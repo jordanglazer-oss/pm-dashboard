@@ -159,6 +159,91 @@ export async function POST(req: NextRequest) {
       ? (ledgerInWindow[ledgerInWindow.length - 1].value / baseline - 1) * 100
       : null;
 
+    // ── PRE-FLIGHT WARNINGS ──────────────────────────────────────
+    // Non-blocking data-shape checks. The import math is a pure
+    // value-ratio chain, so it silently produces a wrong YTD when the
+    // input series has (a) no pre-fromDate anchor row, (b) internal
+    // date gaps, (c) an external cash flow, or (d) a stale end date
+    // that /api/update-daily-value cannot backfill (its Yahoo window is
+    // 15 calendar days — roughly 10 trading days — so anything older is
+    // skipped, silently dropping those days' returns from the chain).
+    // These are surfaced in the dry run so they can be caught BEFORE
+    // the write.
+    const warnings: string[] = [];
+
+    function tradingDaysBetween(a: string, b: string): number {
+      let n = 0;
+      const d = new Date(`${a}T12:00:00`);
+      const end = new Date(`${b}T12:00:00`);
+      d.setDate(d.getDate() + 1);
+      while (d <= end) {
+        const wd = d.getUTCDay();
+        if (wd !== 0 && wd !== 6) n++;
+        d.setDate(d.getDate() + 1);
+      }
+      return n;
+    }
+
+    if (!anchorPreValue) {
+      warnings.push(
+        `No row dated before ${fromDate} in the file. The first imported day ` +
+        `(${inWindow[0].date}) is pinned to the existing index value, so its return vs the ` +
+        `prior year-end is recorded as 0.00% and YTD is understated by that day's move. ` +
+        `Re-export starting in December of the prior year.`,
+      );
+    }
+
+    const staleTradingDays = tradingDaysBetween(inWindow[inWindow.length - 1].date, todayIso);
+    if (staleTradingDays > 3) {
+      warnings.push(
+        `File ends ${inWindow[inWindow.length - 1].date}, ${staleTradingDays} trading days before today ` +
+        `(${todayIso}). /api/update-daily-value backfills at most ~10 trading days of prices; ` +
+        `anything older is skipped and those days' returns are lost from the index chain. ` +
+        `Re-export through the most recent close.`,
+      );
+    }
+
+    const dupDates = (() => {
+      const seen = new Set<string>();
+      const dups: string[] = [];
+      for (const v of values) {
+        if (seen.has(v.date)) dups.push(v.date);
+        seen.add(v.date);
+      }
+      return dups;
+    })();
+    if (dupDates.length > 0) {
+      warnings.push(`Duplicate dates in file (last one wins per date order): ${dupDates.slice(0, 5).join(", ")}${dupDates.length > 5 ? "…" : ""}.`);
+    }
+
+    const internalGaps: string[] = [];
+    for (let i = 1; i < inWindow.length; i++) {
+      const missed = tradingDaysBetween(inWindow[i - 1].date, inWindow[i].date) - 1;
+      if (missed >= 3) internalGaps.push(`${inWindow[i - 1].date}→${inWindow[i].date} (${missed} trading days)`);
+    }
+    if (internalGaps.length > 0) {
+      warnings.push(
+        `Gaps inside the series — the return across each gap is compressed into one entry: ` +
+        `${internalGaps.slice(0, 5).join(", ")}${internalGaps.length > 5 ? "…" : ""}.`,
+      );
+    }
+
+    const bigMoves = newEntries.filter((e) => Math.abs(e.dailyReturn) > 8);
+    if (bigMoves.length > 0) {
+      warnings.push(
+        `Daily move over ±8% on ${bigMoves.slice(0, 5).map((e) => `${e.date} (${e.dailyReturn.toFixed(2)}%)`).join(", ")}` +
+        `${bigMoves.length > 5 ? "…" : ""}. If a deposit/withdrawal hit the SIA account that day, this import ` +
+        `will book the cash flow as performance — the endpoint reads the Total column as a pure value ratio.`,
+      );
+    }
+
+    if (existingYtdPct != null && Math.abs(newYtdPct - existingYtdPct) > 3) {
+      warnings.push(
+        `New YTD (${newYtdPct.toFixed(2)}%) differs from the stored YTD (${existingYtdPct.toFixed(2)}%) by ` +
+        `${Math.abs(newYtdPct - existingYtdPct).toFixed(2)}pp. Confirm this is the correction you expect before applying.`,
+      );
+    }
+
     const summary = {
       profile,
       groupId,
@@ -177,6 +262,7 @@ export async function POST(req: NextRequest) {
       anchoredLastEntry: true,
       preFromDateEntriesPreserved: { perf: perfPre.length, appendix: ledgerPre.length },
       entriesBeingReplaced: { perf: perfInWindow.length, appendix: ledgerInWindow.length },
+      warnings,
     };
 
     if (dryRun) {

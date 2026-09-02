@@ -19,6 +19,9 @@ type SiaDryRunSummary = {
   entriesBeingReplaced: { perf: number; appendix: number };
   preFromDateEntriesPreserved: { perf: number; appendix: number };
   anchorPreValue: { date: string; value: number } | null;
+  /** Non-blocking pre-flight data-shape checks from the server. Empty
+   *  array = nothing suspicious about the file. */
+  warnings?: string[];
 };
 type SiaImportResponse = {
   ok: boolean;
@@ -438,8 +441,12 @@ export default function AppendixPage() {
 
   const handleSiaApply = useCallback(async () => {
     if (!siaDryRun) return;
+    const warn = siaDryRun.summary.warnings ?? [];
     const ok = confirm(
       `Confirm WRITE for ${siaProfile.toUpperCase()}?\n\n` +
+      (warn.length > 0
+        ? `⚠ ${warn.length} DATA CHECK${warn.length > 1 ? "S" : ""} FLAGGED:\n- ${warn.join("\n- ")}\n\n`
+        : "") +
       `Replaces current-year daily values in pm:pim-performance and pm:appendix-daily-values ` +
       `with ${siaDryRun.summary.importedValueCount} SIA-imported entries. All imported entries will be ` +
       `marked anchored (locked from future recompute). Stash keys will be created for rollback.\n\n` +
@@ -1091,6 +1098,16 @@ export default function AppendixPage() {
                     <div className="font-semibold text-ink">{siaDryRun.summary.preFromDateEntriesPreserved.appendix} appendix · {siaDryRun.summary.preFromDateEntriesPreserved.perf} perf</div>
                   </div>
                 </div>
+                {siaDryRun.summary.warnings && siaDryRun.summary.warnings.length > 0 && (
+                  <div className="rounded-lg border border-neg-border bg-neg-soft p-3 space-y-1.5">
+                    <div className="text-xs uppercase tracking-wider text-neg font-semibold">
+                      Data checks ({siaDryRun.summary.warnings.length})
+                    </div>
+                    {siaDryRun.summary.warnings.map((w, i) => (
+                      <div key={i} className="text-xs text-neg leading-relaxed">⚠ {w}</div>
+                    ))}
+                  </div>
+                )}
                 <p className="text-xs text-warn pt-1">
                   Review these numbers. If correct, click <strong>Apply</strong> to write. If anything looks off, change profile / file and re-run Dry Run.
                 </p>
