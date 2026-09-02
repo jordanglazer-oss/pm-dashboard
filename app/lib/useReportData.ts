@@ -187,7 +187,13 @@ export type UseReportDataResult = {
   data: ReportData | null;
   loading: boolean;
   error: string | null;
-  refetch: () => void;
+  /** Re-pulls every upstream and resolves with the freshly-built report.
+   *  The resolved value matters for callers that must act on the NEW
+   *  data in the same tick (the Client Report's "refresh, then generate
+   *  bullets" flow) — reading the `data` field there would hand back the
+   *  pre-refresh render's closure value. Resolves null if the rebuild
+   *  failed; existing callers can keep ignoring the return. */
+  refetch: () => Promise<ReportData | null>;
 };
 
 // ───────── Helpers ─────────
@@ -1123,7 +1129,7 @@ export function useReportData(
         weight: h.weight * 100,
       }));
 
-      setData({
+      const built: ReportData = {
         groupId,
         groupName: group.name,
         profile,
@@ -1140,10 +1146,13 @@ export function useReportData(
         performance,
         tracker,
         totals,
-      });
+      };
+      setData(built);
+      return built;
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to build report");
       setData(null);
+      return null;
     } finally {
       setLoading(false);
     }

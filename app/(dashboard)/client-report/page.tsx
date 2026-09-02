@@ -33,6 +33,7 @@ import type { PimProfileType } from "@/app/lib/pim-types";
 import type { FundData, FundHolding, FundSectorWeight, Stock } from "@/app/lib/types";
 import { colorForSector } from "@/app/lib/sectorColors";
 import type { ClientReportAnalysis } from "@/app/api/client-report-analysis/route";
+import type { ClientReportBullets } from "@/app/api/client-report-bullets/route";
 
 // ───────── Client portfolio comparison types ─────────
 
@@ -584,6 +585,104 @@ function fmtPctFrac(v: number | null | undefined, digits = 1): string {
   return `${(v * 100).toFixed(digits)}%`;
 }
 
+// ───────── Client presentation bullets ─────────
+
+/** Locally-persisted wrapper around the API result. `fingerprint` is the
+ *  hash of the report inputs the bullets were generated from, so the UI
+ *  can tell the PM when a later "Refresh live data" has moved the numbers
+ *  out from under the copy. */
+type StoredBullets = ClientReportBullets & { fingerprint: string };
+
+type BulletsPayload = {
+  profileLabel: string;
+  allocation: { label: string; weight: number }[];
+  sectors: { label: string; weight: number }[];
+  geography: { label: string; weight: number }[];
+  breadth: {
+    underlyingNames: number;
+    top10Weight: number;
+    sectorCount: number;
+  };
+  blendedMerPct?: number;
+  merCoveragePct?: number;
+  cashWeight?: number;
+  performance: {
+    annualizedReturnPct: number | null;
+    sinceInceptionReturnPct: number | null;
+    yearsOfHistory: number | null;
+    volatility: number | null;
+    benchmarkVolatility: number | null;
+    upsideCapture: number | null;
+    downsideCapture: number | null;
+  };
+  weightsSource: "live" | "target";
+};
+
+/**
+ * Build the exact body POSTed to /api/client-report-bullets.
+ *
+ * Deliberately position-agnostic: no ticker, holding name, or client
+ * data goes into it. Only asset-class, sector, geography, breadth
+ * counts, blended fee, and risk/return stats — which is what keeps the
+ * generated bullets free of individual-position commentary.
+ *
+ * Pure function of its inputs so the same call can serve both the POST
+ * and the staleness fingerprint below.
+ */
+function buildBulletsPayload(
+  data: ReportData,
+  clientPositions: ClientPosition[],
+  stocks: Stock[],
+  override: MetricsOverride,
+): BulletsPayload {
+  const modelMer = buildMerBreakdown(null, data, clientPositions, stocks).model;
+  const cashSlice = data.allocation.find((a) => a.key === "cash");
+  const top10 = data.xray
+    .slice(0, 10)
+    .reduce((sum, r) => sum + r.weight, 0);
+  return {
+    profileLabel: data.profileLabel,
+    allocation: data.allocation.map((a) => ({ label: a.label, weight: a.weight })),
+    sectors: data.sectors.map((s) => ({ label: s.sector, weight: s.weight })),
+    geography: data.geography.map((g) => ({ label: g.country, weight: g.weight })),
+    breadth: {
+      underlyingNames: data.xray.length,
+      top10Weight: +top10.toFixed(2),
+      sectorCount: data.sectors.length,
+    },
+    blendedMerPct: modelMer.coveragePct > 0 ? +modelMer.blended.toFixed(3) : undefined,
+    merCoveragePct: +modelMer.coveragePct.toFixed(1),
+    cashWeight: cashSlice ? cashSlice.weight : data.totals.cash,
+    // Overrides win over auto values so the bullets quote the same
+    // numbers the printed Risk Profile strip shows the client.
+    performance: {
+      annualizedReturnPct: data.tracker?.annualizedReturnPct ?? null,
+      sinceInceptionReturnPct: data.tracker?.sinceInceptionReturnPct ?? null,
+      yearsOfHistory: data.tracker?.yearsOfHistory ?? null,
+      volatility: override.stdDev ?? data.performance.volatility ?? null,
+      benchmarkVolatility:
+        override.benchmarkStdDev ?? data.performance.benchmarkVolatility ?? null,
+      upsideCapture: override.upsideCapture ?? data.performance.upsideCapture ?? null,
+      downsideCapture:
+        override.downsideCapture ?? data.performance.downsideCapture ?? null,
+    },
+    weightsSource: data.weightsSource,
+  };
+}
+
+/** FNV-1a over the payload JSON. Only ever compared against another
+ *  fingerprint produced here, so a 32-bit non-cryptographic hash is
+ *  plenty — this is a "did the numbers move?" check, not security. */
+function fingerprintPayload(payload: BulletsPayload): string {
+  const s = JSON.stringify(payload);
+  let h = 0x811c9dc5;
+  for (let i = 0; i < s.length; i++) {
+    h ^= s.charCodeAt(i);
+    h = Math.imul(h, 0x01000193);
+  }
+  return (h >>> 0).toString(16);
+}
+
 export default function ClientReportPage() {
   const router = useRouter();
   const params = useSearchParams();
@@ -630,12 +729,22 @@ export default function ClientReportPage() {
   const [analysisLoading, setAnalysisLoading] = useState(false);
   const [analysisError, setAnalysisError] = useState<string | null>(null);
 
+  // ── Client presentation bullets (model-level talking points) ──
+  // Independent of the client comparison — these describe OUR model, so
+  // they're available as soon as report data loads. Generation always
+  // re-pulls live data first (see generateBullets) so the copy can never
+  // be written off a stale snapshot.
+  const [bullets, setBullets] = useState<StoredBullets | null>(null);
+  const [bulletsLoading, setBulletsLoading] = useState(false);
+  const [bulletsError, setBulletsError] = useState<string | null>(null);
+  const [bulletsCopied, setBulletsCopied] = useState(false);
+
   // Load saved client portfolio positions from Redis on mount.
   useEffect(() => {
     let cancelled = false;
     fetch("/api/kv/client-portfolio", { cache: "no-store" })
       .then((r) => (r.ok ? r.json() : { data: null }))
-      .then((payload: { data?: { positions?: ClientPosition[]; cash?: number; fixedIncome?: number; manualTotalValue?: number; inputMode?: ClientInputMode; analysis?: ClientReportAnalysis; metricsOverrides?: Record<string, MetricsOverride> } | null }) => {
+      .then((payload: { data?: { positions?: ClientPosition[]; cash?: number; fixedIncome?: number; manualTotalValue?: number; inputMode?: ClientInputMode; analysis?: ClientReportAnalysis; presentationBullets?: StoredBullets; metricsOverrides?: Record<string, MetricsOverride> } | null }) => {
         if (cancelled) return;
         const d = payload?.data;
         if (d) {
@@ -649,6 +758,13 @@ export default function ClientReportPage() {
           }
           if (d.inputMode === "units" || d.inputMode === "weight") setClientInputMode(d.inputMode);
           if (d.analysis && typeof d.analysis === "object") setAnalysis(d.analysis);
+          if (
+            d.presentationBullets &&
+            typeof d.presentationBullets === "object" &&
+            Array.isArray(d.presentationBullets.bullets)
+          ) {
+            setBullets(d.presentationBullets);
+          }
           if (d.metricsOverrides && typeof d.metricsOverrides === "object") {
             setMetricsOverrides(d.metricsOverrides);
           }
@@ -718,12 +834,13 @@ export default function ClientReportPage() {
           manualTotalValue: clientManualTotalValue,
           inputMode: clientInputMode,
           analysis,
+          presentationBullets: bullets,
           metricsOverrides,
         }),
       }).catch(() => { /* best effort */ });
     }, 800);
     return () => clearTimeout(handle);
-  }, [clientPositions, clientCash, clientFixedIncome, clientManualTotalValue, clientInputMode, analysis, metricsOverrides]);
+  }, [clientPositions, clientCash, clientFixedIncome, clientManualTotalValue, clientInputMode, analysis, bullets, metricsOverrides]);
 
   const addPosition = useCallback(() => {
     setClientPositions((prev) => [
@@ -1551,6 +1668,84 @@ export default function ClientReportPage() {
     [data, clientResult, stocks, clientPositions, metricsOverrides, groupId, profile],
   );
 
+  // ── Generate client presentation bullets ──
+  // Contract with the PM: these are NEVER written off stale numbers. The
+  // handler awaits a full `refetch()` (live positions, live prices, FX,
+  // fund cache, performance history) and builds the payload from the
+  // value that refetch resolves with — not from the `data` state, which
+  // still holds the pre-refresh render's snapshot inside this closure.
+  //
+  // The server caches by payload hash, so re-clicking on unchanged
+  // numbers costs nothing; `force` bypasses that for a reword.
+  const generateBullets = useCallback(
+    async (force = false) => {
+      setBulletsLoading(true);
+      setBulletsError(null);
+      setBulletsCopied(false);
+      try {
+        const fresh = await refetch();
+        if (!fresh) {
+          setBulletsError(
+            "Couldn't refresh live data — nothing generated. Try again.",
+          );
+          return;
+        }
+        const payload = buildBulletsPayload(
+          fresh,
+          clientPositions,
+          stocks,
+          metricsOverrides[`${groupId}::${profile}`] ?? {},
+        );
+        const res = await fetch("/api/client-report-bullets", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ ...payload, force }),
+        });
+        if (!res.ok) {
+          const body = await res.json().catch(() => ({}));
+          throw new Error(body.error || `Request failed (${res.status})`);
+        }
+        const { result } = (await res.json()) as { result: ClientReportBullets };
+        setBullets({ ...result, fingerprint: fingerprintPayload(payload) });
+      } catch (e) {
+        setBulletsError(
+          e instanceof Error ? e.message : "Failed to generate bullets",
+        );
+      } finally {
+        setBulletsLoading(false);
+      }
+    },
+    [refetch, clientPositions, stocks, metricsOverrides, groupId, profile],
+  );
+
+  // True when the report data has moved since the bullets were written
+  // (a later "Refresh live data", a metrics override edit, a weight
+  // change). Compares fingerprints rather than timestamps so a plain
+  // page reload — which re-pulls identical numbers — doesn't nag.
+  const bulletsStale = useMemo(() => {
+    if (!bullets || !data) return false;
+    const current = fingerprintPayload(
+      buildBulletsPayload(
+        data,
+        clientPositions,
+        stocks,
+        metricsOverrides[`${groupId}::${profile}`] ?? {},
+      ),
+    );
+    return current !== bullets.fingerprint;
+  }, [bullets, data, clientPositions, stocks, metricsOverrides, groupId, profile]);
+
+  const copyBullets = useCallback(async () => {
+    if (!bullets?.bullets.length) return;
+    try {
+      await navigator.clipboard.writeText(bullets.bullets.join("\n"));
+      setBulletsCopied(true);
+      setTimeout(() => setBulletsCopied(false), 2000);
+    } catch {
+      setBulletsError("Clipboard unavailable — select the text below and copy manually.");
+    }
+  }, [bullets]);
+
   // Manager commentary was removed per PM request — it was almost
   // never used. The Redis blob at `pm:client-report-notes` is left
   // intact so any previously-written notes are preserved untouched
@@ -1650,6 +1845,84 @@ export default function ClientReportPage() {
         >
           Generate PDF
         </button>
+      </div>
+
+      {/* ── Client presentation bullets (screen only) ──
+          Model-level talking points for a client deck. Sits above the
+          comparison panel because it needs no client input — just the
+          live model. The button re-pulls live data before generating,
+          so the copy always matches the numbers on the PDF below. */}
+      <div className="print:hidden max-w-4xl mx-auto mt-4 px-4">
+        <div className="bg-white rounded-lg shadow border border-slate-200 px-4 py-3">
+          <div className="flex items-center gap-2">
+            <div className="flex-1">
+              <div className="text-sm font-semibold text-slate-700">
+                Client presentation bullets
+              </div>
+              <div className="text-[11px] text-slate-500">
+                Refreshes live data first, then writes broad talking points —
+                index exposure, diversification, cost, risk. No individual
+                positions are named.
+              </div>
+            </div>
+            {bullets && (
+              <button
+                onClick={() => copyBullets()}
+                disabled={bulletsLoading}
+                className="rounded bg-slate-100 px-3 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-200 disabled:opacity-50"
+              >
+                {bulletsCopied ? "Copied" : "Copy"}
+              </button>
+            )}
+            <button
+              onClick={() => generateBullets(bullets != null)}
+              disabled={bulletsLoading || !!error}
+              className="rounded-lg px-4 py-1.5 text-xs font-semibold !text-white disabled:opacity-50"
+              style={{ backgroundColor: RBC_NAVY }}
+            >
+              {bulletsLoading
+                ? "Refreshing & generating…"
+                : bullets
+                  ? "Refresh & regenerate"
+                  : "Refresh & generate"}
+            </button>
+          </div>
+
+          {bulletsError && (
+            <div className="mt-2 text-xs text-rose-600">{bulletsError}</div>
+          )}
+
+          {bullets && bulletsStale && (
+            <div className="mt-2 rounded border border-amber-200 bg-amber-50 px-2 py-1.5 text-[11px] text-amber-800">
+              The model numbers have changed since these bullets were written —
+              regenerate before sending them to a client.
+            </div>
+          )}
+
+          {bullets && (
+            <div className="mt-3">
+              <ul className="space-y-1.5">
+                {bullets.bullets.map((b, i) => (
+                  <li
+                    key={i}
+                    className="text-[12px] leading-snug text-slate-700 pl-3 border-l-2"
+                    style={{ borderColor: RBC_GOLD }}
+                  >
+                    {b}
+                  </li>
+                ))}
+              </ul>
+              <div className="mt-2 text-[11px] text-slate-400">
+                Generated{" "}
+                {new Date(bullets.generatedAt).toLocaleString("en-CA", {
+                  dateStyle: "medium",
+                  timeStyle: "short",
+                })}
+                . Also renders on the PDF below.
+              </div>
+            </div>
+          )}
+        </div>
       </div>
 
       {/* ── Client Portfolio Input (screen only) ── */}
@@ -2080,6 +2353,7 @@ export default function ClientReportPage() {
             data={data}
             clientPortfolio={showComparison ? clientResult : null}
             analysis={showComparison ? analysis : null}
+            bullets={bullets}
             merBreakdown={buildMerBreakdown(
               // Model side always renders; client side only when the PM
               // has run Analyze and toggled the comparison on.
@@ -2108,6 +2382,7 @@ function OnePager({
   data,
   clientPortfolio,
   analysis,
+  bullets,
   merBreakdown,
   metricsOverride,
   onMetricsOverrideChange,
@@ -2115,6 +2390,7 @@ function OnePager({
   data: ReportData;
   clientPortfolio: ClientPortfolioResult | null;
   analysis: ClientReportAnalysis | null;
+  bullets: StoredBullets | null;
   merBreakdown: MerBreakdown | null;
   metricsOverride: MetricsOverride;
   onMetricsOverrideChange: (next: MetricsOverride) => void;
@@ -2327,6 +2603,28 @@ function OnePager({
           />
         </div>
       </div>
+
+      {/* ── Portfolio highlights ──
+          AI-written, model-level talking points. Only renders once the
+          PM has generated them, so the PDF layout is unchanged for
+          anyone who never clicks the button. Deliberately free of
+          individual position names — see /api/client-report-bullets. */}
+      {bullets && bullets.bullets.length > 0 && (
+        <div className="mt-4 break-inside-avoid">
+          <SectionTitle>Portfolio Highlights</SectionTitle>
+          <ul className="mt-2 space-y-1.5">
+            {bullets.bullets.map((b, i) => (
+              <li key={i} className="flex gap-2 text-[11px] leading-snug text-slate-700">
+                <span
+                  className="mt-[5px] h-1.5 w-1.5 shrink-0 rounded-full"
+                  style={{ backgroundColor: RBC_GOLD }}
+                />
+                <span>{b}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
 
       {/* Manager Commentary section removed — almost never used in
           practice, per the PM. The persisted notes blob is left intact. */}

@@ -12,6 +12,7 @@ import { NextRequest, NextResponse } from "next/server";
  *     cash: 0,
  *     inputMode: "units" | "weight",
  *     analysis?: ClientReportAnalysis,
+ *     presentationBullets?: { bullets: string[], generatedAt, fingerprint },
  *     metricsOverrides?: {
  *       // keyed by `${groupId}::${profile}`
  *       [key: string]: {
