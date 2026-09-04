@@ -28,6 +28,59 @@ export type PdfTextResult = {
   droppedPages: number;
 };
 
+/**
+ * Strip the running page furniture that pdf.js emits at the END of each page:
+ * the page number, the "see Page N" disclosures pointer, and the repeated
+ * running header (e.g. "Daily Technical Strategy September 3, 2026").
+ *
+ * The header is DETECTED as the longest common suffix shared by two or more
+ * pages rather than hard-coded, so it keeps working if the publisher changes
+ * its wording or moves offices — and so this helper stays useful for any
+ * other report PDF. Only trailing text is touched: furniture always sorts
+ * last in the text layer, and anchoring to the end is what makes it safe to
+ * remove without risking real prose.
+ */
+function stripPageFurniture(pages: string[]): string[] {
+  const dropTrailers = (t: string) =>
+    t
+      .replace(/\s*Page\s*\d+\s*$/i, "")
+      .replace(/\s*For important disclosures,?\s*see\s*Page\s*\d+\s*$/i, "")
+      .trimEnd();
+
+  const stage1 = pages.map(dropTrailers);
+
+  // Find the repeated header as the suffix shared by the MOST pages.
+  //
+  // The longest common suffix of any single PAIR is not it: two pages whose
+  // prose happens to end on the same letter ("…sessions" / "…stocks") share
+  // that letter too, yielding a candidate that then matches only those two.
+  // So take that candidate and walk it left-to-right, scoring each suffix by
+  // how many pages actually end with it — coverage first, length as the
+  // tie-break. The real header wins because every page carries it.
+  const MAX_HEADER = 120;
+  let candidate = "";
+  for (let i = 0; i < stage1.length; i++) {
+    for (let j = i + 1; j < stage1.length; j++) {
+      const a = stage1[i], b = stage1[j];
+      let k = 0;
+      while (k < a.length && k < b.length && k < MAX_HEADER && a[a.length - 1 - k] === b[b.length - 1 - k]) k++;
+      if (k > candidate.length) candidate = a.slice(a.length - k);
+    }
+  }
+
+  let header = "";
+  let coverage = 0;
+  for (let start = 0; start < candidate.length; start++) {
+    const cand = candidate.slice(start);
+    if (cand.trim().length < 8) break; // too short to be anything but coincidence
+    const hits = stage1.filter((t) => t.endsWith(cand)).length;
+    if (hits > coverage) { header = cand; coverage = hits; }
+  }
+  // Needs to repeat to be furniture at all.
+  if (coverage < 2) return stage1.map((t) => t.trim());
+  return stage1.map((t) => dropTrailers(t.endsWith(header) ? t.slice(0, -header.length) : t).trim());
+}
+
 /** Extract each page's text layer. Returns one string per page, in order.
  *  A page with no text layer (a scanned/image page) yields "". */
 export async function extractPdfPageTexts(dataUrl: string): Promise<string[]> {
@@ -57,7 +110,7 @@ export async function extractPdfText(
   const pages = await extractPdfPageTexts(dataUrl);
   const totalPages = pages.length;
   const canDrop = dropTrailingPages > 0 && totalPages > dropTrailingPages;
-  const kept = canDrop ? pages.slice(0, totalPages - dropTrailingPages) : pages;
+  const kept = stripPageFurniture(canDrop ? pages.slice(0, totalPages - dropTrailingPages) : pages);
   const text = kept
     .map((p) => p.trim())
     .filter(Boolean)

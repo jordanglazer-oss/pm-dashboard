@@ -54,3 +54,6 @@ next-env.d.ts
 
 # local SIA CSV samples (client data — never commit)
 /sia-samples/
+
+# Sample research PDFs/CSVs copied in for local verification — not source.
+sia-samples/*.pdf
