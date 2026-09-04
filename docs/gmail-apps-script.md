@@ -16,7 +16,7 @@ handles the rest.
 | `Strategist …` | Any analyst/strategist research (PDF or image) | Brief's "Analyst / Strategist Reports" dropbox |
 | `SA: Street Takeaways …` — **or just forward any email from `FactSet_Alerts@factset.com`** (sender is matched too, so the original subject works unchanged) | **The email BODY — no attachment needed** | Per-ticker Street Takeaways: per-firm PT changes, full-panel rating mix, avg target, valuation vs own history. Feeds catalysts / researchCoverage / historicalValuation on the next rescore, and the stock page's Street Takeaways tile. Names outside the Portfolio/Watchlist are skipped. |
 | `Newton …` (or `Mark Newton …`) | **The report PDF, forwarded unedited** (or, as a fallback, the report text pasted into the body) | Brief's Strategist Notes → Mark Newton slot (`pm:market.strategistNotes`), exactly like pasting into the UI. The PDF's text layer is read locally with pdf.js — **no Anthropic spend** — and the **last 2 pages (disclosures) are always dropped**. Charts are not interpreted; text only. Dated today (Eastern) unless the subject contains a `YYYY-MM-DD`. Timing defaults to prior-close if not already set. Also appends the rolling 30-day note history. |
-| `Lee …` (or `Tom Lee …`) | Same — PDF preferred, pasted body as fallback | Same, Tom Lee slot. Timing defaults to pre-market. |
+| `Lee …` (or `Tom Lee …`) | Same — PDF preferred, pasted body as fallback | Same, Tom Lee slot. Timing defaults to pre-market. Lee's full FLASH runs ~9 MB, over Vercel's 4.5 MB request limit, so the script stages anything above 3 MB to Blob first (see `stageAttachmentToBlob`). |
 | `Fundstrat Top` / `Fundstrat Bottom` / `Fundstrat SMID Top` / `Fundstrat SMID Bottom` | Screenshot (PNG/JPG/PDF) | Respective Fundstrat list on the Research tab |
 | `Fundstrat Large-Cap Core` / `Fundstrat SMID Core` | Screenshot (PNG/JPG/PDF) of the DQM quant screen (Ticker, Company, Sector, Industry, Mkt Cap, 1M/YTD relative perf, P/E, DQM Rank, Momentum Rating, trend columns) | Respective Fundstrat "Core Ideas" list on the Research tab |
 | `RBC Canadian` / `RBC US` | Screenshot (PNG/JPG/PDF) | RBC Canadian / US Focus List |
@@ -205,6 +205,67 @@ function pingIntradayMonitor() {
 }
 
 /**
+ * Vercel caps a serverless function's REQUEST BODY at 4.5 MB, and base64
+ * inflates bytes by ~4/3 — so anything over ~3.2 MB raw cannot be POSTed
+ * inline. Fundstrat's fuller notes (Tom Lee's full FLASH runs ~9 MB of
+ * charts) blow straight through that, and the failure is a 413 the script
+ * would otherwise read as "permanent", label, and never retry — a silently
+ * lost note.
+ *
+ * Above this threshold the attachment goes to Vercel Blob FIRST (via a
+ * short-lived, path-scoped token minted by /api/inbox/blob-token) and only
+ * the staging pathname is POSTed to /api/inbox/ingest, which reads the file
+ * back and deletes the staging copy. Conservative on purpose: well under the
+ * real ceiling, so JSON overhead can never tip a borderline file over.
+ */
+const INLINE_MAX_BYTES = 3 * 1024 * 1024;
+
+/**
+ * Upload one attachment straight to Vercel Blob; returns its staging
+ * pathname for /api/inbox/ingest. Throws on any failure — callers MUST treat
+ * that as transient (leave the thread unlabeled) rather than swallowing it,
+ * or a large note disappears without a trace.
+ */
+function stageAttachmentToBlob(ingestUrl, secret, att) {
+  // Pathname must match the server's /^inbox-staging\/[A-Za-z0-9._-]+$/ —
+  // so it is generated, never derived from a filename (real ones contain
+  // spaces, e.g. "Lee - 2026-09-04.pdf").
+  const pathname =
+    "inbox-staging/" + Date.now() + "-" + Math.random().toString(36).slice(2, 10) + ".bin";
+  const contentType = att.getContentType() || "application/octet-stream";
+
+  const tokenRes = UrlFetchApp.fetch(ingestUrl.replace(/\/ingest\/?$/, "/blob-token"), {
+    method: "post",
+    contentType: "application/json",
+    headers: { Authorization: "Bearer " + secret },
+    payload: JSON.stringify({ pathname: pathname, contentType: contentType }),
+    muteHttpExceptions: true,
+  });
+  if (tokenRes.getResponseCode() !== 200) {
+    throw new Error("blob-token " + tokenRes.getResponseCode() + " :: " + tokenRes.getContentText().slice(0, 200));
+  }
+  const t = JSON.parse(tokenRes.getContentText());
+
+  // Mirrors what @vercel/blob's put() sends: the client token carries the
+  // store id, so no separate store header is needed.
+  const putRes = UrlFetchApp.fetch(t.uploadUrl, {
+    method: "put",
+    contentType: contentType,
+    headers: {
+      Authorization: "Bearer " + t.clientToken,
+      "x-api-version": String(t.apiVersion),
+      "x-content-type": contentType,
+    },
+    payload: att.getBytes(),
+    muteHttpExceptions: true,
+  });
+  if (putRes.getResponseCode() >= 300) {
+    throw new Error("blob PUT " + putRes.getResponseCode() + " :: " + putRes.getContentText().slice(0, 200));
+  }
+  return pathname;
+}
+
+/**
  * Gmail → pm-dashboard webhook.
  *
  * Each call processes new threads in the inbox whose subject matches one
@@ -363,15 +424,30 @@ function processInbox() {
           }
           try {
             anyAttempt = true;
-            // Build, POST, then drop the reference. Holding base64 strings for
-            // several multi-MB PDFs at once is what triggers the V8
-            // "Error code INTERNAL" crash.
-            let payload = JSON.stringify({
-              subject,
-              sender,
-              filename: att.getName(),
-              dataUrl: "data:" + att.getContentType() + ";base64," + Utilities.base64Encode(att.getBytes()),
-            });
+            // Over the inline ceiling: stage to Blob and send only the
+            // pathname. A staging failure throws, and the catch below marks
+            // the thread transient so it is retried rather than lost.
+            let payload;
+            if (size > INLINE_MAX_BYTES) {
+              const blobPathname = stageAttachmentToBlob(url, secret, att);
+              Logger.log("STAGED " + Math.round(size / 1048576) + "MB -> " + blobPathname + " :: " + att.getName());
+              payload = JSON.stringify({
+                subject,
+                sender,
+                filename: att.getName(),
+                blobPathname: blobPathname,
+              });
+            } else {
+              // Build, POST, then drop the reference. Holding base64 strings
+              // for several multi-MB PDFs at once is what triggers the V8
+              // "Error code INTERNAL" crash.
+              payload = JSON.stringify({
+                subject,
+                sender,
+                filename: att.getName(),
+                dataUrl: "data:" + att.getContentType() + ";base64," + Utilities.base64Encode(att.getBytes()),
+              });
+            }
             const response = UrlFetchApp.fetch(url, {
               method: "post",
               contentType: "application/json",
@@ -493,6 +569,13 @@ function reprocessRecent() {
       var attachments = msg.getAttachments({ includeInlineImages: true, includeAttachments: true });
       for (var a = 0; a < attachments.length; a++) {
         var att = attachments[a];
+        // This helper posts inline only, so it cannot carry a file that needs
+        // Blob staging. Say so rather than emitting a confusing 413.
+        if (att.getSize() > 3 * 1024 * 1024) {
+          Logger.log("  SKIP (too large for inline re-import, " + Math.round(att.getSize() / 1048576) +
+                     "MB) " + subject + " :: " + att.getName() + " — re-send the email instead.");
+          continue;
+        }
         try {
           var dataUrl = "data:" + att.getContentType() + ";base64," + Utilities.base64Encode(att.getBytes());
           var response = UrlFetchApp.fetch(url, {
