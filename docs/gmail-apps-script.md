@@ -67,6 +67,11 @@ Recipient defaults to `jordan.glazer@rbc.com` (override with the Vercel env var
 
 ## Script
 
+> This block is kept in sync with the LIVE script in the Apps Script editor.
+> It drifted once (the live `SUBJECT_RE` had widened for EQUATE/JPM/SIA while this
+> copy had not), so re-paste from here only after confirming it matches, or you will
+> silently revert those fixes.
+
 > **Why `processInbox` has execution guards.** Between 2026-07-27 and 07-28 the
 > trigger failed six times: three `Exceeded maximum execution time` (each
 > exactly ~6 min, including runs at 12:41 AM and 4:41 AM when no mail arrives)
@@ -110,6 +115,29 @@ function processAll() {
   try { pingIntradayMonitor(); } catch (e) { Logger.log("pingIntradayMonitor EX " + e); }
   try { pingAutoRescore(); } catch (e) { Logger.log("pingAutoRescore EX " + e); }
   try { pingFactorUniverse(); } catch (e) { Logger.log("pingFactorUniverse EX " + e); }
+  try { pingSetupScan(); } catch (e) { Logger.log("pingSetupScan EX " + e); }
+}
+
+/**
+ * Setup-scan pacer. Pings once an hour (the 5-minute trigger doubles as an
+ * hourly cron). The endpoint takes one slice per call because Yahoo throttles
+ * datacentre IPs, so the picture fills in over several pings and costs nothing
+ * once the universe is covered — readings under 12h old are reused, not
+ * re-fetched.
+ */
+function pingSetupScan() {
+  if (new Date().getMinutes() >= 5) return; // hourly gate on the 5-min trigger
+  const props = PropertiesService.getScriptProperties();
+  const base = props.getProperty("WEBHOOK_URL"); // .../api/inbox/ingest
+  const secret = props.getProperty("INBOX_SECRET");
+  if (!base || !secret) return;
+  const url = base.replace(/\/api\/inbox\/ingest\/?$/, "/api/cron/setup-scan");
+  const res = UrlFetchApp.fetch(url, {
+    method: "get",
+    headers: { Authorization: "Bearer " + secret },
+    muteHttpExceptions: true,
+  });
+  Logger.log("setup-scan " + res.getResponseCode() + " " + res.getContentText().slice(0, 200));
 }
 
 /**
@@ -180,11 +208,12 @@ function pingIntradayMonitor() {
  * Gmail → pm-dashboard webhook.
  *
  * Each call processes new threads in the inbox whose subject matches one
- * of the supported prefixes (Analyst Report / SIA / BoostedAI / Boosted /
- * MarketEdge / ChartScout / Strategist). Every attachment is POSTed to
- * /api/inbox/ingest as { subject, sender, filename, dataUrl }. After a
- * successful POST the thread is labeled "Dashboard-Processed" so the next
- * run skips it.
+ * of the supported prefixes (Analyst Report / Fundstrat / RBC / JPM Focus /
+ * RBC EQUATE / SIA / BoostedAI / MarketEdge / ChartScout / Strategist /
+ * Newton / Lee).
+ * Every attachment is POSTed to /api/inbox/ingest as
+ * { subject, sender, filename, dataUrl }. After a successful POST the thread
+ * is labeled "Dashboard-Processed" so the next run skips it.
  */
 
 function processInbox() {
@@ -219,17 +248,28 @@ function processInbox() {
     // Bigger than the webhook will accept anyway; skip rather than OOM on it.
     const MAX_BYTES = 30 * 1024 * 1024;
 
-    // Order matters: more-specific prefixes first ("Fundstrat SMID Top"
-    // before "Fundstrat Top") so regex alternation matches correctly.
-    const SUBJECT_RE = /^(?:(?:re|fwd?|fw):\s*)*(Analyst Report:|Fundstrat Large-Cap Core|Fundstrat SMID Core|Fundstrat SMID Top|Fundstrat SMID Bottom|Fundstrat Top|Fundstrat Bottom|RBC Canadian|RBC US|RBCCM FEW|Seeking Alpha|Alpha Picks|SIA\b|BoostedAI\b|Boosted\b|MarketEdge\b|ChartScout\b|Strategist\b|(?:Mark )?Newton\b|(?:Tom )?Lee\b|SA:\s*Street Takeaways|Street Takeaways)/i;
+    // Kept identical to reprocessRecent's copy so the two cannot disagree
+    // about what is worth forwarding.
+    //
+    // Three things this covers that the previous version did not:
+    //   equate      RBC EQUATE rank sheets, any wording, any date. Matches
+    //               both "Equate CAD" and "RBC EQUATE Quantitative Ranks -
+    //               20260814"; the date is never part of the test.
+    //   jpm focus   the dashboard has classified these all along, but they
+    //               were never forwarded — a silent gap.
+    //   sia         "SIA\b" could not match SIACharts or SIA_SP500: \b needs a
+    //               NON-word character after "SIA", and both "C" and "_" are
+    //               word characters. An unedited SIA download never matched.
+    const SUBJECT_RE = /^(?:\s*(?:fw|fwd|re|tr)\s*:\s*)*(?:analyst\s+report:|fundstrat\b|rbc\s+(?:canadian|us)\b|jpm\s+focus\b|rbccm\s+few\b|equate\b|.*\bequate\b.*\b(?:rank|all\s*cap|large\s*cap)|seeking\s+alpha\b|alpha\s+picks\b|sia(?:charts)?(?![a-z0-9])|boosted(?:ai)?\b|marketedge\b|chartscout\b|strategist\b|(?:mark\s+)?newton(?![a-z0-9])|(?:tom\s+)?lee(?![a-z0-9])|(?:sa:\s*)?(?:street\s+takeaways|streetaccount|transcript\s+intelligence)\b|.*\breports\s+Q[1-4]\b.*\bvs\b)/i;
     // FactSet alerts are BODY-TEXT emails (no attachment) — matched by sender so
     // a plain forward works with its original subject untouched.
     const BODY_TEXT_SENDER_RE = /factset[_.]?alerts?@factset\.com/i;
     const BODY_TEXT_SUBJECT_RE = /^(?:(?:re|fwd?|fw):\s*)*(?:(?:SA:\s*)?(?:Street Takeaways|StreetAccount|Transcript Intelligence)|(?:Mark )?Newton\b|(?:Tom )?Lee\b)/i;
-    // Strategist notes (Fundstrat daily PDFs). These are ATTACHMENT emails
-    // when the PDF is forwarded, but must still work when only pasted text is
-    // sent — so they take the body path only if there's nothing attached.
-    const STRATEGIST_NOTE_RE = /^(?:(?:re|fwd?|fw):\s*)*(?:(?:Mark )?Newton|(?:Tom )?Lee)\b/i;
+    // Strategist notes (Fundstrat dailies). Normally ATTACHMENT emails — the
+    // dashboard reads the PDF's text layer and drops the 2 disclosure pages —
+    // but pasted text must keep working, so these take the body path ONLY when
+    // nothing is attached. Mirrors the dashboard's classifySubject.
+    const STRATEGIST_NOTE_RE = /^(?:\s*(?:fw|fwd|re|tr)\s*:\s*)*(?:(?:mark\s+)?newton|(?:tom\s+)?lee)(?![a-z0-9])/i;
     const PROCESSED_LABEL_NAME = "Dashboard-Processed";
 
     let label = GmailApp.getUserLabelByName(PROCESSED_LABEL_NAME);
@@ -254,6 +294,12 @@ function processInbox() {
       // thread stays unlabeled and is retried.
       let anySuccess = false;
       let anyTransientFailure = false;
+      // ── Guard 4: only label mail we actually TRIED to ingest ─────────
+      // Without this, `!anyTransientFailure` was true for every thread that
+      // matched nothing at all, so ordinary mail — out-of-office replies
+      // included — was tagged "Dashboard-Processed". Nothing was sent for
+      // those (no tokens spent), but the label claimed otherwise.
+      let anyAttempt = false;
       for (const msg of messages) {
         const subject = (msg.getSubject() || "").trim();
         const sender = msg.getFrom();
@@ -265,15 +311,16 @@ function processInbox() {
           plainBody = msg.getPlainBody() || "";
           isBodyTextKind = BODY_TEXT_SENDER_RE.test(plainBody.slice(0, 3000));
         }
-        // Newton / Lee: prefer the forwarded PDF (the dashboard reads its text
-        // layer and drops the disclosure pages). Only fall back to the body
-        // when the email carries no attachment at all.
+        // Newton / Lee: prefer the forwarded PDF over the body. BODY_TEXT_SUBJECT_RE
+        // still lists them (harmless, and it is the fallback's safety net), so this
+        // recomputes the decision from what the email actually carries.
         if (STRATEGIST_NOTE_RE.test(subject)) {
           isBodyTextKind =
             msg.getAttachments({ includeInlineImages: false, includeAttachments: true }).length === 0;
         }
         if (isBodyTextKind) {
           try {
+            anyAttempt = true;
             const bodyText = plainBody || msg.getPlainBody() || "";
             const response = UrlFetchApp.fetch(url, {
               method: "post",
@@ -315,6 +362,7 @@ function processInbox() {
             continue;
           }
           try {
+            anyAttempt = true;
             // Build, POST, then drop the reference. Holding base64 strings for
             // several multi-MB PDFs at once is what triggers the V8
             // "Error code INTERNAL" crash.
@@ -346,8 +394,9 @@ function processInbox() {
           }
         }
       }
-      // Label unless something failed in a way that retrying could fix.
-      if (anySuccess || !anyTransientFailure) {
+      // Label unless something failed in a way that retrying could fix — and
+      // only for threads we actually tried to ingest.
+      if (anyAttempt && (anySuccess || !anyTransientFailure)) {
         thread.addLabel(label);
       }
     }
@@ -427,7 +476,7 @@ function testWebhook() {
  *  works no matter where SUBJECT_RE lives. */
 function reprocessRecent() {
   var DAYS = 3; // widen if your CSVs are older than this
-  var SUBJECT_RE = /^(?:(?:re|fwd?|fw):\s*)*(Analyst Report:|Fundstrat Large-Cap Core|Fundstrat SMID Core|Fundstrat SMID Top|Fundstrat SMID Bottom|Fundstrat Top|Fundstrat Bottom|RBC Canadian|RBC US|RBCCM FEW|Seeking Alpha|Alpha Picks|SIA\b|BoostedAI\b|Boosted\b|MarketEdge\b|ChartScout\b|Strategist\b)/i;
+  var SUBJECT_RE = /^(?:\s*(?:fw|fwd|re|tr)\s*:\s*)*(?:analyst\s+report:|fundstrat\b|rbc\s+(?:canadian|us)\b|jpm\s+focus\b|rbccm\s+few\b|equate\b|.*\bequate\b.*\b(?:rank|all\s*cap|large\s*cap)|seeking\s+alpha\b|alpha\s+picks\b|sia(?:charts)?(?![a-z0-9])|boosted(?:ai)?\b|marketedge\b|chartscout\b|strategist\b|(?:mark\s+)?newton(?![a-z0-9])|(?:tom\s+)?lee(?![a-z0-9])|(?:sa:\s*)?(?:street\s+takeaways|streetaccount|transcript\s+intelligence)\b|.*\breports\s+Q[1-4]\b.*\bvs\b)/i;
   var props = PropertiesService.getScriptProperties();
   var url = props.getProperty("WEBHOOK_URL");
   var secret = props.getProperty("INBOX_SECRET");
@@ -461,6 +510,85 @@ function reprocessRecent() {
     }
   }
   Logger.log("reprocessRecent done.");
+}
+
+/**
+ * Make the label mean what it says: "this thread was sent to the dashboard".
+ *
+ * Three states get conflated today, and each needs a different answer:
+ *
+ *   MATCHES the rules and was already ingested  → KEEP the label.
+ *       Removing it re-sends the thread, and analyst-report PDFs cost real
+ *       Anthropic money to re-extract. This is why the blanket "reopen
+ *       everything" pass was dangerous: 146 of these were correctly labeled.
+ *
+ *   Does NOT match the rules                    → REMOVE the label.
+ *       Never ours. The old labelling bug tagged all of it, and relabelAll
+ *       then tagged the rest. Nothing is ever sent for these, so unlabelling
+ *       costs nothing and stops Gmail claiming otherwise.
+ *
+ *   Matches, but was NEVER ingested (EQUATE)    → REMOVE the label.
+ *       These only became eligible when the subject rules widened, so they
+ *       were labeled without ever having been processed. XLSX parses locally,
+ *       so releasing them costs nothing.
+ *
+ * Cheap by construction: getFirstMessageSubject() is a property read, unlike
+ * getMessages(), and removals go out in batches of 100. Resumable — it works
+ * inside a time budget and picks up where it stopped, so run it until it
+ * reports 0 changes.
+ */
+function fixLabels() {
+  var DAYS = 60;
+  var label = GmailApp.getUserLabelByName("Dashboard-Processed");
+  if (!label) { Logger.log("No Dashboard-Processed label — nothing to do."); return; }
+
+  // Identical to processInbox's copy.
+  var SUBJECT_RE = /^(?:\s*(?:fw|fwd|re|tr)\s*:\s*)*(?:analyst\s+report:|fundstrat\b|rbc\s+(?:canadian|us)\b|jpm\s+focus\b|rbccm\s+few\b|equate\b|.*\bequate\b.*\b(?:rank|all\s*cap|large\s*cap)|seeking\s+alpha\b|alpha\s+picks\b|sia(?:charts)?(?![a-z0-9])|boosted(?:ai)?\b|marketedge\b|chartscout\b|strategist\b|(?:mark\s+)?newton(?![a-z0-9])|(?:tom\s+)?lee(?![a-z0-9])|(?:sa:\s*)?(?:street\s+takeaways|streetaccount|transcript\s+intelligence)\b|.*\breports\s+Q[1-4]\b.*\bvs\b)/i;
+  // Body-text kinds are recognised by subject here; sender matching needs
+  // getMessages(), which is the expensive call this pass exists to avoid. A
+  // FactSet thread whose subject does not say so is left LABELED — the safe
+  // direction, since unlabelling would re-send it.
+  var BODY_TEXT_SUBJECT_RE = /^(?:(?:re|fwd?|fw):\s*)*(?:SA:\s*)?(?:Street Takeaways|StreetAccount|Transcript Intelligence)/i;
+  // Matched the rules but was never actually ingested, so it must be released.
+  var NEVER_INGESTED_RE = /equate/i;
+
+  var startedAt = Date.now();
+  var BUDGET_MS = 4.5 * 60 * 1000;
+
+  var examined = 0, kept = 0, cleared = 0, released = 0;
+  var batch = [];
+
+  var threads = GmailApp.search('label:Dashboard-Processed newer_than:' + DAYS + 'd', 0, 400);
+  Logger.log("fixLabels: examining " + threads.length + " labeled thread(s).");
+
+  for (var t = 0; t < threads.length; t++) {
+    if (Date.now() - startedAt > BUDGET_MS) {
+      Logger.log("Time budget reached — run again to continue.");
+      break;
+    }
+    examined++;
+    var subject = threads[t].getFirstMessageSubject() || "";
+
+    if (NEVER_INGESTED_RE.test(subject)) {
+      batch.push(threads[t]);       // release: eligible but never processed
+      released++;
+      Logger.log("  RELEASE (never ingested): " + subject);
+    } else if (SUBJECT_RE.test(subject) || BODY_TEXT_SUBJECT_RE.test(subject)) {
+      kept++;                        // ours, already ingested — leave alone
+    } else {
+      batch.push(threads[t]);       // never ours — label was a lie
+      cleared++;
+    }
+
+    if (batch.length >= 100) { label.removeFromThreads(batch); batch = []; }
+  }
+  if (batch.length) label.removeFromThreads(batch);
+
+  Logger.log("fixLabels done — examined " + examined +
+             " · kept (already ingested) " + kept +
+             " · cleared (never ours) " + cleared +
+             " · released for ingest " + released);
+  if (cleared + released > 0) Logger.log("Re-run until cleared and released are both 0.");
 }
 ```
 
