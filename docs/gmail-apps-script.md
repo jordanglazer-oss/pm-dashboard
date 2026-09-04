@@ -15,8 +15,8 @@ handles the rest.
 | `MarketEdge …` *or* `ChartScout …` | ChartScout Likes export (CSV) | Each matched stock's `marketEdge` fields + composite score |
 | `Strategist …` | Any analyst/strategist research (PDF or image) | Brief's "Analyst / Strategist Reports" dropbox |
 | `SA: Street Takeaways …` — **or just forward any email from `FactSet_Alerts@factset.com`** (sender is matched too, so the original subject works unchanged) | **The email BODY — no attachment needed** | Per-ticker Street Takeaways: per-firm PT changes, full-panel rating mix, avg target, valuation vs own history. Feeds catalysts / researchCoverage / historicalValuation on the next rescore, and the stock page's Street Takeaways tile. Names outside the Portfolio/Watchlist are skipped. |
-| `Newton …` (or `Mark Newton …`) | **The email BODY — paste the report TEXT, no attachment** | Brief's Strategist Notes → Mark Newton slot (`pm:market.strategistNotes`), exactly like pasting into the UI. Dated today (Eastern) unless the subject contains a `YYYY-MM-DD`. Timing defaults to prior-close if not already set. Also appends the rolling 30-day note history. |
-| `Lee …` (or `Tom Lee …`) | **The email BODY — paste the report TEXT, no attachment** | Same, Tom Lee slot. Timing defaults to pre-market. Skip the last 2 disclosure pages when copying — only paste the report text. |
+| `Newton …` (or `Mark Newton …`) | **The report PDF, forwarded unedited** (or, as a fallback, the report text pasted into the body) | Brief's Strategist Notes → Mark Newton slot (`pm:market.strategistNotes`), exactly like pasting into the UI. The PDF's text layer is read locally with pdf.js — **no Anthropic spend** — and the **last 2 pages (disclosures) are always dropped**. Charts are not interpreted; text only. Dated today (Eastern) unless the subject contains a `YYYY-MM-DD`. Timing defaults to prior-close if not already set. Also appends the rolling 30-day note history. |
+| `Lee …` (or `Tom Lee …`) | Same — PDF preferred, pasted body as fallback | Same, Tom Lee slot. Timing defaults to pre-market. |
 | `Fundstrat Top` / `Fundstrat Bottom` / `Fundstrat SMID Top` / `Fundstrat SMID Bottom` | Screenshot (PNG/JPG/PDF) | Respective Fundstrat list on the Research tab |
 | `Fundstrat Large-Cap Core` / `Fundstrat SMID Core` | Screenshot (PNG/JPG/PDF) of the DQM quant screen (Ticker, Company, Sector, Industry, Mkt Cap, 1M/YTD relative perf, P/E, DQM Rank, Momentum Rating, trend columns) | Respective Fundstrat "Core Ideas" list on the Research tab |
 | `RBC Canadian` / `RBC US` | Screenshot (PNG/JPG/PDF) | RBC Canadian / US Focus List |
@@ -221,11 +221,15 @@ function processInbox() {
 
     // Order matters: more-specific prefixes first ("Fundstrat SMID Top"
     // before "Fundstrat Top") so regex alternation matches correctly.
-    const SUBJECT_RE = /^(?:(?:re|fwd?|fw):\s*)*(Analyst Report:|Fundstrat Large-Cap Core|Fundstrat SMID Core|Fundstrat SMID Top|Fundstrat SMID Bottom|Fundstrat Top|Fundstrat Bottom|RBC Canadian|RBC US|RBCCM FEW|Seeking Alpha|Alpha Picks|SIA\b|BoostedAI\b|Boosted\b|MarketEdge\b|ChartScout\b|Strategist\b|SA:\s*Street Takeaways|Street Takeaways)/i;
+    const SUBJECT_RE = /^(?:(?:re|fwd?|fw):\s*)*(Analyst Report:|Fundstrat Large-Cap Core|Fundstrat SMID Core|Fundstrat SMID Top|Fundstrat SMID Bottom|Fundstrat Top|Fundstrat Bottom|RBC Canadian|RBC US|RBCCM FEW|Seeking Alpha|Alpha Picks|SIA\b|BoostedAI\b|Boosted\b|MarketEdge\b|ChartScout\b|Strategist\b|(?:Mark )?Newton\b|(?:Tom )?Lee\b|SA:\s*Street Takeaways|Street Takeaways)/i;
     // FactSet alerts are BODY-TEXT emails (no attachment) — matched by sender so
     // a plain forward works with its original subject untouched.
     const BODY_TEXT_SENDER_RE = /factset[_.]?alerts?@factset\.com/i;
     const BODY_TEXT_SUBJECT_RE = /^(?:(?:re|fwd?|fw):\s*)*(?:(?:SA:\s*)?(?:Street Takeaways|StreetAccount|Transcript Intelligence)|(?:Mark )?Newton\b|(?:Tom )?Lee\b)/i;
+    // Strategist notes (Fundstrat daily PDFs). These are ATTACHMENT emails
+    // when the PDF is forwarded, but must still work when only pasted text is
+    // sent — so they take the body path only if there's nothing attached.
+    const STRATEGIST_NOTE_RE = /^(?:(?:re|fwd?|fw):\s*)*(?:(?:Mark )?Newton|(?:Tom )?Lee)\b/i;
     const PROCESSED_LABEL_NAME = "Dashboard-Processed";
 
     let label = GmailApp.getUserLabelByName(PROCESSED_LABEL_NAME);
@@ -260,6 +264,13 @@ function processInbox() {
         if (!isBodyTextKind && !SUBJECT_RE.test(subject)) {
           plainBody = msg.getPlainBody() || "";
           isBodyTextKind = BODY_TEXT_SENDER_RE.test(plainBody.slice(0, 3000));
+        }
+        // Newton / Lee: prefer the forwarded PDF (the dashboard reads its text
+        // layer and drops the disclosure pages). Only fall back to the body
+        // when the email carries no attachment at all.
+        if (STRATEGIST_NOTE_RE.test(subject)) {
+          isBodyTextKind =
+            msg.getAttachments({ includeInlineImages: false, includeAttachments: true }).length === 0;
         }
         if (isBodyTextKind) {
           try {

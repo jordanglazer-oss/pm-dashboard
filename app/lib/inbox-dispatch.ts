@@ -50,6 +50,7 @@ import type { ResearchState } from "./defaults";
 import { defaultResearch, defaultMarketData } from "./defaults";
 import { appendStrategistNote } from "./forward-looking";
 import { easternToday } from "./date-eastern";
+import { extractPdfText } from "./pdf-text";
 import {
   appendStreetTakeaway,
   describeTakeaway,
@@ -120,11 +121,12 @@ export function classifySubject(subject: string): InboxKind {
   if (/^(boostedai|boosted)\b/i.test(s)) return "boosted";
   if (/^(marketedge|chartscout)\b/i.test(s)) return "marketedge";
   if (/^strategist\b/i.test(s)) return "strategist";
-  // Strategist NOTES — the pasted TEXT of the daily Fundstrat reports, sent as
-  // the email BODY (no attachment). Distinct from "Strategist …" above, which
-  // files an attached PDF/image into the Brief's dropbox. Same lookahead
-  // pattern as SIA so "Newton — Sept 2" and "Lee: weekly" both match while
-  // "Newtonville" and "Leeds" don't.
+  // Strategist NOTES — the daily Fundstrat reports. Preferred shape is the
+  // report PDF forwarded unedited (text layer read locally, last 2 disclosure
+  // pages dropped); a pasted-text body still works as the fallback. Distinct
+  // from "Strategist …" above, which files an attachment into the Brief's
+  // dropbox without reading it. Same lookahead pattern as SIA so "Newton —
+  // Sept 2" and "Lee: weekly" both match while "Newtonville" and "Leeds" don't.
   if (/^(?:mark\s+)?newton(?![a-z0-9])/i.test(s)) return "newton-note";
   if (/^(?:tom\s+)?lee(?![a-z0-9])/i.test(s)) return "lee-note";
   // FactSet earnings alerts — body-text emails, no attachment (see
@@ -293,12 +295,24 @@ export function stripEmailFooter(text: string): { text: string; stripped: boolea
   return { text: text.slice(0, cut).replace(/[\s_\-–—*]+$/, "").trim(), stripped: true };
 }
 
+/** Fundstrat's daily notes always end with the SAME two disclosure pages.
+ *  They carry no market content and would otherwise be fed to the Morning
+ *  Brief prompt as if they were part of Newton's or Lee's view. */
+const DISCLOSURE_PAGES = 2;
+
 /**
- * Store the pasted text of a Fundstrat daily note into
- * pm:market.strategistNotes — the exact field the Brief's manual paste UI
- * writes — plus the rolling 30-day history via appendStrategistNote (same
- * pairing as the PUT /api/kv/market path, so the two entry points stay
- * equivalent).
+ * Store a Fundstrat daily note into pm:market.strategistNotes — the exact
+ * field the Brief's manual paste UI writes — plus the rolling 30-day history
+ * via appendStrategistNote (same pairing as the PUT /api/kv/market path, so
+ * the two entry points stay equivalent).
+ *
+ * TWO input shapes, both supported:
+ *   - PDF attachment (preferred): the report is forwarded unedited. The text
+ *     layer is read locally with pdf.js — no Anthropic spend — and the last
+ *     DISCLOSURE_PAGES pages are dropped. Charts are not interpreted; text
+ *     only, which is what the manual paste produced anyway.
+ *   - Email body: the pasted text, with the RBC compliance footer stripped.
+ *     Kept as the fallback for a note that arrives without the PDF.
  *
  * Date: an ISO YYYY-MM-DD anywhere in the subject wins ("Lee 2026-09-01"
  * backfills a note sent late); otherwise today's EASTERN date, matching the
@@ -312,21 +326,63 @@ async function handleStrategistNote(
   strategist: "newton" | "lee",
   bodyText: string,
   subject: string,
+  dataUrl?: string,
 ): Promise<DispatchResult> {
   const kind: InboxKind = strategist === "newton" ? "newton-note" : "lee-note";
   const who = strategist === "newton" ? "Newton" : "Lee";
-  const { text, stripped } = stripEmailFooter((bodyText ?? "").trim());
-  // A real note is hundreds of words; a short body means the paste didn't
-  // make it into the email. Refuse (4xx = permanent, no Apps Script retry)
-  // rather than storing junk the Brief prompt would then reason from.
-  if (text.length < 100) {
-    return {
-      ok: false,
-      kind,
-      status: 400,
-      message: `${who} note body was too short to store (${text.length} chars) — paste the report text into the email BODY, not an attachment.`,
-    };
+
+  let text = "";
+  let sourceNote = "";
+  const detail: Record<string, unknown> = { strategist };
+
+  if (dataUrl && isPdfDataUrl(dataUrl)) {
+    let pdf;
+    try {
+      pdf = await extractPdfText(dataUrl, DISCLOSURE_PAGES);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      return { ok: false, kind, status: 400, message: `${who} PDF could not be parsed: ${msg}` };
+    }
+    text = pdf.text;
+    detail.totalPages = pdf.totalPages;
+    detail.usedPages = pdf.usedPages;
+    detail.droppedPages = pdf.droppedPages;
+    // An image-only PDF (no text layer) extracts to nothing. Say so plainly
+    // rather than storing an empty note — the fallback is to paste the text.
+    if (text.length < 100) {
+      return {
+        ok: false,
+        kind,
+        status: 400,
+        message:
+          `${who} PDF yielded almost no text (${text.length} chars from ${pdf.usedPages} of ${pdf.totalPages} pages). ` +
+          `It's likely image-only with no text layer — paste the report text into the email body instead.`,
+      };
+    }
+    sourceNote =
+      pdf.droppedPages > 0
+        ? `PDF pages 1-${pdf.usedPages} of ${pdf.totalPages}, last ${pdf.droppedPages} disclosure pages dropped`
+        : `PDF, all ${pdf.totalPages} pages (too short to trim disclosures)`;
+    detail.source = "pdf";
+  } else {
+    const stripped = stripEmailFooter((bodyText ?? "").trim());
+    text = stripped.text;
+    detail.footerStripped = stripped.stripped;
+    detail.source = "body";
+    // A real note is hundreds of words; a short body means neither a PDF nor
+    // a paste made it into the email. Refuse (4xx = permanent, so the Apps
+    // Script never retry-loops it).
+    if (text.length < 100) {
+      return {
+        ok: false,
+        kind,
+        status: 400,
+        message: `${who} email had no usable content (${text.length} chars) — attach the report PDF, or paste its text into the body.`,
+      };
+    }
+    sourceNote = stripped.stripped ? "email body, compliance footer stripped" : "email body";
   }
+
   const date = subject.match(/(\d{4}-\d{2}-\d{2})/)?.[1] ?? easternToday();
 
   // Read-modify-write pm:market, merging BOTH levels: the top-level blob and
@@ -349,11 +405,14 @@ async function handleStrategistNote(
   );
 
   const words = text.split(/\s+/).length;
+  detail.date = date;
+  detail.words = words;
+  detail.chars = text.length;
   return {
     ok: true,
     kind,
-    message: `${who} note stored for ${date} (${words} words${stripped ? ", compliance footer stripped" : ""}). It will feed the next Morning Brief.`,
-    detail: { strategist, date, words, chars: text.length, footerStripped: stripped },
+    message: `${who} note stored for ${date} (${words} words from ${sourceNote}). It will feed the next Morning Brief.`,
+    detail,
   };
 }
 
@@ -788,8 +847,8 @@ export async function dispatchInbox(args: {
     case "equate":       return await handleEquate(att, label);
     case "strategist":   return await handleStrategist(att, label);
     case "street-takeaways": return await handleStreetTakeaways(args.bodyText ?? "", args.subject);
-    case "newton-note":  return await handleStrategistNote("newton", args.bodyText ?? "", args.subject);
-    case "lee-note":     return await handleStrategistNote("lee", args.bodyText ?? "", args.subject);
+    case "newton-note":  return await handleStrategistNote("newton", args.bodyText ?? "", args.subject, args.dataUrl);
+    case "lee-note":     return await handleStrategistNote("lee", args.bodyText ?? "", args.subject, args.dataUrl);
     case "analyst-report": return null;  // existing flow handles this
     case "unknown":      return null;    // existing route returns its "couldn't determine source" error
   }
