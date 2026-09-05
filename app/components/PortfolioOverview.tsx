@@ -19,6 +19,7 @@ import { VERDICT_LABEL, type SynthesisVerdict } from "@/app/lib/synthesis-screen
 import { useSearchParams, useRouter, usePathname } from "next/navigation";
 import { useLiveModelWeights } from "@/app/lib/useLiveModelWeights";
 import { SuggestedWatchlist } from "@/app/components/SuggestedWatchlist";
+import { SuggestedFunnel } from "@/app/components/SuggestedFunnel";
 import type { PimProfileType } from "@/app/lib/pim-types";
 import { buildBoostedRows, buildSiaSymbolList, buildMarketEdgeList, boostedSymbol, siaSymbol } from "@/app/lib/watchlist-export";
 
@@ -168,6 +169,9 @@ function FundSortIcon({ field, sortField, sortDir }: { field: FundSortField; sor
 
 
 
+type RankBucket = "Portfolio" | "Watchlist" | "Suggested" | "Movers";
+const RANK_BUCKETS: readonly RankBucket[] = ["Portfolio", "Watchlist", "Suggested", "Movers"];
+
 export function PortfolioOverview({ sidebar }: { sidebar?: React.ReactNode } = {}) {
   const {
     portfolioStocks,
@@ -275,14 +279,17 @@ export function PortfolioOverview({ sidebar }: { sidebar?: React.ReactNode } = {
   // of snapping to Portfolio.
   const router = useRouter();
   const pathname = usePathname();
-  const urlBucket: "Portfolio" | "Watchlist" =
-    searchParams.get("bucket") === "Watchlist" ? "Watchlist" : "Portfolio";
+  const urlBucket: RankBucket = (() => {
+    const b = searchParams.get("bucket");
+    return b === "Watchlist" || b === "Suggested" || b === "Movers" ? b : "Portfolio";
+  })();
   // Radar + Setups moved out of the Rankings buckets to their own Ideas
   // segments (/radar, /setups) in the streamline pass.
-  const [rankBucket, setRankBucket] = useState<"Portfolio" | "Watchlist" | "Suggested">(urlBucket);
-  // Live candidate count for the Suggested tab chip. Cheap read; the panel
-  // itself fetches the full store only when the tab is open.
+  const [rankBucket, setRankBucket] = useState<RankBucket>(urlBucket);
+  // Live counts for the Suggested (research confluence) and Movers (Equate +
+  // SIA) tab chips. Cheap reads; each panel fetches its full data when open.
   const [suggestedCount, setSuggestedCount] = useState(0);
+  const [moversCount, setMoversCount] = useState(0);
   // Per-ticker synthesis verdicts for the rankings' Synthesis column — links
   // the Holdings/Watchlist tables to the Ideas › Synthesis record. Read-only
   // fetch of the same endpoint the Synthesis screen renders from.
@@ -324,7 +331,13 @@ export function PortfolioOverview({ sidebar }: { sidebar?: React.ReactNode } = {
     fetch("/api/kv/watchlist-candidates", { cache: "no-store" })
       .then((r) => (r.ok ? r.json() : null))
       .then((d) => {
-        if (d?.candidates) setSuggestedCount(d.candidates.filter((c: { fallenOffAt?: string }) => !c.fallenOffAt).length);
+        if (d?.candidates) setMoversCount(d.candidates.filter((c: { fallenOffAt?: string }) => !c.fallenOffAt).length);
+      })
+      .catch(() => {});
+    fetch("/api/suggested-watchlist", { cache: "no-store" })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => {
+        if (Array.isArray(d?.rows)) setSuggestedCount(d.rows.length);
       })
       .catch(() => {});
   }, []);
@@ -333,7 +346,7 @@ export function PortfolioOverview({ sidebar }: { sidebar?: React.ReactNode } = {
     setRankBucket(urlBucket);
   }, [urlBucket]);
   const selectRankBucket = useCallback(
-    (b: "Portfolio" | "Watchlist" | "Suggested") => {
+    (b: RankBucket) => {
       setRankBucket(b);
       const params = new URLSearchParams(searchParams.toString());
       params.set("bucket", b);
@@ -1181,18 +1194,21 @@ export function PortfolioOverview({ sidebar }: { sidebar?: React.ReactNode } = {
       <div className="space-y-5">
         <div className="min-w-0 space-y-5">
 
-      {/* Rankings — one table with a Portfolio / Watchlist / Suggested toggle.
-          Suggested renders its own panel: it lists CANDIDATES rather than
-          scored holdings, so it shares the column rhythm but not the data. */}
-      {rankBucket === "Suggested" ? (
+      {/* Rankings — one table with a Portfolio / Watchlist / Suggested / Movers
+          toggle. Suggested (research confluence, funnel stage 2) and Movers
+          (Equate + SIA improvement) render their own panels: they list
+          CANDIDATES rather than scored holdings, so they share the column
+          rhythm but not the data. */}
+      {rankBucket === "Suggested" || rankBucket === "Movers" ? (
         <div>
           <div className="mb-3 inline-flex items-center rounded-control border border-line bg-surface-2 p-0.5">
-            {(["Portfolio", "Watchlist", "Suggested"] as const).map((b) => {
+            {RANK_BUCKETS.map((b) => {
               const active = rankBucket === b;
               const count =
                 b === "Portfolio" ? scoreablePortfolio.length
                 : b === "Watchlist" ? scoreableWatchlist.length
-                : suggestedCount;
+                : b === "Suggested" ? suggestedCount
+                : moversCount;
               return (
                 <button
                   key={b}
@@ -1204,7 +1220,11 @@ export function PortfolioOverview({ sidebar }: { sidebar?: React.ReactNode } = {
               );
             })}
           </div>
-          <SuggestedWatchlist onCountChange={setSuggestedCount} />
+          {rankBucket === "Suggested" ? (
+            <SuggestedFunnel onCountChange={setSuggestedCount} />
+          ) : (
+            <SuggestedWatchlist onCountChange={setMoversCount} />
+          )}
         </div>
       ) : (
       <RankingTable
@@ -1212,12 +1232,13 @@ export function PortfolioOverview({ sidebar }: { sidebar?: React.ReactNode } = {
         subtitle={rankBucket === "Portfolio" ? "Bottom 3 flagged for review" : "Top 3 flagged as buy candidates"}
         bucketTabs={
           <div className="inline-flex items-center rounded-control border border-line bg-surface-2 p-0.5">
-            {(["Portfolio", "Watchlist", "Suggested"] as const).map((b) => {
+            {RANK_BUCKETS.map((b) => {
               const active = rankBucket === b;
               const count =
                 b === "Portfolio" ? scoreablePortfolio.length
                 : b === "Watchlist" ? scoreableWatchlist.length
-                : suggestedCount;
+                : b === "Suggested" ? suggestedCount
+                : moversCount;
               return (
                 <button
                   key={b}

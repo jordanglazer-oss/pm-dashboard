@@ -129,11 +129,12 @@ export function SuggestedWatchlist({ onCountChange }: { onCountChange?: (n: numb
     <div className="rounded-card border border-line bg-white p-5 shadow-card">
       <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h2 className="text-base font-bold text-ink">Suggested Watchlist</h2>
+          <h2 className="text-base font-bold text-ink">Movers</h2>
           <p className="text-xs text-ink-3">
             {store.generatedAt
               ? `${live.length} live${live.length > MAX_SHOWN ? ` (top ${MAX_SHOWN} shown)` : ""} · ${fallen.length} fallen off · updated ${new Date(store.generatedAt).toLocaleDateString()}`
-              : "No refresh yet — run one to assemble candidates from the ingested sources."}
+              : "No refresh yet — run one to assemble candidates from the Equate + SIA exports."}
+            {" "}· Equate rank + SIA relative-strength improvers, weighted by confluence. The research-list funnel is the Suggested tab.
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2 text-xs">
