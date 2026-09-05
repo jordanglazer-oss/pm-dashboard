@@ -209,6 +209,7 @@ const TAB_ALIASES: Record<string, string> = {
   "/setups": "Ideas",
   "/factor-lab": "Ideas",
   // Research segments
+  "/research/sources": "Research",
   "/inbox": "Research",
   // Brief segments
   "/hedging": "Brief",
