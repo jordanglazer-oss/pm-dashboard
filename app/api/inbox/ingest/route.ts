@@ -17,7 +17,7 @@ import {
 import { canonicalTicker, tickersEqual } from "@/app/lib/ticker";
 import { blobConfigured, putDataUrl, getDataUrl, deleteBlob } from "@/app/lib/blob-store";
 import { appendInboxEvent } from "@/app/lib/inbox-log";
-import { classifySubject, dispatchInbox, isFactsetAlertSender } from "@/app/lib/inbox-dispatch";
+import { classifySubject, dispatchInbox, isFactsetAlertSender, isFactsetAlertBody } from "@/app/lib/inbox-dispatch";
 import { markReportsIngested } from "@/app/lib/auto-rescore";
 
 /**
@@ -233,10 +233,13 @@ export async function POST(request: NextRequest) {
   // the PM, not FactSet, so the subject (which survives FW:/Fwd:) is the
   // primary signal, with FactSet's address in the forwarded header block as
   // the fallback for a forward whose subject was edited.
+  // A news flash's subject is just its headline, and a forward replaces the
+  // sender with the PM's own address — so the BODY's own alert footer is the
+  // third signal, and often the only one left.
   const isFactsetBodyKind =
     classified === "street-takeaways" ||
     isFactsetAlertSender(sender) ||
-    (bodyText.length > 0 && isFactsetAlertSender(bodyText.slice(0, 3000)));
+    (bodyText.length > 0 && isFactsetAlertBody(bodyText.slice(0, 6000)));
   // Strategist notes (Newton / Lee) are body-text emails too — the pasted
   // report text IS the payload, no attachment expected.
   const isBodyTextKind = isFactsetBodyKind || classified === "newton-note" || classified === "lee-note";

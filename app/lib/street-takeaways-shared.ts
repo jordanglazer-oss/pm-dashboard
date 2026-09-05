@@ -27,6 +27,8 @@ export function factsetKindLabel(entry: Pick<StreetTakeaway, "subject" | "kind">
   if (/transcript\s+intelligence/i.test(s)) return "Transcript Intelligence";
   if (/metrics\s+recap/i.test(s)) return "Metrics Recap";
   if (/street\s+takeaways/i.test(s)) return "Street Takeaways";
+  // News flashes carry the headline itself as the subject, so there is no
+  // format keyword to match — the stored kind is the only signal.
   return KIND_LABEL[entry.kind] ?? "FactSet alert";
 }
 
@@ -35,8 +37,9 @@ export const KIND_LABEL: Record<string, string> = {
   takeaways: "Street Takeaways",
   metrics: "Metrics Recap",
   transcript: "Transcript Intelligence",
+  news: "News",
   other: "FactSet alert",
 };
 
 /** Column order for the Inbox — the two Jordan reads most, then the rest. */
-export const FACTSET_KINDS = ["takeaways", "metrics", "transcript"] as const;
+export const FACTSET_KINDS = ["takeaways", "metrics", "transcript", "news"] as const;

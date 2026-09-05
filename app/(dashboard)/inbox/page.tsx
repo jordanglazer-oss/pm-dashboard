@@ -32,6 +32,7 @@ const FACTSET_COLS: { kind: string; head: string; title: string }[] = [
   { kind: "takeaways", head: "Takeaways", title: "FactSet Street Takeaways — per-firm analyst reaction, price-target changes and rating mix. Date of the newest one held." },
   { kind: "metrics", head: "Metrics", title: "FactSet StreetAccount Metrics Recap — reported results vs consensus and guidance vs prior guide. Date of the newest one held." },
   { kind: "transcript", head: "Transcript", title: "FactSet Transcript Intelligence — the earnings-call and guidance summary. Date of the newest one held." },
+  { kind: "news", head: "News", title: "FactSet news flashes (Top News Summaries) and manually forwarded \"News: <TICKER> …\" items — developments between prints. Date of the newest one held." },
 ];
 import Link from "next/link";
 

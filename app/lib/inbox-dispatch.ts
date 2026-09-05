@@ -55,6 +55,7 @@ import {
   appendStreetTakeaway,
   describeTakeaway,
   factsetIdToTicker,
+  factsetKindLabel,
   type StreetTakeaway,
 } from "./street-takeaways";
 import { parseStreetTakeaway, extractPrimaryIdentifier } from "./street-takeaways-parse";
@@ -139,7 +140,33 @@ export function classifySubject(subject: string): InboxKind {
     return "street-takeaways";
   }
   if (/\breports\s+Q[1-4]\b.*\bvs\b/i.test(s)) return "street-takeaways";
+  // FactSet "Top News Summaries" flashes: the subject IS the headline
+  // ("SA: Broadcom expects AI chip revenue to double to ~$230B in FY28"), so
+  // there is no format keyword to anchor on — only StreetAccount's own "SA:"
+  // prefix. These carry a development between prints and route through the
+  // same pipeline, extracted against the news schema.
+  if (/^sa:\s*\S/i.test(s)) return "street-takeaways";
+  // Manual convention for anything else worth filing against a name —
+  // "News: AVGO <headline>" / "FYI: CLS …" / "Note: IBM …". The ticker comes
+  // from the subject (see subjectTicker) because a non-FactSet forward carries
+  // no "Related Identifiers:" line. Lands in the same per-ticker store, so it
+  // reaches scoring, the thesis evidence block and the synthesis screen.
+  if (SUBJECT_NOTE_RE.test(s)) return "street-takeaways";
   return "unknown";
+}
+
+/**
+ * Manual forward convention: "News: <TICKER> <anything>" (also FYI:/Note:).
+ * The ticker is REQUIRED — without it there is nothing to file the item
+ * against, and a store keyed by ticker cannot hold an orphan.
+ */
+export const SUBJECT_NOTE_RE = /^(?:news|fyi|note)\s*:\s*([A-Za-z0-9.\-]{1,12})(?:\s|$)/i;
+
+/** Ticker named by the manual "News: <TICKER> …" convention, or null. */
+export function subjectTicker(subject: string): string | null {
+  const s = subject.trim().replace(/^(?:\s*(?:fw|fwd|re|tr|wg|aw|rv)\s*:\s*)+/i, "");
+  const m = SUBJECT_NOTE_RE.exec(s);
+  return m ? m[1].toUpperCase() : null;
 }
 
 /** True for anything naming itself an RBC EQUATE rank sheet — subject OR
@@ -159,6 +186,24 @@ export function isEquateLabel(label: string | undefined): boolean {
  *  plain forward works without the user retyping a subject convention. */
 export function isFactsetAlertSender(sender: string | undefined): boolean {
   return /factset[_.]?alerts?@factset\.com/i.test(sender ?? "");
+}
+
+/**
+ * True for a body that is self-evidently a FactSet alert, whatever its
+ * subject. A forward from the PM's own address replaces the sender, and Gmail
+ * does not always keep the original From: line in the quoted body — but every
+ * alert carries its own footer block. This is what lets a news flash whose
+ * subject is just a headline still be recognised.
+ */
+export function isFactsetAlertBody(bodyText: string | undefined): boolean {
+  const b = bodyText ?? "";
+  if (!b) return false;
+  return (
+    isFactsetAlertSender(b) ||
+    /FactSet\s+News\s+Alert\s+for:/i.test(b) ||
+    /Disable\s+this\s+alert\s+in\s+Workstation/i.test(b) ||
+    /(?:Primary|Related)\s+Identifiers?:/i.test(b)
+  );
 }
 
 // ── Shared MIME helpers ────────────────────────────────────────────
@@ -424,17 +469,30 @@ async function handleStrategistNote(
  * a name we don't own or watch is skipped cleanly rather than stored.
  */
 async function handleStreetTakeaways(bodyText: string, subject: string): Promise<DispatchResult> {
-  if (!bodyText || bodyText.trim().length < 200) {
+  // News flashes are a paragraph, not a multi-page roundup, so the old 200-char
+  // floor rejected legitimate items. The guard only needs to catch "the Apps
+  // Script forwarded attachments but no body".
+  if (!bodyText || bodyText.trim().length < 120) {
     return {
       ok: false,
       kind: "street-takeaways",
       status: 400,
-      message: "Street Takeaways email had no readable body text (the Apps Script must forward the body, not just attachments).",
+      message: "FactSet alert had no readable body text (the Apps Script must forward the body, not just attachments).",
     };
   }
-  const identifier = extractPrimaryIdentifier(bodyText);
+  // FactSet's own identifier first ("Primary Identifiers: IBM-US" on the
+  // earnings alerts, "Related Identifiers:" on the news flashes). A manual
+  // "News: AVGO …" forward carries neither, so the subject convention is the
+  // fallback — it is the only ticker such an email has.
+  const identifier = extractPrimaryIdentifier(bodyText) ?? subjectTicker(subject);
   if (!identifier) {
-    return { ok: false, kind: "street-takeaways", status: 400, message: "Couldn't find a FactSet identifier (e.g. 'Primary Identifiers: IBM-US') in the email body." };
+    return {
+      ok: false,
+      kind: "street-takeaways",
+      status: 400,
+      message:
+        "Couldn't find a ticker: no FactSet identifier (e.g. 'Related Identifiers: AVGO-US') in the body, and the subject doesn't use the 'News: <TICKER> …' convention.",
+    };
   }
   const stocks = await readStocks();
   const bookTickers = stocks
@@ -461,14 +519,15 @@ async function handleStreetTakeaways(bodyText: string, subject: string): Promise
     subject,
   };
   const { added, count } = await appendStreetTakeaway(entry);
+  const label = factsetKindLabel(entry);
   return {
     ok: true,
     kind: "street-takeaways",
     status: 200,
     message: added
-      ? `Street Takeaways filed: ${describeTakeaway(entry)}`
-      : `Street Takeaways for ${entry.ticker} (${entry.date}) already on file — skipped duplicate.`,
-    detail: { ticker: entry.ticker, added, count, firms: entry.firms.length },
+      ? `${label} filed: ${describeTakeaway(entry)}`
+      : `${label} for ${entry.ticker} (${entry.date}) already on file — skipped duplicate.`,
+    detail: { ticker: entry.ticker, added, count, alertKind: entry.kind, firms: entry.firms.length },
   };
 }
 

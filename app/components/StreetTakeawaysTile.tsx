@@ -18,9 +18,11 @@ type FirmView = {
 type ResultLine = { label: string; actual?: string; consensus?: string; range?: string; yoy?: string };
 type GuidanceLine = { period: string; metric: string; value: string; priorGuidance?: string; consensus?: string; direction?: "raised" | "lowered" | "maintained" | "initiated" };
 type TrackRecord = { epsBeatRate?: string; revenueBeatRate?: string; guidanceBeatRate?: string; impliedMovePct?: number; recentEarningsMoves?: string[]; priceVsIndex?: string };
+type NewsFigure = { label: string; value: string; context?: string };
 type Takeaway = {
   id: string; ticker: string; date: string; event?: string;
-  kind?: "takeaways" | "metrics";
+  kind?: "takeaways" | "metrics" | "transcript" | "news" | "other";
+  headline?: string; keyPoints?: string[]; figures?: NewsFigure[];
   overview?: string; guidance?: string; firms: FirmView[];
   results?: ResultLine[]; guidanceLines?: GuidanceLine[];
   managementOutlook?: string; trackRecord?: TrackRecord;
@@ -48,15 +50,17 @@ export default function StreetTakeawaysTile({ ticker, className = "" }: { ticker
   return (
     <div className={`rounded-card border border-line bg-white p-4 sm:p-5 shadow-sm ${className}`}>
       <div className="flex items-baseline justify-between gap-2">
-        <h2 className="text-sm font-semibold text-ink">Street Takeaways</h2>
-        <span className="text-[10px] text-ink-3">FactSet analyst roundup · feeds scoring</span>
+        <h2 className="text-sm font-semibold text-ink">FactSet Alerts</h2>
+        <span className="text-[10px] text-ink-3">Analyst roundups + news · feeds scoring</span>
       </div>
 
       <div className="mt-3 space-y-3">
         {entries.map((e) => {
           const open = openId === e.id;
-          const cuts = e.firms.filter((f) => f.targetAction === "lowers").length;
-          const raises = e.firms.filter((f) => f.targetAction === "raises").length;
+          const isNews = e.kind === "news";
+          const firms = e.firms ?? [];
+          const cuts = firms.filter((f) => f.targetAction === "lowers").length;
+          const raises = firms.filter((f) => f.targetAction === "raises").length;
           const gRaised = (e.guidanceLines ?? []).filter((g) => g.direction === "raised").length;
           const gLowered = (e.guidanceLines ?? []).filter((g) => g.direction === "lowered").length;
           return (
@@ -65,11 +69,13 @@ export default function StreetTakeawaysTile({ ticker, className = "" }: { ticker
                 <span className="text-xs font-semibold text-ink">
                   {e.date}{e.event ? ` · ${e.event}` : ""}
                   <span className="ml-1.5 rounded bg-white px-1.5 py-0.5 text-[9px] font-medium uppercase tracking-wide text-ink-3 border border-line">
-                    {e.kind === "metrics" ? "Results" : "Analyst reaction"}
+                    {isNews ? "News" : e.kind === "metrics" ? "Results" : "Analyst reaction"}
                   </span>
                 </span>
                 <span className="text-[11px] text-ink-3">
-                  {e.kind === "metrics" ? (
+                  {isNews ? (
+                    (e.figures?.length ?? 0) > 0 && `${e.figures!.length} figure${e.figures!.length === 1 ? "" : "s"}`
+                  ) : e.kind === "metrics" ? (
                     <>
                       {gRaised > 0 && <span className="text-pos">{gRaised} guide ↑</span>}
                       {gRaised > 0 && gLowered > 0 && " · "}
@@ -77,7 +83,7 @@ export default function StreetTakeawaysTile({ ticker, className = "" }: { ticker
                     </>
                   ) : (
                     <>
-                      {e.firms.length} firm{e.firms.length === 1 ? "" : "s"}
+                      {firms.length} firm{firms.length === 1 ? "" : "s"}
                       {raises > 0 && <span className="text-pos"> · {raises} PT ↑</span>}
                       {cuts > 0 && <span className="text-neg"> · {cuts} PT ↓</span>}
                     </>
@@ -85,12 +91,36 @@ export default function StreetTakeawaysTile({ ticker, className = "" }: { ticker
                 </span>
               </div>
 
+              {e.headline && (
+                <div className="mt-1.5 text-[11px] font-semibold leading-4 text-ink">{e.headline}</div>
+              )}
+
               {e.guidance && (
                 <div className="mt-1.5 text-[11px] leading-4 text-ink">
                   <span className="font-semibold">Guidance:</span> {e.guidance}
                 </div>
               )}
               {e.overview && <p className="mt-1 text-[11px] leading-4 text-ink-2">{e.overview}</p>}
+
+              {/* News: stated figures, each with the baseline the item gave it */}
+              {e.figures && e.figures.length > 0 && (
+                <div className="mt-2 space-y-0.5">
+                  {e.figures.map((f, i) => (
+                    <div key={i} className="text-[10px] leading-4 text-ink-2">
+                      <span className="font-medium text-ink">{f.label}:</span>{" "}
+                      <span className="font-mono">{f.value}</span>
+                      {f.context && <span className="text-ink-3"> ({f.context})</span>}
+                    </div>
+                  ))}
+                </div>
+              )}
+              {e.keyPoints && e.keyPoints.length > 0 && (
+                <div className="mt-1.5 space-y-0.5">
+                  {e.keyPoints.map((k, i) => (
+                    <div key={i} className="text-[10px] leading-4 text-ink-2">• {k}</div>
+                  ))}
+                </div>
+              )}
 
               {/* Results vs consensus */}
               {e.results && e.results.length > 0 && (
@@ -196,16 +226,20 @@ export default function StreetTakeawaysTile({ ticker, className = "" }: { ticker
                 )}
               </div>
 
-              <button
-                onClick={() => setOpenId(open ? null : e.id)}
-                className="mt-2 text-[11px] font-medium text-accent hover:underline"
-              >
-                {open ? "▾ Hide per-firm views" : `▸ Show per-firm views (${e.firms.length})`}
-              </button>
+              {/* News flashes carry no analyst panel — the toggle would read
+                  "Show per-firm views (0)" and open onto nothing. */}
+              {firms.length > 0 && (
+                <button
+                  onClick={() => setOpenId(open ? null : e.id)}
+                  className="mt-2 text-[11px] font-medium text-accent hover:underline"
+                >
+                  {open ? "▾ Hide per-firm views" : `▸ Show per-firm views (${firms.length})`}
+                </button>
+              )}
 
               {open && (
                 <div className="mt-2 space-y-2">
-                  {e.firms.map((f, i) => (
+                  {firms.map((f, i) => (
                     <div key={i} className="border-t border-line/60 pt-1.5 text-[11px] leading-4">
                       <div className="flex flex-wrap items-baseline gap-x-1.5">
                         <span className="font-semibold text-ink">{f.firm}</span>

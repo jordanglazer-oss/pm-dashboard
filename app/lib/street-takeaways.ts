@@ -24,10 +24,19 @@ export const STREET_TAKEAWAYS_KEY = "pm:street-takeaways";
  *   takeaways  — per-firm analyst reaction, PT changes, rating mix
  *   metrics    — the reported results vs consensus, guidance vs prior guide
  *   transcript — the earnings-call and guidance summary
- *   other      — any future FactSet format we do not recognise yet, kept
+ *   news       — a "Top News Summaries" / StreetAccount headline flash: a
+ *                company development OUTSIDE the earnings cycle (a raised
+ *                multi-year target, an analyst day, a large customer win, an
+ *                M&A or regulatory item). No per-firm panel and no
+ *                results-vs-consensus table — a headline, the facts behind it
+ *                and any figures stated. Also the landing kind for a forwarded
+ *                item that matches none of the earnings formats, so new
+ *                material is captured rather than force-fit into a schema it
+ *                does not have.
+ *   other       — any future FactSet format we do not recognise yet, kept
  *                rather than dropped so a new alert type is never lost
  */
-export type TakeawayKind = "takeaways" | "metrics" | "transcript" | "other";
+export type TakeawayKind = "takeaways" | "metrics" | "transcript" | "news" | "other";
 
 /**
  * Retention is PER KIND, not per ticker. A single shared cap meant the formats
@@ -37,9 +46,20 @@ export type TakeawayKind = "takeaways" | "metrics" | "transcript" | "other";
  * window, so both are always held.
  */
 export const MAX_PER_KIND = 4;
+/**
+ * News flashes arrive on no schedule and several can land in a week, so the
+ * 4-slot earnings window would throw away most of a busy month. They are also
+ * individually much smaller than a Metrics Recap, so a deeper window is cheap.
+ */
+export const MAX_NEWS_PER_TICKER = 10;
+/** Per-kind ceiling. Every earnings format keeps MAX_PER_KIND; news keeps its
+ *  own deeper window (see above). */
+export function capForKind(kind: string): number {
+  return kind === "news" ? MAX_NEWS_PER_TICKER : MAX_PER_KIND;
+}
 /** Kept for callers that still import it; the effective per-ticker ceiling is
- *  MAX_PER_KIND × the number of formats. */
-export const MAX_PER_TICKER = MAX_PER_KIND * 4;
+ *  MAX_PER_KIND × the earnings formats, plus the news window. */
+export const MAX_PER_TICKER = MAX_PER_KIND * 4 + MAX_NEWS_PER_TICKER;
 /**
  * Also drop entries older than this. The count cap alone already holds only
  * ~6-9 months for a normally-covered name (2-3 alerts per quarter), so this
@@ -48,6 +68,15 @@ export const MAX_PER_TICKER = MAX_PER_KIND * 4;
  * the normal case.
  */
 export const MAX_AGE_DAYS = 365;
+/**
+ * News goes stale faster than an earnings roundup: a raised FY28 target is
+ * live evidence for a quarter or two, not a year. Held for half as long so the
+ * prompt block stays current without a manual purge.
+ */
+export const NEWS_MAX_AGE_DAYS = 180;
+export function maxAgeDaysForKind(kind: string): number {
+  return kind === "news" ? NEWS_MAX_AGE_DAYS : MAX_AGE_DAYS;
+}
 
 export type StreetFirmView = {
   firm: string;
@@ -103,6 +132,16 @@ export type StreetTrackRecord = {
   priceVsIndex?: string;
 };
 
+/** One stated figure from a news flash. Deliberately loose strings: news
+ *  items quote whatever the company said ("~$230B", "six hyperscalers",
+ *  "FY28"), not a fixed metric set. */
+export type StreetNewsFigure = {
+  label: string;            // "FY28 AI chip revenue"
+  value: string;            // "~$230B"
+  /** Baseline or qualifier when stated, e.g. "raised from ~$110B", "supply-constrained". */
+  context?: string;
+};
+
 export type StreetTakeaway = {
   id: string;
   ticker: string;
@@ -137,6 +176,15 @@ export type StreetTakeaway = {
   managementOutlook?: string;
   /** Beat history + earnings-day move context. */
   trackRecord?: StreetTrackRecord;
+  // ── "news" kind ──
+  /** The headline as published — the dedupe key for a re-forwarded flash. */
+  headline?: string;
+  /** Factual bullets behind the headline (max 6). */
+  keyPoints?: string[];
+  /** Any figures the item states, with their baseline. */
+  figures?: StreetNewsFigure[];
+  /** FactSet's own "Industries:" / "Subjects:" tags, kept for provenance. */
+  topics?: string[];
   consensus?: {
     analystCount?: number;
     buyPct?: number;
@@ -195,6 +243,20 @@ export async function loadStreetTakeawaysFor(ticker: string): Promise<StreetTake
   return store[canonicalTicker(ticker).toUpperCase()] ?? [];
 }
 
+/** Stable identity for a news flash: its headline, normalised so punctuation
+ *  and forwarding noise can't make a re-forward look like a new item. Falls
+ *  back to the subject, then the event, so an entry with no headline still
+ *  dedupes on something. */
+function newsDedupeKey(e: Pick<StreetTakeaway, "headline" | "subject" | "event">): string {
+  const raw = e.headline || e.subject || e.event || "";
+  return raw
+    .toLowerCase()
+    .replace(/^(?:\s*(?:fw|fwd|re|tr)\s*:\s*)+/g, "")
+    .replace(/^sa:\s*/g, "")
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+}
+
 /**
  * Append one entry, newest-first, capped at MAX_PER_TICKER.
  * Read-modify-write; never touches other tickers' lists.
@@ -212,8 +274,14 @@ export async function appendStreetTakeaway(
   const dupe = list.some(
     (e) =>
       e.date === entry.date &&
-      (e.event ?? "") === (entry.event ?? "") &&
-      (e.kind ?? "takeaways") === entry.kind,
+      (e.kind ?? "takeaways") === entry.kind &&
+      // News items share one event label per day ("Guidance", "M&A"), so the
+      // event alone would collapse two unrelated same-day flashes into one and
+      // silently drop the second. Match on the HEADLINE instead — it is the
+      // published subject line, so a re-forward of the same item still dedupes.
+      (entry.kind === "news"
+        ? newsDedupeKey(e) === newsDedupeKey(entry)
+        : (e.event ?? "") === (entry.event ?? "")),
   );
   if (dupe) return { added: false, count: list.length };
 
@@ -247,15 +315,18 @@ export async function appendStreetTakeaway(
     }
   }
   // Age cap first, then cap EACH KIND independently so the formats never
-  // evict one another (see MAX_PER_KIND).
-  const cutoff = new Date(Date.now() - MAX_AGE_DAYS * 86400_000).toISOString().slice(0, 10);
-  const fresh = [stored, ...list].filter((e) => !e?.date || e.date >= cutoff);
+  // evict one another (see MAX_PER_KIND). Both bounds are per-kind: news has a
+  // deeper but shorter-lived window than the earnings formats.
+  const dayMs = 86400_000;
+  const cutoffFor = (k: string) =>
+    new Date(Date.now() - maxAgeDaysForKind(k) * dayMs).toISOString().slice(0, 10);
+  const fresh = [stored, ...list].filter((e) => !e?.date || e.date >= cutoffFor(e?.kind ?? "takeaways"));
   const perKind = new Map<string, number>();
   const next = fresh.filter((e) => {
     const k = e.kind ?? "takeaways";
     const n = (perKind.get(k) ?? 0) + 1;
     perKind.set(k, n);
-    return n <= MAX_PER_KIND;
+    return n <= capForKind(k);
   });
   store[key] = next;
   await redis.set(STREET_TAKEAWAYS_KEY, JSON.stringify(store));
@@ -295,6 +366,13 @@ export function factsetIdToTicker(id: string, bookTickers: string[]): string | n
 /** One-line summary for the inbox log / UI. */
 export function describeTakeaway(t: StreetTakeaway): string {
   const bits = [t.ticker];
+  if (t.kind === "news") {
+    bits.push("News");
+    if (t.headline) bits.push(t.headline.slice(0, 120));
+    else if (t.event) bits.push(t.event);
+    if (t.figures?.length) bits.push(`${t.figures.length} figure${t.figures.length === 1 ? "" : "s"}`);
+    return bits.join(" · ");
+  }
   if (t.event) bits.push(t.event);
   if (t.kind === "metrics") {
     bits.push("Metrics Recap");
@@ -319,14 +397,18 @@ export function describeTakeaway(t: StreetTakeaway): string {
 export function formatStreetTakeawaysForPrompt(entries: StreetTakeaway[]): string {
   if (!entries.length) return "";
   const lines: string[] = [];
-  lines.push("=== STREET TAKEAWAYS / METRICS (FactSet post-earnings alerts) ===");
+  lines.push("=== STREET TAKEAWAYS / METRICS / NEWS (FactSet alerts from the PM's inbox) ===");
   lines.push(
-    "Two complementary FactSet alert types, ingested from the PM's inbox:\n" +
+    "Complementary FactSet alert types, ingested from the PM's inbox:\n" +
       "  • METRICS RECAP — what the company ACTUALLY reported vs consensus (with the estimate range), " +
       "segment detail, GUIDANCE revisions against the PRIOR guide, management's forward quote, and the " +
       "multi-quarter beat track record.\n" +
       "  • STREET TAKEAWAYS — how the sell-side REACTED: per-firm price targets, rating mix, average target.\n" +
-      "Category routing: guidance revisions + management outlook → catalysts. Reported beats/misses and segment " +
+      "  • NEWS — a company development between prints (a multi-year target raised, a customer or " +
+      "capacity commitment, an analyst day, M&A, a regulatory item). Facts and stated figures only, no " +
+      "analyst panel. Treat these as CATALYST evidence and as a check on whether the growth story is " +
+      "still tracking; a stated forward figure is company guidance, not consensus.\n" +
+      "Category routing: guidance revisions, management outlook and news-flash developments → catalysts. Reported beats/misses and segment " +
       "growth → growth. Beat-rate history → trackRecord and management (a long streak of beats is direct evidence " +
       "of execution reliability; a broken streak is equally direct evidence against). Rating mix / analyst count → " +
       "researchCoverage. Valuation vs own history → historicalValuation. Implied move + recent earnings-day moves → " +
@@ -335,6 +417,17 @@ export function formatStreetTakeawaysForPrompt(entries: StreetTakeaway[]): strin
   );
   for (const e of entries) {
     lines.push("");
+    if (e.kind === "news") {
+      lines.push(`--- ${e.date}${e.event ? ` · ${e.event}` : ""} · NEWS FLASH ---`);
+      if (e.headline) lines.push(`HEADLINE: ${e.headline}`);
+      if (e.overview) lines.push(`WHAT HAPPENED: ${e.overview}`);
+      if (e.guidance) lines.push(`COMPANY GUIDANCE STATED: ${e.guidance}`);
+      for (const f of e.figures ?? []) {
+        lines.push(`  - ${f.label}: ${f.value}${f.context ? ` (${f.context})` : ""}`);
+      }
+      for (const p of e.keyPoints ?? []) lines.push(`  • ${p}`);
+      continue;
+    }
     const kindLabel = e.kind === "metrics" ? "METRICS RECAP" : "STREET TAKEAWAYS (analyst reaction)";
     lines.push(`--- ${e.date}${e.event ? ` · ${e.event}` : ""} · ${kindLabel} ---`);
     if (e.guidance) lines.push(`GUIDANCE: ${e.guidance}`);

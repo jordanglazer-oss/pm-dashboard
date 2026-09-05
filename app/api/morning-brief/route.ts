@@ -16,6 +16,7 @@ import { defaultResearch } from "@/app/lib/defaults";
 import { buildHedgingCostsBlock, buildHedgeChecklistBlock, computeHedgeChecklist } from "@/app/lib/hedging";
 import { crossSectional, factsetConfigured } from "@/app/lib/factset";
 import { buildCatalystCalendar, type CatalystCalendar } from "@/app/lib/catalyst-calendar";
+import { shapeNotesForPrompt, FULL_TEXT_SESSIONS } from "@/app/lib/strategist-note-prompt";
 import { easternToday, easternLongDate, relativeDayLabel } from "@/app/lib/date-eastern";
 import { loadHedges, isActiveHedge, describeHedge } from "@/app/lib/hedges";
 import { parseModelJson } from "@/app/lib/json-repair";
@@ -1440,14 +1441,28 @@ ${(() => {
     return [...hist, { date: d, text: t }];
   };
   const blocks: string[] = [];
+  // Shape for the prompt only — pm:strategist-history keeps the full text.
+  // Drops the publishers' standing appendices (Core Ideas ticker lists, macro
+  // data tables) and tapers notes older than the recent window. See
+  // app/lib/strategist-note-prompt.ts for why each reduction exists.
+  const newtonShaped = shapeNotesForPrompt(withTodayNote(strategistHistory.newton, sn?.newton, sn?.newtonDate));
+  const leeShaped = shapeNotesForPrompt(withTodayNote(strategistHistory.lee, sn?.lee, sn?.leeDate));
+  const savedChars = newtonShaped.removedChars + leeShaped.removedChars;
+  if (savedChars > 0) {
+    console.log(
+      `[Brief] strategist notes shaped for prompt: -${savedChars.toLocaleString()} chars ` +
+      `(~${Math.round(savedChars / 4).toLocaleString()} tokens), ` +
+      `${newtonShaped.taperedCount + leeShaped.taperedCount} older note(s) tapered`,
+    );
+  }
   const nb = formatEntries(
-    withTodayNote(strategistHistory.newton, sn?.newton, sn?.newtonDate),
+    newtonShaped.entries,
     "Mark Newton",
     "Fundstrat Technical Strategy",
     timingLabel(sn?.newtonTiming)
   );
   const lb = formatEntries(
-    withTodayNote(strategistHistory.lee, sn?.lee, sn?.leeDate),
+    leeShaped.entries,
     "Tom Lee",
     "Fundstrat Head of Research",
     timingLabel(sn?.leeTiming)
@@ -1458,6 +1473,8 @@ ${(() => {
   return `
 
 STRATEGIST NOTES — The PM follows these Fundstrat strategists. Notes below contain the trailing 30 days where available. Note: Tom Lee primarily communicates via video, so his written notes will often be absent — that is normal, not an error. When Lee notes ARE present, treat them like Newton's. When they are absent, rely on his Focus Areas (in the FUNDSTRAT RESEARCH CONTEXT section) as background context instead.
+
+Note shaping: the most recent ${FULL_TEXT_SESSIONS} sessions appear in full. Older notes are shortened to their opening (title + key takeaways) and marked "[…note truncated…]" — that is a display choice, NOT the strategist writing less. Each publisher's standing appendices (Core Ideas ticker lists, macro data tables) are removed from every note: the ticker lists live in the Research tab, and dated economic events belong to the CATALYST CALENDAR block, which remains the ONLY source for catalystWatch.
 
 Key instructions:
 1. Track THEMES ACROSS DAYS — if a strategist keeps mentioning the same level, catalyst, or risk multiple sessions over the 30-day window, that consistency matters more than a one-off mention. Call it out (e.g. "Newton has flagged 5,200 support across eight sessions in the last month"). Persistent themes carry more weight than recent ones in isolation. Also watch for STANCE EVOLUTION over the longer window — a gradual shift from cautious to constructive over 3 weeks is a meaningful signal that's invisible in a 2-week view.

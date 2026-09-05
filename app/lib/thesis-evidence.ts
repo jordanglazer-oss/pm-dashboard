@@ -32,10 +32,18 @@ function reportLines(label: string, r: ExtractedReport | undefined): string[] {
   return out;
 }
 
+const KIND_HEAD: Record<string, string> = {
+  metrics: "Metrics Recap",
+  transcript: "Transcript Intelligence",
+  news: "News",
+  takeaways: "Street Takeaways",
+};
+
 function takeawayLines(t: StreetTakeaway): string[] {
   const out: string[] = [
-    `FactSet ${t.kind === "metrics" ? "Metrics Recap" : "Street Takeaways"} — ${t.date}${t.event ? ` (${t.event})` : ""}:`,
+    `FactSet ${KIND_HEAD[t.kind] ?? "Street Takeaways"} — ${t.date}${t.event ? ` (${t.event})` : ""}:`,
   ];
+  if (t.headline) out.push(`  headline: ${t.headline}`);
   if (t.overview) out.push(`  overview: ${t.overview}`);
   if (t.guidance) out.push(`  guidance: ${t.guidance}`);
   for (const r of cap(t.results, 6)) {
@@ -48,6 +56,10 @@ function takeawayLines(t: StreetTakeaway): string[] {
       `  • guide ${g.period} ${g.metric}: ${g.value}${g.priorGuidance ? ` (prior ${g.priorGuidance})` : ""}${g.direction ? ` — ${g.direction}` : ""}`,
     );
   }
+  for (const f of cap(t.figures, 6)) {
+    out.push(`  • ${f.label}: ${f.value}${f.context ? ` (${f.context})` : ""}`);
+  }
+  for (const k of cap(t.keyPoints, 4)) out.push(`  • ${k}`);
   if (t.managementOutlook) out.push(`  management outlook: ${t.managementOutlook}`);
   for (const f of cap(t.firms, 3)) {
     const pts = cap(f.points, 2).join("; ");
@@ -112,10 +124,16 @@ export async function buildTickerEvidence(ticker: string): Promise<string> {
     ...reportLines("JPM report", tr?.jpm?.extracted),
     ...reportLines("Morningstar report", tr?.morningstar?.extracted),
   ];
-  const recent = (takeaways || [])
-    .slice()
-    .sort((a, b) => (a.date < b.date ? 1 : -1))
-    .slice(0, 2);
+  // Two earnings-format alerts PLUS two news flashes. A single newest-first
+  // slice would let a busy news week push the last earnings roundup out of the
+  // evidence block entirely — they answer different questions, so each gets
+  // its own budget.
+  const byDateDesc = (a: StreetTakeaway, b: StreetTakeaway) => (a.date < b.date ? 1 : -1);
+  const all = (takeaways || []).slice().sort(byDateDesc);
+  const recent = [
+    ...all.filter((t) => t.kind !== "news").slice(0, 2),
+    ...all.filter((t) => t.kind === "news").slice(0, 2),
+  ].sort(byDateDesc);
   for (const t of recent) lines.push(...takeawayLines(t));
 
   return lines.join("\n");
