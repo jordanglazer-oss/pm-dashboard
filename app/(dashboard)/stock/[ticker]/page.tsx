@@ -18,6 +18,7 @@ import RiskAlertPanel from "@/app/components/RiskAlertPanel";
 import RatioVsSpxSparkline from "@/app/components/RatioVsSpxSparkline";
 import ScoreHistory from "@/app/components/ScoreHistory";
 import ThesisTile from "@/app/components/ThesisTile";
+import { ThesisRequiredBanner } from "@/app/components/ThesisRequiredBanner";
 import FactorLensTile from "@/app/components/FactorLensTile";
 import StreetTakeawaysTile from "@/app/components/StreetTakeawaysTile";
 import { StockSynthesisTile } from "@/app/components/StockSynthesisTile";
@@ -1555,6 +1556,9 @@ export default function StockDetailPage() {
 
       <div className="px-4 py-6 md:px-8 md:py-8">
         <div className="mx-auto max-w-7xl">
+          {stock.bucket === "Portfolio" && scoreable && (
+            <ThesisRequiredBanner ticker={stock.ticker} className="mb-5" />
+          )}
           {/* Stock header card */}
           <div className="overflow-hidden rounded-card border border-line bg-white shadow-sm">
             {/* Identity strip — ticker/price/pills left, actions right (canvas anatomy).

@@ -553,6 +553,10 @@ export function PimPortfolio({ groups }: Props) {
   const [showSwitch, setShowSwitch] = useState(false);
   // Rebalance prices are shared across profiles (cross-model price sharing)
   const [rebalancePrices, setRebalancePrices] = useState<Record<string, string>>({});
+  /** Tickers bought in the last executed batch that still owe a thesis
+   *  (cleared when dismissed; the Dashboard banner keeps following them). */
+  const [thesisOwed, setThesisOwed] = useState<string[]>([]);
+
   // ── Buy / Sell trade queue ───────────────────────────────────────
   // The Buy / Sell panel supports queueing multiple (sell, buy) pairs
   // and executing them together. Each row is an independent trade:
@@ -2914,6 +2918,13 @@ export function PimPortfolio({ groups }: Props) {
     setTradeExecProgress(
       `${executed} of ${trades.length} executed${skipped > 0 ? ` · ${skipped} skipped (empty)` : ""}${errors.length > 0 ? ` · ${errors.length} failed` : ""}`
     );
+    // Funnel stage 4→5: every bought name owes a thesis. Non-blocking — the
+    // reminder lists the buys with a link to each stock page, where the
+    // Thesis tile (write, or Draft with AI) closes the gap.
+    if (executed > 0) {
+      const bought = trades.filter((t) => t.buyTicker).map((t) => t.buyTicker.trim().toUpperCase());
+      if (bought.length > 0) setThesisOwed(Array.from(new Set(bought)));
+    }
     if (warnings.length > 0) {
       alert("Warnings:\n\n" + warnings.join("\n\n"));
     }
@@ -3555,6 +3566,20 @@ export function PimPortfolio({ groups }: Props) {
           to 100; lower values run a partial-sell, which trims the model
           target by the fraction sold AND adds the bought name to each
           eligible model. Execute All runs the queue sequentially. */}
+      {thesisOwed.length > 0 && (
+        <div className="mb-4 flex flex-wrap items-center gap-2 rounded-card border border-warn-border bg-warn-soft px-4 py-2.5">
+          <span className="text-xs font-bold uppercase tracking-wide text-warn">Thesis required</span>
+          <span className="text-xs text-ink-2">Bought — write the thesis or draft it with AI, then sign, so monitoring starts:</span>
+          <span className="flex flex-wrap items-center gap-1.5">
+            {thesisOwed.map((t) => (
+              <Link key={t} href={`/stock/${encodeURIComponent(t)}#thesis-tile`} className="inline-flex items-center rounded-full bg-white px-2 py-0.5 font-mono text-[11px] font-bold !text-warn ring-1 ring-warn-border hover:bg-warn hover:!text-white transition-colors">
+                {displayTicker(t)}
+              </Link>
+            ))}
+          </span>
+          <button onClick={() => setThesisOwed([])} className="ml-auto text-[11px] font-semibold text-ink-3 hover:text-ink" title="Hide this reminder (the Dashboard banner keeps tracking the gap)">Dismiss</button>
+        </div>
+      )}
       {showSwitch && (() => {
         const watchlistStocks = stocks
           .filter((s) => s.bucket === "Watchlist")

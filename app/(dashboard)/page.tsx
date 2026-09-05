@@ -7,6 +7,7 @@ import { PortfolioOverview } from "@/app/components/PortfolioOverview";
 import { CockpitBand } from "@/app/components/CockpitBand";
 import { AttentionPanel } from "@/app/components/AttentionPanel";
 import { ChangeMonitor } from "@/app/components/ChangeMonitor";
+import { ThesisRequiredBanner } from "@/app/components/ThesisRequiredBanner";
 import { ScoreCalibration } from "@/app/components/ScoreCalibration";
 import { ForwardScorePanel } from "@/app/components/ForwardScorePanel";
 import { regimeMultiplier, normalizeSector } from "@/app/lib/scoring";
@@ -91,6 +92,10 @@ export default function DashboardPage() {
             under the cockpit; renders only when there's something actionable,
             so calm days stay clean. */}
         <AttentionPanel />
+
+        {/* Funnel stage 4→5: Portfolio names with no underwritten thesis.
+            Non-blocking — follows the PM until the position is underwritten. */}
+        <ThesisRequiredBanner />
 
         {/* Change monitor moved into the Rankings cockpit's right sidebar
             (passed to PortfolioOverview below) alongside Sector Exposure. */}

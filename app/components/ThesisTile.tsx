@@ -116,6 +116,18 @@ export default function ThesisTile({
     }
   }, [ticker]);
 
+  // "Thesis required" banner → "Draft with AI": the banner sits outside this
+  // tile, so it asks via a window event rather than a prop drilled through
+  // the stock page. Same draftWithAi, same draft-never-commit rule.
+  useEffect(() => {
+    const onDraft = (e: Event) => {
+      const t = (e as CustomEvent<{ ticker?: string }>).detail?.ticker;
+      if (!t || t.toUpperCase() === ticker.toUpperCase()) void draftWithAi();
+    };
+    window.addEventListener("thesis:draft", onDraft);
+    return () => window.removeEventListener("thesis:draft", onDraft);
+  }, [ticker, draftWithAi]);
+
   // On-trip Claude thesis check (phase ④). GET reads the cache only — zero
   // spend; the POST behind the button is hash-gated server-side, so a
   // re-click on unchanged facts is also free.
@@ -364,7 +376,7 @@ export default function ThesisTile({
   const overdue = reDue ? reDue < todayIso() : false;
 
   return (
-    <section className={`rounded-card border border-line bg-white shadow-sm ${className || ""}`}>
+    <section id="thesis-tile" className={`scroll-mt-24 rounded-card border border-line bg-white shadow-sm ${className || ""}`}>
       <div className="flex flex-wrap items-center gap-2 border-b border-line px-4 py-3">
         <span className="text-xs font-bold uppercase tracking-[0.22em] text-ink-3">Thesis</span>
         {auto > 0 && (
