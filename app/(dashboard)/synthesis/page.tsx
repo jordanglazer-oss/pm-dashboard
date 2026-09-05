@@ -5,6 +5,8 @@ import { IdeasRail } from "@/app/components/IdeasRail";
 import { ClampText } from "@/app/components/ClampText";
 import { useStocks } from "@/app/lib/StockContext";
 import { displayTicker } from "@/app/lib/ticker";
+import type { Stock, ScoreKey } from "@/app/lib/types";
+import type { SuggestedDecision } from "@/app/lib/suggested-watchlist";
 import TickerLink from "@/app/components/TickerLink";
 import {
   VERDICT_LABEL,
@@ -37,11 +39,29 @@ type Evidence = {
   sia?: boolean;
 };
 
+type Bucket = "Portfolio" | "Watchlist" | "Suggested";
+
+/** A name advanced from Suggested starts unscored — the scoring flow fills it in. */
+const ZERO_SCORES: Record<ScoreKey, number> = {
+  brand: 0, secular: 0, researchCoverage: 0, marketEdge: 0,
+  analystConsensus: 0, researchMentions: 0,
+  charting: 0, relativeStrength: 0, aiRating: 0, growth: 0,
+  relativeValuation: 0, historicalValuation: 0, leverageCoverage: 0,
+  cashFlowQuality: 0, competitiveMoat: 0, turnaround: 0, catalysts: 0,
+  trackRecord: 0, ownershipTrends: 0,
+};
+
+const DECISION_STYLE: Record<SuggestedDecision, string> = {
+  advance: "bg-pos-soft text-pos ring-pos-border",
+  watch: "bg-warn-soft text-warn ring-warn-border",
+  pass: "bg-surface-2 text-ink-3 ring-line",
+};
+
 type Row = {
   ticker: string;
   displayTicker?: string;
   name: string;
-  bucket: "Portfolio" | "Watchlist";
+  bucket: Bucket;
   sector: string;
   currentPrice?: number;
   earningsDate?: string;
@@ -49,6 +69,8 @@ type Row = {
   stale: StaleReason[];
   evidence?: Evidence;
   previous?: SynthesisHistoryRow | null;
+  /** Suggested rows only: the PM's remembered verdict (30-day memory). */
+  decision?: { verdict: SuggestedDecision; decidedAt: string; expiresOn: string } | null;
 };
 
 const hasReports = (r: Row) => !!(r.evidence?.rbcReport || r.evidence?.jpmReport);
@@ -342,7 +364,8 @@ export default function SynthesisPage() {
   // Row-card + section open state persists in pm:ui-prefs (site rule:
   // every collapse survives refreshes). Set-based APIs preserved so the
   // render code below is untouched.
-  const { uiPrefs, setUiPref } = useStocks();
+  const { uiPrefs, setUiPref, addStock } = useStocks();
+  const [deciding, setDeciding] = useState<string | null>(null);
   const expanded = useMemo(() => {
     const out = new Set<string>();
     for (const k of Object.keys(uiPrefs)) if (k.startsWith("synthesis.row.") && uiPrefs[k] === "1") out.add(k.slice("synthesis.row.".length));
@@ -502,10 +525,50 @@ export default function SynthesisPage() {
       return next;
     });
 
-  const sections: Array<{ title: string; bucket: "Portfolio" | "Watchlist" }> = [
+  const sections: Array<{ title: string; bucket: Bucket }> = [
+    { title: "Suggested", bucket: "Suggested" },
     { title: "Watchlist", bucket: "Watchlist" },
     { title: "Portfolio", bucket: "Portfolio" },
   ];
+
+  /** Funnel stage 3 → 4: the PM's call on a Suggested name after reading its
+   *  synthesis. Advance adds the name to the real Watchlist (existing addStock
+   *  path — nothing else touches pm:stocks); watch/pass only write the 30-day
+   *  memory (pm:synthesis-decisions). The row is re-read afterwards so it
+   *  moves to the Watchlist section or drops out (pass). */
+  const decide = useCallback(
+    async (row: Row, verdict: SuggestedDecision) => {
+      setDeciding(row.ticker);
+      try {
+        if (verdict === "advance") {
+          let name = row.name || row.ticker;
+          let sector = row.sector || "Technology";
+          try {
+            const res = await fetch(`/api/company-name?tickers=${encodeURIComponent(row.ticker)}`);
+            if (res.ok) {
+              const d = await res.json();
+              if (d.names?.[row.ticker]) name = d.names[row.ticker];
+              if (d.sectors?.[row.ticker]) sector = d.sectors[row.ticker];
+            }
+          } catch { /* keep what the list carried */ }
+          const stock: Stock = { ticker: row.ticker, name, bucket: "Watchlist", sector, beta: 1.0, weights: { portfolio: 0 }, scores: { ...ZERO_SCORES }, notes: "" };
+          addStock(stock);
+        }
+        await fetch("/api/kv/synthesis-decisions", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ ticker: row.ticker, verdict }),
+        });
+        // Give the debounced pm:stocks persist a beat before re-reading so an
+        // advanced name comes back under Watchlist rather than Suggested.
+        await new Promise((r) => setTimeout(r, verdict === "advance" ? 700 : 0));
+        await load();
+      } finally {
+        setDeciding(null);
+      }
+    },
+    [addStock, load],
+  );
 
   const sortRows = (rows: Row[]) =>
     [...rows].sort((a, b) => {
@@ -705,6 +768,46 @@ export default function SynthesisPage() {
                           )}
                         </div>
                       </div>
+                      {row.bucket === "Suggested" && (
+                        <span className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
+                          {row.decision && (
+                            <span
+                              className={`inline-flex items-center rounded-full px-1.5 py-px text-[9px] font-bold uppercase ring-1 ${DECISION_STYLE[row.decision.verdict]}`}
+                              title={`Decided ${row.decision.decidedAt.slice(0, 10)} · remembered until ${row.decision.expiresOn}`}
+                            >
+                              {row.decision.verdict}
+                            </span>
+                          )}
+                          {row.entry && (
+                            <>
+                              <button
+                                onClick={() => void decide(row, "advance")}
+                                disabled={deciding === row.ticker}
+                                className="rounded-md border border-pos-border bg-pos-soft px-2 py-1 text-[10px] font-semibold text-pos hover:bg-pos hover:text-white disabled:opacity-40"
+                                title="Add to the real Watchlist (funnel stage 4)"
+                              >
+                                Advance
+                              </button>
+                              <button
+                                onClick={() => void decide(row, "watch")}
+                                disabled={deciding === row.ticker || row.decision?.verdict === "watch"}
+                                className="rounded-md border border-warn-border bg-warn-soft px-2 py-1 text-[10px] font-semibold text-warn hover:bg-warn hover:text-white disabled:opacity-40"
+                                title="Keep on Suggested; don't flag it for a fresh synthesis for 30 days"
+                              >
+                                Watch
+                              </button>
+                              <button
+                                onClick={() => void decide(row, "pass")}
+                                disabled={deciding === row.ticker}
+                                className="rounded-md border border-line bg-surface px-2 py-1 text-[10px] font-semibold text-ink-3 hover:text-ink disabled:opacity-40"
+                                title="Hide from Suggested for 30 days (it resurfaces only if still on 2+ lists after that)"
+                              >
+                                Pass
+                              </button>
+                            </>
+                          )}
+                        </span>
+                      )}
                       <button
                         onClick={(e) => {
                           e.stopPropagation();

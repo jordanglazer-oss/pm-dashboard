@@ -16,6 +16,8 @@ import { resolveFactsetId, isFundservCode } from "@/app/lib/factset-symbols";
 import { crossSectional, factsetConfigured, relayRetry, RELAY_HEAVY_TIMEOUT_MS } from "@/app/lib/factset";
 import { companySnapshot, formatSnapshotForPrompt } from "@/app/lib/factset-fundamentals";
 import { getSectorLeadership } from "@/app/lib/sector-leadership";
+import { loadRankedResearch } from "@/app/lib/research-ranked-server";
+import { qualifyingRows, activeDecision, decisionExpiresOn, DECISIONS_KEY, type DecisionStore } from "@/app/lib/suggested-watchlist";
 import {
   SYNTHESIS_CACHE_KEY,
   SYNTHESIS_HISTORY_KEY,
@@ -39,7 +41,9 @@ import {
 /**
  * Synthesis screen API.
  *
- * GET  — returns one row per Portfolio/Watchlist name: the cached synthesis
+ * GET  — returns one row per Portfolio/Watchlist name PLUS one per Suggested
+ *        Watchlist name (funnel stage 2: research names on 2+ lists that the
+ *        book doesn't hold yet — bucket "Suggested"): the cached synthesis
  *        (if any) plus computed staleness reasons, and the sector-leadership
  *        table for the page header. Staleness is computed from Redis-only
  *        inputs (no Yahoo/FactSet calls) so the page load stays fast.
@@ -198,6 +202,29 @@ async function loadBookStocks(): Promise<StockLike[]> {
   );
 }
 
+/**
+ * Suggested Watchlist stubs — names on 2+ research lists that the book does
+ * NOT hold yet (funnel stage 3 runs the synthesis on them so a name earns its
+ * Watchlist spot). Names the PM passed on inside the 30-day memory are left
+ * out, matching the Dashboard's Suggested tab. Pure read: pm:research,
+ * pm:stocks, pm:synthesis-decisions.
+ */
+async function loadSuggestedStubs(book: StockLike[]): Promise<{ stubs: StockLike[]; decisions: DecisionStore }> {
+  const [{ rows }, decisions] = await Promise.all([loadRankedResearch(), readJson<DecisionStore>(DECISIONS_KEY, {})]);
+  const held = new Set(book.map((s) => canonicalTicker(s.ticker!)));
+  const stubs: StockLike[] = [];
+  for (const r of qualifyingRows(rows)) {
+    if (r.held || held.has(canonicalTicker(r.ticker))) continue;
+    if (activeDecision(decisions, r.ticker)?.verdict === "pass") continue;
+    stubs.push({ ticker: r.ticker, name: r.name || r.ticker, bucket: "Suggested", sector: r.sector });
+  }
+  return { stubs, decisions: decisions && typeof decisions === "object" ? decisions : {} };
+}
+
+/** The verdict set a row is scored against — Suggested names use the
+ *  Watchlist set (advance / watch / pass). */
+const promptBucket = (b: string | undefined): "Portfolio" | "Watchlist" => (b === "Portfolio" ? "Portfolio" : "Watchlist");
+
 /** Membership-only fingerprint — changes when a name joins/leaves a list. */
 function mentionsFingerprint(mentions: Awaited<ReturnType<typeof tallyResearchMentions>> | null): string {
   if (!mentions) return "none";
@@ -319,7 +346,7 @@ async function fetchBusinessSummary(ticker: string): Promise<string | undefined>
 
 export async function GET() {
   try {
-    const [stocks, snapshots, reports, cache, leadership, takeawayStore, history] = await Promise.all([
+    const [book, snapshots, reports, cache, leadership, takeawayStore, history] = await Promise.all([
       loadBookStocks(),
       readJson<AnalystSnapshots>("pm:analyst-snapshots", {}),
       readJson<AnalystReports>("pm:analyst-reports", {}),
@@ -328,6 +355,9 @@ export async function GET() {
       loadStreetTakeaways(),
       readJson<SynthesisHistory>(SYNTHESIS_HISTORY_KEY, {}),
     ]);
+
+    const { stubs, decisions } = await loadSuggestedStubs(book);
+    const stocks = [...book, ...stubs];
 
     const today = new Date().toISOString().slice(0, 10);
     const rows = await Promise.all(
@@ -374,11 +404,12 @@ export async function GET() {
           previous = prior.length > 0 ? prior[prior.length - 1] : null;
         }
 
+        const decision = s.bucket === "Suggested" ? activeDecision(decisions, ticker) : null;
         return {
           ticker,
           displayTicker: s.ticker,
           name: s.name ?? ticker,
-          bucket: s.bucket as "Portfolio" | "Watchlist",
+          bucket: s.bucket as "Portfolio" | "Watchlist" | "Suggested",
           sector: s.sector ?? "",
           currentPrice: s.currentPrice,
           earningsDate: s.earningsDate,
@@ -386,6 +417,7 @@ export async function GET() {
           stale,
           evidence,
           previous,
+          decision: decision ? { ...decision, expiresOn: decisionExpiresOn(decision) } : null,
         };
       }),
     );
@@ -489,14 +521,15 @@ export async function POST(request: NextRequest) {
   // entry it produces is permanently badged `incomplete`.
   const allowIncomplete = body.allowIncomplete === true;
 
-  const [stocks, snapshots, reports, leadership, takeawayStore] = await Promise.all([
+  const [book, snapshots, reports, leadership, takeawayStore] = await Promise.all([
     loadBookStocks(),
     readJson<AnalystSnapshots>("pm:analyst-snapshots", {}),
     readJson<AnalystReports>("pm:analyst-reports", {}),
     getSectorLeadership(),
     loadStreetTakeaways(),
   ]);
-  const byTicker = new Map(stocks.map((s) => [canonicalTicker(s.ticker!), s]));
+  const { stubs } = await loadSuggestedStubs(book);
+  const byTicker = new Map([...book, ...stubs].map((s) => [canonicalTicker(s.ticker!), s]));
   const today = new Date().toISOString().slice(0, 10);
 
   const results: Array<{
@@ -512,7 +545,7 @@ export async function POST(request: NextRequest) {
   for (const ticker of requested) {
     const stock = byTicker.get(ticker);
     if (!stock) {
-      results.push({ ticker, status: "error", error: "not in Portfolio/Watchlist" });
+      results.push({ ticker, status: "error", error: "not in Portfolio/Watchlist/Suggested" });
       continue;
     }
     try {
@@ -565,7 +598,7 @@ export async function POST(request: NextRequest) {
       const payload: SynthesisPayload = {
         ticker,
         name: stock.name ?? ticker,
-        bucket: stock.bucket as "Portfolio" | "Watchlist",
+        bucket: promptBucket(stock.bucket),
         sector: stock.sector ?? "",
         currentPrice,
         earningsDate: stock.earningsDate,
