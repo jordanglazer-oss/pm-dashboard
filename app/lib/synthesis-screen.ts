@@ -86,7 +86,9 @@ export type ThirdPartyTech = {
 export function computeInputsHash(input: {
   snapshot?: TickerSnapshot;
   reports?: { rbc?: { extractedAt?: string; hash?: string }; jpm?: { extractedAt?: string; hash?: string }; morningstar?: { extractedAt?: string; hash?: string } };
-  takeaways: Pick<StreetTakeaway, "date" | "event">[] | { date?: string; event?: string }[];
+  takeaways:
+    | Pick<StreetTakeaway, "date" | "event" | "headline">[]
+    | { date?: string; event?: string; headline?: string }[];
   mentionsFingerprint: string;
   earningsDate?: string;
   thirdPartyTech?: ThirdPartyTech;
@@ -121,7 +123,19 @@ export function computeInputsHash(input: {
         ? { at: input.reports.morningstar.extractedAt ?? null, h: input.reports.morningstar.hash ?? null }
         : null,
     },
-    takeaways: input.takeaways.map((t) => `${t.date ?? ""}|${t.event ?? ""}`).sort(),
+    // Headline is part of the key: several news flashes can land on one day
+    // under the same short event label, and date|event alone would collapse
+    // them into one fingerprint entry — the synthesis would then keep serving
+    // a cached read that never saw the newer item.
+    takeaways: input.takeaways
+      .map((t) => {
+        const base = `${t.date ?? ""}|${t.event ?? ""}`;
+        // Appended ONLY when present, so every entry stored before news items
+        // existed hashes exactly as it did before — adding the field must not
+        // mark every name stale and re-spend a synthesis call on each.
+        return t.headline ? `${base}|${t.headline}` : base;
+      })
+      .sort(),
     mentions: input.mentionsFingerprint,
     earnings: input.earningsDate ?? null,
   };

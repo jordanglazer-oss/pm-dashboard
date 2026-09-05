@@ -151,7 +151,7 @@ export function classifySubject(subject: string): InboxKind {
   // from the subject (see subjectTicker) because a non-FactSet forward carries
   // no "Related Identifiers:" line. Lands in the same per-ticker store, so it
   // reaches scoring, the thesis evidence block and the synthesis screen.
-  if (SUBJECT_NOTE_RE.test(s)) return "street-takeaways";
+  if (subjectTicker(s)) return "street-takeaways";
   return "unknown";
 }
 
@@ -159,14 +159,23 @@ export function classifySubject(subject: string): InboxKind {
  * Manual forward convention: "News: <TICKER> <anything>" (also FYI:/Note:).
  * The ticker is REQUIRED — without it there is nothing to file the item
  * against, and a store keyed by ticker cannot hold an orphan.
+ *
+ * The ticker must be typed in CAPS. "FYI:" is a normal way to start a human
+ * email, so a case-insensitive word here would route "FYI: thanks" into the
+ * ingest pipeline; requiring caps keeps the convention deliberate. Trailing
+ * class/exchange segments are allowed so "CLS.TO", "BRK.B" and "TECK-B.TO"
+ * all match.
  */
-export const SUBJECT_NOTE_RE = /^(?:news|fyi|note)\s*:\s*([A-Za-z0-9.\-]{1,12})(?:\s|$)/i;
+export const SUBJECT_NOTE_RE = /^(?:news|fyi|note)\s*:\s*([A-Z][A-Z0-9]{0,5}(?:[.\-][A-Z]{1,2}){0,2})(?:\s|$)/;
 
 /** Ticker named by the manual "News: <TICKER> …" convention, or null. */
 export function subjectTicker(subject: string): string | null {
   const s = subject.trim().replace(/^(?:\s*(?:fw|fwd|re|tr|wg|aw|rv)\s*:\s*)+/i, "");
-  const m = SUBJECT_NOTE_RE.exec(s);
-  return m ? m[1].toUpperCase() : null;
+  // Case-insensitive on the KEYWORD, case-sensitive on the ticker (see above).
+  const m = /^(?:news|fyi|note)\s*:\s*(.*)$/i.exec(s);
+  if (!m) return null;
+  const t = /^([A-Z][A-Z0-9]{0,5}(?:[.\-][A-Z]{1,2}){0,2})(?:\s|$)/.exec(m[1].trim());
+  return t ? t[1] : null;
 }
 
 /** True for anything naming itself an RBC EQUATE rank sheet — subject OR

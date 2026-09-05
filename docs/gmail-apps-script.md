@@ -14,7 +14,8 @@ handles the rest.
 | `BoostedAI …` *or* `Boosted …` | **Boosted.ai unified-data CSV (preferred)** or watchlist screenshot (PNG/JPG/PDF) | Each matched stock's BoostedAI rating + consensus + score. CSV is auto-detected — same subject either way. |
 | `MarketEdge …` *or* `ChartScout …` | ChartScout Likes export (CSV) | Each matched stock's `marketEdge` fields + composite score |
 | `Strategist …` | Any analyst/strategist research (PDF or image) | Brief's "Analyst / Strategist Reports" dropbox |
-| `SA: Street Takeaways …` — **or just forward any email from `FactSet_Alerts@factset.com`** (sender is matched too, so the original subject works unchanged) | **The email BODY — no attachment needed** | Per-ticker Street Takeaways: per-firm PT changes, full-panel rating mix, avg target, valuation vs own history. Feeds catalysts / researchCoverage / historicalValuation on the next rescore, and the stock page's Street Takeaways tile. Names outside the Portfolio/Watchlist are skipped. |
+| `SA: Street Takeaways …` / `SA: <any headline>` — **or just forward any email from `FactSet_Alerts@factset.com`** (sender is matched too, so the original subject works unchanged) | **The email BODY — no attachment needed** | Per-ticker FactSet store. Earnings formats (Street Takeaways / Metrics Recap / Transcript Intelligence) give per-firm PT changes, results vs consensus and guidance. A **news flash** (`Top News Summaries`) is stored as its own `news` kind — headline, the facts behind it, and every stated figure with its baseline. All of it feeds catalysts / researchCoverage / historicalValuation on the next rescore, the thesis evidence block, the synthesis screen, and the stock page's FactSet Alerts tile. Names outside the Portfolio/Watchlist are skipped (no tokens spent). |
+| `News: <TICKER> …` (also `FYI:` / `Note:`) — **ticker in CAPS** | **The email BODY — no attachment needed** | Manual catch-all for anything worth filing against a name that isn't a FactSet alert — a company PR, a wire headline, a note you typed yourself. Same `news` kind and the same downstream reach as above. The **ticker is required** in the subject, because a non-FactSet email carries no `Related Identifiers:` line. |
 | `Newton …` (or `Mark Newton …`) | **The report PDF, forwarded unedited** (or, as a fallback, the report text pasted into the body) | Brief's Strategist Notes → Mark Newton slot (`pm:market.strategistNotes`), exactly like pasting into the UI. The PDF's text layer is read locally with pdf.js — **no Anthropic spend** — and the **last 2 pages (disclosures) are always dropped**. Charts are not interpreted; text only. Dated today (Eastern) unless the subject contains a `YYYY-MM-DD`. Timing defaults to prior-close if not already set. Also appends the rolling 30-day note history. |
 | `Lee …` (or `Tom Lee …`) | Same — PDF preferred, pasted body as fallback | Same, Tom Lee slot. Timing defaults to pre-market. Lee's full FLASH runs ~9 MB, over Vercel's 4.5 MB request limit, so the script stages anything above 3 MB to Blob first (see `stageAttachmentToBlob`). |
 | `Fundstrat Top` / `Fundstrat Bottom` / `Fundstrat SMID Top` / `Fundstrat SMID Bottom` | Screenshot (PNG/JPG/PDF) | Respective Fundstrat list on the Research tab |
@@ -325,7 +326,16 @@ function processInbox() {
     // FactSet alerts are BODY-TEXT emails (no attachment) — matched by sender so
     // a plain forward works with its original subject untouched.
     const BODY_TEXT_SENDER_RE = /factset[_.]?alerts?@factset\.com/i;
-    const BODY_TEXT_SUBJECT_RE = /^(?:(?:re|fwd?|fw):\s*)*(?:(?:SA:\s*)?(?:Street Takeaways|StreetAccount|Transcript Intelligence)|(?:Mark )?Newton\b|(?:Tom )?Lee\b)/i;
+    // Footer markers every FactSet alert carries, whatever its subject or who
+    // forwarded it. Kept in sync with isFactsetAlertBody() on the server.
+    const BODY_TEXT_MARKER_RE = /FactSet\s+News\s+Alert\s+for:|Disable\s+this\s+alert\s+in\s+Workstation|(?:Primary|Related)\s+Identifiers?:/i;
+    // Manual catch-all convention: "News: AVGO …" / "FYI: CLS.TO …" / "Note: IBM …".
+    // The TICKER MUST BE IN CAPS (no /i flag on the ticker group) — "FYI:" is a
+    // normal way to start a human email, and a case-insensitive match would
+    // push "FYI: thanks" into the pipeline. Kept in sync with subjectTicker()
+    // on the server.
+    const SUBJECT_NOTE_RE = /^(?:(?:re|fwd?|fw):\s*)*(?:news|fyi|note)\s*:\s*[A-Z][A-Z0-9]{0,5}(?:[.\-][A-Z]{1,2}){0,2}(?:\s|$)/;
+    const BODY_TEXT_SUBJECT_RE = /^(?:(?:re|fwd?|fw):\s*)*(?:SA:\s*\S|(?:Street Takeaways|StreetAccount|Transcript Intelligence)|(?:Mark )?Newton\b|(?:Tom )?Lee\b)/i;
     // Strategist notes (Fundstrat dailies). Normally ATTACHMENT emails — the
     // dashboard reads the PDF's text layer and drops the 2 disclosure pages —
     // but pasted text must keep working, so these take the body path ONLY when
@@ -367,10 +377,20 @@ function processInbox() {
 
         // ── Body-text kinds (FactSet Street Takeaways) ──
         let plainBody = "";
-        let isBodyTextKind = BODY_TEXT_SENDER_RE.test(sender) || BODY_TEXT_SUBJECT_RE.test(subject);
+        let isBodyTextKind =
+          BODY_TEXT_SENDER_RE.test(sender) ||
+          BODY_TEXT_SUBJECT_RE.test(subject) ||
+          SUBJECT_NOTE_RE.test(subject);
         if (!isBodyTextKind && !SUBJECT_RE.test(subject)) {
           plainBody = msg.getPlainBody() || "";
-          isBodyTextKind = BODY_TEXT_SENDER_RE.test(plainBody.slice(0, 3000));
+          // Sniff the BODY, not just the sender: a forward replaces the sender
+          // with your own address, and Gmail does not always keep FactSet's
+          // From: line in the quoted text — but every alert carries its own
+          // footer block. This is what catches a news flash whose subject is
+          // just the headline.
+          isBodyTextKind =
+            BODY_TEXT_SENDER_RE.test(plainBody.slice(0, 6000)) ||
+            BODY_TEXT_MARKER_RE.test(plainBody.slice(0, 6000));
         }
         // Newton / Lee: prefer the forwarded PDF over the body. BODY_TEXT_SUBJECT_RE
         // still lists them (harmless, and it is the fallback's safety net), so this
@@ -631,7 +651,8 @@ function fixLabels() {
   // getMessages(), which is the expensive call this pass exists to avoid. A
   // FactSet thread whose subject does not say so is left LABELED — the safe
   // direction, since unlabelling would re-send it.
-  var BODY_TEXT_SUBJECT_RE = /^(?:(?:re|fwd?|fw):\s*)*(?:SA:\s*)?(?:Street Takeaways|StreetAccount|Transcript Intelligence)/i;
+  var BODY_TEXT_SUBJECT_RE = /^(?:(?:re|fwd?|fw):\s*)*(?:SA:\s*\S|Street Takeaways|StreetAccount|Transcript Intelligence)/i;
+  var SUBJECT_NOTE_RE = /^(?:(?:re|fwd?|fw):\s*)*(?:news|fyi|note)\s*:\s*[A-Z][A-Z0-9]{0,5}(?:[.\-][A-Z]{1,2}){0,2}(?:\s|$)/;
   // Matched the rules but was never actually ingested, so it must be released.
   var NEVER_INGESTED_RE = /equate/i;
 
@@ -656,7 +677,7 @@ function fixLabels() {
       batch.push(threads[t]);       // release: eligible but never processed
       released++;
       Logger.log("  RELEASE (never ingested): " + subject);
-    } else if (SUBJECT_RE.test(subject) || BODY_TEXT_SUBJECT_RE.test(subject)) {
+    } else if (SUBJECT_RE.test(subject) || BODY_TEXT_SUBJECT_RE.test(subject) || SUBJECT_NOTE_RE.test(subject)) {
       kept++;                        // ours, already ingested — leave alone
     } else {
       batch.push(threads[t]);       // never ours — label was a lie

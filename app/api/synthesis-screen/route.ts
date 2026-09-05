@@ -228,7 +228,7 @@ async function cheapInputsHashFor(
       jpm: rep?.jpm ? { extractedAt: rep.jpm.extractedAt, hash: rep.jpm.hash } : undefined,
       morningstar: rep?.morningstar ? { extractedAt: rep.morningstar.extractedAt, hash: rep.morningstar.hash } : undefined,
     },
-    takeaways: takeaways.map((t) => ({ date: t.date, event: t.event })),
+    takeaways: takeaways.map((t) => ({ date: t.date, event: t.event, headline: t.headline })),
     mentionsFingerprint: mentionsFingerprint(mentions),
     earningsDate: stock.earningsDate,
     thirdPartyTech: thirdPartyTechFor(stock),
