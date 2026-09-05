@@ -14,6 +14,7 @@ const useIsoLayoutEffect = typeof window !== "undefined" ? useLayoutEffect : use
  * PortfolioTabs pattern, including the sliding pill and Shift+←/→.
  */
 const SEGMENTS: { label: string; href: string }[] = [
+  { label: "Funnel", href: "/funnel" },
   { label: "Synthesis", href: "/synthesis" },
   { label: "Pipeline", href: "/conviction" },
   { label: "Screener", href: "/screener" },

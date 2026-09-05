@@ -203,6 +203,7 @@ const TAB_ALIASES: Record<string, string> = {
   "/thesis": "Portfolio",
   "/journal": "Portfolio",
   // Ideas segments
+  "/funnel": "Ideas",
   "/conviction": "Ideas",
   "/screener": "Ideas",
   "/radar": "Ideas",
