@@ -193,14 +193,20 @@ Rules:
 - Do not propose score_floor or score_decay.`;
 
   try {
-    const resp = await client.messages.create({
-      model: "claude-sonnet-5",
-      thinking: { type: "disabled" },
-      max_tokens: 1400,
-      messages: [{ role: "user", content: prompt }],
-    });
-    const text = resp.content.filter((b): b is Anthropic.TextBlock => b.type === "text").map((b) => b.text).join("");
-    const parsed = parseModelJson<{ summary?: unknown; pillars?: unknown; changes?: unknown }>(text);
+    const ask = async (extra = "") => {
+      const resp = await client.messages.create({
+        model: "claude-sonnet-5",
+        thinking: { type: "disabled" },
+        max_tokens: 1600,
+        messages: [{ role: "user", content: prompt + extra }],
+      });
+      return resp.content.filter((b): b is Anthropic.TextBlock => b.type === "text").map((b) => b.text).join("");
+    };
+    let parsed = parseModelJson<{ summary?: unknown; pillars?: unknown; changes?: unknown }>(await ask());
+    if (!parsed.ok) {
+      log.warn(`${tk} JSON parse failed, retrying once: ${parsed.error}`);
+      parsed = parseModelJson(await ask("\n\nFORMAT: reply with the JSON object ONLY — no prose before or after it, no code fences, every string double-quoted with inner quotes escaped, newlines inside strings written as \\n."));
+    }
     if (!parsed.ok) return { review: existing, cached: false, error: `unparseable: ${parsed.error}` };
     const o = parsed.value;
     const summary = typeof o.summary === "string" ? o.summary.trim().slice(0, 600) : "";

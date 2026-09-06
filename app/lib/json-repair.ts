@@ -12,6 +12,9 @@
  * well-formed response takes exactly the path it always did. Repairs only run
  * on failure, cheapest and least invasive first.
  *
+ * Extraction takes the FIRST balanced top-level object (string-aware), so
+ * prose or a second object after the answer can't poison a good one.
+ *
  * Repairs, in order:
  *   1. escape unescaped inner quotes + raw control characters inside strings
  *   2. strip trailing commas before } or ]
@@ -101,23 +104,72 @@ export type ModelJsonResult<T> =
  * Extract the outermost JSON object from a model response and parse it,
  * repairing the known malformations if needed.
  */
+/**
+ * Top-level `{...}` spans in the text, string-aware, in order of appearance.
+ * The greedy `\{[\s\S]*\}` this replaces ran from the FIRST `{` to the LAST
+ * `}` in the whole response — so a model that emitted its object and then a
+ * trailing remark containing a brace (or a second object) produced
+ * "Unexpected non-whitespace character after JSON" on a perfectly good
+ * answer. A truncated response (no closing brace) yields the open span to
+ * the end so the bracket-closing repair can still rescue it.
+ */
+function balancedObjects(text: string): string[] {
+  const out: string[] = [];
+  let depth = 0;
+  let start = -1;
+  let inString = false;
+  let escaped = false;
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+    if (inString) {
+      if (escaped) escaped = false;
+      else if (ch === "\\") escaped = true;
+      else if (ch === '"') inString = false;
+      continue;
+    }
+    if (ch === '"' && depth > 0) inString = true;
+    else if (ch === "{") {
+      if (depth === 0) start = i;
+      depth++;
+    } else if (ch === "}") {
+      if (depth > 0) depth--;
+      if (depth === 0 && start >= 0) {
+        out.push(text.slice(start, i + 1));
+        start = -1;
+      }
+    }
+  }
+  if (start >= 0) out.push(text.slice(start)); // truncated tail
+  return out;
+}
+
+/**
+ * Extract the outermost JSON object from a model response and parse it,
+ * repairing the known malformations if needed.
+ */
 export function parseModelJson<T = unknown>(text: string): ModelJsonResult<T> {
-  const match = text.match(/\{[\s\S]*\}/);
-  const raw = match ? match[0] : text.trim();
+  const spans = balancedObjects(text);
+  const greedy = text.match(/\{[\s\S]*\}/)?.[0];
+  // First balanced object first; the greedy span stays as a fallback for the
+  // case where an unescaped quote fooled the string walker.
+  const candidates = [...spans, ...(greedy && !spans.includes(greedy) ? [greedy] : [])];
+  const raw = candidates[0] ?? text.trim();
   if (!raw) return { ok: false, error: "no JSON object in response" };
 
-  try {
-    return { ok: true, value: JSON.parse(raw) as T, repaired: false };
-  } catch {
-    /* fall through to repairs */
+  for (const c of candidates) {
+    try {
+      return { ok: true, value: JSON.parse(c) as T, repaired: false };
+    } catch {
+      /* fall through to repairs */
+    }
   }
 
-  const attempts = [
-    escapeInsideStrings(raw),
-    stripTrailingCommas(escapeInsideStrings(raw)),
-    closeOpenBrackets(stripTrailingCommas(escapeInsideStrings(raw))),
-    closeOpenBrackets(raw), // truncation only — the pre-existing behaviour
-  ];
+  const attempts = candidates.flatMap((c) => [
+    escapeInsideStrings(c),
+    stripTrailingCommas(escapeInsideStrings(c)),
+    closeOpenBrackets(stripTrailingCommas(escapeInsideStrings(c))),
+    closeOpenBrackets(c), // truncation only — the pre-existing behaviour
+  ]);
   for (const candidate of attempts) {
     try {
       return { ok: true, value: JSON.parse(candidate) as T, repaired: true };

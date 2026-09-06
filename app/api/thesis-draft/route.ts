@@ -284,16 +284,25 @@ Rules:
 - Keep each custom under 250 characters. One test per condition. No judgment calls ("management loses credibility").
 - Ground everything in the material above — no invented figures, segments or events.`;
 
-    const resp = await client.messages.create({
-      model: "claude-sonnet-5",
-      thinking: { type: "disabled" },
-      max_tokens: 1400,
-      messages: [{ role: "user", content: prompt }],
-    });
-    const text = resp.content.filter((b): b is Anthropic.TextBlock => b.type === "text").map((b) => b.text).join("");
-    const parseResult = parseModelJson(text);
+    const ask = async (extra = "") => {
+      const resp = await client.messages.create({
+        model: "claude-sonnet-5",
+        thinking: { type: "disabled" },
+        max_tokens: 1600,
+        messages: [{ role: "user", content: prompt + extra }],
+      });
+      return resp.content.filter((b): b is Anthropic.TextBlock => b.type === "text").map((b) => b.text).join("");
+    };
+    let parseResult = parseModelJson(await ask());
     if (!parseResult.ok) {
-      console.error(`[thesis-draft] ${tk} JSON parse failed:`, parseResult.error, parseResult.excerpt ?? "");
+      // One retry with a hard format nudge — a bad wrapper (prose after the
+      // object, an unescaped quote) is a formatting slip, not a reason to
+      // throw the draft away.
+      console.warn(`[thesis-draft] ${tk} JSON parse failed, retrying once:`, parseResult.error, parseResult.excerpt ?? "");
+      parseResult = parseModelJson(await ask("\n\nFORMAT: reply with the JSON object ONLY — no prose before or after it, no code fences, every string double-quoted with inner quotes escaped, newlines inside strings written as \\n."));
+    }
+    if (!parseResult.ok) {
+      console.error(`[thesis-draft] ${tk} JSON parse failed twice:`, parseResult.error, parseResult.excerpt ?? "");
       return NextResponse.json({ error: `draft failed — unparseable response: ${parseResult.error}` }, { status: 502 });
     }
     const draft = sanitize(parseResult.value, available, {
