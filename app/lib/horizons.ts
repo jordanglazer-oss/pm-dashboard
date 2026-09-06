@@ -157,10 +157,14 @@ export function classifyScore(score: number): "Risk-On" | "Neutral" | "Risk-Off"
   return "Neutral";
 }
 
-/** Map the [-1, +1] weighted score onto a 0..100 dial (50 = dead neutral). */
+/** Map the [-1, +1] weighted score onto a 0..100 dial (50 = dead neutral).
+ *  Rounded through 6 decimals first: the weighted sum accumulates float error
+ *  (0.15 → 57.499999999999996), which would round the gauge DOWN to 57 while
+ *  the per-signal breakdown adds to 57.5. The two must agree. */
 export function scoreTo100(score: number): number | null {
   if (!isFinite(score)) return null;
-  return Math.round(((Math.max(-1, Math.min(1, score)) + 1) / 2) * 100);
+  const raw = ((Math.max(-1, Math.min(1, score)) + 1) / 2) * 100;
+  return Math.round(parseFloat(raw.toFixed(6)));
 }
 
 /**

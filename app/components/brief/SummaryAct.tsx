@@ -37,8 +37,9 @@ export function ActionQueue({
       setBusy(null);
     }
   };
+  const shown = showCleared ? [...(a?.items ?? []), ...(a?.dismissed ?? [])] : a?.items ?? [];
   return (
-    <Card>
+    <Card className={scrollable ? "flex min-h-[260px] flex-col" : ""}>
       <CardHeader
         title="Action queue"
         sub={a ? `${a.counts.open} open · ${a.counts.high} high` : "loading"}
@@ -55,8 +56,8 @@ export function ActionQueue({
       ) : a.items.length === 0 && !showCleared ? (
         <Empty>Nothing needs a decision right now.</Empty>
       ) : (
-        <ul className={`divide-y divide-line-soft ${scrollable ? "max-h-[298px] overflow-y-auto" : ""}`}>
-          {(showCleared ? [...a.items, ...a.dismissed] : a.items).map((it) => (
+        <ul className={`divide-y divide-line-soft ${scrollable ? "min-h-0 flex-1 basis-0 overflow-y-auto" : ""}`}>
+          {shown.map((it) => (
             <li key={it.id} className={`flex items-start gap-3 px-4 py-2.5 ${it.state ? "opacity-55" : ""}`}>
               <span className={`mt-[7px] h-2 w-2 shrink-0 rounded-full ${it.priority === "high" ? "bg-neg" : it.priority === "medium" ? "bg-warn" : "bg-ink-faint"}`} />
               <div className="min-w-0 flex-1">
@@ -97,6 +98,11 @@ export function ActionQueue({
             </li>
           ))}
         </ul>
+      )}
+      {a && scrollable && shown.length > 3 && (
+        <div className="border-t border-line-soft px-4 py-1 text-[10.5px] text-ink-3">
+          {shown.length} item{shown.length === 1 ? "" : "s"} — scroll the list, the page stays put
+        </div>
       )}
     </Card>
   );

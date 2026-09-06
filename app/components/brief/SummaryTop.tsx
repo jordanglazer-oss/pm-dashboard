@@ -3,7 +3,7 @@
 import React from "react";
 import Link from "next/link";
 import type { DailySummary } from "@/app/lib/daily-summary";
-import { Card, Dial, DivergingBar, Metric, Pct, Pill, Spark, fmtPct, regimeTone, timeAgo } from "./summary-ui";
+import { Card, Dial, DivergingBar, Metric, Pct, Pill, Spark, fmtPct, ordinal, regimeTone, timeAgo } from "./summary-ui";
 
 /**
  * The decision band — the four reads that answer the daily questions, sized to
@@ -253,13 +253,13 @@ export function HedgeCard({ s }: { s: DailySummary }) {
         <Metric label="5% OTM" value={anchor?.otm5PctOfSpot != null ? `${anchor.otm5PctOfSpot.toFixed(2)}%` : "—"} sub={anchor?.expiryLabel} />
         <Metric
           label="Prem %ile"
-          value={bucket?.otm5Percentile != null ? `${Math.round(bucket.otm5Percentile)}th` : "—"}
+          value={bucket?.otm5Percentile != null ? ordinal(bucket.otm5Percentile) : "—"}
           sub={h?.detail ? `${h.detail.sessions} sessions` : undefined}
           tone={bucket?.otm5Percentile != null ? (bucket.otm5Percentile <= 30 ? "pos" : bucket.otm5Percentile >= 70 ? "neg" : undefined) : undefined}
         />
         <Metric
           label="VIX3M %ile"
-          value={h?.detail?.volAnchor?.vix3m ? `${Math.round(h.detail.volAnchor.vix3m.percentile)}th` : "—"}
+          value={h?.detail?.volAnchor?.vix3m ? ordinal(h.detail.volAnchor.vix3m.percentile) : "—"}
           sub={h?.detail?.volAnchor?.vix3m ? `${h.detail.volAnchor.vix3m.years}y` : undefined}
         />
       </div>

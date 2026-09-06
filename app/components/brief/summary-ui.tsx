@@ -121,38 +121,56 @@ export function DivergingBar({ v, max = 1, className = "" }: { v: number | null;
   );
 }
 
-/** Semicircle 0..100 gauge. */
+/**
+ * Semicircle 0..100 gauge. The value is marked with a tick at the RIM rather
+ * than a needle from the pivot — a needle crosses the number at these sizes
+ * and makes it unreadable.
+ */
 export function Dial({ value, label, size = 148 }: { value: number | null; label: string | null; size?: number }) {
   const r = size / 2 - 8;
   const cx = size / 2;
   const cy = size / 2;
+  const at = (f: number, radius: number) => {
+    const a = Math.PI - (Math.max(0, Math.min(100, f)) / 100) * Math.PI;
+    return { x: cx + radius * Math.cos(a), y: cy - radius * Math.sin(a) };
+  };
   const arc = (from: number, to: number) => {
-    const a0 = Math.PI - (from / 100) * Math.PI;
-    const a1 = Math.PI - (to / 100) * Math.PI;
-    const p = (a: number) => `${(cx + r * Math.cos(a)).toFixed(2)},${(cy - r * Math.sin(a)).toFixed(2)}`;
-    return `M${p(a0)} A${r},${r} 0 0 1 ${p(a1)}`;
+    const a = at(from, r);
+    const b = at(to, r);
+    return `M${a.x.toFixed(2)},${a.y.toFixed(2)} A${r},${r} 0 0 1 ${b.x.toFixed(2)},${b.y.toFixed(2)}`;
   };
   const v = value == null ? null : Math.max(0, Math.min(100, value));
-  const needle = v == null ? null : Math.PI - (v / 100) * Math.PI;
   const tone = label === "Risk-On" ? "text-pos" : label === "Risk-Off" ? "text-neg" : "text-warn";
+  const inner = v == null ? null : at(v, r - 7);
+  const outer = v == null ? null : at(v, r + 6);
   return (
-    <svg width={size} height={size / 2 + 14} viewBox={`0 0 ${size} ${size / 2 + 14}`} aria-hidden>
+    <svg width={size} height={size / 2 + 16} viewBox={`0 0 ${size} ${size / 2 + 16}`} aria-hidden>
       <path d={arc(0, 33)} fill="none" strokeWidth="7" strokeLinecap="butt" className="stroke-neg-border" />
       <path d={arc(33, 67)} fill="none" strokeWidth="7" className="stroke-warn-border" />
       <path d={arc(67, 100)} fill="none" strokeWidth="7" className="stroke-pos-border" />
-      {needle != null && (
-        <>
-          <line x1={cx} y1={cy} x2={cx + (r - 10) * Math.cos(needle)} y2={cy - (r - 10) * Math.sin(needle)} strokeWidth="2.5" strokeLinecap="round" className={`stroke-current ${tone}`} />
-          <circle cx={cx} cy={cy} r="4" className={`fill-current ${tone}`} />
-        </>
+      {inner && outer && (
+        <line x1={inner.x} y1={inner.y} x2={outer.x} y2={outer.y} strokeWidth="3" strokeLinecap="round" className={`stroke-current ${tone}`} />
       )}
-      <text x={cx} y={cy - 14} textAnchor="middle" className={`fill-current font-mono ${tone}`} style={{ fontSize: 22, fontWeight: 600 }}>
+      <text x={cx} y={cy - 4} textAnchor="middle" className={`fill-current font-mono ${tone}`} style={{ fontSize: Math.round(size * 0.2), fontWeight: 600 }}>
         {v == null ? "—" : Math.round(v)}
       </text>
-      <text x={8} y={cy + 12} className="fill-current text-ink-3" style={{ fontSize: 9 }}>OFF</text>
-      <text x={size - 8} y={cy + 12} textAnchor="end" className="fill-current text-ink-3" style={{ fontSize: 9 }}>ON</text>
+      <text x={2} y={cy + 13} className="fill-current text-ink-3" style={{ fontSize: 9 }}>OFF</text>
+      <text x={size - 2} y={cy + 13} textAnchor="end" className="fill-current text-ink-3" style={{ fontSize: 9 }}>ON</text>
     </svg>
   );
+}
+
+/** Ordinal suffix — 1st, 2nd, 3rd, 4th … 21st, 31st. */
+export function ordinal(n: number): string {
+  const i = Math.round(n);
+  const mod100 = i % 100;
+  if (mod100 >= 11 && mod100 <= 13) return `${i}th`;
+  switch (i % 10) {
+    case 1: return `${i}st`;
+    case 2: return `${i}nd`;
+    case 3: return `${i}rd`;
+    default: return `${i}th`;
+  }
 }
 
 export function TickerLink({ ticker, className = "" }: { ticker: string; className?: string }) {

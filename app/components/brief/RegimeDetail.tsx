@@ -32,7 +32,7 @@ function BigDial({ value, label }: { value: number | null; label: string | null 
     return `M${a.x.toFixed(2)},${a.y.toFixed(2)} A${r},${r} 0 0 1 ${b.x.toFixed(2)},${b.y.toFixed(2)}`;
   };
   const v = value == null ? null : Math.max(0, Math.min(100, value));
-  const needle = v == null ? null : pt(v, r - 26);
+  const tick = v == null ? null : { inner: pt(v, r - 12), outer: pt(v, r + 10) };
   const tone = label === "Risk-On" ? "text-pos" : label === "Risk-Off" ? "text-neg" : "text-warn";
   const t33 = pt(33, r + 9);
   const t67 = pt(67, r + 9);
@@ -45,13 +45,10 @@ function BigDial({ value, label }: { value: number | null; label: string | null 
       <line x1={pt(67).x} y1={pt(67).y} x2={t67.x} y2={t67.y} strokeWidth="1" className="stroke-line" />
       <text x={t33.x - 6} y={t33.y - 3} textAnchor="middle" className="fill-current font-mono text-ink-3" style={{ fontSize: 9 }}>33</text>
       <text x={t67.x + 6} y={t67.y - 3} textAnchor="middle" className="fill-current font-mono text-ink-3" style={{ fontSize: 9 }}>67</text>
-      {needle && (
-        <>
-          <line x1={cx} y1={cy} x2={needle.x} y2={needle.y} strokeWidth="3.5" strokeLinecap="round" className={`stroke-current ${tone}`} />
-          <circle cx={cx} cy={cy} r="6.5" className={`fill-current ${tone}`} />
-        </>
+      {tick && (
+        <line x1={tick.inner.x} y1={tick.inner.y} x2={tick.outer.x} y2={tick.outer.y} strokeWidth="4" strokeLinecap="round" className={`stroke-current ${tone}`} />
       )}
-      <text x={cx} y={cy - 22} textAnchor="middle" className={`fill-current font-mono ${tone}`} style={{ fontSize: 42, fontWeight: 600 }}>
+      <text x={cx} y={cy - 8} textAnchor="middle" className={`fill-current font-mono ${tone}`} style={{ fontSize: 42, fontWeight: 600 }}>
         {v == null ? "—" : Math.round(v)}
       </text>
       <text x={10} y={cy + 22} className="fill-current text-ink-3" style={{ fontSize: 9.5 }}>RISK-OFF</text>
