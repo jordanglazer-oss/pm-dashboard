@@ -45,6 +45,9 @@ export function BriefCommandBar({
   regimeScore,
   regimeSignals,
   boundaryGap,
+  score100,
+  pending,
+  sections = BRIEF_SECTIONS,
   briefMode,
   onModeChange,
   onRegenerate,
@@ -56,6 +59,12 @@ export function BriefCommandBar({
   regimeScore?: number;
   regimeSignals?: string[];
   boundaryGap?: number;
+  /** Regime dial (0..100) from the weighted composite, when the engine has it. */
+  score100?: number | null;
+  /** A raw-label flip the 3-session hysteresis is still holding back. */
+  pending?: { label: string; days: number; needed: number } | null;
+  /** Rail entries; defaults to the classic five, the summary layout passes its own. */
+  sections?: BriefSection[];
   briefMode: "brief" | "input";
   onModeChange: (m: "brief" | "input") => void;
   onRegenerate: () => void;
@@ -88,10 +97,10 @@ export function BriefCommandBar({
 
   // Highlight the section currently in view. Uses IntersectionObserver so the
   // rail reflects scroll position without a scroll listener on every frame.
-  const [active, setActive] = useState<string>(BRIEF_SECTIONS[0].id);
+  const [active, setActive] = useState<string>(sections[0]?.id ?? BRIEF_SECTIONS[0].id);
   useEffect(() => {
     if (briefMode !== "brief") return;
-    const els = BRIEF_SECTIONS.map((s) => document.getElementById(s.id)).filter(
+    const els = sections.map((s) => document.getElementById(s.id)).filter(
       (e): e is HTMLElement => e !== null,
     );
     if (!els.length) return;
@@ -108,7 +117,7 @@ export function BriefCommandBar({
     );
     els.forEach((el) => obs.observe(el));
     return () => obs.disconnect();
-  }, [briefMode]);
+  }, [briefMode, sections]);
 
   const time = generatedAt
     ? new Date(generatedAt).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })
@@ -145,23 +154,36 @@ export function BriefCommandBar({
             <span className={`inline-flex items-center rounded-pill border px-2.5 py-[3px] text-[11px] font-bold uppercase tracking-[0.04em] ${regimeTone(regime)}`}>
               {regime}
             </span>
-            {total != null && total > 0 && (
-              <span className="font-mono text-[11px] text-ink-3">
-                {up}↑ {down}↓ / {total}
-                {typeof regimeScore === "number" && ` · net ${regimeScore >= 0 ? "+" : ""}${regimeScore}`}
+            {typeof score100 === "number" ? (
+              <span className="font-mono text-[11px] text-ink-3" title="Weighted regime dial, 0 = risk-off … 100 = risk-on">
+                dial {score100}
+                {total != null && total > 0 && ` · ${up}↑ ${down}↓ / ${total}`}
               </span>
+            ) : (
+              total != null && total > 0 && (
+                <span className="font-mono text-[11px] text-ink-3">
+                  {up}↑ {down}↓ / {total}
+                  {typeof regimeScore === "number" && ` · net ${regimeScore >= 0 ? "+" : ""}${regimeScore}`}
+                </span>
+              )
             )}
-            {typeof boundaryGap === "number" && boundaryGap > 0 && boundaryGap <= 3 && (
-              <span className="inline-flex items-center rounded-pill bg-neg-soft px-2 py-[3px] text-[10px] font-semibold text-neg">
-                {boundaryGap} from a flip
+            {pending ? (
+              <span className="inline-flex items-center rounded-pill bg-warn-soft px-2 py-[3px] text-[10px] font-semibold text-warn" title="The raw read has moved; the label follows after three consecutive sessions">
+                → {pending.label} {pending.days}/{pending.needed}
               </span>
+            ) : (
+              typeof boundaryGap === "number" && boundaryGap > 0 && boundaryGap <= 3 && (
+                <span className="inline-flex items-center rounded-pill bg-neg-soft px-2 py-[3px] text-[10px] font-semibold text-neg">
+                  {boundaryGap} from a flip
+                </span>
+              )
             )}
           </div>
         )}
 
         {/* Section rail — desktop inline, mobile on its own scrollable row */}
         <nav className="ml-auto hidden items-center gap-0.5 lg:flex" aria-label="Brief sections">
-          {BRIEF_SECTIONS.map((s) => (
+          {sections.map((s) => (
             <a
               key={s.id}
               href={`#${s.id}`}
@@ -209,7 +231,7 @@ export function BriefCommandBar({
       {/* Mobile section rail — horizontally scrollable so five labels fit any width */}
       {briefMode === "brief" && (
         <nav className="-mx-4 flex items-center gap-1 overflow-x-auto px-4 pb-2 lg:hidden" aria-label="Brief sections">
-          {BRIEF_SECTIONS.map((s) => (
+          {sections.map((s) => (
             <a
               key={s.id}
               href={`#${s.id}`}

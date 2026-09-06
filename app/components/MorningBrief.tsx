@@ -669,6 +669,18 @@ type Props = {
   scoredStocks: ScoredStock[];
   onBriefGenerated: (brief: MorningBriefType) => void;
   onUpdateMarketData: (updates: Partial<MarketData>) => void;
+  /**
+   * "summary" (the Brief page since Sept 2026): the deterministic
+   * DailySummaryView is rendered in the `summary` slot directly under the
+   * command bar, and the legacy Decide / Act sections are NOT rendered —
+   * their tiles (hedging, cash, earnings, do-today, risk flags) all live in
+   * the summary now. Board / Horizons / Narrative folds and Daily Input mode
+   * are untouched. "full" keeps the previous layout verbatim.
+   */
+  variant?: "full" | "summary";
+  summary?: React.ReactNode;
+  /** Rail entries for the command bar in summary mode. */
+  sections?: { id: string; label: string }[];
 };
 
 export function MorningBrief({
@@ -679,6 +691,9 @@ export function MorningBrief({
   scoredStocks,
   onBriefGenerated,
   onUpdateMarketData,
+  variant = "full",
+  summary,
+  sections,
 }: Props) {
   const [generating, setGenerating] = useState(false);
   // Modal visibility is separate from `generating` so "Run in background"
@@ -1434,11 +1449,16 @@ export function MorningBrief({
         regimeScore={brief?.regimeScore}
         regimeSignals={brief?.regimeSignals}
         boundaryGap={regimeTransition?.boundaryGap}
+        score100={marketRegime?.composite?.score100 ?? null}
+        pending={marketRegime?.composite?.pending ?? null}
+        sections={variant === "summary" ? sections : undefined}
         briefMode={briefMode}
         onModeChange={setBriefMode}
         onRegenerate={() => generateBrief(true)}
         generating={generating}
       />
+
+      {variant === "summary" && briefMode === "brief" && summary}
 
       {briefMode === "input" && (() => {
         /* ── Daily Input, in the design's card language. Every control,
@@ -1924,6 +1944,8 @@ export function MorningBrief({
       )}
 
       {briefMode === "brief" && (
+      <>
+      {variant === "full" && (
       <>
       {/* ── Decide: the verdict on the left, four compact decision tiles on the right ── */}
       <div style={{ scrollMarginTop: "var(--brief-scroll-mt, 132px)" }} className="mb-2 mt-2 flex items-baseline gap-2.5" id="s-decide">
@@ -2446,6 +2468,8 @@ export function MorningBrief({
       </section>
         </div>
       </div>
+      </>
+      )}
       {/* ── Board: contrarian gauges + macro tiles ── */}
       <div style={{ scrollMarginTop: "var(--brief-scroll-mt, 132px)" }} className="mb-2 mt-2 flex items-baseline gap-2.5" id="s-board">
         <h2 className="text-xs font-bold uppercase tracking-[0.22em] text-ink-3">Board</h2>
