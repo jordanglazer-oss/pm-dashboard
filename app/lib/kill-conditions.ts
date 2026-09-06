@@ -25,12 +25,54 @@
  */
 
 export type KillConditionKind =
+  | "metric" // a REPORTED company figure (from the ingested FactSet Metrics Recap) vs a threshold — the pillar guard
+  | "sia_floor" // SIA relative-strength percentile must stay ≥ threshold (position in the market)
+  | "equate_rank" // RBC Equate composite rank must stay ≤ threshold (position in its universe)
+  | "marketedge" // MarketEdge opinion must not read Avoid (technical position)
   | "score_floor" // composite score must stay ≥ threshold
   | "score_decay" // composite must not fall by ≥ threshold points over ~45d
   | "revisions" // net FY+1 revisions (revUp − revDown) must stay > threshold
   | "risk_alert" // no CRITICAL technical risk alert on the name
   | "ma200" // price must hold above the 200-day average
-  | "custom"; // prose-only, manually judged
+  | "custom"; // prose-only, AI-verified against filings after each report
+
+/**
+ * A `metric` condition's spec: WHICH reported line, read HOW, against WHAT.
+ *
+ * Resolved deterministically by app/lib/metric-resolver against the newest
+ * FactSet "Metrics Recap" alert on file for the name (pm:street-takeaways,
+ * kind "metrics"): `results[]` rows (actual / consensus / YoY per line) and
+ * `guidanceLines[]` (value per period + metric). The match is a normalised
+ * substring on the line's label, so "Data Center revenue" finds "Data Center
+ * revenue" and "Data center rev." alike. No LLM in the loop — the figure is
+ * whatever the recap printed, with its date.
+ */
+export type MetricSpec = {
+  /** Human label, e.g. "Data Center revenue YoY growth". */
+  label: string;
+  /** Where the figure comes from. */
+  source: "results" | "guidance";
+  /** Label (results) or metric name (guidance) to match, case-insensitive substring. */
+  match: string;
+  /** results only: read the reported level (`actual`) or the YoY change (`yoy`). Default `actual`. */
+  field?: "actual" | "yoy";
+  /** guidance only: restrict to a period label substring (e.g. "FY", "Q3"). */
+  period?: string;
+  comparator: ">=" | "<=";
+  threshold: number;
+  /** Display unit hint: "%" | "$" | "x" | "" . */
+  unit?: string;
+};
+
+/** A thesis pillar — one of the 2-4 things the case actually rests on. Every
+ *  condition should guard exactly one pillar (`pillarId`). */
+export type ThesisPillar = {
+  id: string;
+  /** 2-5 words, e.g. "Data-center demand", "Margin structure". */
+  title: string;
+  /** One falsifiable sentence — the belief, with the figure it rests on. */
+  claim: string;
+};
 
 export type KillCondition = {
   id: string;
@@ -46,6 +88,10 @@ export type KillCondition = {
    *  conditions so a card shows WHAT each breaker is protecting, not just the
    *  metric — a list of raw metrics reads as trivia detached from the thesis. */
   theme?: string;
+  /** The pillar this condition guards (ThesisPillar.id). */
+  pillarId?: string;
+  /** `metric` kind only — the reported-figure spec. */
+  metric?: MetricSpec;
   /** ISO date this condition was registered — pre-registration timestamp. */
   addedAt: string;
   /** Set by the caller when a check transitions OK → TRIPPED; cleared when it
@@ -105,6 +151,28 @@ export type KillSignals = {
   /** Latest price and 200-day average. */
   price?: number | null;
   ma200?: number | null;
+  // ── Server-resolved extras (app/lib/metric-resolver) ──
+  /** Reading per `metric` condition id, resolved from the ingested recap. null = no matching line. */
+  metricReadings?: Record<string, MetricReading | null>;
+  /** SIA relative-strength percentile (0-100) from pm:sia-history, and SMAX 0-10 off the stock row. */
+  siaPercentile?: number | null;
+  siaSmax?: number | null;
+  /** RBC Equate composite rank (1 = best) from the Research Equate list, null when not in the top decile list. */
+  equateRank?: number | null;
+  /** MarketEdge opinion + power rating off the stock row. */
+  marketEdgeOpinion?: "long" | "neutral" | "avoid" | null;
+  marketEdgePower?: number | null;
+};
+
+/** What the resolver found for one `metric` condition. */
+export type MetricReading = {
+  /** Parsed numeric value in the condition's unit (percent for yoy / margin lines). */
+  value: number;
+  /** The line as printed, e.g. "$41.1B vs consensus $40.9B (+73% YoY)". */
+  display: string;
+  /** Alert date (YYYY-MM-DD) and event, e.g. "Q2 Earnings". */
+  asOf: string;
+  event?: string;
 };
 
 export const KILL_TEMPLATES: {
@@ -114,6 +182,10 @@ export const KILL_TEMPLATES: {
   defaultThreshold?: number;
   describe: (threshold?: number) => string;
 }[] = [
+  { kind: "metric", label: "Reported metric", describe: () => "A reported figure vs a threshold (set via Draft with AI)" },
+  { kind: "sia_floor", label: "SIA percentile floor", defaultThreshold: 50, describe: (t) => `SIA relative-strength percentile stays ≥ ${t ?? 50}` },
+  { kind: "equate_rank", label: "Equate rank", defaultThreshold: 60, describe: (t) => `RBC Equate rank stays ≤ ${t ?? 60} (top decile list)` },
+  { kind: "marketedge", label: "MarketEdge", describe: () => "MarketEdge opinion does not flip to Avoid" },
   { kind: "score_floor", label: "Score floor", defaultThreshold: 22, describe: (t) => `Composite stays ≥ ${t ?? 22}` },
   { kind: "score_decay", label: "Score decay", defaultThreshold: 5, describe: (t) => `Composite does not drop ≥ ${t ?? 5} pts over ~45d` },
   { kind: "revisions", label: "Estimate revisions", defaultThreshold: 0, describe: (t) => `Net FY+1 revisions stay ${(t ?? 0) === 0 ? "non-negative" : `> ${t}`}` },
@@ -122,8 +194,20 @@ export const KILL_TEMPLATES: {
   { kind: "custom", label: "Custom (AI-checked)", describe: () => "Verified by AI web check after each earnings report" },
 ];
 
+const fmtThreshold = (m: MetricSpec): string => {
+  const u = m.unit ?? "";
+  if (u === "%") return `${m.threshold}%`;
+  if (u === "$") return `$${m.threshold}${m.field === "yoy" ? "%" : ""}`;
+  return `${m.threshold}${u}`;
+};
+
 export function describeCondition(c: KillCondition): string {
   if (c.kind === "custom") return c.note || "Custom condition";
+  if (c.kind === "metric" && c.metric) {
+    const m = c.metric;
+    const what = m.field === "yoy" ? `${m.label} (YoY)` : m.label;
+    return `${what} stays ${m.comparator === ">=" ? "≥" : "≤"} ${fmtThreshold(m)}`;
+  }
   const t = KILL_TEMPLATES.find((x) => x.kind === c.kind);
   return t ? t.describe(c.threshold) : c.kind;
 }
@@ -179,6 +263,57 @@ export function checkCondition(c: KillCondition, s: KillSignals): KillCheck {
         condition: c,
         status: s.price >= s.ma200 ? "ok" : "tripped",
         reading: `${pct >= 0 ? "+" : ""}${fmt(pct, 1)}% vs 200DMA`,
+      };
+    }
+    case "metric": {
+      const m = c.metric;
+      if (!m) return { condition: c, status: "unknown", reading: "no metric spec" };
+      const r = s.metricReadings?.[c.id];
+      if (r == null) {
+        return {
+          condition: c,
+          status: "unknown",
+          reading: s.metricReadings && c.id in s.metricReadings ? `"${m.match}" not found in the latest recap` : "awaiting the next Metrics Recap",
+        };
+      }
+      const ok = m.comparator === ">=" ? r.value >= m.threshold : r.value <= m.threshold;
+      return {
+        condition: c,
+        status: ok ? "ok" : "tripped",
+        reading: `${r.display} · ${r.event ? `${r.event} ` : ""}${r.asOf}`,
+      };
+    }
+    case "sia_floor": {
+      const th = c.threshold ?? 50;
+      if (s.siaPercentile == null) {
+        // SMAX is too coarse to stand in for a percentile, but it can still say
+        // "clearly below" (SMAX ≤ 3 ≈ bottom third) rather than nothing.
+        if (s.siaSmax == null) return { condition: c, status: "unknown", reading: "no SIA reading" };
+        return { condition: c, status: "unknown", reading: `SMAX ${s.siaSmax} (no percentile logged yet)` };
+      }
+      return {
+        condition: c,
+        status: s.siaPercentile >= th ? "ok" : "tripped",
+        reading: `SIA ${s.siaPercentile}th percentile${s.siaSmax != null ? ` · SMAX ${s.siaSmax}` : ""}`,
+      };
+    }
+    case "equate_rank": {
+      const th = c.threshold ?? 60;
+      if (s.equateRank === undefined) return { condition: c, status: "unknown", reading: "no Equate sheet on file" };
+      if (s.equateRank === null) return { condition: c, status: "tripped", reading: "dropped out of the Equate top-decile list" };
+      return {
+        condition: c,
+        status: s.equateRank <= th ? "ok" : "tripped",
+        reading: `Equate rank ${s.equateRank}`,
+      };
+    }
+    case "marketedge": {
+      if (!s.marketEdgeOpinion) return { condition: c, status: "unknown", reading: "no MarketEdge read" };
+      const pr = s.marketEdgePower != null ? ` · power ${s.marketEdgePower}` : "";
+      return {
+        condition: c,
+        status: s.marketEdgeOpinion === "avoid" ? "tripped" : "ok",
+        reading: `MarketEdge ${s.marketEdgeOpinion.toUpperCase()}${pr}`,
       };
     }
     case "custom": {

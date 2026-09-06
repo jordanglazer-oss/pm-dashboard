@@ -9,6 +9,7 @@ import { refreshFactsetEstimates } from "@/app/lib/estimates-refresh";
 import { refreshMarketRegime } from "@/app/lib/market-regime-refresh";
 import { refreshTechnicals } from "@/app/lib/technicals-refresh";
 import { rebuildThesisHealth } from "@/app/lib/thesis-health-refresh";
+import { runThesisReviews } from "@/app/lib/thesis-review";
 import { runCustomConditionChecks } from "@/app/lib/custom-condition-check";
 import { computeBookFactorScores } from "@/app/lib/factor-scores";
 import { computeDataHealth, type DataHealthReport } from "@/app/lib/data-health";
@@ -395,6 +396,21 @@ export async function GET(req: NextRequest) {
       customChecks = { ran: false, error: msg };
     }
 
+    // ── 4b. Post-earnings thesis reviews ─────────────────────────────
+    // One hash-gated call per underwritten name whose evidence or synthesis is
+    // newer than its last review (max 5/night). Proposes a diff the PM accepts
+    // in the ThesisTile; never rewrites a signed thesis. Same wall-clock budget
+    // as the custom checks so the digest still runs.
+    let thesisReviews: { reviewed: number; skipped: number; errors: number } | { ran: false; error: string };
+    try {
+      const r = await runThesisReviews({ deadlineAt: startedAt + CUSTOM_CHECK_DEADLINE_MS });
+      thesisReviews = { reviewed: r.reviewed.length, skipped: r.skipped, errors: r.errors };
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      console.error("[backup-redis] thesis reviews failed:", msg);
+      thesisReviews = { ran: false, error: msg };
+    }
+
     // ── 5. Run invariant check inline ────────────────────────────────
     // Best-effort: a thrown invariant check must not turn a successful
     // backup into a failed response. We log + carry on if it errors.
@@ -435,6 +451,7 @@ export async function GET(req: NextRequest) {
       technicalsRefresh,
       thesisRefresh,
       customChecks,
+      thesisReviews,
       factorScores,
       dataHealth: dataHealth ? { ok: dataHealth.ok, problems: dataHealth.problemCount } : null,
       alertDigest,

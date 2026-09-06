@@ -9,7 +9,9 @@ import {
   type KillCondition,
   type KillSignals,
   type KillStatus,
+  type ThesisPillar,
 } from "@/app/lib/kill-conditions";
+import type { ThesisReview, ReviewChange } from "@/app/lib/thesis-review";
 
 /**
  * Thesis tile (stock page) — the pre-registration surface of the
@@ -39,7 +41,36 @@ type ThesisEntry = {
   reUnderwriteBy?: string;
   /** True when the saved thesis started from an AI draft (PM still signed it). */
   aiDrafted?: boolean;
+  /** The 2-4 things the case rests on; conditions link to them via pillarId. */
+  pillars?: ThesisPillar[];
+  history?: Array<{ savedAt: string; reason: string }>;
 };
+
+const PILLAR_STATUS_STYLE: Record<string, string> = {
+  confirmed: "border-pos-border bg-pos-soft text-pos",
+  contested: "border-warn-border bg-warn-soft text-warn",
+  broken: "border-neg-border bg-neg-soft text-neg",
+  unknown: "border-line bg-surface-2 text-ink-3",
+};
+
+/** Kinds the PM can add by hand. `metric` needs a recap line to bind to, so it
+ *  arrives only via Draft with AI / a review (which validate the line exists). */
+const MANUAL_TEMPLATES = KILL_TEMPLATES.filter((t) => t.kind !== "metric");
+
+/** Turn a review change's `after` into a condition row for the editor. */
+function conditionFromChange(after: NonNullable<ReviewChange["after"]>, base?: KillCondition): KillCondition {
+  return {
+    id: base?.id ?? `${after.kind ?? "custom"}-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+    kind: after.kind ?? base?.kind ?? "custom",
+    threshold: after.threshold ?? (after.kind && after.kind !== base?.kind ? undefined : base?.threshold),
+    note: after.note ?? (after.kind === "custom" ? base?.note : undefined),
+    theme: after.theme ?? base?.theme,
+    pillarId: after.pillarId ?? base?.pillarId,
+    metric: after.metric ?? (after.kind === "metric" ? base?.metric : undefined),
+    addedAt: base?.addedAt ?? todayIso(),
+    trippedAt: null,
+  };
+}
 
 const STATUS_STYLE: Record<KillStatus, { dot: string; pill: string; label: string }> = {
   ok: { dot: "bg-pos", pill: "bg-pos-soft text-pos border-pos-border", label: "OK" },
@@ -55,11 +86,15 @@ function todayIso(): string {
 export default function ThesisTile({
   ticker,
   signals,
+  earningsDate,
   className,
 }: {
   ticker: string;
   /** Live inputs for the deterministic checks, assembled by the stock page. */
   signals: KillSignals;
+  /** Next earnings date (YYYY-MM-DD) — sets the re-underwrite clock to the
+   *  print + 7 days, so the review shows up when the evidence does. */
+  earningsDate?: string | null;
   className?: string;
 }) {
   const [entry, setEntry] = useState<ThesisEntry | null>(null);
@@ -68,7 +103,18 @@ export default function ThesisTile({
   const [saving, setSaving] = useState(false);
   const [draftWhy, setDraftWhy] = useState("");
   const [draftConds, setDraftConds] = useState<KillCondition[]>([]);
-  const [addKind, setAddKind] = useState(KILL_TEMPLATES[0].kind);
+  const [draftPillars, setDraftPillars] = useState<ThesisPillar[]>([]);
+  const [addKind, setAddKind] = useState(MANUAL_TEMPLATES[0].kind);
+  const [addPillar, setAddPillar] = useState<string>("");
+  // Server-resolved signals (metric readings off the ingested recap, SIA /
+  // Equate / MarketEdge) — the half of KillSignals the page can't compute.
+  const [extras, setExtras] = useState<Partial<KillSignals>>({});
+  // Post-earnings review (app/lib/thesis-review): pillar statuses + a diff.
+  const [review, setReview] = useState<ThesisReview | null>(null);
+  const [reviewing, setReviewing] = useState(false);
+  const [reviewErr, setReviewErr] = useState<string | null>(null);
+  const [accepted, setAccepted] = useState<Set<string>>(new Set());
+  const [versionReason, setVersionReason] = useState<string>("edit");
   const [addThreshold, setAddThreshold] = useState<string>("");
   const [addNote, setAddNote] = useState("");
   const [journalNote, setJournalNote] = useState<string | null>(null);
@@ -95,26 +141,31 @@ export default function ThesisTile({
         return;
       }
       setDraftWhy(d.draft.why);
+      const pillars: ThesisPillar[] = Array.isArray(d.draft.pillars) ? d.draft.pillars : [];
+      setDraftPillars(pillars);
       setDraftConds(
         (
-          d.draft.conditions as { kind: KillCondition["kind"]; threshold?: number; note?: string; theme?: string }[]
+          d.draft.conditions as { kind: KillCondition["kind"]; threshold?: number; note?: string; theme?: string; pillarId?: string; metric?: KillCondition["metric"] }[]
         ).map((c, i) => ({
           id: `${c.kind}-${Date.now()}-${i}`,
           kind: c.kind,
           threshold: c.threshold,
           note: c.note,
           theme: c.theme,
+          pillarId: c.pillarId,
+          metric: c.metric,
           addedAt: todayIso(),
         })),
       );
       setAiDrafted(true);
+      setVersionReason(entry ? "redrafted with AI" : "underwrite");
       setEditing(true);
     } catch {
       setDraftErr("draft failed");
     } finally {
       setDrafting(false);
     }
-  }, [ticker]);
+  }, [ticker, entry]);
 
   // "Thesis required" banner → "Draft with AI": the banner sits outside this
   // tile, so it asks via a window event rather than a prop drilled through
@@ -168,9 +219,24 @@ export default function ThesisTile({
   }, [ticker]);
 
   const liveSignals = useMemo<KillSignals>(
-    () => ({ ...signals, scoreDelta45d: scoreDelta45d === undefined ? signals.scoreDelta45d : scoreDelta45d }),
-    [signals, scoreDelta45d],
+    () => ({ ...signals, ...extras, scoreDelta45d: scoreDelta45d === undefined ? signals.scoreDelta45d : scoreDelta45d }),
+    [signals, extras, scoreDelta45d],
   );
+
+  // Server-resolved signals + the cached review, re-read whenever the entry
+  // changes (a save can add metric conditions the resolver must now read).
+  useEffect(() => {
+    let alive = true;
+    fetch(`/api/thesis-signals?ticker=${encodeURIComponent(ticker)}`)
+      .then((r) => r.json())
+      .then((d) => alive && d?.extras && setExtras(d.extras))
+      .catch(() => {});
+    fetch(`/api/thesis-review?ticker=${encodeURIComponent(ticker)}`)
+      .then((r) => r.json())
+      .then((d) => alive && setReview(d?.review ?? null))
+      .catch(() => {});
+    return () => { alive = false; };
+  }, [ticker, entry?.updatedAt]);
 
   useEffect(() => {
     let alive = true;
@@ -230,12 +296,63 @@ export default function ThesisTile({
   const startEdit = () => {
     setDraftWhy(entry?.why ?? "");
     setDraftConds(conditions.map((c) => ({ ...c })));
+    setDraftPillars((entry?.pillars ?? []).map((p) => ({ ...p })));
     setAiDrafted(false);
+    setVersionReason(entry ? "edit" : "underwrite");
     setEditing(true);
   };
 
+  /** Open the editor with the ACCEPTED review changes applied. Nothing is
+   *  saved until the PM signs — the review only ever proposes. */
+  const applyReview = () => {
+    if (!review) return;
+    let conds = conditions.map((c) => ({ ...c }));
+    let pillars = (entry?.pillars ?? []).map((p) => ({ ...p }));
+    for (const ch of review.changes) {
+      if (!accepted.has(ch.id)) continue;
+      if (ch.type === "drop" && ch.conditionId) conds = conds.filter((c) => c.id !== ch.conditionId);
+      else if ((ch.type === "tighten" || ch.type === "loosen" || ch.type === "replace") && ch.conditionId && ch.after) {
+        conds = conds.map((c) => (c.id === ch.conditionId ? conditionFromChange(ch.after!, c) : c));
+      } else if (ch.type === "add" && ch.after) conds.push(conditionFromChange(ch.after));
+      else if (ch.type === "pillar" && ch.after?.title && ch.after.claim) {
+        if (ch.pillarId && pillars.some((p) => p.id === ch.pillarId)) {
+          pillars = pillars.map((p) => (p.id === ch.pillarId ? { ...p, title: ch.after!.title!, claim: ch.after!.claim! } : p));
+        } else {
+          pillars.push({ id: `${ch.after.title.toLowerCase().replace(/[^a-z0-9]+/g, "-").slice(0, 32)}-${pillars.length + 1}`, title: ch.after.title, claim: ch.after.claim });
+        }
+      }
+    }
+    setDraftWhy(entry?.why ?? "");
+    setDraftConds(conds);
+    setDraftPillars(pillars);
+    setAiDrafted(false);
+    setVersionReason("review applied");
+    setEditing(true);
+  };
+
+  const runReview = useCallback(async (force = false) => {
+    setReviewing(true);
+    setReviewErr(null);
+    try {
+      const r = await fetch("/api/thesis-review", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ticker, force }) });
+      const d = await r.json();
+      if (d?.review) setReview(d.review);
+      else setReviewErr(d?.error || "review failed");
+    } catch {
+      setReviewErr("review failed");
+    } finally {
+      setReviewing(false);
+    }
+  }, [ticker]);
+
+  const dismissChange = async (id: string) => {
+    setReview((r) => (r ? { ...r, dismissed: [...(r.dismissed ?? []), id] } : r));
+    setAccepted((s) => { const n = new Set(s); n.delete(id); return n; });
+    await fetch("/api/thesis-review", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ticker, dismiss: [id] }) }).catch(() => {});
+  };
+
   const addCondition = () => {
-    const tpl = KILL_TEMPLATES.find((t) => t.kind === addKind);
+    const tpl = MANUAL_TEMPLATES.find((t) => t.kind === addKind);
     if (!tpl) return;
     if (addKind === "custom" && !addNote.trim()) return;
     const th = addThreshold.trim() === "" ? tpl.defaultThreshold : Number(addThreshold);
@@ -246,6 +363,8 @@ export default function ThesisTile({
         kind: addKind,
         threshold: typeof th === "number" && isFinite(th) ? th : tpl.defaultThreshold,
         note: addKind === "custom" ? addNote.trim() : undefined,
+        pillarId: addPillar || undefined,
+        theme: addPillar ? draftPillars.find((p) => p.id === addPillar)?.title : undefined,
         addedAt: todayIso(),
       },
     ]);
@@ -260,15 +379,30 @@ export default function ThesisTile({
         ticker,
         why: draftWhy.trim(),
         killConditions: draftConds,
+        pillars: draftPillars,
         aiDrafted, // provenance: started from an AI draft (PM edited + signed)
+        versionReason, // the server versions the PRIOR signed state under this reason
       };
-      if (!entry?.underwrittenAt) {
-        // First underwrite: stamp date + price, and set the quarterly clock.
-        body.underwrittenAt = todayIso();
-        if (signals.price != null) body.underwritePrice = signals.price;
+      // Re-underwrite clock: the next print + 7 days when known (the review
+      // shows up when the evidence does), else 90 days. Reset on every signed
+      // save so a review-applied thesis gets a fresh clock.
+      const nextDue = (() => {
+        if (earningsDate && /^\d{4}-\d{2}-\d{2}/.test(earningsDate)) {
+          const d = new Date(`${earningsDate.slice(0, 10)}T00:00:00Z`);
+          if (d.getTime() > Date.now()) {
+            d.setUTCDate(d.getUTCDate() + 7);
+            return d.toISOString().slice(0, 10);
+          }
+        }
         const due = new Date();
         due.setDate(due.getDate() + 90);
-        body.reUnderwriteBy = due.toISOString().slice(0, 10);
+        return due.toISOString().slice(0, 10);
+      })();
+      body.reUnderwriteBy = nextDue;
+      if (!entry?.underwrittenAt) {
+        // First underwrite: stamp date + price.
+        body.underwrittenAt = todayIso();
+        if (signals.price != null) body.underwritePrice = signals.price;
       }
       await fetch("/api/kv/position-theses", {
         method: "POST",
@@ -279,16 +413,23 @@ export default function ThesisTile({
         why: draftWhy.trim(),
         updatedAt: new Date().toISOString(),
         killConditions: draftConds,
+        pillars: draftPillars,
         underwrittenAt: e?.underwrittenAt ?? (body.underwrittenAt as string | undefined),
         underwritePrice: e?.underwritePrice ?? (body.underwritePrice as number | undefined) ?? null,
-        reUnderwriteBy: e?.reUnderwriteBy ?? (body.reUnderwriteBy as string | undefined),
+        reUnderwriteBy: body.reUnderwriteBy as string | undefined,
         aiDrafted,
+        history: e?.history,
       }));
+      if (versionReason === "review applied") {
+        setReview((r) => (r ? { ...r, appliedAt: new Date().toISOString() } : r));
+        setAccepted(new Set());
+        fetch("/api/thesis-review", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ticker, applied: true }) }).catch(() => {});
+      }
       setEditing(false);
     } finally {
       setSaving(false);
     }
-  }, [ticker, draftWhy, draftConds, entry, signals.price, aiDrafted]);
+  }, [ticker, draftWhy, draftConds, draftPillars, entry, signals.price, aiDrafted, versionReason, earningsDate]);
 
   const runCheck = useCallback(async () => {
     setChecking(true);
@@ -415,6 +556,16 @@ export default function ThesisTile({
             >
               {drafting ? "Drafting…" : "✦ Draft with AI"}
             </button>
+            {entry?.why && (
+              <button
+                onClick={() => runReview(!!review)}
+                disabled={reviewing}
+                title="One hash-gated model call — reads the thesis pillar by pillar against the latest report, recap and synthesis, and proposes changes you accept or reject. Runs automatically after new evidence lands."
+                className="rounded-control border border-line bg-white px-2.5 py-1 text-xs font-semibold text-ink-2 hover:text-ink disabled:opacity-50"
+              >
+                {reviewing ? "Reviewing…" : review ? "Re-review" : "Review vs evidence"}
+              </button>
+            )}
             <button
               onClick={startEdit}
               className="rounded-control border border-line bg-white px-2.5 py-1 text-xs font-semibold text-ink-2 hover:text-ink"
@@ -424,6 +575,7 @@ export default function ThesisTile({
           </>
         )}
       </div>
+      {reviewErr && !editing && <p className="border-b border-line-soft px-4 py-2 text-[11px] text-neg">{reviewErr}</p>}
       {draftErr && !editing && (
         <p className="border-b border-line-soft px-4 py-2 text-[11px] text-neg">{draftErr}</p>
       )}
@@ -443,9 +595,40 @@ export default function ThesisTile({
             </p>
           )}
 
-          {checks.length > 0 && (
+          {(checks.length > 0 || (entry?.pillars?.length ?? 0) > 0) && (
             <div className="divide-y divide-line-soft">
-              {checks.map((k) => {
+              {(() => {
+                const pillars = entry?.pillars ?? [];
+                const byPillar = new Map<string, typeof checks>();
+                const loose: typeof checks = [];
+                for (const k of checks) {
+                  const pid = k.condition.pillarId;
+                  if (pid && pillars.some((p) => p.id === pid)) byPillar.set(pid, [...(byPillar.get(pid) ?? []), k]);
+                  else loose.push(k);
+                }
+                const groups: Array<{ pillar: ThesisPillar | null; rows: typeof checks }> = [
+                  ...pillars.map((p) => ({ pillar: p, rows: byPillar.get(p.id) ?? [] })),
+                  ...(loose.length ? [{ pillar: null, rows: loose }] : []),
+                ];
+                return groups.map(({ pillar, rows }) => {
+                  const rs = pillar && review ? review.pillars.find((x) => x.pillarId === pillar.id) : undefined;
+                  return (
+                    <div key={pillar?.id ?? "loose"}>
+                      {pillar ? (
+                        <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5 bg-surface-2/60 px-4 py-1.5">
+                          <span className="text-[10px] font-bold uppercase tracking-[0.14em] text-accent">{pillar.title}</span>
+                          <span className="min-w-0 flex-1 text-[12px] text-ink-2">{pillar.claim}</span>
+                          {rs && (
+                            <span className={`rounded-full border px-1.5 py-px text-[9px] font-bold uppercase ${PILLAR_STATUS_STYLE[rs.status]}`} title={rs.reading}>
+                              {rs.status}
+                            </span>
+                          )}
+                          {rows.length === 0 && <span className="text-[10px] text-warn">no condition guards this pillar</span>}
+                        </div>
+                      ) : pillars.length > 0 ? (
+                        <div className="bg-surface-2/60 px-4 py-1.5 text-[10px] font-bold uppercase tracking-[0.14em] text-ink-3">Position &amp; other</div>
+                      ) : null}
+              {rows.map((k) => {
                 const st = STATUS_STYLE[k.status];
                 return (
                   <div key={k.condition.id} className="flex items-start gap-2.5 px-4 py-2">
@@ -479,8 +662,81 @@ export default function ThesisTile({
                   </div>
                 );
               })}
+                    </div>
+                  );
+                });
+              })()}
             </div>
           )}
+
+          {/* ── Post-earnings review: pillar verdicts + a diff to accept/reject ── */}
+          {review && (() => {
+            const applied = !!review.appliedAt && review.appliedAt >= review.generatedAt;
+            const open = review.changes.filter((c) => !(review.dismissed ?? []).includes(c.id));
+            const CHANGE_LABEL: Record<ReviewChange["type"], string> = { tighten: "Tighten", loosen: "Loosen", replace: "Replace", add: "Add", drop: "Drop", pillar: "Pillar" };
+            return (
+              <div className="border-t border-line px-4 py-3">
+                <div className="mb-1.5 flex flex-wrap items-center gap-2">
+                  <span className="text-[10px] font-bold uppercase tracking-[0.14em] text-ink-3">Review vs evidence</span>
+                  {review.pillars.map((p) => (
+                    <span key={p.pillarId} className={`rounded-full border px-1.5 py-px text-[9px] font-bold uppercase ${PILLAR_STATUS_STYLE[p.status]}`} title={`${p.title}: ${p.reading}`}>
+                      {p.title} · {p.status}
+                    </span>
+                  ))}
+                  <span className="ml-auto font-mono text-[10px] text-ink-faint">
+                    claude · {review.generatedAt.slice(0, 10)}{review.evidenceAt ? ` · evidence ${review.evidenceAt.slice(0, 10)}` : ""}
+                  </span>
+                </div>
+                <p className="text-[13px] leading-5 text-ink-2">{review.summary}</p>
+                {open.length === 0 ? (
+                  <p className="mt-1.5 text-[11px] text-ink-3">{applied ? "Changes applied and re-signed." : "No changes proposed — the thesis stands as written."}</p>
+                ) : applied ? (
+                  <p className="mt-1.5 text-[11px] text-ink-3">Applied and re-signed on {review.appliedAt!.slice(0, 10)}.</p>
+                ) : (
+                  <div className="mt-2 space-y-1.5">
+                    {open.map((ch) => {
+                      const on = accepted.has(ch.id);
+                      const afterText = ch.after
+                        ? ch.type === "pillar"
+                          ? `${ch.after.title}: ${ch.after.claim}`
+                          : describeCondition({ id: "x", kind: ch.after.kind ?? "custom", threshold: ch.after.threshold, note: ch.after.note, metric: ch.after.metric, addedAt: "" })
+                        : null;
+                      return (
+                        <div key={ch.id} className={`flex items-start gap-2.5 rounded-lg border px-2.5 py-2 ${on ? "border-accent-border bg-accent-soft/40" : "border-line bg-white"}`}>
+                          <button
+                            onClick={() => setAccepted((s) => { const n = new Set(s); if (n.has(ch.id)) n.delete(ch.id); else n.add(ch.id); return n; })}
+                            className={`mt-0.5 h-4 w-4 shrink-0 rounded border text-[10px] font-bold leading-none ${on ? "border-accent bg-accent text-white" : "border-line bg-white text-transparent"}`}
+                            aria-pressed={on}
+                            title={on ? "Accepted — will be applied" : "Accept this change"}
+                          >
+                            ✓
+                          </button>
+                          <div className="min-w-0 flex-1 text-[12px]">
+                            <span className="mr-1.5 rounded bg-surface-2 px-1.5 py-px text-[9px] font-bold uppercase text-ink-2">{CHANGE_LABEL[ch.type]}</span>
+                            {ch.before && <span className="text-ink-3 line-through">{ch.before}</span>}
+                            {ch.before && afterText && <span className="mx-1 text-ink-faint">→</span>}
+                            {afterText && <span className="font-medium text-ink">{afterText}</span>}
+                            <div className="text-[11px] text-ink-3">{ch.reason}</div>
+                          </div>
+                          <button onClick={() => dismissChange(ch.id)} className="shrink-0 text-[11px] text-ink-3 hover:text-neg" title="Dismiss — won't be proposed again from this review">dismiss</button>
+                        </div>
+                      );
+                    })}
+                    <div className="flex items-center justify-end gap-2 pt-1">
+                      <span className="mr-auto text-[11px] text-ink-3">Accepted changes open in the editor; nothing changes until you re-sign.</span>
+                      <button
+                        onClick={applyReview}
+                        disabled={accepted.size === 0}
+                        className="rounded-control bg-ink px-3 py-1 text-xs font-semibold text-white disabled:opacity-40"
+                      >
+                        Apply {accepted.size || ""} &amp; re-sign
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            );
+          })()}
 
           {tripped > 0 && check && (
             <div className="border-t border-line px-4 py-3">
@@ -554,12 +810,63 @@ export default function ThesisTile({
             placeholder={`Why do you own ${ticker}? State it falsifiably: "buying because X, expecting Y, wrong if K."`}
             className="w-full rounded-lg border border-line bg-white px-3 py-2 text-[13px] leading-5 text-ink placeholder:text-ink-faint focus:outline-none focus:ring-1 focus:ring-accent"
           />
+          {/* Pillars — the 2-4 things the case rests on. Conditions bind to one. */}
+          <div className="space-y-1.5 rounded-lg border border-line bg-surface-2/40 px-3 py-2">
+            <div className="flex items-center justify-between">
+              <span className="text-[10px] font-bold uppercase tracking-[0.14em] text-ink-3">Pillars</span>
+              <button
+                onClick={() => setDraftPillars((ps) => [...ps, { id: `pillar-${Date.now()}`, title: "", claim: "" }])}
+                className="text-[11px] font-semibold text-accent hover:underline"
+              >
+                + Add pillar
+              </button>
+            </div>
+            {draftPillars.length === 0 && (
+              <p className="text-[11px] text-ink-3">No pillars yet — name the 2-4 things this case rests on, then guard each with a condition. Draft with AI proposes them from the synthesis.</p>
+            )}
+            {draftPillars.map((p) => (
+              <div key={p.id} className="flex flex-wrap items-center gap-2">
+                <input
+                  value={p.title}
+                  onChange={(e) => setDraftPillars((ps) => ps.map((x) => (x.id === p.id ? { ...x, title: e.target.value } : x)))}
+                  placeholder="Pillar (2-5 words)"
+                  className="w-44 rounded-control border border-line bg-white px-2 py-1 text-xs font-semibold text-ink"
+                />
+                <input
+                  value={p.claim}
+                  onChange={(e) => setDraftPillars((ps) => ps.map((x) => (x.id === p.id ? { ...x, claim: e.target.value } : x)))}
+                  placeholder="One falsifiable sentence with the figure it rests on"
+                  className="min-w-[16rem] flex-1 rounded-control border border-line bg-white px-2 py-1 text-xs text-ink"
+                />
+                <button
+                  onClick={() => {
+                    setDraftPillars((ps) => ps.filter((x) => x.id !== p.id));
+                    setDraftConds((cs) => cs.map((c) => (c.pillarId === p.id ? { ...c, pillarId: undefined } : c)));
+                  }}
+                  className="text-[11px] text-ink-3 hover:text-neg"
+                >
+                  remove
+                </button>
+              </div>
+            ))}
+          </div>
           <div className="space-y-1.5">
             {draftConds.map((c) => (
               <div key={c.id} className="flex items-center gap-2 text-[13px]">
+                <select
+                  value={c.pillarId ?? ""}
+                  onChange={(e) => setDraftConds((cs) => cs.map((x) => (x.id === c.id ? { ...x, pillarId: e.target.value || undefined, theme: draftPillars.find((p) => p.id === e.target.value)?.title ?? x.theme } : x)))}
+                  className="w-36 shrink-0 rounded-control border border-line bg-white px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-accent"
+                  title="Which pillar this condition guards"
+                >
+                  <option value="">— no pillar —</option>
+                  {draftPillars.map((p) => (
+                    <option key={p.id} value={p.id}>{p.title || "(untitled)"}</option>
+                  ))}
+                </select>
                 <span className="flex-1 text-ink">
-                  {c.theme && <span className="mr-2 text-[10px] font-bold uppercase tracking-[0.14em] text-accent">{c.theme}</span>}
                   {describeCondition(c)}
+                  {c.kind === "metric" && <span className="ml-1.5 rounded bg-pos-soft px-1 py-px text-[9px] font-bold uppercase text-pos">reported metric</span>}
                 </span>
                 <button
                   onClick={() => setDraftConds((cs) => cs.filter((x) => x.id !== c.id))}
@@ -571,21 +878,32 @@ export default function ThesisTile({
             ))}
             <div className="flex flex-wrap items-center gap-2 pt-1">
               <select
+                value={addPillar}
+                onChange={(e) => setAddPillar(e.target.value)}
+                className="rounded-control border border-line bg-white px-2 py-1 text-xs text-ink"
+                title="Pillar the new condition guards"
+              >
+                <option value="">— pillar —</option>
+                {draftPillars.map((p) => (
+                  <option key={p.id} value={p.id}>{p.title || "(untitled)"}</option>
+                ))}
+              </select>
+              <select
                 value={addKind}
                 onChange={(e) => setAddKind(e.target.value as KillCondition["kind"])}
                 className="rounded-control border border-line bg-white px-2 py-1 text-xs text-ink"
               >
-                {KILL_TEMPLATES.map((t) => (
+                {MANUAL_TEMPLATES.map((t) => (
                   <option key={t.kind} value={t.kind}>
                     {t.label}
                   </option>
                 ))}
               </select>
-              {addKind !== "custom" && KILL_TEMPLATES.find((t) => t.kind === addKind)?.defaultThreshold != null && (
+              {addKind !== "custom" && MANUAL_TEMPLATES.find((t) => t.kind === addKind)?.defaultThreshold != null && (
                 <input
                   value={addThreshold}
                   onChange={(e) => setAddThreshold(e.target.value)}
-                  placeholder={String(KILL_TEMPLATES.find((t) => t.kind === addKind)?.defaultThreshold)}
+                  placeholder={String(MANUAL_TEMPLATES.find((t) => t.kind === addKind)?.defaultThreshold)}
                   className="w-20 rounded-control border border-line bg-white px-2 py-1 text-xs text-ink"
                 />
               )}
@@ -606,11 +924,15 @@ export default function ThesisTile({
             </div>
           </div>
           <div className="flex items-center justify-end gap-2 border-t border-line-soft pt-2.5">
-            {aiDrafted && (
+            {aiDrafted ? (
               <span className="mr-auto text-[11px] text-ink-3">
                 AI draft — review, edit, and sign it; nothing is saved until you underwrite.
               </span>
-            )}
+            ) : versionReason === "review applied" ? (
+              <span className="mr-auto text-[11px] text-ink-3">
+                Review changes applied — check them, then re-sign. The prior version is kept.
+              </span>
+            ) : null}
             <button
               onClick={draftWithAi}
               disabled={drafting}

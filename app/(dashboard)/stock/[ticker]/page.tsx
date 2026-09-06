@@ -1948,7 +1948,7 @@ export default function StockDetailPage() {
             return (
               <ThesisTile
                 ticker={stock.ticker}
-               
+                earningsDate={stock.healthData?.earningsDate ?? null}
                 signals={{
                   score: typeof stock.adjusted === "number" ? stock.adjusted : null,
                   netRevisions: revUp != null || revDown != null ? (revUp ?? 0) - (revDown ?? 0) : null,
