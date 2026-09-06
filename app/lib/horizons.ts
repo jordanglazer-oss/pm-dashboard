@@ -94,11 +94,15 @@ export const SIGNAL_HORIZON: Record<string, Horizon> = {
   "VIX Level": "tactical",
   "Breadth (RSP/SPY)": "tactical",
   "MTUM/USMV (Momentum/LowVol)": "tactical",
+  // Built from the 20-day breadth change, so it reads on the tactical clock.
+  "Breadth Divergence": "tactical",
 
   // ── Cyclical (3–6M) ──
   "XLY/XLP (Discretionary/Staples)": "cyclical",
   "XLK/XLU (Tech/Utilities)": "cyclical",
   "ISM PMI (50-line)": "cyclical",
+  // HY spreads lead equity risk-off by weeks-to-months — a cyclical tell.
+  "Credit Spreads (HY OAS)": "cyclical",
 
   // ── Structural (6–12M) ──
   "SPX 10-Month Trend": "structural",
@@ -132,16 +136,93 @@ export type HorizonRollup = {
 
 // ── Composition ──────────────────────────────────────────────────
 
-function classifyScore(score: number): "Risk-On" | "Neutral" | "Risk-Off" {
+/**
+ * Label threshold on the weighted score (which lives in [-1, +1]). The
+ * weighted score IS the canonical regime score (see composeRegime in
+ * market-regime.ts) — a horizon-weighted net vote where every signal always
+ * occupies a slot, neutral included, so the denominator can't shrink and
+ * lower the bar on a quiet day.
+ */
+export const LABEL_THRESHOLD = 0.34;
+
+export function classifyScore(score: number): "Risk-On" | "Neutral" | "Risk-Off" {
   // Continuous-score thresholds — chosen to roughly match the count-based
-  // 66% threshold the flat composite uses. With score = (on - off) / total:
+  // 66% threshold the flat composite used to use. With score = (on - off) / total:
   //   • +0.34 corresponds to "≥ 2/3 net risk-on" in any horizon
   //   • -0.34 to the symmetric risk-off case
   //   • everything in between is Neutral
   if (!isFinite(score)) return "Neutral";
-  if (score >= 0.34) return "Risk-On";
-  if (score <= -0.34) return "Risk-Off";
+  if (score >= LABEL_THRESHOLD) return "Risk-On";
+  if (score <= -LABEL_THRESHOLD) return "Risk-Off";
   return "Neutral";
+}
+
+/** Map the [-1, +1] weighted score onto a 0..100 dial (50 = dead neutral). */
+export function scoreTo100(score: number): number | null {
+  if (!isFinite(score)) return null;
+  return Math.round(((Math.max(-1, Math.min(1, score)) + 1) / 2) * 100);
+}
+
+/**
+ * Minimum number of individual signals that would have to change direction
+ * for the weighted label to become `target`. Greedy: each signal's marginal
+ * move on the weighted score is (horizonWeight / horizonTotal) per step, and
+ * a signal can move up to two steps (risk-off → risk-on). We take the biggest
+ * available moves first. Returns 0 when the label is already `target`, and
+ * Infinity when no combination of flips could reach it (shouldn't happen with
+ * signals present, but guards the empty case).
+ */
+export function signalsToFlip(
+  rollup: HorizonRollup,
+  target: "Risk-On" | "Neutral" | "Risk-Off"
+): number {
+  const current = rollup.weightedLabel;
+  if (current === target) return 0;
+  if (!isFinite(rollup.weightedScore)) return Infinity;
+
+  // Effective per-horizon weight after the same re-normalisation rollupHorizons
+  // applies (missing horizons don't count).
+  let den = 0;
+  for (const meta of HORIZONS) {
+    const b = rollup.byHorizon[meta.id];
+    if (b.total > 0 && isFinite(b.score)) den += meta.weight;
+  }
+  if (den <= 0) return Infinity;
+
+  // Direction of travel needed and the boundary we must cross.
+  // Risk-On → Neutral: score must fall below +T. Neutral → Risk-Off: ≤ -T.
+  // Risk-Off → Neutral: score must rise above -T. Neutral → Risk-On: ≥ +T.
+  let needed: number; // absolute score movement required
+  let upward: boolean; // true = we need the score to rise
+  const T = LABEL_THRESHOLD;
+  const s = rollup.weightedScore;
+  if (target === "Risk-On") { upward = true; needed = T - s; }
+  else if (target === "Risk-Off") { upward = false; needed = s + T; }
+  else if (current === "Risk-On") { upward = false; needed = s - T + 1e-9; }
+  else { upward = true; needed = -T - s + 1e-9; }
+  if (needed <= 0) return 0;
+
+  // Each signal can contribute up to two "steps" of size w/total in the needed
+  // direction (e.g. risk-off → risk-on = 2 steps upward). Collect every step.
+  const steps: number[] = [];
+  for (const meta of HORIZONS) {
+    const b = rollup.byHorizon[meta.id];
+    if (b.total === 0) continue;
+    const unit = (meta.weight / den) / b.total;
+    for (const sig of b.signals) {
+      const room = upward
+        ? sig.direction === "risk-on" ? 0 : sig.direction === "neutral" ? 1 : 2
+        : sig.direction === "risk-off" ? 0 : sig.direction === "neutral" ? 1 : 2;
+      if (room > 0) steps.push(unit * room);
+    }
+  }
+  steps.sort((a, b) => b - a);
+  let acc = 0;
+  for (let i = 0; i < steps.length; i++) {
+    acc += steps[i];
+    if (acc >= needed) return i + 1;
+  }
+  return Infinity;
 }
 
 /**

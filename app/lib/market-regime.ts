@@ -24,6 +24,14 @@
  *
  *   6. VIX level — < 20 risk-on, > 25 risk-off, else neutral.
  *
+ *   7. Credit spreads (HY OAS), 8. yield curve (10Y-2Y), 9. breadth
+ *      divergence, 10./11. ISM PMI level + 3M trend (FRED).
+ *
+ * Composite (Sept-2026 rework): a FIXED slate — every signal always votes,
+ * neutral included — rolled up as a horizon-weighted net score (horizons.ts)
+ * and smoothed with 3-session hysteresis (regime-history.ts). See
+ * `RegimeComposite` for the rationale.
+ *
  * Cross-asset (DXY, 10Y, Oil) and global (^STOXX, ^N225) are included
  * as informational context but do not currently feed the composite
  * score — they are surfaced for the brief + dashboard to render.
@@ -35,7 +43,7 @@
 
 import type { OHLCVBar } from "./technicals";
 import { computeSMA, resampleToMonthly } from "./technicals";
-import type { HorizonRollup } from "./horizons";
+import { type HorizonRollup, rollupHorizons, scoreTo100 } from "./horizons";
 
 // ── Public types ──────────────────────────────────────────────────
 
@@ -197,6 +205,44 @@ export type IsmPmiReadout = {
   trend_direction: RegimeDirection;
 };
 
+export type RegimeLabel = "Risk-On" | "Neutral" | "Risk-Off";
+
+export type RegimeSignal = { name: string; direction: RegimeDirection; detail: string };
+
+/**
+ * The canonical regime read-out. `label` is the ONE label every surface
+ * defers to (CLAUDE.md "regime consolidation"). Since the Sept-2026 regime
+ * rework it is:
+ *   • computed as a horizon-WEIGHTED net vote (`weightedScore`, [-1, +1]) —
+ *     tactical 50% / cyclical 30% / structural 20% (see horizons.ts) — so a
+ *     VIX print no longer counts 1:1 with the ten-month trend;
+ *   • computed over a FIXED slate — every signal always occupies a slot,
+ *     neutral included. Previously a neutral yield curve or breadth
+ *     divergence left the vote entirely, shrinking the denominator and
+ *     lowering the bar for everyone else, which flipped the label on days
+ *     the market did nothing;
+ *   • smoothed with hysteresis — `rawLabel` is what today's data says,
+ *     `label` only follows it after `pending.needed` consecutive sessions
+ *     (see regime-history.ts). `score` / `total` are kept for the "N of M
+ *     risk-on" read-out surfaces already render.
+ */
+export type RegimeComposite = {
+  score: number; // count of risk-on signals (0..N) — legacy read-out
+  total: number; // total signals evaluated (fixed slate, neutral included)
+  label: RegimeLabel; // committed label (hysteresis applied)
+  signals: RegimeSignal[];
+  /** What today's data says before hysteresis. Equal to `label` when settled. */
+  rawLabel?: RegimeLabel;
+  /** Horizon-weighted net vote in [-1, +1]; null when no signals. */
+  weightedScore?: number | null;
+  /** `weightedScore` mapped onto 0..100 (50 = dead neutral). */
+  score100?: number | null;
+  /** Set while the raw label disagrees with the committed one. */
+  pending?: { label: RegimeLabel; days: number; needed: number } | null;
+  /** Fewest signals that would have to change for the raw label to move. */
+  signalsToShed?: number | null;
+};
+
 export type MarketRegimeData = {
   computedAt: string; // ISO timestamp of when this snapshot was computed
   spx10m: TrendReadout | null;
@@ -225,12 +271,7 @@ export type MarketRegimeData = {
     stoxx: CrossAssetReadout | null;
     nikkei: CrossAssetReadout | null;
   };
-  composite: {
-    score: number; // count of risk-on signals (0..N)
-    total: number; // total signals evaluated
-    label: "Risk-On" | "Neutral" | "Risk-Off";
-    signals: { name: string; direction: RegimeDirection; detail: string }[];
-  };
+  composite: RegimeComposite;
   /**
    * ISM PMI from FRED. Optional — older cached blobs predate this field
    * and the UI must tolerate `undefined` (don't render the PMI tile,
@@ -463,21 +504,26 @@ export function composeRegime(
       }`,
     });
   }
-  // Yield curve (10Y-2Y) votes only when it's a directional signal (deeply
-  // inverted → risk-off, clearly positive slope → risk-on); a flat/near-zero
-  // curve stays out so it doesn't raise the supermajority bar for no reason.
-  if (parts.curve && parts.curve.direction !== "neutral") {
+  // Yield curve (10Y-2Y) ALWAYS occupies a slot. A flat curve is a neutral
+  // vote, not an absence: letting neutral signals leave the slate shrank the
+  // denominator and lowered the flip bar for every other signal, which is
+  // what made the label flip on days nothing moved.
+  if (parts.curve) {
     signals.push({
       name: "Yield Curve (10Y-2Y)",
       direction: parts.curve.direction,
       detail: `${parts.curve.spreadBps >= 0 ? "+" : ""}${parts.curve.spreadBps}bps${
-        parts.curve.direction === "risk-off" ? " (inverted)" : " (positive slope)"
+        parts.curve.direction === "risk-off"
+          ? " (inverted)"
+          : parts.curve.direction === "risk-on"
+          ? " (positive slope)"
+          : " (flat — no vote)"
       }`,
     });
   }
-  // Breadth divergence votes only when there IS a divergence (non-neutral),
-  // so it doesn't dilute the composite when price and breadth agree.
-  if (parts.breadthDivergence && parts.breadthDivergence.direction !== "neutral") {
+  // Breadth divergence likewise always votes; "price and breadth agree" is
+  // the neutral reading.
+  if (parts.breadthDivergence) {
     const bd = parts.breadthDivergence;
     signals.push({
       name: "Breadth Divergence",
@@ -485,7 +531,9 @@ export function composeRegime(
       detail:
         bd.direction === "risk-off"
           ? `price +${bd.priceDistancePct.toFixed(1)}% vs 10M but breadth ${bd.breadthChange20dPct.toFixed(1)}% 20d (narrowing)`
-          : `price soft but breadth +${bd.breadthChange20dPct.toFixed(1)}% 20d (broadening)`,
+          : bd.direction === "risk-on"
+          ? `price soft but breadth +${bd.breadthChange20dPct.toFixed(1)}% 20d (broadening)`
+          : `price and breadth agree (${bd.priceDistancePct >= 0 ? "+" : ""}${bd.priceDistancePct.toFixed(1)}% vs 10M, breadth ${bd.breadthChange20dPct >= 0 ? "+" : ""}${bd.breadthChange20dPct.toFixed(1)}% 20d)`,
     });
   }
 
@@ -514,19 +562,25 @@ export function composeRegime(
   }
 
   const riskOn = signals.filter((s) => s.direction === "risk-on").length;
-  const riskOff = signals.filter((s) => s.direction === "risk-off").length;
   const total = signals.length;
 
-  // Label thresholds scale with the number of signals we have:
-  //   score ≥ total * 0.66  → Risk-On
-  //   risk-off majority     → Risk-Off
-  //   otherwise             → Neutral
-  let label: "Risk-On" | "Neutral" | "Risk-Off" = "Neutral";
-  if (total > 0) {
-    if (riskOn >= Math.ceil(total * 0.66)) label = "Risk-On";
-    else if (riskOff >= Math.ceil(total * 0.66)) label = "Risk-Off";
-    else label = "Neutral";
-  }
+  // Canonical label = the horizon-weighted net vote (horizons.ts). The old
+  // flat 66% supermajority counted a VIX print 1:1 with the ten-month trend
+  // and let neutral signals drop out of the denominator; both made the
+  // label noisier than the data. `label` here is the RAW read — the refresh
+  // layer applies hysteresis and may hold the previously committed label.
+  const rollup = rollupHorizons(signals);
+  const weighted = isFinite(rollup.weightedScore) ? rollup.weightedScore : null;
+  const label: RegimeLabel = total > 0 ? rollup.weightedLabel : "Neutral";
 
-  return { score: riskOn, total, label, signals };
+  return {
+    score: riskOn,
+    total,
+    label,
+    rawLabel: label,
+    weightedScore: weighted,
+    score100: weighted == null ? null : scoreTo100(weighted),
+    pending: null,
+    signals,
+  };
 }
