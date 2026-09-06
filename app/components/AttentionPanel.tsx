@@ -12,7 +12,7 @@ import type { Alert, Opportunity, RegimeTailwind } from "@/app/lib/alerts";
  * dashboard, so the PM doesn't have to go looking. Renders nothing when calm.
  */
 
-const CAT_LABEL: Record<string, string> = { thesis: "Thesis", regime: "Regime", technical: "Technical" };
+const CAT_LABEL: Record<string, string> = { thesis: "Thesis", regime: "Regime", technical: "Technical", entry: "Ready to buy" };
 
 export function AttentionPanel() {
   const [alerts, setAlerts] = useState<Alert[] | null>(null);
@@ -142,7 +142,7 @@ export function AttentionPanel() {
           <>
           <div className="mb-2 flex flex-wrap items-center gap-2">
             <span className="rounded-md bg-pos px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-white">Opportunities</span>
-            <span className="text-[11.5px] text-ink-3">watchlist names improving — worth a look for the book</span>
+            <span className="text-[11.5px] text-ink-3">watchlist &amp; suggested names improving — entry setups first, then revisions / score</span>
           </div>
           <ul className="flex flex-col gap-1.5">
             {opps.map((o) => (

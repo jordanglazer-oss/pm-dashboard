@@ -37,6 +37,8 @@ type SynthRow = {
 type KillRow = { ticker: string; tripped: number; auto: number; underwrittenAt?: string; reUnderwriteBy?: string; checks: Array<{ status: string; reading: string; condition: { kind: string; theme?: string; note?: string } }> };
 type Coverage = { portfolioCount: number; underwritten: number; missing: Array<{ ticker: string; name?: string; hasProse: boolean }> };
 type Health = { counts: { broken: number; eroding: number; intact: number }; holdings: Array<ThesisHealth & { name?: string }> };
+type EntryRowLite = { ticker: string; name: string; sector: string; bucket: "Watchlist" | "Suggested"; met: number; known: number; ready: boolean; strength: string; readySince?: string; why?: string; signals: Array<{ key: string; label: string; status: string; reading: string }> };
+type EntryScanLite = { builtAt: string; rows: EntryRowLite[]; newlyReady: string[] };
 
 function StageCard({ title, count, sub, href, tone = "ink" }: { title: string; count: number | string; sub?: React.ReactNode; href: string; tone?: "ink" | "accent" | "pos" | "warn" | "neg" }) {
   const toneCls = { ink: "text-ink", accent: "text-accent", pos: "text-pos", warn: "text-warn", neg: "text-neg" }[tone];
@@ -74,6 +76,7 @@ export default function FunnelPage() {
   const [synth, setSynth] = useState<SynthRow[] | null>(null);
   const [kill, setKill] = useState<{ holdings: KillRow[]; coverage: Coverage } | null>(null);
   const [health, setHealth] = useState<Health | null>(null);
+  const [entry, setEntry] = useState<EntryScanLite | null>(null);
 
   useEffect(() => {
     let alive = true;
@@ -83,6 +86,7 @@ export default function FunnelPage() {
     get("/api/synthesis-screen").then((j) => alive && setSynth(Array.isArray(j?.rows) ? j.rows : []));
     get("/api/thesis-watch").then((j) => alive && setKill({ holdings: j?.holdings ?? [], coverage: j?.coverage ?? { portfolioCount: 0, underwritten: 0, missing: [] } }));
     get("/api/thesis-health").then((j) => alive && setHealth(j?.thesisHealth ?? null));
+    get("/api/entry-scan").then((j) => alive && setEntry(Array.isArray(j?.rows) ? j : null));
     return () => { alive = false; };
   }, []);
 
@@ -137,6 +141,8 @@ export default function FunnelPage() {
     return rows;
   }, [health, kill, synth]);
 
+  const readyRows = (entry?.rows ?? []).filter((r) => r.ready);
+  const buildingRows = (entry?.rows ?? []).filter((r) => !r.ready && r.strength === "building").slice(0, 8);
   const underwritten = kill?.coverage.underwritten ?? 0;
   const portfolioCount = kill?.coverage.portfolioCount ?? portfolio.length;
   const loading = !research || !suggested || !synth || !kill;
@@ -158,7 +164,7 @@ export default function FunnelPage() {
         <Arrow />
         <StageCard title="Synthesis" count={`${generatedSuggested.length}/${suggestedSynth.length}`} href="/synthesis" sub={<>{verdictCounts.advance ?? 0} advance · {verdictCounts.watch ?? 0} watch · {verdictCounts.pass ?? 0} pass</>} />
         <Arrow />
-        <StageCard title="Watchlist" count={watchlist.length} href="/?bucket=Watchlist" sub={<>{(synth ?? []).filter((r) => r.bucket === "Watchlist" && r.entry).length} with a synthesis</>} />
+        <StageCard title="Watchlist" count={watchlist.length} href="/?bucket=Watchlist" tone={readyRows.length > 0 ? "pos" : "ink"} sub={<>{(synth ?? []).filter((r) => r.bucket === "Watchlist" && r.entry).length} with a synthesis · <span className={readyRows.length > 0 ? "font-semibold text-pos" : ""}>{readyRows.length} ready to buy</span></>} />
         <Arrow />
         <StageCard title="Portfolio" count={portfolio.length} href="/" sub="scoreable stocks (ETFs / funds excluded)" />
         <Arrow />
@@ -191,6 +197,43 @@ export default function FunnelPage() {
                 </div>
               </div>
             ))}
+          </Section>
+        </div>
+
+        {/* ── Ready to buy: the entry scorecard's push ── */}
+        <div className="lg:col-span-2">
+          <Section title="Ready to buy" count={readyRows.length} sub={`Watchlist and Suggested names where ${5}+ entry signals are met (200-day, 50/200, no critical alert, SIA level/trend, Equate, MarketEdge, revisions, synthesis Advance, catalyst, list confluence). A flip into ready raises a HIGH alert in the digest.${entry ? ` Scanned ${entry.builtAt.slice(0, 16).replace("T", " ")}.` : ""}`}>
+            {readyRows.length === 0 ? <Empty text="Nothing reads ready yet." /> : readyRows.map((r) => (
+              <div key={r.ticker} className="flex flex-wrap items-start gap-3 px-4 py-2.5">
+                <div className="w-28 shrink-0">
+                  <div className="font-mono text-xs font-bold text-ink"><TickerLink ticker={r.ticker}>{displayTicker(r.ticker)}</TickerLink></div>
+                  <div className="truncate text-[10px] text-ink-3">{r.name} · {r.bucket}</div>
+                </div>
+                <div className="min-w-0 flex-1">
+                  <div className="flex flex-wrap items-center gap-1">
+                    <span className="mr-1 rounded-md bg-pos px-1.5 py-0.5 font-mono text-[10px] font-bold text-white" title={`${r.met} of ${r.known} known signals met`}>{r.met}/{r.known}</span>
+                    {r.signals.filter((x) => x.status !== "unknown").map((x) => (
+                      <span key={x.key} className={`rounded px-1.5 py-px text-[10px] font-medium ${x.status === "met" ? "bg-pos-soft text-pos" : "bg-surface-2 text-ink-3 line-through"}`} title={x.reading}>{x.label}</span>
+                    ))}
+                  </div>
+                  {r.why && <div className="mt-0.5 text-[11px] text-ink-2">Watching because: {r.why}</div>}
+                  {r.readySince && <div className="text-[10px] text-ink-3">ready since {r.readySince}{entry?.newlyReady.includes(r.ticker) ? " · NEW" : ""}</div>}
+                </div>
+                <div className="flex shrink-0 items-center gap-1.5">
+                  <Link href={`/synthesis?ticker=${encodeURIComponent(r.ticker)}`} className="rounded-md border border-line bg-surface px-2 py-1 text-[10px] font-semibold !text-ink-2 hover:!text-ink">Synthesis</Link>
+                  {r.bucket === "Watchlist" ? (
+                    <Link href="/portfolio" className="rounded-md border border-pos-border bg-pos-soft px-2 py-1 text-[10px] font-semibold !text-pos hover:bg-pos hover:!text-white">Buy / Sell</Link>
+                  ) : (
+                    <Link href="/?bucket=Suggested" className="rounded-md border border-accent-border bg-accent-soft px-2 py-1 text-[10px] font-semibold !text-accent hover:bg-accent hover:!text-white">Advance</Link>
+                  )}
+                </div>
+              </div>
+            ))}
+            {buildingRows.length > 0 && (
+              <div className="px-4 py-2 text-[11px] text-ink-3">
+                Building: {buildingRows.map((r) => `${displayTicker(r.ticker)} ${r.met}/${r.known}`).join(" · ")}
+              </div>
+            )}
           </Section>
         </div>
 

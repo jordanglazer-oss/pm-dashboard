@@ -553,6 +553,12 @@ export default function SynthesisPage() {
           } catch { /* keep what the list carried */ }
           const stock: Stock = { ticker: row.ticker, name, bucket: "Watchlist", sector, beta: 1.0, weights: { portfolio: 0 }, scores: { ...ZERO_SCORES }, notes: "" };
           addStock(stock);
+          // "Why I'm watching" — pre-filled from the synthesis so the entry
+          // case (and later the thesis draft) starts from the verdict's reason.
+          const why = [row.entry?.result.verdictReason, row.entry?.result.nextStep].filter(Boolean).join(" ");
+          if (why) {
+            void fetch("/api/kv/entry-cases", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ticker: row.ticker, why, source: "synthesis-advance" }) }).catch(() => {});
+          }
         }
         await fetch("/api/kv/synthesis-decisions", {
           method: "POST",

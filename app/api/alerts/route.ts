@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 import { createLogger } from "@/app/lib/logger";
-import { computeAlerts, alertCounts, computeOpportunities, computeRegimeTailwind } from "@/app/lib/alerts";
+import { computeAlerts, alertCounts, computeOpportunities, computeRegimeTailwind, entryAlerts, entryOpportunities } from "@/app/lib/alerts";
 import { loadAlertInputs } from "@/app/lib/alert-inputs";
+import { getEntryScan, newlyReady } from "@/app/lib/entry-scan";
 
 /**
  * GET /api/alerts — the proactive "needs your attention" digest (Phase 07).
@@ -20,10 +21,16 @@ export async function GET() {
   try {
     const { thesis, transition, risk, context, watchlist, killWatch } = await loadAlertInputs();
 
-    const alerts = computeAlerts({ thesis, transition, risk, context, killWatch });
+    // Entry scorecard (cached 6h): newly-ready names are HIGH alerts (the push),
+    // every ready name is an opportunity.
+    const scan = await getEntryScan().catch(() => null);
+    const ready = scan ? scan.rows.filter((r) => r.ready) : [];
+    const fresh = scan ? newlyReady(scan) : [];
+    const alerts = [...computeAlerts({ thesis, transition, risk, context, killWatch }), ...entryAlerts(fresh)];
     // A toward-Risk-On lean is a tailwind, not an alert — surfaced green.
     const regimeTailwind = computeRegimeTailwind(transition);
-    const opportunities = computeOpportunities({ watchlist, context });
+    const seen = new Set(ready.map((r) => r.ticker));
+    const opportunities = [...entryOpportunities(ready), ...computeOpportunities({ watchlist, context }).filter((o) => !seen.has(o.ticker))];
 
     return NextResponse.json({
       alerts,

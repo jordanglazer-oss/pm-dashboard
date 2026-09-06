@@ -167,13 +167,14 @@ export async function POST(req: NextRequest) {
     if (!tk) return NextResponse.json({ error: "ticker required" }, { status: 400 });
 
     const redis = await getRedis();
-    const [{ context, killWatch }, stocksRaw, evidence, takeaways, synthRaw, thesesRaw] = await Promise.all([
+    const [{ context, killWatch }, stocksRaw, evidence, takeaways, synthRaw, thesesRaw, casesRaw] = await Promise.all([
       loadAlertInputs(),
       redis.get("pm:stocks"),
       buildTickerEvidence(tk),
       loadStreetTakeaways().catch(() => ({})),
       redis.get("pm:synthesis-screen-cache"),
       redis.get("pm:position-theses"),
+      redis.get("pm:entry-cases"),
     ]);
     const ctx = context[tk];
     if (!ctx) return NextResponse.json({ error: "unknown ticker" }, { status: 404 });
@@ -241,6 +242,12 @@ export async function POST(req: NextRequest) {
     ].filter(Boolean).join(" · ");
 
     const existing = killWatch.find((k) => k.ticker === tk);
+    let watchingWhy = "";
+    try {
+      const cases = casesRaw ? (JSON.parse(casesRaw) as Record<string, { why?: string; addedAt?: string }>) : {};
+      const c = cases[tk] ?? cases[canonicalTicker(tk)];
+      if (c?.why) watchingWhy = `${c.why}${c.addedAt ? ` (captured ${c.addedAt.slice(0, 10)})` : ""}`;
+    } catch { /* none */ }
 
     const prompt = `You are drafting a portfolio manager's pre-registered investment thesis for a holding. The PM will edit and sign it. Structure it as PILLARS: the 2-4 things the case actually rests on, each guarded by one or two conditions that would tell the PM that pillar has failed. Make every claim FALSIFIABLE — the point is that a future version of the PM cannot rationalize past their own exit criteria.
 
@@ -252,7 +259,10 @@ ${evidence ? `INGESTED ANALYST & FACTSET EVIDENCE (dated, attributable — prefe
 ${linesBlock}
 
 POSITION READS TODAY: ${positionLine}
-${existing?.why ? `\nEXISTING THESIS (being redrafted — keep what still holds, drop what the evidence no longer supports):\n${existing.why}\n` : ""}${blocked.length ? `\nALREADY PROVEN UNVERIFIABLE FOR THIS NAME — DO NOT PROPOSE THESE OR ANY CLOSE VARIANT:\n${blocked.map((b) => `- ${b}`).join("\n")}\n` : ""}
+${watchingWhy ? `
+WHY THE PM WAS WATCHING THIS NAME (captured when it was advanced from Suggested — the thesis should start from this belief):
+${watchingWhy}
+` : ""}${existing?.why ? `\nEXISTING THESIS (being redrafted — keep what still holds, drop what the evidence no longer supports):\n${existing.why}\n` : ""}${blocked.length ? `\nALREADY PROVEN UNVERIFIABLE FOR THIS NAME — DO NOT PROPOSE THESE OR ANY CLOSE VARIANT:\n${blocked.map((b) => `- ${b}`).join("\n")}\n` : ""}
 CONDITION KINDS:
 - metric: a reported figure from the Metrics Recap lines above vs a threshold. Checked automatically from the next recap. Fields: {"kind":"metric","pillar":"<pillar title>","metric":{"label":"<human label>","source":"results"|"guidance","match":"<the label EXACTLY as it appears in the lines above>","field":"actual"|"yoy","period":"<guidance only, e.g. FY2026>","comparator":">="|"<=","threshold":<number in the line's unit — % for yoy/margins, $B for dollar lines as printed>,"unit":"%"|"$"|""}}
 - custom: a company-specific test the recap does NOT print (a segment, backlog, contract, unit metric, market-share or competitive-position fact). AI-verified against filings after each report. Must name the metric, the comparison and the current reference figure, be reported EVERY quarter, and be one test (never "and"). {"kind":"custom","pillar":"...","note":"...","theme":"..."}

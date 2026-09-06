@@ -14,7 +14,7 @@
 import { regimeValence } from "@/app/lib/regime-transition";
 
 export type AlertPriority = "high" | "medium";
-export type AlertCategory = "thesis" | "regime" | "technical";
+export type AlertCategory = "thesis" | "regime" | "technical" | "entry";
 
 export type Alert = {
   id: string;
@@ -424,6 +424,51 @@ export function computeOpportunities(input: {
   }
   out.sort((a, b) => (a.strength === b.strength ? a.ticker.localeCompare(b.ticker) : a.strength === "strong" ? -1 : 1));
   return out;
+}
+
+/** A Watchlist / Suggested name as scored by the entry scorecard (app/lib/entry-scan). */
+export type EntryReadyRow = {
+  ticker: string;
+  name?: string;
+  sector?: string;
+  bucket: "Watchlist" | "Suggested";
+  met: number;
+  known: number;
+  readySince?: string;
+  signals: Array<{ label: string; status: string; reading: string }>;
+  why?: string;
+};
+
+/**
+ * "Ready to buy" alerts — the PUSH for the entry scorecard. HIGH so the digest
+ * emails it; raised only for names that flipped to ready today/yesterday
+ * (`newlyReady` in entry-scan), so a name that stays ready doesn't nag daily.
+ */
+export function entryAlerts(rows: EntryReadyRow[]): Alert[] {
+  return rows.map((r) => ({
+    id: `entry-${r.ticker}`,
+    priority: "high" as const,
+    category: "entry" as const,
+    ticker: r.ticker,
+    name: r.name,
+    title: `Ready to buy: ${r.ticker}`,
+    detail: `${r.met} of ${r.known} entry signals met (${r.bucket})${r.readySince ? ` · ready since ${r.readySince}` : ""}${r.why ? ` · watching because: ${r.why}` : ""}`,
+    metrics: r.signals.filter((x) => x.status === "met").map((x) => `${x.label}: ${x.reading}`),
+    action: r.bucket === "Watchlist" ? "Review on the Funnel page; if it still reads right, size it in Buy / Sell and underwrite the thesis." : "Advance it to the Watchlist from Synthesis, then review the setup on the Funnel page.",
+  }));
+}
+
+/** Ready (not necessarily new) names as opportunities for the Attention panel. */
+export function entryOpportunities(rows: EntryReadyRow[]): Opportunity[] {
+  return rows.map((r) => ({
+    id: `entry-opp-${r.ticker}`,
+    ticker: r.ticker,
+    strength: "strong" as const,
+    signals: [`entry setup ${r.met}/${r.known}`, ...r.signals.filter((x) => x.status === "met").slice(0, 4).map((x) => x.label.toLowerCase())],
+    name: r.name,
+    sector: r.sector,
+    composite: null,
+  }));
 }
 
 export function alertCounts(alerts: Alert[]): { high: number; medium: number; total: number } {

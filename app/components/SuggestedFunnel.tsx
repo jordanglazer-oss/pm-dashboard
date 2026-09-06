@@ -57,6 +57,21 @@ export function SuggestedFunnel({ onCountChange }: { onCountChange?: (n: number)
   const [showPassed, setShowPassed] = useState(false);
   const [ccy, setCcy] = useState<"All" | "CAD" | "USD">("All");
   const [synthesis, setSynthesis] = useState<Map<string, SynthesisMeta>>(new Map());
+  // Entry scorecard (met/known + ready) per name, read-only from the cached scan.
+  const [setup, setSetup] = useState<Map<string, { met: number; known: number; ready: boolean; signals: string[] }>>(new Map());
+  useEffect(() => {
+    let alive = true;
+    fetch("/api/entry-scan")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => {
+        if (!alive || !Array.isArray(d?.rows)) return;
+        const m = new Map<string, { met: number; known: number; ready: boolean; signals: string[] }>();
+        for (const row of d.rows) m.set(String(row.ticker).toUpperCase(), { met: row.met, known: row.known, ready: row.ready, signals: (row.signals ?? []).filter((x: { status: string }) => x.status === "met").map((x: { label: string }) => x.label) });
+        setSetup(m);
+      })
+      .catch(() => {});
+    return () => { alive = false; };
+  }, []);
 
   const load = useCallback(async () => {
     try {
@@ -230,7 +245,7 @@ export function SuggestedFunnel({ onCountChange }: { onCountChange?: (n: number)
                 <th className={thSort} onClick={() => toggle("sector")}>Sector{arrow("sector")}</th>
                 <th className={`${thSort} text-right`} onClick={() => toggle("lists")}>Lists{arrow("lists")}</th>
                 <th className={th}>Sources</th>
-                <th className={th}>Signals</th>
+                <th className={th} title="Entry setup (signals met / known) and improving reads">Setup</th>
                 <th className={th}>Synthesis</th>
                 <th className={th} title="Analyst reports on file (arrivals) and when coverage was requested">Coverage</th>
                 <th className={`${th} text-right`}>Action</th>
@@ -265,13 +280,26 @@ export function SuggestedFunnel({ onCountChange }: { onCountChange?: (n: number)
                       </span>
                     </td>
                     <td className="py-2.5 pr-3">
-                      {r.improving.length > 0 ? (
-                        <span className="inline-flex items-center rounded-full bg-pos-soft px-1.5 py-px text-[10px] font-semibold text-pos ring-1 ring-pos-border" title={r.improving.join(" · ")}>
-                          ▲ Improving
-                        </span>
-                      ) : (
-                        <span className="text-[11px] text-ink-faint">—</span>
-                      )}
+                      <span className="flex flex-wrap items-center gap-1">
+                        {(() => {
+                          const st = setup.get(r.ticker.toUpperCase()) ?? setup.get(r.key.toUpperCase());
+                          if (!st) return null;
+                          return (
+                            <span
+                              className={`inline-flex items-center rounded-md px-1.5 py-px font-mono text-[10px] font-bold ${st.ready ? "bg-pos text-white" : "bg-surface-2 text-ink-2"}`}
+                              title={`Entry setup: ${st.met} of ${st.known} signals met${st.signals.length ? ` — ${st.signals.join(", ")}` : ""}${st.ready ? " · READY" : ""}`}
+                            >
+                              {st.ready ? "READY " : ""}{st.met}/{st.known}
+                            </span>
+                          );
+                        })()}
+                        {r.improving.length > 0 && (
+                          <span className="inline-flex items-center rounded-full bg-pos-soft px-1.5 py-px text-[10px] font-semibold text-pos ring-1 ring-pos-border" title={r.improving.join(" · ")}>
+                            ▲ Improving
+                          </span>
+                        )}
+                        {r.improving.length === 0 && !setup.size && <span className="text-[11px] text-ink-faint">—</span>}
+                      </span>
                     </td>
                     <td className="py-2.5 pr-3 whitespace-nowrap">
                       {r.decision ? (

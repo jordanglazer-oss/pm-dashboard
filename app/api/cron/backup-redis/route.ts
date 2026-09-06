@@ -10,6 +10,7 @@ import { refreshMarketRegime } from "@/app/lib/market-regime-refresh";
 import { refreshTechnicals } from "@/app/lib/technicals-refresh";
 import { rebuildThesisHealth } from "@/app/lib/thesis-health-refresh";
 import { runThesisReviews } from "@/app/lib/thesis-review";
+import { buildEntryScan } from "@/app/lib/entry-scan";
 import { runCustomConditionChecks } from "@/app/lib/custom-condition-check";
 import { computeBookFactorScores } from "@/app/lib/factor-scores";
 import { computeDataHealth, type DataHealthReport } from "@/app/lib/data-health";
@@ -318,6 +319,19 @@ export async function GET(req: NextRequest) {
       technicalsRefresh = { ran: false, considered: 0, updated: 0, failed: 0, error: msg };
     }
 
+    // Entry scorecard for Watchlist + Suggested names (funnel stage 4 push).
+    // Redis-only, so cheap; runs after technicals so the 200-day / risk reads
+    // are tonight's. The digest below raises "Ready to buy" for new flips.
+    let entryScan: { ran: true; rows: number; ready: number } | { ran: false; error: string };
+    try {
+      const es = await buildEntryScan();
+      entryScan = { ran: true, rows: es.rows.length, ready: es.rows.filter((r) => r.ready).length };
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      console.error("[backup-redis] entry scan failed (digest will use the cached scan):", msg);
+      entryScan = { ran: false, error: msg };
+    }
+
     let thesisRefresh:
       | { ran: true; broken: number; eroding: number; intact: number }
       | { ran: false; error: string };
@@ -452,6 +466,7 @@ export async function GET(req: NextRequest) {
       thesisRefresh,
       customChecks,
       thesisReviews,
+      entryScan,
       factorScores,
       dataHealth: dataHealth ? { ok: dataHealth.ok, problems: dataHealth.problemCount } : null,
       alertDigest,
