@@ -18,6 +18,7 @@ import { readWatchlistNotifiedMap } from "@/app/lib/mail-outbox";
 import { requestCoverage } from "@/app/lib/coverage-request";
 import { crossListingRoot } from "@/app/lib/ticker";
 import type { CandidateStore } from "@/app/lib/watchlist-candidates";
+import { getReportsForTicker, type AnalystReports } from "@/app/lib/analyst-snapshots";
 
 /**
  * Suggested Watchlist (funnel stage 2).
@@ -65,6 +66,27 @@ async function readDecisions(): Promise<DecisionStore> {
   }
 }
 
+async function readReports(): Promise<AnalystReports> {
+  try {
+    const raw = await (await getRedis()).get("pm:analyst-reports");
+    const parsed = raw ? JSON.parse(raw) : {};
+    return parsed && typeof parsed === "object" ? (parsed as AnalystReports) : {};
+  } catch {
+    return {};
+  }
+}
+
+/** Filed dates per source for the coverage column — the reply-to-feed loop's
+ *  visible end: requested → RBC ✓ date → JPM ✓ date. */
+function reportsFor(blob: AnalystReports, row: RankedRow): SuggestedRowReports | undefined {
+  const rep = getReportsForTicker(blob, row.ticker) ?? getReportsForTicker(blob, row.key);
+  if (!rep) return undefined;
+  const d = (m?: { extractedAt?: string; uploadedAt: string }) => (m ? (m.extractedAt ?? m.uploadedAt).slice(0, 10) : undefined);
+  const out = { rbc: d(rep.rbc), jpm: d(rep.jpm), morningstar: d(rep.morningstar) };
+  return out.rbc || out.jpm || out.morningstar ? out : undefined;
+}
+type SuggestedRowReports = NonNullable<import("@/app/lib/suggested-watchlist").SuggestedRow["reports"]>;
+
 async function readMovers(): Promise<CandidateStore> {
   try {
     const raw = await (await getRedis()).get("pm:watchlist-candidates");
@@ -96,17 +118,19 @@ async function improvingFn(): Promise<(row: RankedRow) => string[]> {
 
 export async function GET() {
   try {
-    const [{ rows: ranked }, store, decisions, notified, improving] = await Promise.all([
+    const [{ rows: ranked }, store, decisions, notified, improving, reports] = await Promise.all([
       loadRankedResearch(),
       readStore(),
       readDecisions(),
       readWatchlistNotifiedMap(),
       improvingFn(),
+      readReports(),
     ]);
     const { rows, passed } = buildSuggestedRows(ranked, store, decisions, improving);
     const withCoverage = (r: (typeof rows)[number]) => ({
       ...r,
       coverageRequestedAt: r.coverageRequestedAt ?? notified[r.ticker.toUpperCase()] ?? notified[r.key.toUpperCase()],
+      reports: reportsFor(reports, r),
     });
     return NextResponse.json({
       rows: rows.map(withCoverage),

@@ -221,7 +221,7 @@ export default function FunnelPage() {
           {awaitingSynthesis.length === 0 ? <Empty text="Every Suggested name has a synthesis." /> : awaitingSynthesis.map((r) => (
             <div key={r.key} className="flex items-center gap-3 px-4 py-2">
               <span className="w-28 shrink-0 font-mono text-xs font-bold text-ink"><TickerLink ticker={r.ticker}>{displayTicker(r.ticker)}</TickerLink></span>
-              <span className="min-w-0 flex-1 truncate text-xs text-ink-2">{r.name || ""} · {r.listCount} lists{r.improving.length > 0 ? " · ▲ improving" : ""}{r.coverageRequestedAt ? " · coverage requested" : ""}</span>
+              <span className="min-w-0 flex-1 truncate text-xs text-ink-2">{r.name || ""} · {r.listCount} lists{r.improving.length > 0 ? " · ▲ improving" : ""}{r.reports ? ` · reports: ${[r.reports.rbc && "RBC", r.reports.jpm && "JPM", r.reports.morningstar && "MS"].filter(Boolean).join("/")}` : r.coverageRequestedAt ? " · coverage requested, no report yet" : " · no report"}</span>
               <Link href={`/synthesis?ticker=${encodeURIComponent(r.ticker)}`} className="rounded-md border border-accent-border bg-accent-soft px-2 py-1 text-[10px] font-semibold !text-accent hover:bg-accent hover:!text-white">Generate →</Link>
             </div>
           ))}

@@ -131,6 +131,9 @@ export type SuggestedRow = RankedRow & {
   /** Positive when the name gained lists since the previous refresh. */
   listDelta: number;
   coverageRequestedAt?: string;
+  /** Analyst reports on file (filed date per source), so the coverage column
+   *  shows ARRIVALS, not just the request. Joined by the route. */
+  reports?: { rbc?: string; jpm?: string; morningstar?: string };
   decision: (DecisionEntry & { expiresOn: string }) | null;
   /** Human reasons the name is IMPROVING (gained a list, SIA percentile up, Equate rank up). */
   improving: string[];

@@ -232,7 +232,7 @@ export function SuggestedFunnel({ onCountChange }: { onCountChange?: (n: number)
                 <th className={th}>Sources</th>
                 <th className={th}>Signals</th>
                 <th className={th}>Synthesis</th>
-                <th className={th}>Coverage</th>
+                <th className={th} title="Analyst reports on file (arrivals) and when coverage was requested">Coverage</th>
                 <th className={`${th} text-right`}>Action</th>
               </tr>
             </thead>
@@ -282,22 +282,38 @@ export function SuggestedFunnel({ onCountChange }: { onCountChange?: (n: number)
                         <Link href={`/synthesis#syn-${r.ticker.toUpperCase()}`} className="inline-flex items-center rounded-full bg-accent-soft px-1.5 py-px text-[10px] font-semibold !text-accent ring-1 ring-accent-border hover:underline" title={`${VERDICT_LABEL[syn.verdict]} · ${syn.generatedAt.slice(0, 10)}${syn.stale ? " · stale" : ""}`}>
                           {VERDICT_LABEL[syn.verdict]}{syn.stale ? " ·stale" : ""}
                         </Link>
-                      ) : (
-                        <Link href={`/synthesis#syn-${r.ticker.toUpperCase()}`} className="text-[11px] font-semibold !text-ink-3 hover:!text-accent" title="No synthesis yet — generate one on the Synthesis page">
+                      ) : r.reports ? (
+                        <Link href={`/synthesis?ticker=${encodeURIComponent(r.ticker)}`} className="text-[11px] font-semibold !text-accent hover:underline" title="Reports on file, no synthesis yet — generate one on the Synthesis page">
                           Needs synthesis →
                         </Link>
+                      ) : (
+                        <span className="text-[11px] text-ink-faint" title="No analyst report on file yet — a synthesis would run on thin evidence. Request coverage first.">Awaiting reports</span>
                       )}
                     </td>
                     <td className="py-2.5 pr-3 whitespace-nowrap">
-                      {r.coverageRequestedAt ? (
-                        <span className="text-[11px] text-ink-3" title={`Coverage requested ${r.coverageRequestedAt.slice(0, 10)}`}>✓ Requested</span>
-                      ) : h ? (
-                        <span className="text-[11px] text-ink-faint">—</span>
-                      ) : (
-                        <button onClick={() => requestCov(r)} disabled={requesting === r.ticker} className="rounded border border-line px-2 py-0.5 text-[11px] font-semibold text-ink-2 hover:text-ink disabled:opacity-50" title="Queue the RBC/JPM coverage-request email to the desk">
-                          {requesting === r.ticker ? "…" : "Request"}
-                        </button>
-                      )}
+                      <span className="flex items-center gap-1.5">
+                        {/* Arrivals first: the reply-to-feed loop's visible end. */}
+                        {(["rbc", "jpm", "morningstar"] as const).map((src) => {
+                          const on = r.reports?.[src];
+                          const label = src === "rbc" ? "RBC" : src === "jpm" ? "JPM" : "MS";
+                          return (
+                            <span
+                              key={src}
+                              className={`rounded px-1 py-px text-[9px] font-bold ${on ? "bg-pos-soft text-pos ring-1 ring-pos-border" : "bg-surface-2 text-ink-faint"}`}
+                              title={on ? `${label} report on file (${on})` : `${label} report not received`}
+                            >
+                              {label}{on ? " ✓" : ""}
+                            </span>
+                          );
+                        })}
+                        {r.coverageRequestedAt ? (
+                          <span className="text-[10px] text-ink-3" title={`Coverage requested ${r.coverageRequestedAt.slice(0, 10)}`}>req {r.coverageRequestedAt.slice(5, 10)}</span>
+                        ) : h ? null : (
+                          <button onClick={() => requestCov(r)} disabled={requesting === r.ticker} className="rounded border border-line px-2 py-0.5 text-[11px] font-semibold text-ink-2 hover:text-ink disabled:opacity-50" title="Queue the RBC/JPM coverage-request email to the desk">
+                            {requesting === r.ticker ? "…" : "Request"}
+                          </button>
+                        )}
+                      </span>
                     </td>
                     <td className="py-2.5 text-right whitespace-nowrap">
                       {showPassed ? (
