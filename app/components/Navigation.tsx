@@ -1,5 +1,6 @@
 "use client";
 
+import { TAB_ALIASES } from "@/app/lib/hubs";
 import React, { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
@@ -192,29 +193,7 @@ const MORE_LINKS = [
 ];
 
 /** Routes that belong under a tab but aren't that tab's own href. */
-const TAB_ALIASES: Record<string, string> = {
-  // Portfolio segments
-  "/scoring": "Portfolio",
-  "/portfolio": "Portfolio",
-  "/pim-model": "Portfolio",
-  "/aa-performance": "Portfolio",
-  "/attribution": "Portfolio",
-  "/risk": "Portfolio",
-  "/thesis": "Portfolio",
-  "/journal": "Portfolio",
-  // Ideas segments
-  "/funnel": "Ideas",
-  "/conviction": "Ideas",
-  "/screener": "Ideas",
-  "/radar": "Ideas",
-  "/setups": "Ideas",
-  "/factor-lab": "Ideas",
-  // Research segments
-  "/research/sources": "Research",
-  "/inbox": "Research",
-  // Brief segments
-  "/hedging": "Brief",
-};
+// Hub membership lives in app/lib/hubs.ts (shared with the back crumb).
 
 /** Bottom-bar icons (stroke SVGs, one style). */
 function TabIcon({ tab, className }: { tab: string; className?: string }) {

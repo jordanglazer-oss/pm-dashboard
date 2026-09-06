@@ -78,37 +78,35 @@ export function CockpitBand({
         </div>
       </div>
 
-      {/* Row 2 — full market-regime read (bare: no inner card chrome) */}
-      <div className="px-3 py-3 sm:px-4">
-        <RegimeStrip bare />
-      </div>
-
-      {/* Row 3 — scoring posture. This is the one control the old Market
-          Regime card carried: the knob that actually drives score
-          multipliers, with a one-click apply when it disagrees with the
-          regime engine. Renders only when the dashboard passes it in. */}
-      {posture && (
-        <div className="flex flex-wrap items-center gap-2 border-t border-line-soft px-4 py-2.5">
-          <span className="text-[11px] font-semibold uppercase tracking-wide text-ink-3">Scoring posture</span>
-          <span className={`rounded-full px-2.5 py-0.5 text-[11px] font-bold ${
-            posture === "Risk-Off" ? "bg-neg-soft text-neg"
-            : posture === "Neutral" ? "bg-warn-soft text-warn"
-            : "bg-pos-soft text-pos"
-          }`}>{posture}</span>
-          {consolidatedRegime && consolidatedRegime !== posture ? (
-            <button
-              onClick={onApplyPosture}
-              className="rounded-pill bg-accent px-2.5 py-0.5 text-[11px] font-semibold text-white hover:bg-accent-ink transition-colors"
-              title={`Set the scoring posture to ${consolidatedRegime} to match the regime engine. This changes the multipliers applied to every stock score.`}
-            >
-              Engine suggests {consolidatedRegime} — Apply
-            </button>
-          ) : (
-            consolidatedRegime && <span className="text-[11px] text-ink-3">in sync with the engine</span>
-          )}
-          <a href="#regime-detail" className="ml-auto text-[11px] font-semibold text-accent hover:underline">Per-stock detail ↓</a>
+      {/* Row 2 — the regime in one line, with the scoring posture beside it.
+          The full read (every signal, the horizons) lives on the Brief; here
+          it was repeating the whole engine on a page about holdings. */}
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 px-4 py-2.5">
+        <div className="min-w-0 flex-1">
+          <RegimeStrip bare compact />
         </div>
-      )}
+        {posture && (
+          <div className="flex flex-wrap items-center gap-2 border-l border-line-soft pl-4">
+            <span className="text-[11px] font-semibold uppercase tracking-wide text-ink-3">Scoring posture</span>
+            <span className={`rounded-full px-2.5 py-0.5 text-[11px] font-bold ${
+              posture === "Risk-Off" ? "bg-neg-soft text-neg"
+              : posture === "Neutral" ? "bg-warn-soft text-warn"
+              : "bg-pos-soft text-pos"
+            }`}>{posture}</span>
+            {consolidatedRegime && consolidatedRegime !== posture ? (
+              <button
+                onClick={onApplyPosture}
+                className="rounded-pill bg-accent px-2.5 py-0.5 text-[11px] font-semibold text-white hover:bg-accent-ink transition-colors"
+                title={`Set the scoring posture to ${consolidatedRegime} to match the regime engine. This changes the multipliers applied to every stock score.`}
+              >
+                Engine suggests {consolidatedRegime} — Apply
+              </button>
+            ) : (
+              consolidatedRegime && <span className="text-[11px] text-ink-3">in sync</span>
+            )}
+          </div>
+        )}
+      </div>
     </section>
   );
 }

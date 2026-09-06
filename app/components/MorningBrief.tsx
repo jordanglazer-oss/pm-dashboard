@@ -20,7 +20,7 @@ import { BriefCommandBar } from "./BriefCommandBar";
 import { CollapsibleSection } from "./CollapsibleSection";
 import { BriefGenerationModal } from "./BriefGenerationModal";
 import { MacroBoard } from "./MacroBoard";
-import type { MarketRegimeData, RegimeDirection } from "@/app/lib/market-regime";
+import type { MarketRegimeData } from "@/app/lib/market-regime";
 import { regimeValence } from "@/app/lib/regime-transition";
 import { HORIZONS } from "@/app/lib/horizons";
 import { useStocks } from "@/app/lib/StockContext";
@@ -343,136 +343,6 @@ function BriefSection({
       </header>
       <div className="border-t border-line-soft px-4 py-3">{children}</div>
     </section>
-  );
-}
-
-/** Composite pill tone helper for the Market Regime strip. */
-function regimePillClasses(direction: RegimeDirection): string {
-  if (direction === "risk-on") return "border-pos-border bg-pos-soft text-pos";
-  if (direction === "risk-off") return "border-neg-border bg-neg-soft text-neg";
-  return "border-line bg-surface-2 text-ink-2";
-}
-
-/** Format a signed pct number as "+X.X%" / "-X.X%" (or "—" when null). */
-function fmtPct(v: number | null | undefined, digits = 1): string {
-  if (v == null || !isFinite(v)) return "—";
-  return `${v >= 0 ? "+" : ""}${v.toFixed(digits)}%`;
-}
-
-/**
- * Compact Market Regime strip shown above the forward-looking tile grid.
- * Driven entirely by pm:market-regime (Yahoo-derived, deterministic).
- * Composite label on the left, individual signal pills in the middle,
- * cross-asset + global spot/20d moves on the bottom row.
- */
-function MarketRegimeStrip({ regime }: { regime: MarketRegimeData }) {
-  const comp = regime.composite;
-  const label = comp.label;
-  const labelTone: "green" | "red" | "amber" =
-    label === "Risk-On" ? "green" : label === "Risk-Off" ? "red" : "amber";
-  const cross = regime.crossAsset;
-  const global = regime.global;
-  const crossRow: { label: string; body: string }[] = [];
-  if (cross.dxy) crossRow.push({ label: "DXY", body: `${cross.dxy.price.toFixed(2)} · 20d ${fmtPct(cross.dxy.change20dPct)}` });
-  if (cross.tnx) crossRow.push({ label: "10Y", body: `${cross.tnx.price.toFixed(2)}% · 20d ${fmtPct(cross.tnx.change20dPct)}` });
-  if (cross.oil) crossRow.push({ label: "WTI", body: `$${cross.oil.price.toFixed(2)} · 20d ${fmtPct(cross.oil.change20dPct)}` });
-  if (global.stoxx) crossRow.push({ label: "STOXX", body: `${global.stoxx.price.toFixed(0)} · 20d ${fmtPct(global.stoxx.change20dPct)}` });
-  if (global.nikkei) crossRow.push({ label: "Nikkei", body: `${global.nikkei.price.toFixed(0)} · 20d ${fmtPct(global.nikkei.change20dPct)}` });
-
-  return (
-    <div className="mb-5 overflow-hidden rounded-card border border-line bg-white/80 p-3 sm:p-4">
-      <div className="mb-3 flex flex-wrap items-start justify-between gap-2 sm:gap-3">
-        <div className="flex flex-wrap items-center gap-2">
-          <span className="text-[10px] font-bold uppercase tracking-wider text-ink-3">Market Regime</span>
-          <SignalPill tone={labelTone}>{label}</SignalPill>
-          <span className="text-xs text-ink-3">
-            {comp.score}/{comp.total} risk-on signals
-          </span>
-        </div>
-        <span
-          className="text-[10px] text-ink-3"
-          title={`Computed from Yahoo Finance at ${regime.computedAt}`}
-        >
-          Yahoo-derived · cached 30m
-        </span>
-      </div>
-
-      {comp.signals.length > 0 && (
-        <div className="mb-3 flex flex-wrap gap-1 sm:gap-1.5">
-          {comp.signals.map((s, i) => (
-            <span
-              key={i}
-              className={`inline-flex max-w-full items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] sm:gap-1.5 sm:px-2.5 sm:py-1 sm:text-[11px] ${regimePillClasses(s.direction)}`}
-              title={s.detail}
-            >
-              <span className="truncate font-semibold">{s.name}</span>
-              <span className="truncate opacity-70">· {s.detail}</span>
-            </span>
-          ))}
-        </div>
-      )}
-
-      {/* Horizon-projected composites (1-3M / 3-6M / 6-12M, weighted 50/30/20).
-          Renders only when the cached blob has the new `horizons` field; older
-          snapshots silently skip and the rest of the strip is unaffected. */}
-      {regime.horizons && (
-        <div className="mb-3 border-t border-line-soft pt-2">
-          <div className="flex flex-wrap items-center gap-1 sm:gap-1.5">
-            <span className="mr-1 text-[10px] font-bold uppercase tracking-wider text-ink-3">By Horizon</span>
-            {HORIZONS.map((h) => {
-              const b = regime.horizons!.byHorizon[h.id];
-              const empty = b.total === 0;
-              const tone: "green" | "red" | "amber" = empty
-                ? "amber"
-                : b.label_ === "Risk-On" ? "green" : b.label_ === "Risk-Off" ? "red" : "amber";
-              return (
-                <span
-                  key={h.id}
-                  className={`inline-flex max-w-full items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] sm:gap-1.5 sm:px-2.5 sm:py-1 sm:text-[11px] ${
-                    empty ? "border-line bg-surface-2 text-ink-3" : regimePillClasses(
-                      tone === "green" ? "risk-on" : tone === "red" ? "risk-off" : "neutral"
-                    )
-                  }`}
-                  title={
-                    empty
-                      ? `${h.description} · No signals available yet.`
-                      : `${h.description}\n\n${b.signals.map((s) => `• ${s.name}: ${s.detail}`).join("\n")}`
-                  }
-                >
-                  <span className="font-semibold">{h.shortLabel}</span>
-                  <span className="opacity-70">·</span>
-                  <span className="font-bold">{empty ? "—" : b.label_}</span>
-                  {!empty && (
-                    <span className="font-mono opacity-70">{b.riskOn}↑ {b.riskOff}↓ <span className="opacity-60">/ {b.total}</span></span>
-                  )}
-                  <span className="text-[10px] opacity-50">×{Math.round(h.weight * 100)}%</span>
-                </span>
-              );
-            })}
-          </div>
-          {isFinite(regime.horizons.weightedScore) && (
-            <div className="mt-2 text-[10px] text-ink-3 sm:text-right">
-              Weighted: <span className="font-semibold text-ink-2">{regime.horizons.weightedLabel}</span>{" "}
-              <span className="font-mono opacity-70">
-                ({regime.horizons.weightedScore >= 0 ? "+" : ""}
-                {regime.horizons.weightedScore.toFixed(2)})
-              </span>
-            </div>
-          )}
-        </div>
-      )}
-
-      {crossRow.length > 0 && (
-        <div className="flex flex-wrap gap-x-4 gap-y-1 pt-2 border-t border-line-soft text-[11px] text-ink-3">
-          {crossRow.map((r, i) => (
-            <span key={i}>
-              <span className="font-semibold text-ink-2">{r.label}</span>{" "}
-              <span className="font-mono">{r.body}</span>
-            </span>
-          ))}
-        </div>
-      )}
-    </div>
   );
 }
 
@@ -2791,10 +2661,10 @@ export function MorningBrief({
           </div>
         )}
 
-        {/* Deterministic Market Regime strip — derived from pm:market-regime.
-            Sits above the macro tiles so the PM can anchor on the composite
-            read before scanning individual indicators. */}
-        {marketRegime && <MarketRegimeStrip regime={marketRegime} />}
+        {/* The deterministic regime strip that used to sit here was the
+            page's SECOND rendering of the same engine read — the summary's
+            Regime tile + its contribution table now carry every signal and
+            horizon, so it was pure repetition. */}
 
         {/* The old full-size ForwardTile panel lived here; its metrics now
             render in the condensed Macro Board at the top of this section,

@@ -2,6 +2,7 @@
 
 import { useEffect, useSyncExternalStore } from "react";
 import { usePathname } from "next/navigation";
+import { hubOf } from "@/app/lib/hubs";
 
 /**
  * Lightweight in-app navigation history (sessionStorage, per tab) powering
@@ -105,19 +106,24 @@ export function usePrevPage(): { path: string; label: string } | null {
 }
 
 /**
- * The reverse direction: a floating "← TICKER" chip on any page reached
- * from a stock page. Hidden on stock pages themselves (they carry their own
- * back control in the ticker rail).
+ * A floating "← where I came from" chip. Appears when the previous page was
+ * a stock page (the original case) OR when you have crossed hubs — e.g. the
+ * Brief's alpha-vs-core tile sends you to Performance under Portfolio, and
+ * without this the only way back to the Brief is the top nav. Sibling moves
+ * inside one hub stay quiet: the sub-tab bar already covers those. Hidden on
+ * stock pages themselves (they carry their own back control).
  */
 export function BackCrumb() {
   const pathname = usePathname();
   const prev = usePrevPage();
-  if (pathname.startsWith("/stock/") || !prev || !prev.path.startsWith("/stock/")) return null;
+  if (pathname.startsWith("/stock/") || !prev) return null;
+  const crossedHubs = hubOf(prev.path) !== hubOf(pathname);
+  if (!prev.path.startsWith("/stock/") && !crossedHubs) return null;
   return (
     <button
       onClick={() => window.history.back()}
       className="fixed bottom-[76px] left-4 z-40 flex items-center gap-1.5 rounded-pill border border-line bg-surface px-3 py-1.5 text-[12px] font-semibold text-ink-2 shadow-card hover:bg-surface-hover hover:text-ink transition-colors md:bottom-4 print:hidden"
-      title={`Return to the ${prev.label} stock page (restores your place)`}
+      title={prev.path.startsWith("/stock/") ? `Return to the ${prev.label} stock page (restores your place)` : `Back to ${prev.label} (restores your place)`}
     >
       ← {prev.label}
     </button>

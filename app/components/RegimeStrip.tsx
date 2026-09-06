@@ -39,7 +39,13 @@ function horizonChipClasses(label: "Risk-On" | "Neutral" | "Risk-Off"): string {
   return "border-warn-border bg-warn-soft text-warn";
 }
 
-export function RegimeStrip({ bare = false }: { bare?: boolean } = {}) {
+/**
+ * `compact`: ONE line — label, dial, distance to a flip, Open Brief. No
+ * per-signal pills and no per-horizon chips: those belong on the Brief's
+ * regime breakdown, where the PM asked for them; on the Portfolio home they
+ * repeated the whole engine read on a page about holdings.
+ */
+export function RegimeStrip({ bare = false, compact = false }: { bare?: boolean; compact?: boolean } = {}) {
   const [regime, setRegime] = useState<MarketRegimeData | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -79,6 +85,36 @@ export function RegimeStrip({ bare = false }: { bare?: boolean } = {}) {
     );
   }
   if (!regime) return null;
+
+  if (compact) {
+    const c = regime.composite;
+    const off = c.signals.filter((s) => s.direction === "risk-off").length;
+    const flat = c.total - c.score - off;
+    return (
+      <div className={`flex flex-wrap items-center gap-x-3 gap-y-1 ${bare ? "" : "rounded-card border border-line bg-white px-4 py-2.5 shadow-sm"}`}>
+        <span className="text-[11px] font-semibold uppercase tracking-wide text-ink-3">Market regime</span>
+        <span className={`rounded-pill px-2.5 py-[3px] text-[11px] font-bold ${compositeBadge(c.label)}`}>{c.label}</span>
+        {typeof c.score100 === "number" && (
+          <span className="font-mono text-[12px] text-ink-2" title="Weighted regime dial, 0 = risk-off … 100 = risk-on">
+            dial <b className="text-ink">{c.score100}</b>
+          </span>
+        )}
+        <span className="font-mono text-[11px] text-ink-3" title={c.signals.map((s) => `${s.name}: ${s.direction}`).join("\n")}>
+          {c.score}↑ {off}↓ {flat}· / {c.total}
+        </span>
+        {c.pending ? (
+          <span className="rounded-pill bg-warn-soft px-2 py-[2px] text-[10.5px] font-semibold text-warn" title="The raw read has moved; the label follows after three consecutive sessions">
+            → {c.pending.label} {c.pending.days}/{c.pending.needed}
+          </span>
+        ) : typeof c.signalsToShed === "number" && c.signalsToShed > 0 && c.signalsToShed <= 2 ? (
+          <span className="text-[11px] text-ink-3">{c.signalsToShed} signal{c.signalsToShed === 1 ? "" : "s"} from a change</span>
+        ) : null}
+        <Link href="/brief" className="ml-auto text-[11px] font-semibold text-accent hover:text-accent-ink" title="The full breakdown — every signal and what it is worth on the dial">
+          Why → Brief
+        </Link>
+      </div>
+    );
+  }
 
   return (
     <div className={bare ? "overflow-hidden" : "overflow-hidden rounded-card border border-line bg-white p-3 shadow-sm sm:p-4"}>
