@@ -3,7 +3,7 @@
 import React from "react";
 import Link from "next/link";
 import type { DailySummary } from "@/app/lib/daily-summary";
-import { Card, Dial, DivergingBar, Metric, Pct, Pill, Spark, fmtPct, ordinal, regimeTone, timeAgo } from "./summary-ui";
+import { Card, Dial, DivergingBar, Metric, Pct, Pill, Spark, TileLink, fmtPct, ordinal, regimeTone, timeAgo, useRevealFold } from "./summary-ui";
 
 /**
  * The decision band — the four reads that answer the daily questions, sized to
@@ -67,7 +67,7 @@ export function AlphaCoreCard({ s }: { s: DailySummary }) {
   const tone = adding ? "pos" : detracting ? "neg" : "warn";
   const mom = p.momentum.direction;
   return (
-    <Card tone={tone}>
+    <Card tone={tone} className="flex flex-col">
       <TileHead
         title="Alpha vs core"
         sub={p.asOf ?? undefined}
@@ -96,6 +96,7 @@ export function AlphaCoreCard({ s }: { s: DailySummary }) {
           </div>
         ))}
       </div>
+      <TileLink href="/aa-performance">Full performance, every model &rarr;</TileLink>
     </Card>
   );
 }
@@ -116,7 +117,7 @@ export function RegimeCard({ s, onOpenDetail, detailOpen }: { s: DailySummary; o
   const tone = regimeTone(c.label);
   const lead = r.horizons.filter((h) => h.score != null).sort((a, b) => Math.abs(b.score as number) - Math.abs(a.score as number))[0];
   return (
-    <Card tone={tone}>
+    <Card tone={tone} className="flex flex-col">
       <TileHead
         title="Regime"
         sub={r.computedAt ? timeAgo(r.computedAt) : "weighted vote"}
@@ -146,9 +147,6 @@ export function RegimeCard({ s, onOpenDetail, detailOpen }: { s: DailySummary; o
             {c.score}↑ {c.signals.filter((x) => x.direction === "risk-off").length}↓{" "}
             {c.signals.filter((x) => x.direction === "neutral").length}· / {c.total}
           </div>
-          <div className="pt-0.5 text-[11px] font-semibold text-accent">
-            {detailOpen ? "Hide contributions ↑" : `See all ${c.total} contributions →`}
-          </div>
         </div>
       </button>
       <div className="space-y-1 border-t border-line-soft px-4 py-2">
@@ -162,6 +160,9 @@ export function RegimeCard({ s, onOpenDetail, detailOpen }: { s: DailySummary; o
           </div>
         ))}
       </div>
+      <TileLink onClick={onOpenDetail}>
+        {detailOpen ? "Hide the contributions \u2191" : `See all ${c.total} contributions \u2192`}
+      </TileLink>
     </Card>
   );
 }
@@ -169,6 +170,7 @@ export function RegimeCard({ s, onOpenDetail, detailOpen }: { s: DailySummary; o
 /* ── Cash ────────────────────────────────────────────────────────────── */
 
 export function CashCard({ s }: { s: DailySummary }) {
+  const reveal = useRevealFold();
   const cash = s.brief?.cash;
   const call = cash?.call;
   if (!call) {
@@ -182,8 +184,13 @@ export function CashCard({ s }: { s: DailySummary }) {
   const tone = call.action === "DEPLOY" ? "pos" : call.action === "DEPLOY_PARTIAL" ? "warn" : undefined;
   const score = Math.max(0, Math.min(100, call.score));
   const delta = cash?.priorScore != null ? call.score - cash.priorScore : null;
+  // The trigger lists are model output and run long — as pills they wrapped to
+  // three rows and clipped mid-word. Two fixed single lines (met / missing)
+  // fit the tile whatever the model returns; the full text is on hover.
+  const met = call.triggersMet ?? [];
+  const missing = call.triggersMissing ?? [];
   return (
-    <Card tone={tone}>
+    <Card tone={tone} className="flex flex-col">
       <TileHead title="Cash" sub={call.window} right={<Pill tone={tone ?? "neutral"}>{call.action.replace("_", " ")}</Pill>} />
       <div className="flex items-start gap-2.5 px-4 pt-2">
         <div className="relative h-[54px] w-[54px] shrink-0">
@@ -202,21 +209,28 @@ export function CashCard({ s }: { s: DailySummary }) {
           </svg>
           <span className="absolute inset-0 flex items-center justify-center font-mono text-[15px] font-semibold">{call.score}</span>
         </div>
-        <div className="min-w-0 text-[11.5px] leading-snug text-ink-2">
-          <span className="line-clamp-3">{call.reason}</span>
+        <div className="min-w-0 flex-1">
           {delta != null && delta !== 0 && (
-            <span className={`ml-1 font-mono text-[11px] ${delta > 0 ? "text-pos" : "text-neg"}`}>({delta > 0 ? "+" : ""}{delta} vs prior)</span>
+            <div className={`font-mono text-[11px] font-semibold ${delta > 0 ? "text-pos" : "text-neg"}`}>
+              {delta > 0 ? "+" : ""}{delta} vs prior
+            </div>
           )}
+          <p className="line-clamp-3 text-[11.5px] leading-snug text-ink-2" title={call.reason}>
+            {call.reason}
+          </p>
         </div>
       </div>
-      <div className="mt-2 flex flex-wrap gap-1 border-t border-line-soft px-4 pt-2 pb-2.5">
-        {call.triggersMet.slice(0, 3).map((t) => (
-          <Pill key={`m-${t}`} tone="pos" className="normal-case tracking-normal">{t}</Pill>
-        ))}
-        {call.triggersMissing.slice(0, 2).map((t) => (
-          <Pill key={`x-${t}`} tone="neutral" className="normal-case tracking-normal line-through decoration-ink-faint">{t}</Pill>
-        ))}
+      <div className="mt-2 space-y-0.5 px-4 pb-2 text-[11px]">
+        <div className="flex items-baseline gap-1.5" title={met.join(" · ") || "none"}>
+          <span className="shrink-0 font-semibold text-pos">{met.length} met</span>
+          <span className="min-w-0 truncate text-ink-2">{met.join(" · ") || "—"}</span>
+        </div>
+        <div className="flex items-baseline gap-1.5" title={missing.join(" · ") || "none"}>
+          <span className="shrink-0 font-semibold text-ink-3">{missing.length} missing</span>
+          <span className="min-w-0 truncate text-ink-3">{missing.join(" · ") || "—"}</span>
+        </div>
       </div>
+      <TileLink onClick={() => reveal("briefNarrativeCash")}>How the score was built &rarr;</TileLink>
     </Card>
   );
 }
@@ -224,13 +238,14 @@ export function CashCard({ s }: { s: DailySummary }) {
 /* ── Hedging ─────────────────────────────────────────────────────────── */
 
 export function HedgeCard({ s }: { s: DailySummary }) {
+  const reveal = useRevealFold();
   const h = s.brief?.hedging;
   const call = h?.call;
   const tone = call?.action === "ADD" ? "neg" : call?.action === "HOLD" ? "accent" : undefined;
   const bucket = h?.detail?.buckets.find((b) => /2-4/.test(b.bucket)) ?? h?.detail?.buckets[0];
   const anchor = h?.detail?.anchors.find((a) => a.daysToExpiry >= 60 && a.daysToExpiry <= 120) ?? h?.detail?.anchors[0];
   return (
-    <Card tone={tone}>
+    <Card tone={tone} className="flex flex-col">
       <TileHead
         title="Hedging"
         sub={h?.refreshedAt ? `repriced ${timeAgo(h.refreshedAt)}` : h?.detail ? timeAgo(h.detail.fetchedAt) : "brief call"}
@@ -280,6 +295,7 @@ export function HedgeCard({ s }: { s: DailySummary }) {
           <span className="text-ink-3">No protection on the books.</span>
         )}
       </div>
+      <TileLink onClick={() => reveal("briefNarrativeHedgeBasis")}>Premium basis and the checklist &rarr;</TileLink>
     </Card>
   );
 }

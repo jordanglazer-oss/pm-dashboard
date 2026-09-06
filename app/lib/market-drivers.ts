@@ -13,7 +13,8 @@
 
 import { getRedis } from "@/app/lib/redis";
 import { createLogger } from "@/app/lib/logger";
-import { crossSectional, factsetConfigured, type FactsetValue } from "@/app/lib/factset";
+import { crossSectional, factsetConfigured, totalReturnFormula, type FactsetValue } from "@/app/lib/factset";
+import { fetchYahooDaily } from "@/app/lib/daily-summary/yahoo";
 import { resolveFactsetId } from "@/app/lib/factset-symbols";
 import { SP500, TSX60 } from "@/app/lib/factor-constituents";
 import type { Stock } from "@/app/lib/types";
@@ -24,15 +25,84 @@ export const DRIVERS_KEY = "pm:market-drivers";
 export const DRIVERS_STALE_MS = 20 * 60 * 60 * 1000;
 const CHUNK = 40;
 
-const FORMULAS = {
-  ret1d: "P_TOTAL_RETURNC(-1D,0)",
-  ret1w: "P_TOTAL_RETURNC(-1W,0)",
-  ret1m: "P_TOTAL_RETURNC(-1M,0)",
-  ret3m: "P_TOTAL_RETURNC(-3M,0)",
+/**
+ * Stock-side formulas. Deliberately MINIMAL (four): the first cut asked for
+ * seven across ~554 ids and the relay answered 429 "API rate limit exceeded".
+ * `ret1m` was dropped because the drivers UI only ever shows 1D and 1W, and
+ * the company name was dropped because held names already come from pm:stocks
+ * and everything else labels fine by ticker + sector.
+ *
+ * The daily/weekly windows are built from EXPLICIT session dates, not relative
+ * offsets: FactSet rejects `P_TOTAL_RETURNC(-1D,0)` outright with
+ * "Invalid Daily Price Date Specification", which silently nulled every 1D and
+ * 1W number. Explicit dates are also weekend- and holiday-proof, because the
+ * anchors are read off real SPY sessions rather than calendar arithmetic.
+ */
+const STATIC_FORMULAS = {
   mcap: "FG_MKT_VALUE",
   sector: "FG_GICS_SECTOR",
-  name: "FG_COMPANY_NAME",
 } as const;
+
+/** Windows in TRADING SESSIONS back from the latest close. */
+const SESSIONS_1D = 1;
+const SESSIONS_1W = 5;
+const SESSIONS_1M = 21;
+const SESSIONS_3M = 63;
+
+/** Relay chunking. Chunks run SEQUENTIALLY (factor-universe's proven shape) —
+ *  firing all ~14 in parallel is what triggered the 429. */
+const CHUNK_PAUSE_MS = 250;
+
+type Anchors = { end: string; d1: string; w1: string };
+
+/** YYYY-MM-DD → YYYYMMDD (FactSet's explicit date form). */
+function fsDate(iso: string): string {
+  return iso.slice(0, 10).replace(/-/g, "");
+}
+
+/**
+ * Real session dates from SPY's own daily bars, so "1 day" means the last
+ * completed session — correct on a Sunday, a holiday, or a half day alike.
+ * Null when Yahoo is unavailable (the caller then skips the FactSet pull
+ * rather than asking for a window it cannot anchor).
+ */
+async function sessionAnchors(): Promise<{ anchors: Anchors | null; dates: string[] }> {
+  const bars = await fetchYahooDaily("SPY", "6mo");
+  const dates = bars.map((b) => b.date);
+  if (dates.length < SESSIONS_1W + 1) return { anchors: null, dates };
+  const end = dates[dates.length - 1];
+  return {
+    anchors: {
+      end: fsDate(end),
+      d1: fsDate(dates[dates.length - 1 - SESSIONS_1D]),
+      w1: fsDate(dates[dates.length - 1 - SESSIONS_1W]),
+    },
+    dates,
+  };
+}
+
+/** Trailing return over `sessions` bars of a close series, in percent. */
+function trailingReturn(values: number[], sessions: number): number | null {
+  if (values.length < sessions + 1) return null;
+  const now = values[values.length - 1];
+  const then = values[values.length - 1 - sessions];
+  if (!isFinite(now) || !isFinite(then) || then <= 0) return null;
+  return ((now / then) - 1) * 100;
+}
+
+/** Run `jobs` with at most `limit` in flight. */
+async function pool<T>(jobs: (() => Promise<T>)[], limit: number): Promise<T[]> {
+  const out: T[] = new Array(jobs.length);
+  let next = 0;
+  const workers = Array.from({ length: Math.min(limit, jobs.length) }, async () => {
+    while (next < jobs.length) {
+      const i = next++;
+      out[i] = await jobs[i]();
+    }
+  });
+  await Promise.all(workers);
+  return out;
+}
 
 export type DriverRow = {
   ticker: string;
@@ -131,20 +201,61 @@ export const ETF_UNIVERSE: { symbol: string; label: string; kind: EtfRow["kind"]
 
 type Raw = Record<string, Record<string, FactsetValue>>;
 
+/**
+ * Sequential chunked cross-sectional pull.
+ *
+ * Chunks run ONE AT A TIME with a short pause — the first cut fired all ~14 in
+ * parallel and the relay answered 429 "API rate limit exceeded" for every one,
+ * which is why the whole zone came back empty. `relayRetry` deliberately does
+ * not retry 4xx, and 429 IS a 4xx, so the backoff for it lives here.
+ */
 async function pull(ids: string[], formulas: string[]): Promise<Raw> {
   const merged: Raw = {};
   const chunks: string[][] = [];
   for (let i = 0; i < ids.length; i += CHUNK) chunks.push(ids.slice(i, i + CHUNK));
-  await Promise.all(
-    chunks.map(async (chunk) => {
+  let rateLimited = 0;
+  for (const chunk of chunks) {
+    for (let attempt = 0; attempt < 3; attempt++) {
       try {
         Object.assign(merged, await crossSectional(chunk, formulas));
+        break;
       } catch (e) {
-        log.warn(`chunk of ${chunk.length} failed:`, e instanceof Error ? e.message : e);
+        const msg = e instanceof Error ? e.message : String(e);
+        const is429 = /returned 429/.test(msg);
+        if (is429 && attempt < 2) {
+          rateLimited++;
+          await new Promise((r) => setTimeout(r, 1200 * (attempt + 1)));
+          continue;
+        }
+        log.warn(`chunk of ${chunk.length} failed:`, msg.slice(0, 200));
+        break;
       }
-    })
-  );
+    }
+    await new Promise((r) => setTimeout(r, CHUNK_PAUSE_MS));
+  }
+  if (rateLimited > 0) log.info(`backed off ${rateLimited}x on relay rate limits`);
   return merged;
+}
+
+/** Yahoo-derived returns for the sector / industry ETF universe.
+ *  Moved off FactSet entirely: 35 more relay ids was a needless share of the
+ *  rate limit, and daily bars give a session-accurate 1D/1W/1M/3M for free
+ *  (the same shape sector-leadership.ts already relies on). */
+async function etfReturns(): Promise<EtfRow[]> {
+  const jobs = ETF_UNIVERSE.map((e) => async (): Promise<EtfRow> => {
+    const bars = await fetchYahooDaily(e.symbol, "6mo");
+    const closes = bars.map((b) => b.value);
+    return {
+      symbol: e.symbol,
+      label: e.label,
+      kind: e.kind,
+      ret1d: r2(trailingReturn(closes, SESSIONS_1D)),
+      ret1w: r2(trailingReturn(closes, SESSIONS_1W)),
+      ret1m: r2(trailingReturn(closes, SESSIONS_1M)),
+      ret3m: r2(trailingReturn(closes, SESSIONS_3M)),
+    };
+  });
+  return pool(jobs, 6);
 }
 
 const num = (v: FactsetValue | undefined): number | null => (typeof v === "number" && isFinite(v) ? v : null);
@@ -157,7 +268,8 @@ function buildIndex(
   label: string,
   tickers: string[],
   raw: Raw,
-  held: Map<string, { bucket: "Portfolio" | "Watchlist"; name?: string }>
+  held: Map<string, { bucket: "Portfolio" | "Watchlist"; name?: string }>,
+  f: { ret1d: string; ret1w: string }
 ): IndexDrivers {
   const rows: DriverRow[] = [];
   for (const t of tickers) {
@@ -165,19 +277,19 @@ function buildIndex(
     if (res.source !== "factset") continue;
     const rec = raw[res.id];
     if (!rec) continue;
-    const mcap = num(rec[FORMULAS.mcap]);
-    const ret1d = num(rec[FORMULAS.ret1d]);
+    const mcap = num(rec[STATIC_FORMULAS.mcap]);
+    const ret1d = num(rec[f.ret1d]);
     if (mcap == null || mcap <= 0 || ret1d == null) continue;
     const h = held.get(t.toUpperCase());
     rows.push({
       ticker: t,
-      name: str(rec[FORMULAS.name]) ?? h?.name ?? null,
-      sector: str(rec[FORMULAS.sector]),
+      name: h?.name ?? null,
+      sector: str(rec[STATIC_FORMULAS.sector]),
       mcap,
       weight: null,
       ret1d: r2(ret1d),
-      ret1w: r2(num(rec[FORMULAS.ret1w])),
-      ret1m: r2(num(rec[FORMULAS.ret1m])),
+      ret1w: r2(num(rec[f.ret1w])),
+      ret1m: null,
       contrib1d: null,
       contrib1w: null,
       held: h?.bucket ?? null,
@@ -251,9 +363,10 @@ function buildIndex(
 
 export async function buildMarketDrivers(): Promise<MarketDrivers> {
   const builtAt = new Date().toISOString();
-  if (!factsetConfigured()) {
-    return { builtAt, indexes: [], etfs: [], error: "FactSet relay not configured" };
-  }
+  // NOTE: no early return when FactSet is unconfigured — the ETF sector map is
+  // Yahoo-only now and is worth serving on its own; only the constituent
+  // contributors need the relay.
+  const factset = factsetConfigured();
 
   // Held / watched flags — read-only over pm:stocks.
   const held = new Map<string, { bucket: "Portfolio" | "Watchlist"; name?: string }>();
@@ -274,33 +387,38 @@ export async function buildMarketDrivers(): Promise<MarketDrivers> {
     const r = resolveFactsetId(t);
     if (r.source === "factset") stockIds.add(r.id);
   }
-  const etfIds = ETF_UNIVERSE.map((e) => `${e.symbol}-US`);
 
-  const stockFormulas = Object.values(FORMULAS) as string[];
-  const etfFormulas = [FORMULAS.ret1d, FORMULAS.ret1w, FORMULAS.ret1m, FORMULAS.ret3m];
-  const [stockRaw, etfRaw] = await Promise.all([pull([...stockIds], stockFormulas), pull(etfIds, etfFormulas)]);
+  // Session anchors first: the daily/weekly windows are explicit dates read off
+  // real SPY sessions, so they stay correct on a weekend or a market holiday.
+  const [{ anchors, dates }, etfs] = await Promise.all([sessionAnchors(), etfReturns()]);
+  if (!factset) {
+    log.info("FactSet not configured — serving the Yahoo ETF map only");
+    return { builtAt, indexes: [], etfs, error: "FactSet relay not configured" };
+  }
+  if (!anchors) {
+    log.warn("no SPY session anchors from Yahoo — skipping the constituent pull");
+    return { builtAt, indexes: [], etfs, error: "Could not resolve trading sessions" };
+  }
+  log.info(`sessions: 1D ${anchors.d1}->${anchors.end}, 1W ${anchors.w1}->${anchors.end} (${dates.length} bars)`);
+
+  const f = {
+    ret1d: totalReturnFormula(anchors.d1, anchors.end),
+    ret1w: totalReturnFormula(anchors.w1, anchors.end),
+  };
+  const stockRaw = await pull([...stockIds], [f.ret1d, f.ret1w, STATIC_FORMULAS.mcap, STATIC_FORMULAS.sector]);
 
   const indexes = [
-    buildIndex("spx", "S&P 500", SP500, stockRaw, held),
-    buildIndex("tsx", "TSX 60", TSX60, stockRaw, held),
+    buildIndex("spx", "S&P 500", SP500, stockRaw, held, f),
+    buildIndex("tsx", "TSX 60", TSX60, stockRaw, held, f),
   ];
-  const etfs: EtfRow[] = ETF_UNIVERSE.map((e) => {
-    const rec = etfRaw[`${e.symbol}-US`] ?? {};
-    return {
-      symbol: e.symbol,
-      label: e.label,
-      kind: e.kind,
-      ret1d: r2(num(rec[FORMULAS.ret1d])),
-      ret1w: r2(num(rec[FORMULAS.ret1w])),
-      ret1m: r2(num(rec[FORMULAS.ret1m])),
-      ret3m: r2(num(rec[FORMULAS.ret3m])),
-    };
-  });
 
   const priced = indexes.reduce((s, i) => s + i.namesPriced, 0);
+  const etfsPriced = etfs.filter((e) => e.ret1d != null).length;
   const out: MarketDrivers = { builtAt, indexes, etfs };
-  if (priced === 0) out.error = "FactSet returned no prices";
-  log.info(`built: ${priced} names priced, ${etfs.filter((e) => e.ret1d != null).length}/${etfs.length} ETFs`);
+  // ETFs alone still make the sector map useful, so only a total miss is an error.
+  if (priced === 0 && etfsPriced === 0) out.error = "No market data available";
+  else if (priced === 0) out.error = "FactSet returned no constituent prices";
+  log.info(`built: ${priced} names priced, ${etfsPriced}/${etfs.length} ETFs`);
   return out;
 }
 

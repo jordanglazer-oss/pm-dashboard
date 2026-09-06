@@ -18,7 +18,7 @@ import { buildPerformanceSection, type PerformanceSection } from "./performance"
 import { buildCalendarSection, type CalendarSection } from "./calendar";
 import { buildBriefDigest, type BriefDigest } from "./hedging";
 import { buildActionsSection, type ActionsSection } from "./actions";
-import { buildInflowSection, type InflowSection } from "./inflow";
+import { type InflowSection } from "./inflow";
 import { buildBookSections, type BookSection, type JournalSection, type FunnelSection } from "./book";
 import { buildRegimeSection, type RegimeSection } from "./regime";
 
@@ -88,12 +88,11 @@ export async function buildDailySummary(opts: { refreshDrivers?: boolean } = {})
   // Drivers first (regime's sector map joins on its ETF rows), everything else
   // in parallel with it.
   const driversP = settle("drivers", timed("drivers", () => getMarketDrivers({ refresh: opts.refreshDrivers }), timing));
-  const [performance, calendar, digest, actions, inflow, books, drivers] = await Promise.all([
+  const [performance, calendar, digest, actions, books, drivers] = await Promise.all([
     settle("performance", timed("performance", buildPerformanceSection, timing)),
     settle("calendar", timed("calendar", () => buildCalendarSection(14), timing)),
     settle("brief", timed("brief", buildBriefDigest, timing)),
     settle("actions", timed("actions", () => buildActionsSection(brief), timing)),
-    settle("inflow", timed("inflow", () => buildInflowSection(30), timing)),
     settle("book", timed("book", buildBookSections, timing)),
     driversP,
   ]);
@@ -143,7 +142,10 @@ export async function buildDailySummary(opts: { refreshDrivers?: boolean } = {})
     calendar,
     drivers,
     actions,
-    inflow,
+    // The Desk zone was removed from the Brief, so nothing renders inflow —
+    // don't pay for its Redis reads (analyst reports + street takeaways +
+    // score history). The field stays on the type so re-adding is a one-liner.
+    inflow: null,
     book: books?.book ?? null,
     journal: books?.journal ?? null,
     funnel: books?.funnel ?? null,

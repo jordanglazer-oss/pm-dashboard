@@ -30,32 +30,39 @@ import { useStocks } from "@/app/lib/StockContext";
  * click away). Renders the familiar section eyebrow as a toggle; open/closed
  * persists in pm:ui-prefs. Children render untouched when open.
  */
-function BriefFold({ prefKey, title, meta, id, defaultCollapsed = true, children }: {
+function BriefFold({ prefKey, title, meta, preview, id, defaultCollapsed = true, padded = true, children }: {
   prefKey: string;
   title: string;
   meta?: React.ReactNode;
+  /** One-line read shown while CLOSED, so a folded rail still says whether it
+   *  is worth opening (same contract as the summary rails). */
+  preview?: React.ReactNode;
   /** Anchor id for the command-bar jump links (e.g. "s-horizon"). */
   id?: string;
   defaultCollapsed?: boolean;
+  /** Set false when the body brings its own padding/cards. */
+  padded?: boolean;
   children: React.ReactNode;
 }) {
   const { uiPrefs, setUiPref } = useStocks();
   const collapsed = (uiPrefs[prefKey] ?? (defaultCollapsed ? "1" : "0")) === "1";
   return (
-    <>
-      <div style={{ scrollMarginTop: "var(--brief-scroll-mt, 132px)" }} id={id} className="mb-2 mt-2">
-        <button
-          onClick={() => setUiPref(prefKey, collapsed ? "0" : "1")}
-          aria-expanded={!collapsed}
-          className="flex items-baseline gap-2.5 text-left cursor-pointer hover:opacity-80 transition-opacity"
-        >
-          <svg className={`h-3 w-3 self-center text-ink-3 transition-transform ${collapsed ? "-rotate-90" : ""}`} fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" /></svg>
-          <h2 className="text-xs font-bold uppercase tracking-[0.22em] text-ink-3">{title}</h2>
-          {meta && <span className="text-[11px] text-ink-faint">{meta}</span>}
-        </button>
-      </div>
-      {!collapsed && children}
-    </>
+    <section className="min-w-0 overflow-hidden rounded-card border border-line bg-white shadow-sm">
+      <button
+        type="button"
+        onClick={() => setUiPref(prefKey, collapsed ? "0" : "1")}
+        aria-expanded={!collapsed}
+        id={id}
+        style={{ scrollMarginTop: "var(--brief-scroll-mt, 132px)" }}
+        className="flex w-full items-center gap-2 px-4 py-2.5 text-left transition-colors hover:bg-surface-hover"
+      >
+        <svg className={`h-3 w-3 shrink-0 text-ink-3 transition-transform ${collapsed ? "-rotate-90" : ""}`} fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" /></svg>
+        <span className="shrink-0 text-[13px] font-bold tracking-tight text-ink">{title}</span>
+        {meta && <span className="shrink-0 text-[11px] text-ink-3">· {meta}</span>}
+        {preview && collapsed && <span className="min-w-0 flex-1 truncate text-[11.5px] text-ink-2">{preview}</span>}
+      </button>
+      {!collapsed && <div className={`border-t border-line-soft ${padded ? "p-3" : ""}`}>{children}</div>}
+    </section>
   );
 }
 
@@ -2493,15 +2500,19 @@ export function MorningBrief({
           heatmap or the leading/lagging fallback, PM implication); it simply no
           longer needs a click to see. */}
       {sectorRotation && (
-        <BriefFold prefKey="brief.fold.sectorRotation" title="Sector rotation" meta={brief?.sectorPerformance?.length ? `${brief.sectorPerformance.length} sectors · best → worst` : "best → worst"}>
-        <section className="rounded-card border border-line bg-white shadow-sm">
-          <div className="flex items-center gap-2 border-b border-line px-5 py-3">
-            <span className="text-xs font-bold uppercase tracking-[0.22em] text-ink-3">Sector rotation</span>
-            {brief?.sectorPerformance && brief.sectorPerformance.length > 0 && (
-              <span className="text-[11px] text-ink-3">{brief.sectorPerformance.length} sectors · best → worst</span>
-            )}
-          </div>
-          <div className="px-5 py-4">
+        <BriefFold
+          prefKey="brief.fold.sectorRotation"
+          title="Sector rotation"
+          meta={brief?.sectorPerformance?.length ? `${brief.sectorPerformance.length} sectors` : "best → worst"}
+          preview={sectorRotation.leading.length || sectorRotation.lagging.length ? (
+            <>
+              leading {sectorRotation.leading.slice(0, 2).join(", ") || "—"} · lagging {sectorRotation.lagging.slice(0, 2).join(", ") || "—"}
+            </>
+          ) : undefined}
+          padded={false}
+        >
+        <div>
+          <div className="px-4 py-3">
             <ClampText text={sectorRotation.summary} className="mb-4" />
             {brief?.sectorPerformance && brief.sectorPerformance.length > 0 ? (
               <div className="grid grid-cols-3 gap-2 sm:grid-cols-6 lg:grid-cols-11">
@@ -2540,14 +2551,26 @@ export function MorningBrief({
             )}
             <ClampText text={sectorRotation.pmImplication} className="mt-3" textClassName="text-sm italic leading-6 text-ink-2" />
           </div>
-        </section>
+        </div>
         </BriefFold>
       )}
 
       {/* Contrarian sentiment + Catalyst watch side by side, as the mock
           pairs them: the sentiment read on the left, the dated calendar it
           has to survive on the right. */}
-      <BriefFold prefKey="brief.fold.sentiment" title="Contrarian sentiment & catalysts" meta="the counter-signal read, and the calendar it has to survive">
+      <BriefFold
+        prefKey="brief.fold.sentiment"
+        title="Contrarian sentiment"
+        meta="counter-signal read + catalysts"
+        preview={
+          <>
+            F&amp;G {activeForward?.fearGreed?.value ?? marketData.fearGreed ?? "—"} · put/call{" "}
+            {activeForward?.putCallRatio?.value ?? marketData.putCall ?? "—"} · AAII{" "}
+            {activeForward?.aaiiBullBear?.value ?? marketData.aaiiBullBear ?? "—"} · oscillator{" "}
+            {activeForward?.spOscillator?.value ?? marketData.spOscillator ?? "—"}
+          </>
+        }
+      >
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-[1.35fr_1fr] items-start">
         <div className="min-w-0">
       {/* Contrarian Sentiment — all 4 indicators + Claude analysis */}
@@ -2613,10 +2636,32 @@ export function MorningBrief({
       </BriefFold>
       </div>
       {/* ── Horizons: tactical / cyclical / structural — folded (canvas) ── */}
-      <BriefFold prefKey="brief.fold.horizons" title="Horizons" meta="tactical · cyclical · structural" id="s-horizon">
-      <div className="space-y-6 ">
+      <BriefFold
+        prefKey="brief.fold.horizons"
+        title="Horizons"
+        meta="tactical · cyclical · structural"
+        id="s-horizon"
+        padded={false}
+        preview={
+          marketRegime?.horizons ? (
+            <>
+              {HORIZONS.map((h, i) => {
+                const b = marketRegime.horizons!.byHorizon[h.id];
+                const v = isFinite(b.score) ? `${b.score >= 0 ? "+" : ""}${b.score.toFixed(2)}` : "—";
+                return (
+                  <span key={h.id}>
+                    {i > 0 ? " · " : ""}
+                    {h.shortLabel} <span className="font-mono">{v}</span>
+                  </span>
+                );
+              })}
+            </>
+          ) : undefined
+        }
+      >
+      <div className="space-y-4 p-3">
       {/* Forward View — Next 2 Weeks */}
-      <section className="rounded-card border border-line bg-white p-4 md:p-5 shadow-sm">
+      <section className="rounded-card border border-line-soft bg-surface-2 p-4">
         <div className="flex flex-wrap items-center justify-between gap-3 mb-3">
           <div className="flex flex-wrap items-center gap-2">
             <h2 className="text-[15px] font-bold text-ink">Forward View — Multi-Horizon</h2>
@@ -2793,7 +2838,7 @@ export function MorningBrief({
           title={
             <span className="flex items-center gap-2">
               <span className="h-2 w-2 rounded-full bg-ink-3" aria-hidden />
-              <span className="text-base font-semibold">Regime tells</span>
+              <span className="text-[13px] font-bold tracking-tight">Regime tells</span>
             </span>
           }
           subtitle={
@@ -2822,7 +2867,7 @@ export function MorningBrief({
           title={
             <span className="flex items-center gap-2">
               <span className="h-2 w-2 rounded-full bg-neg" aria-hidden />
-              <span className="text-base font-semibold">Breadth & internals</span>
+              <span className="text-[13px] font-bold tracking-tight">Breadth & internals</span>
             </span>
           }
           subtitle={<span className="text-xs text-ink-3">participation behind the index move</span>}
@@ -2838,7 +2883,7 @@ export function MorningBrief({
           title={
             <span className="flex items-center gap-2">
               <span className="h-2 w-2 rounded-full bg-pos" aria-hidden />
-              <span className="text-base font-semibold">Credit & volatility</span>
+              <span className="text-[13px] font-bold tracking-tight">Credit & volatility</span>
             </span>
           }
           subtitle={<span className="text-xs text-ink-3">where stress shows up before it hits price</span>}
@@ -2855,7 +2900,7 @@ export function MorningBrief({
           title={
             <span className="flex items-center gap-2">
               <span className="h-2 w-2 rounded-full bg-accent" aria-hidden />
-              <span className="text-base font-semibold">Hedging data basis</span>
+              <span className="text-[13px] font-bold tracking-tight">Hedging data basis</span>
             </span>
           }
           subtitle={
@@ -2997,7 +3042,7 @@ export function MorningBrief({
           prefKey="briefNarrativeCash"
           flush
           defaultCollapsed
-          title={<span className="flex items-center gap-2"><span className="h-2 w-2 rounded-full bg-warn" aria-hidden /><span className="text-base font-semibold">Cash deployment</span></span>}
+          title={<span className="flex items-center gap-2"><span className="h-2 w-2 rounded-full bg-warn" aria-hidden /><span className="text-[13px] font-bold tracking-tight">Cash deployment</span></span>}
           subtitle={<span className="text-xs text-ink-3">{cashDeploymentCall.action}{typeof cashDeploymentCall.score === "number" ? ` · ${cashDeploymentCall.score}/100` : ""}</span>}
         >
         {/* Clamped: this tile now sits in the Decide column, and the
@@ -3053,7 +3098,7 @@ export function MorningBrief({
         title={
           <span className="flex flex-wrap items-center gap-2">
             <span className="h-2 w-2 rounded-full bg-warn" aria-hidden />
-            <span className="text-base font-semibold">Composite Signal</span>
+            <span className="text-[13px] font-bold tracking-tight">Composite Signal</span>
           </span>
         }
         subtitle={
@@ -3085,7 +3130,7 @@ export function MorningBrief({
           title={
             <span className="flex flex-wrap items-center gap-2">
               <span className="h-2 w-2 rounded-full bg-violet" aria-hidden />
-              <span className="text-base font-semibold">What the tape may be under-pricing</span>
+              <span className="text-[13px] font-bold tracking-tight">What the tape may be under-pricing</span>
             </span>
           }
           subtitle={<span className="text-[10px] font-bold uppercase tracking-wider text-violet">Non-consensus</span>}

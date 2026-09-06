@@ -65,7 +65,7 @@ export function Pct({ v, digits = 2, className = "", deadband = 0, pp = false }:
   return <span className={`font-mono tabular-nums ${toneFor(v, deadband)} ${className}`}>{pp ? fmtPp(v, digits) : fmtPct(v, digits)}</span>;
 }
 
-export function Pill({ children, tone = "neutral", className = "" }: { children: React.ReactNode; tone?: "pos" | "neg" | "warn" | "accent" | "neutral" | "violet"; className?: string }) {
+export function Pill({ children, tone = "neutral", className = "", title }: { children: React.ReactNode; tone?: "pos" | "neg" | "warn" | "accent" | "neutral" | "violet"; className?: string; title?: string }) {
   const map = {
     pos: "border-pos-border bg-pos-soft text-pos",
     neg: "border-neg-border bg-neg-soft text-neg",
@@ -74,7 +74,7 @@ export function Pill({ children, tone = "neutral", className = "" }: { children:
     violet: "border-violet-border bg-violet-soft text-violet",
     neutral: "border-line bg-surface-2 text-ink-2",
   } as const;
-  return <span className={`inline-flex items-center whitespace-nowrap rounded-pill border px-2 py-[2px] text-[10.5px] font-semibold uppercase tracking-[0.04em] ${map[tone]} ${className}`}>{children}</span>;
+  return <span title={title} className={`inline-flex items-center whitespace-nowrap rounded-pill border px-2 py-[2px] text-[10.5px] font-semibold uppercase tracking-[0.04em] ${map[tone]} ${className}`}>{children}</span>;
 }
 
 export function regimeTone(label: string | null | undefined): "pos" | "neg" | "warn" {
@@ -280,5 +280,45 @@ export function Metric({ label, value, sub, tone }: { label: string; value: Reac
       <div className={`font-mono text-[13px] font-semibold tabular-nums ${cls}`}>{value}</div>
       {sub && <div className="truncate text-[10px] text-ink-faint">{sub}</div>}
     </div>
+  );
+}
+
+/**
+ * Open a narrative fold and scroll to it.
+ *
+ * The Brief's long-form rows are `CollapsibleSection`s keyed by prefKey, and
+ * each renders `id={prefKey}` — so a decision tile can hand the PM straight to
+ * the prose behind its call instead of leaving them to hunt for it. Setting the
+ * pref to "0" expands it (pm:ui-prefs, "1" = collapsed), then we scroll once
+ * React has painted the now-open row.
+ */
+export function useRevealFold(): (prefKey: string) => void {
+  const { setUiPref } = useStocks();
+  return React.useCallback(
+    (prefKey: string) => {
+      setUiPref(prefKey, "0");
+      requestAnimationFrame(() => {
+        const el = document.getElementById(prefKey);
+        if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });
+      });
+    },
+    [setUiPref]
+  );
+}
+
+/** The consistent "go deeper" affordance at the foot of a decision tile. */
+export function TileLink({ onClick, href, children }: { onClick?: () => void; href?: string; children: React.ReactNode }) {
+  const cls = "mt-auto block w-full border-t border-line-soft px-4 py-1.5 text-left text-[11px] font-semibold text-accent transition-colors hover:bg-accent-soft";
+  if (href) {
+    return (
+      <Link href={href} className={cls}>
+        {children}
+      </Link>
+    );
+  }
+  return (
+    <button type="button" onClick={onClick} className={cls}>
+      {children}
+    </button>
   );
 }

@@ -10,7 +10,6 @@ import { ActionQueue, ThesisBookCard } from "./SummaryAct";
 import { NextUpCard } from "./NextUp";
 import { EarningsCard, EconCard } from "./SummaryCalendar";
 import { DriversCard, ModelsCard, SectorMapCard } from "./SummaryMarket";
-import { FunnelCard, InflowCard, JournalCard } from "./SummaryDesk";
 import { RegimeDetail } from "./RegimeDetail";
 
 /**
@@ -33,7 +32,6 @@ export const SUMMARY_SECTIONS = [
   { id: "s-act", label: "Act" },
   { id: "s-calendar", label: "Calendar" },
   { id: "s-market", label: "Market" },
-  { id: "s-desk", label: "Desk" },
   { id: "s-board", label: "Board" },
   { id: "s-horizon", label: "Horizons" },
   { id: "s-narrative", label: "Narrative" },
@@ -226,19 +224,6 @@ export function DailySummaryView({ onLoaded }: { onLoaded?: (s: DailySummary) =>
           </div>
         </Fold>
 
-        <Fold
-          prefKey="brief.summary.desk"
-          id="s-desk"
-          title="Desk"
-          preview={<DeskPreview s={s} />}
-          right={<RailHint>inflow · funnel · decisions</RailHint>}
-        >
-          <div className="grid grid-cols-1 gap-3 p-3 lg:grid-cols-3">
-            <InflowCard s={s} />
-            <FunnelCard s={s} />
-            <JournalCard s={s} />
-          </div>
-        </Fold>
       </div>
 
       {s.errors.length > 0 && (
@@ -322,23 +307,6 @@ function MarketPreview({ s }: { s: DailySummary }) {
       )}
       {worstSector && <> · {worstSector.sector} lags <Pct v={worstSector.ret1d} digits={1} /></>}
       {heldInTop > 0 && <> · you hold {heldInTop} of the top 10</>}
-    </>
-  );
-}
-
-function DeskPreview({ s }: { s: DailySummary }) {
-  const i = s.inflow;
-  const f = s.funnel;
-  const j = s.journal;
-  const arrived = i ? i.reports.length + i.alerts.length + i.rescored.length : 0;
-  return (
-    <>
-      <b>{arrived}</b> arrived
-      {f && <> · funnel <span className="font-mono">{f.suggested} → {f.watchlist} → {f.portfolio}</span></>}
-      {f && f.entryReady > 0 && <span className="text-pos"> · {f.entryReady} entry-ready</span>}
-      {j?.stats && j.stats.buys.n > 0 && (
-        <> · buys hitting <span className="font-mono">{j.stats.buys.hits}/{j.stats.buys.n}</span> at 3M</>
-      )}
     </>
   );
 }
