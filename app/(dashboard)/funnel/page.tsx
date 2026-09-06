@@ -77,6 +77,7 @@ export default function FunnelPage() {
   const [kill, setKill] = useState<{ holdings: KillRow[]; coverage: Coverage } | null>(null);
   const [health, setHealth] = useState<Health | null>(null);
   const [entry, setEntry] = useState<EntryScanLite | null>(null);
+  const [aiPositioned, setAiPositioned] = useState<number | null>(null);
 
   useEffect(() => {
     let alive = true;
@@ -87,6 +88,7 @@ export default function FunnelPage() {
     get("/api/thesis-watch").then((j) => alive && setKill({ holdings: j?.holdings ?? [], coverage: j?.coverage ?? { portfolioCount: 0, underwritten: 0, missing: [] } }));
     get("/api/thesis-health").then((j) => alive && setHealth(j?.thesisHealth ?? null));
     get("/api/entry-scan").then((j) => alive && setEntry(Array.isArray(j?.rows) ? j : null));
+    get("/api/suggested-ai").then((j) => alive && setAiPositioned(j?.view?.names ? Object.values(j.view.names as Record<string, { tier: string }>).filter((n) => n.tier === "positioned").length : null));
     return () => { alive = false; };
   }, []);
 
@@ -160,7 +162,7 @@ export default function FunnelPage() {
       <div className="flex flex-col gap-2 md:flex-row md:items-stretch">
         <StageCard title="Research" count={ranked.length} href="/research" sub={<>{ranked.filter((r) => r.currency === "CAD").length} CAD · {ranked.filter((r) => r.currency === "USD").length} USD · ranked by list count</>} />
         <Arrow />
-        <StageCard title="Suggested" count={suggestedRows.length} href="/?bucket=Suggested" tone="accent" sub={<>{SUGGESTED_MIN_LISTS}+ lists · {suggestedRows.filter((r) => r.isNew).length} new · {suggested?.passed.length ?? 0} passed (30d)</>} />
+        <StageCard title="Suggested" count={suggestedRows.length} href="/?bucket=Suggested" tone="accent" sub={<>{SUGGESTED_MIN_LISTS}+ lists · {suggestedRows.filter((r) => r.isNew).length} new · {suggested?.passed.length ?? 0} passed (30d){aiPositioned != null ? <> · <span className="font-semibold text-pos">{aiPositioned} AI-positioned</span></> : null}</>} />
         <Arrow />
         <StageCard title="Synthesis" count={`${generatedSuggested.length}/${suggestedSynth.length}`} href="/synthesis" sub={<>{verdictCounts.advance ?? 0} advance · {verdictCounts.watch ?? 0} watch · {verdictCounts.pass ?? 0} pass</>} />
         <Arrow />

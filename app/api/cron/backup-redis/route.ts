@@ -11,6 +11,7 @@ import { refreshTechnicals } from "@/app/lib/technicals-refresh";
 import { rebuildThesisHealth } from "@/app/lib/thesis-health-refresh";
 import { runThesisReviews } from "@/app/lib/thesis-review";
 import { buildEntryScan } from "@/app/lib/entry-scan";
+import { readSuggestedAi, buildSuggestedAi, isSuggestedAiStale } from "@/app/lib/suggested-ai";
 import { runCustomConditionChecks } from "@/app/lib/custom-condition-check";
 import { computeBookFactorScores } from "@/app/lib/factor-scores";
 import { computeDataHealth, type DataHealthReport } from "@/app/lib/data-health";
@@ -425,6 +426,29 @@ export async function GET(req: NextRequest) {
       thesisReviews = { ran: false, error: msg };
     }
 
+    // ── 4c. AI-positioned Suggested — weekly, or when the regime label flips ──
+    // ≈ one call per sector group. Gated on staleness so a normal night spends
+    // nothing; the Suggested tab button forces it any time.
+    let suggestedAi: { ran: true; calls: number; positioned: number } | { ran: false; reason: string };
+    try {
+      const cur = await readSuggestedAi();
+      let label: string | null = null;
+      try {
+        const raw = await redis.get("pm:market-regime");
+        label = raw ? ((JSON.parse(raw) as { composite?: { label?: string } }).composite?.label ?? null) : null;
+      } catch { label = null; }
+      if (isSuggestedAiStale(cur, label) && Date.now() < startedAt + CUSTOM_CHECK_DEADLINE_MS) {
+        const v = await buildSuggestedAi();
+        suggestedAi = { ran: true, calls: v.calls, positioned: Object.values(v.names).filter((n) => n.tier === "positioned").length };
+      } else {
+        suggestedAi = { ran: false, reason: "fresh" };
+      }
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      console.error("[backup-redis] suggested-ai refresh failed:", msg);
+      suggestedAi = { ran: false, reason: msg };
+    }
+
     // ── 5. Run invariant check inline ────────────────────────────────
     // Best-effort: a thrown invariant check must not turn a successful
     // backup into a failed response. We log + carry on if it errors.
@@ -467,6 +491,7 @@ export async function GET(req: NextRequest) {
       customChecks,
       thesisReviews,
       entryScan,
+      suggestedAi,
       factorScores,
       dataHealth: dataHealth ? { ok: dataHealth.ok, problems: dataHealth.problemCount } : null,
       alertDigest,

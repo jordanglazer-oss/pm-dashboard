@@ -11,6 +11,13 @@ import type { SuggestedRow, SuggestedDecision } from "@/app/lib/suggested-watchl
 import type { SynthesisVerdict } from "@/app/lib/synthesis-screen-display";
 import { VERDICT_LABEL } from "@/app/lib/synthesis-screen-display";
 import type { Stock, ScoreKey } from "@/app/lib/types";
+import type { SuggestedAiView, PositionTier } from "@/app/lib/suggested-ai";
+
+const TIER_STYLE: Record<PositionTier, string> = {
+  positioned: "bg-pos text-white ring-pos",
+  neutral: "bg-surface-2 text-ink-2 ring-line",
+  against: "bg-neg-soft text-neg ring-neg-border",
+};
 
 /** A promoted name starts unscored — the scoring flow fills it in. */
 const ZERO_SCORES: Record<ScoreKey, number> = {
@@ -57,6 +64,33 @@ export function SuggestedFunnel({ onCountChange }: { onCountChange?: (n: number)
   const [showPassed, setShowPassed] = useState(false);
   const [ccy, setCcy] = useState<"All" | "CAD" | "USD">("All");
   const [synthesis, setSynthesis] = useState<Map<string, SynthesisMeta>>(new Map());
+  // AI-positioned view (pm:suggested-ai): tier + reason per name, sector backdrops.
+  const [ai, setAi] = useState<{ view: SuggestedAiView | null; stale: boolean; regimeLabel: string | null } | null>(null);
+  const [positioning, setPositioning] = useState(false);
+  const [aiErr, setAiErr] = useState<string | null>(null);
+  const [tierFilter, setTierFilter] = useState<"all" | "positioned" | "not-against">("all");
+  const [showAdds, setShowAdds] = useState(false);
+  const loadAi = useCallback(async () => {
+    try {
+      const r = await fetch("/api/suggested-ai", { cache: "no-store" });
+      if (r.ok) setAi(await r.json());
+    } catch { /* leave as is */ }
+  }, []);
+  useEffect(() => { void loadAi(); }, [loadAi]);
+  const positionWithAi = async () => {
+    setPositioning(true);
+    setAiErr(null);
+    try {
+      const r = await fetch("/api/suggested-ai", { method: "POST" });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok) setAiErr(j.error ?? "positioning failed");
+      else if (j.view?.error) setAiErr(j.view.error);
+      await loadAi();
+    } finally {
+      setPositioning(false);
+    }
+  };
+
   // Entry scorecard (met/known + ready) per name, read-only from the cached scan.
   const [setup, setSetup] = useState<Map<string, { met: number; known: number; ready: boolean; signals: string[] }>>(new Map());
   useEffect(() => {
@@ -176,7 +210,13 @@ export function SuggestedFunnel({ onCountChange }: { onCountChange?: (n: number)
   };
 
   const base = data ? (showPassed ? data.passed : data.rows) : [];
-  const all = ccy === "All" ? base : base.filter((r) => r.currency === ccy);
+  const tierOf = (r: SuggestedRow): PositionTier | undefined => ai?.view?.names[r.ticker.toUpperCase()]?.tier ?? ai?.view?.names[`${r.key.toUpperCase()}.TO`]?.tier ?? ai?.view?.names[r.key.toUpperCase()]?.tier;
+  const byTier = tierFilter === "all" ? base : base.filter((r) => { const t = tierOf(r); return tierFilter === "positioned" ? t === "positioned" : t !== "against"; });
+  const all = ccy === "All" ? byTier : byTier.filter((r) => r.currency === ccy);
+  // "AI adds": names the model calls positioned that sit on only ONE list —
+  // the widening move the pure count can't make. Shown below the table.
+  const suggestedSet = new Set(base.map((r) => r.ticker.toUpperCase()));
+  const aiAdds = ai?.view ? Object.entries(ai.view.names).filter(([t, v]) => v.tier === "positioned" && !suggestedSet.has(t)).sort((x, y) => y[1].listCount - x[1].listCount) : [];
   const { sorted, toggle, arrow } = useTableSort(
     all,
     {
@@ -206,6 +246,16 @@ export function SuggestedFunnel({ onCountChange }: { onCountChange?: (n: number)
             {" "}Next: <Link href="/synthesis" className="font-semibold !text-accent hover:underline">Synthesis › Suggested</Link>.
           </p>
           {status && <p className="mt-1 text-[11px] text-ink-2">{status}</p>}
+          {ai?.view ? (
+            <p className="mt-1 text-[11px] text-ink-3">
+              AI view {ai.view.generatedAt.slice(0, 10)}{ai.view.regimeLabel ? ` · regime ${ai.view.regimeLabel}` : ""}{ai.view.briefDate ? ` · brief ${ai.view.briefDate}` : ""} ·{" "}
+              <span className="font-semibold text-pos">{Object.values(ai.view.names).filter((n) => n.tier === "positioned").length} positioned</span> of {ai.view.namesConsidered}
+              {ai.stale && <span className="ml-1 rounded bg-warn-soft px-1 py-px text-[9px] font-bold uppercase text-warn ring-1 ring-warn-border">stale</span>}
+            </p>
+          ) : (
+            <p className="mt-1 text-[11px] text-ink-3">No AI positioning yet — &ldquo;Position with AI&rdquo; tiers every ranked name against today&apos;s backdrop (≈ one call per sector).</p>
+          )}
+          {aiErr && <p className="mt-1 text-[11px] text-neg">{aiErr}</p>}
         </div>
         <div className="flex flex-wrap items-center gap-2 text-xs">
           <span className="inline-flex items-center rounded-control border border-line bg-surface-2 p-0.5">
@@ -222,6 +272,21 @@ export function SuggestedFunnel({ onCountChange }: { onCountChange?: (n: number)
             title="Names you passed on in the last 30 days (hidden from the list until the memory expires)"
           >
             {showPassed ? `Showing passed (${data?.passed.length ?? 0})` : `Passed (${data?.passed.length ?? 0})`}
+          </button>
+          <span className="inline-flex items-center rounded-control border border-line bg-surface-2 p-0.5" title="Filter by the AI positioning tier">
+            {([["all", "All"], ["not-against", "Not against"], ["positioned", "Positioned"]] as const).map(([k, label]) => (
+              <button key={k} onClick={() => setTierFilter(k)} disabled={!ai?.view} className={`rounded-[6px] px-2.5 py-1 font-semibold transition-colors disabled:opacity-40 ${tierFilter === k ? "bg-pos text-white" : "text-ink-2 hover:text-ink"}`}>
+                {label}
+              </button>
+            ))}
+          </span>
+          <button
+            onClick={positionWithAi}
+            disabled={positioning}
+            className="rounded-control border border-pos-border bg-pos-soft px-3 py-1.5 font-semibold text-pos hover:bg-pos hover:text-white transition-colors disabled:opacity-50"
+            title="Tier every ranked research name (positioned / neutral / against) given the regime, the brief, sector & industry leadership and each name's own reads. About one model call per sector."
+          >
+            {positioning ? "Positioning…" : "✦ Position with AI"}
           </button>
           <button onClick={refresh} disabled={refreshing} className="rounded-control bg-accent px-3 py-1.5 font-semibold !text-white disabled:opacity-50">
             {refreshing ? "Refreshing…" : "Refresh"}
@@ -244,6 +309,7 @@ export function SuggestedFunnel({ onCountChange }: { onCountChange?: (n: number)
                 <th className={thSort} onClick={() => toggle("name")}>Name{arrow("name")}</th>
                 <th className={thSort} onClick={() => toggle("sector")}>Sector{arrow("sector")}</th>
                 <th className={`${thSort} text-right`} onClick={() => toggle("lists")}>Lists{arrow("lists")}</th>
+                <th className={th} title="AI positioning vs today's backdrop">AI view</th>
                 <th className={th}>Sources</th>
                 <th className={th} title="Entry setup (signals met / known) and improving reads">Setup</th>
                 <th className={th}>Synthesis</th>
@@ -269,6 +335,17 @@ export function SuggestedFunnel({ onCountChange }: { onCountChange?: (n: number)
                     <td className="py-2.5 pr-3 text-right font-mono font-semibold tabular-nums text-ink">
                       {r.listCount}
                       {r.listDelta !== 0 && <span className={`ml-1 text-[10px] ${r.listDelta > 0 ? "text-pos" : "text-neg"}`}>{r.listDelta > 0 ? "+" : ""}{r.listDelta}</span>}
+                    </td>
+                    <td className="py-2.5 pr-3">
+                      {(() => {
+                        const n = ai?.view?.names[r.ticker.toUpperCase()] ?? ai?.view?.names[r.key.toUpperCase()];
+                        if (!n) return <span className="text-[11px] text-ink-faint">—</span>;
+                        return (
+                          <span className={`inline-flex items-center rounded-full px-1.5 py-px text-[10px] font-bold uppercase ring-1 ${TIER_STYLE[n.tier]}`} title={n.reason}>
+                            {n.tier}
+                          </span>
+                        );
+                      })()}
                     </td>
                     <td className="py-2.5 pr-3">
                       <span className="flex flex-wrap gap-1">
@@ -359,6 +436,34 @@ export function SuggestedFunnel({ onCountChange }: { onCountChange?: (n: number)
               })}
             </tbody>
           </table>
+        </div>
+      )}
+
+      {ai?.view && (aiAdds.length > 0 || Object.keys(ai.view.sectorBackdrops).length > 0) && (
+        <div className="mt-3 border-t border-line pt-3">
+          <button onClick={() => setShowAdds((v) => !v)} className="text-[11px] font-semibold text-ink-2 hover:text-ink">
+            {showAdds ? "▾" : "▸"} AI adds ({aiAdds.length}) &amp; sector backdrops
+          </button>
+          {showAdds && (
+            <div className="mt-2 space-y-2">
+              {aiAdds.length > 0 && (
+                <div>
+                  <p className="text-[11px] text-ink-3">Positioned names on fewer than {SUGGESTED_MIN_LISTS} lists — the model widening the funnel. Not on the Suggested list unless you add them.</p>
+                  <div className="mt-1 flex flex-wrap gap-1.5">
+                    {aiAdds.map(([t, v]) => (
+                      <span key={t} className="inline-flex items-center gap-1 rounded-md border border-pos-border bg-pos-soft px-1.5 py-0.5 text-[11px]" title={v.reason}>
+                        <TickerLink ticker={t} className="font-mono font-bold text-pos">{displayTicker(t)}</TickerLink>
+                        <span className="text-ink-3">{v.listCount} list · {v.sector || "—"}</span>
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
+              {Object.entries(ai.view.sectorBackdrops).map(([sector, text]) => (
+                <p key={sector} className="text-[11px] text-ink-2"><span className="font-semibold text-ink">{sector}:</span> {text}</p>
+              ))}
+            </div>
+          )}
         </div>
       )}
     </div>
