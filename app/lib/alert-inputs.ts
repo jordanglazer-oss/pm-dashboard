@@ -69,7 +69,7 @@ type StoredStock = {
   /** YYYY-MM-DD (Yahoo calendarEvents) — feeds the catalyst-aware escalation. */
   earningsDate?: string;
   riskAlert?: { level?: string; summary?: string; signals?: Array<{ name: string; status: string }> };
-  healthData?: { twoHundredDayAvg?: number; currentPrice?: number };
+  healthData?: { twoHundredDayAvg?: number; currentPrice?: number; earningsDate?: string };
 };
 
 function parse<T>(raw: string | null, fallback: T): T {
@@ -166,7 +166,12 @@ export async function loadAlertInputs(): Promise<AlertInputs> {
       revDown: typeof fs?.revDown === "number" ? fs.revDown : null,
       riskLevel: s.riskAlert?.level ?? null,
       instrumentType: s.instrumentType ?? null,
-      earningsDate: typeof s.earningsDate === "string" ? s.earningsDate.slice(0, 10) : null,
+      earningsDate:
+        typeof s.earningsDate === "string"
+          ? s.earningsDate.slice(0, 10)
+          : typeof s.healthData?.earningsDate === "string"
+          ? s.healthData.earningsDate.slice(0, 10)
+          : null,
     };
   }
 

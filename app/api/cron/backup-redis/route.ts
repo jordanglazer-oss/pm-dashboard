@@ -7,6 +7,7 @@ import { pruneStashes } from "@/app/lib/stash-prune";
 import { captureLiveHedgingSnapshot } from "@/app/lib/hedging";
 import { refreshFactsetEstimates } from "@/app/lib/estimates-refresh";
 import { refreshMarketRegime } from "@/app/lib/market-regime-refresh";
+import { getMarketDrivers } from "@/app/lib/market-drivers";
 import { refreshTechnicals } from "@/app/lib/technicals-refresh";
 import { rebuildThesisHealth } from "@/app/lib/thesis-health-refresh";
 import { runThesisReviews } from "@/app/lib/thesis-review";
@@ -304,6 +305,20 @@ export async function GET(req: NextRequest) {
       regimeRefresh = { ran: false, error: msg };
     }
 
+    // ── 4e. Market drivers (index / sector / industry contributors) for
+    //        the Brief summary — one batched FactSet pull over the S&P 500 +
+    //        TSX 60 lists. Pure regenerable cache (pm:market-drivers).
+    //        Best-effort: never fails the backup. ──
+    let driversRefresh: { ran: true; namesPriced: number; error?: string } | { ran: false; error: string };
+    try {
+      const d = await getMarketDrivers({ refresh: true });
+      driversRefresh = { ran: true, namesPriced: d?.indexes.reduce((n, i) => n + i.namesPriced, 0) ?? 0, error: d?.error };
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      console.error("[backup-redis] market-drivers refresh failed (summary will use the cached snapshot):", msg);
+      driversRefresh = { ran: false, error: msg };
+    }
+
     // Technicals + riskAlert from fresh price history. Must run BEFORE
     // thesis-health (which consumes riskAlert) and before the digest (whose
     // TECHNICAL alerts key off riskAlert). This is the only step that writes
@@ -486,6 +501,7 @@ export async function GET(req: NextRequest) {
       hedgingSnapshot,
       estimatesRefresh,
       regimeRefresh,
+      driversRefresh,
       technicalsRefresh,
       thesisRefresh,
       customChecks,

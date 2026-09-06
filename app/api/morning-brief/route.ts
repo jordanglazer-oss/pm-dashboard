@@ -977,8 +977,14 @@ ${rows.join("\n")}`;
       const calRedis = await getRedis();
       const rawStocks = await calRedis.get("pm:stocks");
       const parsedStocks = rawStocks ? JSON.parse(rawStocks) : [];
+      // earningsDate is written under healthData by /api/refresh-data; older
+      // entries may carry it at the top level. Read both so the calendar
+      // actually sees the dates (it silently saw none when only the top
+      // level was consulted).
       const calStocks = Array.isArray(parsedStocks)
-        ? (parsedStocks as Array<{ ticker?: string; bucket?: string; earningsDate?: string }>)
+        ? (parsedStocks as Array<{ ticker?: string; bucket?: string; earningsDate?: string; healthData?: { earningsDate?: string } }>).map(
+            (s) => ({ ...s, earningsDate: s.earningsDate ?? s.healthData?.earningsDate })
+          )
         : [];
       catalystCalendar = await buildCatalystCalendar(calStocks, 14);
     } catch (e) {
