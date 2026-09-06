@@ -10,7 +10,14 @@
 import { readRegimeCache } from "@/app/lib/market-regime-refresh";
 import { readRegimeHistory } from "@/app/lib/regime-history";
 import { computeRegimeTransition, type RegimeTransition } from "@/app/lib/regime-transition";
-import { HORIZONS, type Horizon } from "@/app/lib/horizons";
+import {
+  HORIZONS,
+  type FlipPlan,
+  type Horizon,
+  type SignalContribution,
+  flipCandidates,
+  signalContributions,
+} from "@/app/lib/horizons";
 import { readRiskAnalytics } from "@/app/lib/risk-analytics";
 import type { MarketRegimeData, RegimeComposite } from "@/app/lib/market-regime";
 import type { MarketDrivers } from "@/app/lib/market-drivers";
@@ -35,6 +42,10 @@ export type RegimeSection = {
   composite: RegimeComposite | null;
   horizons: { id: Horizon; label: string; shortLabel: string; weight: number; score: number | null; label_: string; riskOn: number; riskOff: number; total: number }[];
   transition: RegimeTransition | null;
+  /** What each signal is worth on the 0..100 dial; sums to score100 − 50. */
+  contributions: SignalContribution[];
+  /** The cheapest set of signals that would move the label, and where to. */
+  flip: FlipPlan | null;
   history: { date: string; score100: number | null; label: string; rawLabel: string }[];
   informational: { dxy: number | null; tnx: number | null; oil: number | null; stoxx: number | null; nikkei: number | null };
   sectorMap: SectorMapRow[];
@@ -78,6 +89,21 @@ export async function buildRegimeSection(drivers: MarketDrivers | null): Promise
       })
     : [];
 
+  const contributions = regime?.horizons ? signalContributions(regime.horizons) : [];
+  // Where could it go from here? From Neutral, whichever pole is cheaper;
+  // from a committed pole, the step back to Neutral.
+  let flip: FlipPlan | null = null;
+  if (regime?.horizons) {
+    const label = regime.horizons.weightedLabel;
+    if (label === "Neutral") {
+      const on = flipCandidates(regime.horizons, "Risk-On");
+      const off = flipCandidates(regime.horizons, "Risk-Off");
+      flip = !on ? off : !off ? on : on.count <= off.count ? on : off;
+    } else {
+      flip = flipCandidates(regime.horizons, "Neutral");
+    }
+  }
+
   const sectorWeight = new Map<string, { weight: number; sp: number | null }>();
   for (const s of risk?.sectors ?? []) sectorWeight.set(s.sector.toLowerCase(), { weight: s.weight, sp: s.spWeight });
 
@@ -114,6 +140,8 @@ export async function buildRegimeSection(drivers: MarketDrivers | null): Promise
     composite: regime?.composite ?? null,
     horizons,
     transition,
+    contributions,
+    flip,
     history: history.slice(-30).map((r) => ({ date: r.date, score100: r.score100, label: r.label, rawLabel: r.rawLabel })),
     informational: {
       dxy: regime?.crossAsset?.dxy?.change20dPct ?? null,

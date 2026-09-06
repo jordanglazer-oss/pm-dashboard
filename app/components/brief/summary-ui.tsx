@@ -2,6 +2,7 @@
 
 import React from "react";
 import Link from "next/link";
+import { useStocks } from "@/app/lib/StockContext";
 
 /**
  * Shared primitives for the Brief summary zones. Card language mirrors the
@@ -189,4 +190,77 @@ export function timeAgo(iso: string | null | undefined): string {
   const h = Math.round(m / 60);
   if (h < 36) return `${h}h ago`;
   return `${Math.round(h / 24)}d ago`;
+}
+
+/**
+ * A collapsible rail. Open/closed persists per person in `pm:ui-prefs` (the
+ * same store the brief's narrative folds use, "1" = collapsed), so the page
+ * comes back the way it was left.
+ *
+ * `preview` is the point of the pattern: a CLOSED rail still carries a live
+ * one-line read, so the PM can tell whether it is worth opening without
+ * opening it. Keep it to one line of the most decision-relevant numbers.
+ */
+export function Fold({
+  prefKey,
+  id,
+  title,
+  preview,
+  meta,
+  right,
+  defaultOpen = false,
+  tone,
+  children,
+}: {
+  prefKey: string;
+  id?: string;
+  title: string;
+  preview?: React.ReactNode;
+  meta?: React.ReactNode;
+  right?: React.ReactNode;
+  defaultOpen?: boolean;
+  tone?: "pos" | "neg" | "warn" | "accent";
+  children: React.ReactNode;
+}) {
+  const { uiPrefs, setUiPref } = useStocks();
+  const open = (uiPrefs[prefKey] ?? (defaultOpen ? "0" : "1")) !== "1";
+  return (
+    <Card tone={tone} className="min-w-0">
+      <button
+        type="button"
+        onClick={() => setUiPref(prefKey, open ? "1" : "0")}
+        aria-expanded={open}
+        id={id}
+        style={{ scrollMarginTop: "var(--brief-scroll-mt, 132px)" }}
+        className="flex w-full items-center gap-2 px-4 py-2.5 text-left transition-colors hover:bg-surface-hover"
+      >
+        <svg
+          className={`h-3 w-3 shrink-0 text-ink-3 transition-transform ${open ? "" : "-rotate-90"}`}
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2.5"
+          viewBox="0 0 24 24"
+        >
+          <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+        </svg>
+        <span className="shrink-0 text-[13px] font-bold tracking-tight text-ink">{title}</span>
+        {meta && <span className="shrink-0 text-[11px] text-ink-3">· {meta}</span>}
+        {preview && !open && <span className="min-w-0 flex-1 truncate text-[11.5px] text-ink-2">{preview}</span>}
+        <span className="ml-auto shrink-0 pl-2">{right}</span>
+      </button>
+      {open && <div className="border-t border-line-soft">{children}</div>}
+    </Card>
+  );
+}
+
+/** Compact label/value pair for the decision band. */
+export function Metric({ label, value, sub, tone }: { label: string; value: React.ReactNode; sub?: React.ReactNode; tone?: "pos" | "neg" | "warn" }) {
+  const cls = tone === "pos" ? "text-pos" : tone === "neg" ? "text-neg" : tone === "warn" ? "text-warn" : "text-ink";
+  return (
+    <div className="min-w-0 rounded-control border border-line-soft bg-surface-2 px-2 py-1.5">
+      <div className="truncate text-[10px] font-semibold uppercase tracking-wide text-ink-3">{label}</div>
+      <div className={`font-mono text-[13px] font-semibold tabular-nums ${cls}`}>{value}</div>
+      {sub && <div className="truncate text-[10px] text-ink-faint">{sub}</div>}
+    </div>
+  );
 }

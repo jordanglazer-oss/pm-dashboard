@@ -16,7 +16,16 @@ const SOURCE_LABEL: Record<ActionItem["source"], { label: string; tone: "pos" | 
   ai: { label: "Brief", tone: "accent" },
 };
 
-export function ActionQueue({ s, onMark }: { s: DailySummary; onMark: (id: string, status: "done" | "snoozed" | "clear") => Promise<void> }) {
+export function ActionQueue({
+  s,
+  onMark,
+  scrollable = false,
+}: {
+  s: DailySummary;
+  onMark: (id: string, status: "done" | "snoozed" | "clear") => Promise<void>;
+  /** Cap the list and scroll INSIDE it, so a long queue never grows the page. */
+  scrollable?: boolean;
+}) {
   const a = s.actions;
   const [showCleared, setShowCleared] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
@@ -46,7 +55,7 @@ export function ActionQueue({ s, onMark }: { s: DailySummary; onMark: (id: strin
       ) : a.items.length === 0 && !showCleared ? (
         <Empty>Nothing needs a decision right now.</Empty>
       ) : (
-        <ul className="divide-y divide-line-soft">
+        <ul className={`divide-y divide-line-soft ${scrollable ? "max-h-[298px] overflow-y-auto" : ""}`}>
           {(showCleared ? [...a.items, ...a.dismissed] : a.items).map((it) => (
             <li key={it.id} className={`flex items-start gap-3 px-4 py-2.5 ${it.state ? "opacity-55" : ""}`}>
               <span className={`mt-[7px] h-2 w-2 shrink-0 rounded-full ${it.priority === "high" ? "bg-neg" : it.priority === "medium" ? "bg-warn" : "bg-ink-faint"}`} />
@@ -93,13 +102,14 @@ export function ActionQueue({ s, onMark }: { s: DailySummary; onMark: (id: strin
   );
 }
 
-export function ThesisBookCard({ s }: { s: DailySummary }) {
+export function ThesisBookCard({ s, bare = false }: { s: DailySummary; bare?: boolean }) {
   const t = s.actions?.thesis;
   const b = s.book;
   const th = b?.thesis;
+  const Wrap = bare ? BareWrap : Card;
   return (
-    <Card>
-      <CardHeader title="Thesis & book" sub="monitoring" href="/thesis" />
+    <Wrap>
+      {!bare && <CardHeader title="Thesis & book" sub="monitoring" href="/thesis" />}
       <div className="px-4 pt-3 pb-2 text-[12px]">
         {th && (
           <div className="flex items-center gap-2">
@@ -152,8 +162,14 @@ export function ThesisBookCard({ s }: { s: DailySummary }) {
           )}
         </div>
       )}
-    </Card>
+    </Wrap>
   );
+}
+
+/** Renders children with no card chrome — for use inside a Fold, which already
+ *  supplies the card and the header. */
+function BareWrap({ children }: { children: React.ReactNode }) {
+  return <div className="min-w-0">{children}</div>;
 }
 
 function Count({ n, label, tone }: { n: number; label: string; tone: "pos" | "warn" | "neg" }) {

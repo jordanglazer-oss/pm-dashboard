@@ -289,3 +289,134 @@ function makeEmpty(id: Horizon): HorizonComposite {
     signals: [],
   };
 }
+
+// ── Per-signal contributions (the dial breakdown) ─────────────────
+
+export type SignalContribution = {
+  name: string;
+  direction: RegimeDirection;
+  detail: string;
+  horizon: Horizon;
+  horizonLabel: string;
+  horizonShort: string;
+  /** Horizon weight after the same re-normalisation rollupHorizons applies. */
+  horizonWeight: number;
+  /** Dial points a SINGLE vote in this horizon is worth (always positive). */
+  perSignalPoints: number;
+  /** Signed contribution to the 0..100 dial; 0 for a neutral vote. */
+  dialPoints: number;
+};
+
+/** Effective (re-normalised) weight per horizon — horizons with no signals
+ *  don't dilute the rest, matching rollupHorizons' weightedScore. */
+function effectiveWeights(rollup: HorizonRollup): Record<Horizon, number> {
+  let den = 0;
+  for (const meta of HORIZONS) {
+    const b = rollup.byHorizon[meta.id];
+    if (b.total > 0 && isFinite(b.score)) den += meta.weight;
+  }
+  const out = { tactical: 0, cyclical: 0, structural: 0 } as Record<Horizon, number>;
+  if (den <= 0) return out;
+  for (const meta of HORIZONS) {
+    const b = rollup.byHorizon[meta.id];
+    if (b.total > 0 && isFinite(b.score)) out[meta.id] = meta.weight / den;
+  }
+  return out;
+}
+
+/**
+ * What each individual signal is worth on the 0..100 dial.
+ *
+ * The dial starts at 50 (every signal neutral) and each vote moves it by its
+ * horizon's share divided by that horizon's signal count, scaled to dial
+ * points. Summing `dialPoints` over every signal and adding 50 reproduces
+ * `scoreTo100(weightedScore)` exactly — that identity is the point: the
+ * breakdown shown to the PM has to add up to the number on the dial.
+ *
+ * Ordered by horizon (tactical → cyclical → structural), and within a horizon
+ * by contribution, risk-on first.
+ */
+export function signalContributions(rollup: HorizonRollup): SignalContribution[] {
+  const weights = effectiveWeights(rollup);
+  const out: SignalContribution[] = [];
+  for (const meta of HORIZONS) {
+    const b = rollup.byHorizon[meta.id];
+    if (b.total === 0) continue;
+    const w = weights[meta.id];
+    const perSignalPoints = (w / b.total) * 50;
+    for (const sig of b.signals) {
+      const sign = sig.direction === "risk-on" ? 1 : sig.direction === "risk-off" ? -1 : 0;
+      out.push({
+        name: sig.name,
+        direction: sig.direction,
+        detail: sig.detail,
+        horizon: meta.id,
+        horizonLabel: meta.label,
+        horizonShort: meta.shortLabel,
+        horizonWeight: w,
+        perSignalPoints,
+        dialPoints: sign * perSignalPoints,
+      });
+    }
+  }
+  return out.sort((a, b) => {
+    const order: Horizon[] = ["tactical", "cyclical", "structural"];
+    const d = order.indexOf(a.horizon) - order.indexOf(b.horizon);
+    return d !== 0 ? d : b.dialPoints - a.dialPoints;
+  });
+}
+
+export type FlipPlan = {
+  target: "Risk-On" | "Neutral" | "Risk-Off";
+  /** Fewest signals that would have to move. */
+  count: number;
+  /** Those signals, biggest mover first, with the dial points each would add. */
+  signals: { name: string; dialPoints: number; steps: 1 | 2 }[];
+};
+
+/**
+ * WHICH signals would move the label, not just how many — the greedy set
+ * `signalsToFlip` counts, surfaced so the UI can name them. Returns null when
+ * the label is already `target` or nothing could reach it.
+ */
+export function flipCandidates(
+  rollup: HorizonRollup,
+  target: "Risk-On" | "Neutral" | "Risk-Off"
+): FlipPlan | null {
+  const current = rollup.weightedLabel;
+  if (current === target || !isFinite(rollup.weightedScore)) return null;
+
+  const weights = effectiveWeights(rollup);
+  const T = LABEL_THRESHOLD;
+  const s = rollup.weightedScore;
+  let needed: number;
+  let upward: boolean;
+  if (target === "Risk-On") { upward = true; needed = T - s; }
+  else if (target === "Risk-Off") { upward = false; needed = s + T; }
+  else if (current === "Risk-On") { upward = false; needed = s - T + 1e-9; }
+  else { upward = true; needed = -T - s + 1e-9; }
+  if (needed <= 0) return { target, count: 0, signals: [] };
+
+  const moves: { name: string; score: number; steps: 1 | 2 }[] = [];
+  for (const meta of HORIZONS) {
+    const b = rollup.byHorizon[meta.id];
+    if (b.total === 0) continue;
+    const unit = weights[meta.id] / b.total;
+    for (const sig of b.signals) {
+      const room = upward
+        ? sig.direction === "risk-on" ? 0 : sig.direction === "neutral" ? 1 : 2
+        : sig.direction === "risk-off" ? 0 : sig.direction === "neutral" ? 1 : 2;
+      if (room > 0) moves.push({ name: sig.name, score: unit * room, steps: room as 1 | 2 });
+    }
+  }
+  moves.sort((a, b) => b.score - a.score);
+
+  const chosen: FlipPlan["signals"] = [];
+  let acc = 0;
+  for (const m of moves) {
+    acc += m.score;
+    chosen.push({ name: m.name, dialPoints: m.score * 50 * (upward ? 1 : -1), steps: m.steps });
+    if (acc >= needed) return { target, count: chosen.length, signals: chosen };
+  }
+  return null;
+}
