@@ -15,16 +15,20 @@ import type { ScoredStock } from "@/app/lib/types";
  * default; the toggle here reveals it.
  */
 
-const FIT_CHIP: Record<string, string> = {
-  favored: "bg-pos-soft text-pos",
-  neutral: "bg-surface-2 text-ink-3",
-  headwind: "bg-neg-soft text-neg",
+/** Regime fit → status dot + word (colour by job). */
+const FIT_DOT: Record<string, { dot: string; text: string; word: string }> = {
+  favored: { dot: "bg-pos", text: "text-pos", word: "Favored" },
+  neutral: { dot: "bg-ink-faint", text: "text-ink-3", word: "Neutral" },
+  headwind: { dot: "bg-neg", text: "text-neg", word: "Headwind" },
 };
 
-function fitChip(label: string, fit?: string) {
+function FitCell({ fit }: { fit?: string }) {
+  const f = fit ? FIT_DOT[fit] : undefined;
+  if (!f) return <span className="text-ink-faint">—</span>;
   return (
-    <span className={`rounded px-1.5 py-0.5 text-[10px] font-semibold ${FIT_CHIP[fit ?? "neutral"]}`}>
-      {label}: {fit ?? "—"}
+    <span className="inline-flex items-center gap-1.5">
+      <span className={`dot ${f.dot}`} />
+      <span className={`text-[12px] ${f.text}`}>{f.word}</span>
     </span>
   );
 }
@@ -58,37 +62,33 @@ export function ForwardScorePanel() {
       title={
         <span className="inline-flex items-center gap-2">
           Forward regime score
-          <span className="rounded-full bg-accent-soft px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-accent">beta</span>
+          <span className="text-[11px] font-normal text-ink-3">beta</span>
         </span>
       }
       subtitle="Your scores, tilted toward the regime you're heading into"
       right={
-        <button
-          onClick={() => setUiPref("forwardScoreEnabled", enabled ? "0" : "1")}
-          className={`rounded-full px-2.5 py-1 text-[11px] font-semibold transition-colors ${
-            enabled ? "bg-ink text-white" : "border border-line text-ink-3 hover:bg-surface-2"
-          }`}
-        >
-          {enabled ? "On" : "Off"}
-        </button>
+        <div className="seg" title="Reveal the forward-tilted view (a lens — never changes live scores)">
+          <button type="button" onClick={() => setUiPref("forwardScoreEnabled", "0")} className={enabled ? "" : "on"}>Off</button>
+          <button type="button" onClick={() => setUiPref("forwardScoreEnabled", "1")} className={enabled ? "on" : ""}>On</button>
+        </div>
       }
     >
       {!enabled ? (
-        <p className="py-1 text-[13px] text-ink-2">
+        <p className="text-[12.5px] leading-5 text-ink-2">
           A parallel, forward-looking view of your scores — each holding blended toward the regime you&apos;re leaning into,
-          weighted by how likely the shift is. It <span className="font-semibold text-ink">never changes</span> your live scores, ratings, or rankings — it&apos;s a lens.
-          Turn it <span className="font-semibold">On</span> to see the tilt.
+          weighted by how likely the shift is. It <span className="font-medium text-ink">never changes</span> your live scores, ratings, or rankings — it&apos;s a lens.
+          Turn it <span className="font-medium text-ink">On</span> to see the tilt.
         </p>
       ) : (
         <div className="flex flex-col gap-3">
           {/* regime context */}
           <div className="flex flex-wrap items-center gap-2 text-[12.5px]">
-            <span className="font-semibold text-ink">{marketData.riskRegime}</span>
+            <span className="font-medium text-ink">{marketData.riskRegime}</span>
             {anticipated && anticipated !== marketData.riskRegime ? (
               <>
-                <span className="text-ink-faint">→ leaning</span>
-                <span className={`font-semibold ${anticipated === "Risk-Off" ? "text-neg" : "text-pos"}`}>{anticipated}</span>
-                <span className="rounded-full bg-surface-2 px-2 py-0.5 text-[11px] font-semibold text-ink-2">blend {Math.round(p * 100)}%</span>
+                <span className="text-ink-3">leaning</span>
+                <span className={`font-medium ${anticipated === "Risk-Off" ? "text-neg" : "text-pos"}`}>{anticipated}</span>
+                <span className="text-ink-3">· blend <span className="font-mono text-ink-2">{Math.round(p * 100)}%</span></span>
               </>
             ) : (
               <span className="text-ink-3">· no directional lean right now (calm regime) — forward scores match current</span>
@@ -97,41 +97,52 @@ export function ForwardScorePanel() {
 
           {/* book-level readiness */}
           {anticipated && anticipated !== marketData.riskRegime && (
-            <p className="rounded-control bg-surface-2/60 px-3 py-2 text-[12.5px] text-ink-2">
-              <span className="font-semibold text-ink">{headwindCount}</span> of {port.length} holdings face a headwind in the{" "}
-              <span className="font-semibold">{anticipated}</span> regime you&apos;re leaning toward
+            <p className="text-[12.5px] leading-5 text-ink-2">
+              <span className="font-mono font-medium text-ink">{headwindCount}</span> of <span className="font-mono">{port.length}</span> holdings face a headwind in the{" "}
+              <span className="font-medium text-ink">{anticipated}</span> regime you&apos;re leaning toward
               {diverging.length > 0 ? " — the biggest score shifts are below." : "."}
             </p>
           )}
 
           {/* per-holding divergence */}
           {diverging.length === 0 ? (
-            <p className="text-[13px] text-ink-3">
+            <p className="text-[12.5px] text-ink-3">
               No meaningful score shifts right now — the current and forward regimes tilt these names the same way.
             </p>
           ) : (
-            <div className="flex flex-col gap-1.5">
-              {diverging.slice(0, 12).map(({ s, delta }: { s: ScoredStock; delta: number }) => (
-                <div key={s.ticker} className="flex items-center gap-3 rounded-control border border-line-soft px-3 py-2 text-[13px]">
-                  <Link href={`/stock/${s.ticker.toLowerCase()}`} className="w-[60px] shrink-0 font-mono font-semibold text-ink hover:underline">
-                    {s.ticker}
-                  </Link>
-                  <span className="font-mono tabular-nums text-ink-2">{s.adjusted.toFixed(1)}</span>
-                  <span className="text-ink-faint">→</span>
-                  <span className="font-mono font-semibold tabular-nums text-ink">{(s.forwardAdjusted ?? s.adjusted).toFixed(1)}</span>
-                  <span className={`font-mono text-[12px] tabular-nums ${delta > 0 ? "text-pos" : "text-neg"}`}>
-                    ({delta > 0 ? "+" : ""}{delta.toFixed(1)})
-                  </span>
-                  <span className="ml-auto flex items-center gap-1.5">
-                    {fitChip("now", s.regimeFitNow)}
-                    {fitChip("next", s.regimeFitNext)}
-                  </span>
-                </div>
-              ))}
+            <div className="-mx-3.5 overflow-x-auto border-t border-line-soft">
+              <table className="data-table min-w-[520px]">
+                <thead>
+                  <tr>
+                    <th className="!pl-3.5">Ticker</th>
+                    <th className="n">Now</th>
+                    <th className="n">Forward</th>
+                    <th className="n">Shift</th>
+                    <th>Fit now</th>
+                    <th>Fit next</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {diverging.slice(0, 12).map(({ s, delta }: { s: ScoredStock; delta: number }) => (
+                    <tr key={s.ticker}>
+                      <td className="!pl-3.5">
+                        <Link href={`/stock/${s.ticker.toLowerCase()}`} className="font-mono font-medium text-ink hover:underline">
+                          {s.ticker}
+                        </Link>
+                      </td>
+                      <td className="n"><span className="text-ink-2">{s.adjusted.toFixed(1)}</span></td>
+                      <td className="n font-medium">{(s.forwardAdjusted ?? s.adjusted).toFixed(1)}</td>
+                      <td className="n"><span className={delta > 0 ? "text-pos" : "text-neg"}>{delta > 0 ? "+" : ""}{delta.toFixed(1)}</span></td>
+                      <td><FitCell fit={s.regimeFitNow} /></td>
+                      <td><FitCell fit={s.regimeFitNext} /></td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
           )}
 
-          <p className="text-[10.5px] leading-4 text-ink-faint">
+          <p className="text-[11.5px] leading-4 text-ink-3">
             Forward score = raw × a blend of the current-regime and anticipated-regime sector tilt (weight from transition risk). A lens on top of your live scores — it never changes ratings or rankings.
           </p>
         </div>

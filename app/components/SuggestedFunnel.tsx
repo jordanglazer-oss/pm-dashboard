@@ -3,8 +3,11 @@
 import React, { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { useStocks } from "@/app/lib/StockContext";
+import { usePersistedOpen } from "@/app/lib/useCollapsed";
 import { displayTicker } from "@/app/lib/ticker";
 import TickerLink from "@/app/components/TickerLink";
+import { AppIcon } from "@/app/components/AppIcon";
+import { EmptyState } from "@/app/components/EmptyState";
 import { useTableSort } from "@/app/lib/useTableSort";
 import { SUGGESTED_MIN_LISTS } from "@/app/lib/research-ranked";
 import type { SuggestedRow, SuggestedDecision } from "@/app/lib/suggested-watchlist";
@@ -13,10 +16,18 @@ import { VERDICT_LABEL } from "@/app/lib/synthesis-screen-display";
 import type { Stock, ScoreKey } from "@/app/lib/types";
 import type { SuggestedAiView, PositionTier } from "@/app/lib/suggested-ai";
 
-const TIER_STYLE: Record<PositionTier, string> = {
-  positioned: "bg-pos text-white ring-pos",
-  neutral: "bg-surface-2 text-ink-2 ring-line",
-  against: "bg-neg-soft text-neg ring-neg-border",
+/** AI tier → status dot + word. Colour by job: positioned / neutral / against. */
+const TIER_DOT: Record<PositionTier, { dot: string; text: string; word: string }> = {
+  positioned: { dot: "bg-pos", text: "text-pos", word: "Positioned" },
+  neutral: { dot: "bg-ink-faint", text: "text-ink-3", word: "Neutral" },
+  against: { dot: "bg-neg", text: "text-neg", word: "Against" },
+};
+
+/** Decision memory → status dot + word. */
+const DECISION_DOT: Record<SuggestedDecision, { dot: string; text: string; word: string }> = {
+  advance: { dot: "bg-pos", text: "text-pos", word: "Advance" },
+  watch: { dot: "bg-warn", text: "text-warn", word: "Watch" },
+  pass: { dot: "bg-ink-faint", text: "text-ink-3", word: "Pass" },
 };
 
 /** A promoted name starts unscored — the scoring flow fills it in. */
@@ -38,11 +49,17 @@ type Payload = {
 
 type SynthesisMeta = { verdict: SynthesisVerdict; stale: boolean; generatedAt: string };
 
-const DECISION_STYLE: Record<SuggestedDecision, string> = {
-  advance: "bg-pos-soft text-pos ring-pos-border",
-  watch: "bg-warn-soft text-warn ring-warn-border",
-  pass: "bg-surface-2 text-ink-3 ring-line",
-};
+/* Control vocabulary: 28px toolbar controls; in-row buttons follow the Ideas
+   canvas (22px, 11.5px) so they sit inside a 34px row. */
+const BTN = "inline-flex h-7 items-center gap-1.5 rounded-control border border-line bg-surface px-2.5 text-[12.5px] text-ink-2 hover:bg-surface-hover hover:text-ink disabled:opacity-50 transition-colors";
+const BTN_PRI = "inline-flex h-7 items-center gap-1.5 rounded-control bg-ink px-2.5 text-[12.5px] font-medium text-white hover:bg-ink-2 disabled:opacity-50 transition-colors";
+const ROW_BTN = "inline-flex h-[22px] items-center gap-1 rounded border border-line bg-surface px-1.5 text-[11.5px] text-ink-2 hover:bg-surface-hover hover:text-ink disabled:opacity-50 transition-colors";
+const TH_SORT = "cursor-pointer select-none hover:text-ink";
+
+function SortIcon({ col, sortKey, dir }: { col: string; sortKey: string; dir: "asc" | "desc" }) {
+  if (col !== sortKey) return null;
+  return <AppIcon name={dir === "asc" ? "sortAsc" : "sortDesc"} size={11} className="ml-1 inline-block align-[-1px]" />;
+}
 
 /**
  * Suggested Watchlist — stage 2 of the funnel: every ranked-research name on
@@ -69,7 +86,8 @@ export function SuggestedFunnel({ onCountChange }: { onCountChange?: (n: number)
   const [positioning, setPositioning] = useState(false);
   const [aiErr, setAiErr] = useState<string | null>(null);
   const [tierFilter, setTierFilter] = useState<"all" | "positioned" | "not-against">("all");
-  const [showAdds, setShowAdds] = useState(false);
+  // The "AI adds & sector backdrops" fold persists (site rule) — closed by default.
+  const [showAdds, toggleAdds] = usePersistedOpen("holdings.suggested.aiAdds.open", false);
   const loadAi = useCallback(async () => {
     try {
       const r = await fetch("/api/suggested-ai", { cache: "no-store" });
@@ -217,7 +235,7 @@ export function SuggestedFunnel({ onCountChange }: { onCountChange?: (n: number)
   // the widening move the pure count can't make. Shown below the table.
   const suggestedSet = new Set(base.map((r) => r.ticker.toUpperCase()));
   const aiAdds = ai?.view ? Object.entries(ai.view.names).filter(([t, v]) => v.tier === "positioned" && !suggestedSet.has(t)).sort((x, y) => y[1].listCount - x[1].listCount) : [];
-  const { sorted, toggle, arrow } = useTableSort(
+  const { sorted, toggle, key: sortKey, dir: sortDir } = useTableSort(
     all,
     {
       ticker: (r) => r.ticker,
@@ -231,172 +249,180 @@ export function SuggestedFunnel({ onCountChange }: { onCountChange?: (n: number)
 
   const cadCount = base.filter((r) => r.currency === "CAD").length;
   const usdCount = base.length - cadCount;
-  const th = "pb-2 pr-3 text-left text-[11px] font-semibold uppercase tracking-wide text-ink-3";
-  const thSort = `${th} cursor-pointer select-none hover:text-ink`;
+  const positionedCount = ai?.view ? Object.values(ai.view.names).filter((n) => n.tier === "positioned").length : 0;
 
   return (
-    <div className="rounded-card border border-line bg-white p-5 shadow-card">
-      <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h2 className="text-base font-bold text-ink">Suggested Watchlist</h2>
-          <p className="text-xs text-ink-3">
-            Names on {SUGGESTED_MIN_LISTS}+ research lists, straight from the{" "}
-            <Link href="/research" className="font-semibold !text-accent hover:underline">ranked Research table</Link>.
-            {data?.updatedAt ? ` Updated ${new Date(data.updatedAt).toLocaleDateString()}.` : ""}
-            {" "}Next: <Link href="/synthesis" className="font-semibold !text-accent hover:underline">Synthesis › Suggested</Link>.
-          </p>
-          {status && <p className="mt-1 text-[11px] text-ink-2">{status}</p>}
-          {ai?.view ? (
-            <p className="mt-1 text-[11px] text-ink-3">
-              AI view {ai.view.generatedAt.slice(0, 10)}{ai.view.regimeLabel ? ` · regime ${ai.view.regimeLabel}` : ""}{ai.view.briefDate ? ` · brief ${ai.view.briefDate}` : ""} ·{" "}
-              <span className="font-semibold text-pos">{Object.values(ai.view.names).filter((n) => n.tier === "positioned").length} positioned</span> of {ai.view.namesConsidered}
-              {ai.stale && <span className="ml-1 rounded bg-warn-soft px-1 py-px text-[9px] font-bold uppercase text-warn ring-1 ring-warn-border">stale</span>}
-            </p>
-          ) : (
-            <p className="mt-1 text-[11px] text-ink-3">No AI positioning yet — &ldquo;Position with AI&rdquo; tiers every ranked name against today&apos;s backdrop (≈ one call per sector).</p>
-          )}
-          {aiErr && <p className="mt-1 text-[11px] text-neg">{aiErr}</p>}
-        </div>
-        <div className="flex flex-wrap items-center gap-2 text-xs">
-          <span className="inline-flex items-center rounded-control border border-line bg-surface-2 p-0.5">
+    <section className="panel">
+      {/* Header: title · meta · controls (28px, .seg for every switcher). */}
+      <div className="panel-h flex-wrap gap-y-1.5 py-1.5">
+        <span className="t">Suggested</span>
+        <span className="m">
+          Names on {SUGGESTED_MIN_LISTS}+ research lists
+          {data?.updatedAt ? ` · updated ${new Date(data.updatedAt).toLocaleDateString()}` : ""}
+        </span>
+        <div className="ml-auto flex flex-wrap items-center gap-2">
+          <div className="seg" title="Currency, from the ticker suffix">
             {(["All", "CAD", "USD"] as const).map((c) => (
-              <button key={c} onClick={() => setCcy(c)} className={`rounded-[6px] px-2.5 py-1 font-semibold transition-colors ${ccy === c ? "bg-accent text-white" : "text-ink-2 hover:text-ink"}`}>
+              <button key={c} type="button" onClick={() => setCcy(c)} className={ccy === c ? "on" : ""}>
                 {c}
-                {c !== "All" && <span className={`ml-1 font-normal ${ccy === c ? "text-white/70" : "text-ink-3"}`}>{c === "CAD" ? cadCount : usdCount}</span>}
+                {c !== "All" && <span className="c">{c === "CAD" ? cadCount : usdCount}</span>}
               </button>
             ))}
-          </span>
-          <button
-            onClick={() => setShowPassed((v) => !v)}
-            className={`rounded-control border px-3 py-1.5 font-semibold ${showPassed ? "border-neg-border bg-neg-soft text-neg" : "border-line text-ink-2 hover:text-ink"}`}
-            title="Names you passed on in the last 30 days (hidden from the list until the memory expires)"
-          >
-            {showPassed ? `Showing passed (${data?.passed.length ?? 0})` : `Passed (${data?.passed.length ?? 0})`}
-          </button>
-          <span className="inline-flex items-center rounded-control border border-line bg-surface-2 p-0.5" title="Filter by the AI positioning tier">
+          </div>
+          <div className="seg" title="Names you passed on in the last 30 days are hidden from the live list until the memory expires">
+            <button type="button" onClick={() => setShowPassed(false)} className={!showPassed ? "on" : ""}>
+              Live <span className="c">{data?.rows.length ?? 0}</span>
+            </button>
+            <button type="button" onClick={() => setShowPassed(true)} className={showPassed ? "on" : ""}>
+              Passed <span className="c">{data?.passed.length ?? 0}</span>
+            </button>
+          </div>
+          <div className="seg" title="Filter by the AI positioning tier">
             {([["all", "All"], ["not-against", "Not against"], ["positioned", "Positioned"]] as const).map(([k, label]) => (
-              <button key={k} onClick={() => setTierFilter(k)} disabled={!ai?.view} className={`rounded-[6px] px-2.5 py-1 font-semibold transition-colors disabled:opacity-40 ${tierFilter === k ? "bg-pos text-white" : "text-ink-2 hover:text-ink"}`}>
+              <button key={k} type="button" onClick={() => setTierFilter(k)} disabled={!ai?.view} className={`${tierFilter === k ? "on" : ""} disabled:cursor-default disabled:opacity-40`}>
                 {label}
               </button>
             ))}
-          </span>
+          </div>
           <button
+            type="button"
             onClick={positionWithAi}
             disabled={positioning}
-            className="rounded-control border border-pos-border bg-pos-soft px-3 py-1.5 font-semibold text-pos hover:bg-pos hover:text-white transition-colors disabled:opacity-50"
+            className={BTN}
             title="Tier every ranked research name (positioned / neutral / against) given the regime, the brief, sector & industry leadership and each name's own reads. About one model call per sector."
           >
-            {positioning ? "Positioning…" : "✦ Position with AI"}
+            <AppIcon name="spark" size={13} />
+            {positioning ? "Positioning…" : "Position with AI"}
           </button>
-          <button onClick={refresh} disabled={refreshing} className="rounded-control bg-accent px-3 py-1.5 font-semibold !text-white disabled:opacity-50">
+          <button type="button" onClick={refresh} disabled={refreshing} className={BTN_PRI}>
+            <AppIcon name="refresh" size={13} strokeWidth={2} className={refreshing ? "animate-spin" : ""} />
             {refreshing ? "Refreshing…" : "Refresh"}
           </button>
         </div>
       </div>
 
+      {/* Meta strip: where the list comes from, the AI view's vintage, the last refresh's result. */}
+      <div className="flex min-h-8 flex-wrap items-center gap-x-3 gap-y-1 border-b border-line-soft px-3.5 py-1.5 text-[11.5px] text-ink-3">
+        <span>
+          From the <Link href="/research" className="!text-accent hover:underline">ranked Research table</Link>
+          {" "}· next: <Link href="/synthesis" className="!text-accent hover:underline">Synthesis › Suggested</Link>
+        </span>
+        {ai?.view ? (
+          <span className="inline-flex items-center gap-1.5">
+            AI view {ai.view.generatedAt.slice(0, 10)}{ai.view.regimeLabel ? ` · regime ${ai.view.regimeLabel}` : ""}{ai.view.briefDate ? ` · brief ${ai.view.briefDate}` : ""} ·{" "}
+            <span className="text-pos">{positionedCount} positioned</span> of {ai.view.namesConsidered}
+            {ai.stale && (
+              <span className="inline-flex items-center gap-1.5 text-warn"><span className="dot bg-warn" />Stale</span>
+            )}
+          </span>
+        ) : (
+          <span>No AI positioning yet — &ldquo;Position with AI&rdquo; tiers every ranked name against today&apos;s backdrop (≈ one call per sector).</span>
+        )}
+        {status && <span className="text-ink-2">{status}</span>}
+        {aiErr && <span className="text-neg">{aiErr}</span>}
+      </div>
+
       {loading ? (
-        <p className="py-8 text-center text-xs text-ink-3">Loading…</p>
+        <p className="px-3.5 py-6 text-center text-[12.5px] text-ink-3">Loading…</p>
       ) : sorted.length === 0 ? (
-        <p className="py-8 text-center text-xs text-ink-3">
-          {showPassed ? "Nothing passed in the last 30 days." : `No names on ${SUGGESTED_MIN_LISTS}+ lists yet. Ingest a few research lists on the Research tab first.`}
-        </p>
+        <EmptyState
+          glyph={<AppIcon name="list" size={16} />}
+          title={showPassed ? "Nothing passed in the last 30 days" : "No suggested names yet"}
+          body={showPassed ? undefined : `Names on ${SUGGESTED_MIN_LISTS}+ lists appear here. Ingest a few research lists on the Research tab first.`}
+        />
       ) : (
-        <div className="max-w-full overflow-x-auto">
-          <table className="w-full min-w-[860px] text-sm">
+        <div className="overflow-x-auto">
+          <table className="data-table min-w-[900px]">
             <thead>
-              <tr className="border-b border-line">
-                <th className={thSort} onClick={() => toggle("ticker")}>Ticker{arrow("ticker")}</th>
-                <th className={thSort} onClick={() => toggle("name")}>Name{arrow("name")}</th>
-                <th className={thSort} onClick={() => toggle("sector")}>Sector{arrow("sector")}</th>
-                <th className={`${thSort} text-right`} onClick={() => toggle("lists")}>Lists{arrow("lists")}</th>
-                <th className={th} title="AI positioning vs today's backdrop">AI view</th>
-                <th className={th}>Sources</th>
-                <th className={th} title="Entry setup (signals met / known) and improving reads">Setup</th>
-                <th className={th}>Synthesis</th>
-                <th className={th} title="Analyst reports on file (arrivals) and when coverage was requested">Coverage</th>
-                <th className={`${th} text-right`}>Action</th>
+              <tr>
+                <th className={`!pl-3.5 ${TH_SORT}`} onClick={() => toggle("ticker")}>Ticker<SortIcon col="ticker" sortKey={sortKey} dir={sortDir} /></th>
+                <th className={TH_SORT} onClick={() => toggle("name")}>Name<SortIcon col="name" sortKey={sortKey} dir={sortDir} /></th>
+                <th className={TH_SORT} onClick={() => toggle("sector")}>Sector<SortIcon col="sector" sortKey={sortKey} dir={sortDir} /></th>
+                <th className={`n ${TH_SORT}`} onClick={() => toggle("lists")}>Lists<SortIcon col="lists" sortKey={sortKey} dir={sortDir} /></th>
+                <th title="AI positioning vs today's backdrop">AI view</th>
+                <th>Sources</th>
+                <th title="Entry setup (signals met / known) and improving reads">Setup</th>
+                <th>Synthesis</th>
+                <th title="Analyst reports on file (arrivals) and when coverage was requested">Coverage</th>
+                <th className="!text-right">Action</th>
               </tr>
             </thead>
             <tbody>
               {sorted.map((r) => {
                 const h = held(r);
                 const syn = synthesis.get(r.ticker.toUpperCase()) ?? synthesis.get(r.key.toUpperCase());
+                const tier = ai?.view?.names[r.ticker.toUpperCase()] ?? ai?.view?.names[r.key.toUpperCase()];
+                const st = setup.get(r.ticker.toUpperCase()) ?? setup.get(r.key.toUpperCase());
                 return (
-                  <tr key={r.key} className="border-b border-line-soft hover:bg-surface-hover">
-                    <td className="py-2.5 pr-3 font-mono text-xs font-semibold text-ink whitespace-nowrap">
-                      <TickerLink ticker={r.heldTicker ?? r.ticker}>{displayTicker(r.ticker)}</TickerLink>
-                      {r.isNew && <span className="ml-1.5 rounded-full bg-pos-soft px-1.5 py-px text-[9px] font-bold uppercase text-pos ring-1 ring-pos-border">New</span>}
+                  <tr key={r.key}>
+                    <td className="!pl-3.5">
+                      <TickerLink ticker={r.heldTicker ?? r.ticker} className="font-mono font-medium text-ink hover:underline">{displayTicker(r.ticker)}</TickerLink>
+                      {r.isNew && <span className="ml-2 text-[11px] text-pos">New</span>}
                       {r.bearish.length > 0 && (
-                        <span className="ml-1.5 rounded-full bg-neg-soft px-1.5 py-px text-[9px] font-bold uppercase text-neg ring-1 ring-neg-border" title={`Bearish view: ${r.bearish.map((b) => b.label).join(", ")}`}>Bearish</span>
+                        <span className="ml-2 text-[11px] text-neg" title={`Bearish view: ${r.bearish.map((b) => b.label).join(", ")}`}>Bearish</span>
                       )}
                     </td>
-                    <td className="max-w-[200px] truncate py-2.5 pr-3 text-ink" title={r.name}>{r.name || "—"}</td>
-                    <td className="py-2.5 pr-3 text-xs text-ink-2">{r.sector || "—"}</td>
-                    <td className="py-2.5 pr-3 text-right font-mono font-semibold tabular-nums text-ink">
+                    <td className="max-w-[200px] truncate" title={r.name}><span className="text-ink-2">{r.name || "—"}</span></td>
+                    <td><span className="text-ink-2">{r.sector || "—"}</span></td>
+                    <td className="n">
                       {r.listCount}
-                      {r.listDelta !== 0 && <span className={`ml-1 text-[10px] ${r.listDelta > 0 ? "text-pos" : "text-neg"}`}>{r.listDelta > 0 ? "+" : ""}{r.listDelta}</span>}
+                      {r.listDelta !== 0 && <span className={`ml-1 text-[11px] ${r.listDelta > 0 ? "text-pos" : "text-neg"}`}>{r.listDelta > 0 ? "+" : ""}{r.listDelta}</span>}
                     </td>
-                    <td className="py-2.5 pr-3">
-                      {(() => {
-                        const n = ai?.view?.names[r.ticker.toUpperCase()] ?? ai?.view?.names[r.key.toUpperCase()];
-                        if (!n) return <span className="text-[11px] text-ink-faint">—</span>;
-                        return (
-                          <span className={`inline-flex items-center rounded-full px-1.5 py-px text-[10px] font-bold uppercase ring-1 ${TIER_STYLE[n.tier]}`} title={n.reason}>
-                            {n.tier}
-                          </span>
-                        );
-                      })()}
+                    <td>
+                      {tier ? (
+                        <span className="inline-flex items-center gap-1.5" title={tier.reason}>
+                          <span className={`dot ${TIER_DOT[tier.tier].dot}`} />
+                          <span className={`text-[12px] ${TIER_DOT[tier.tier].text}`}>{TIER_DOT[tier.tier].word}</span>
+                        </span>
+                      ) : (
+                        <span className="text-ink-faint">—</span>
+                      )}
                     </td>
-                    <td className="py-2.5 pr-3">
-                      <span className="flex flex-wrap gap-1">
-                        {r.lists.map((l) => (
-                          <Link key={l.key} href={`/research/sources#${l.railKey}`} className="rounded bg-accent-soft px-1.5 py-px text-[10px] font-medium !text-accent hover:bg-accent hover:!text-white transition-colors" title={l.label}>
-                            {l.short}
-                          </Link>
+                    <td>
+                      <span className="inline-flex flex-wrap items-center gap-x-1.5 text-[12px]">
+                        {r.lists.map((l, i) => (
+                          <React.Fragment key={l.key}>
+                            {i > 0 && <span className="text-ink-faint">·</span>}
+                            <Link href={`/research/sources#${l.railKey}`} className="!text-accent hover:underline" title={l.label}>{l.short}</Link>
+                          </React.Fragment>
                         ))}
                       </span>
                     </td>
-                    <td className="py-2.5 pr-3">
-                      <span className="flex flex-wrap items-center gap-1">
-                        {(() => {
-                          const st = setup.get(r.ticker.toUpperCase()) ?? setup.get(r.key.toUpperCase());
-                          if (!st) return null;
-                          return (
-                            <span
-                              className={`inline-flex items-center rounded-md px-1.5 py-px font-mono text-[10px] font-bold ${st.ready ? "bg-pos text-white" : "bg-surface-2 text-ink-2"}`}
-                              title={`Entry setup: ${st.met} of ${st.known} signals met${st.signals.length ? ` — ${st.signals.join(", ")}` : ""}${st.ready ? " · READY" : ""}`}
-                            >
-                              {st.ready ? "READY " : ""}{st.met}/{st.known}
-                            </span>
-                          );
-                        })()}
-                        {r.improving.length > 0 && (
-                          <span className="inline-flex items-center rounded-full bg-pos-soft px-1.5 py-px text-[10px] font-semibold text-pos ring-1 ring-pos-border" title={r.improving.join(" · ")}>
-                            ▲ Improving
-                          </span>
-                        )}
-                        {r.improving.length === 0 && !setup.size && <span className="text-[11px] text-ink-faint">—</span>}
-                      </span>
+                    <td>
+                      {st && (
+                        <span
+                          className="font-mono text-[12px] text-ink"
+                          title={`Entry setup: ${st.met} of ${st.known} signals met${st.signals.length ? ` — ${st.signals.join(", ")}` : ""}${st.ready ? " · READY" : ""}`}
+                        >
+                          {st.met}<span className="text-ink-faint">/{st.known}</span>
+                          {st.ready && <span className="ml-1.5 font-sans text-[11px] text-pos">Ready</span>}
+                        </span>
+                      )}
+                      {r.improving.length > 0 && (
+                        <span className={`text-[11px] text-pos ${st ? "ml-1.5" : ""}`} title={r.improving.join(" · ")}>Improving</span>
+                      )}
+                      {!st && r.improving.length === 0 && <span className="text-ink-faint">—</span>}
                     </td>
-                    <td className="py-2.5 pr-3 whitespace-nowrap">
+                    <td>
                       {r.decision ? (
-                        <span className={`inline-flex items-center rounded-full px-1.5 py-px text-[10px] font-bold uppercase ring-1 ${DECISION_STYLE[r.decision.verdict]}`} title={`Decided ${r.decision.decidedAt.slice(0, 10)} · memory until ${r.decision.expiresOn}`}>
-                          {r.decision.verdict}
+                        <span className="inline-flex items-center gap-1.5" title={`Decided ${r.decision.decidedAt.slice(0, 10)} · memory until ${r.decision.expiresOn}`}>
+                          <span className={`dot ${DECISION_DOT[r.decision.verdict].dot}`} />
+                          <span className={`text-[12px] ${DECISION_DOT[r.decision.verdict].text}`}>{DECISION_DOT[r.decision.verdict].word}</span>
                         </span>
                       ) : syn ? (
-                        <Link href={`/synthesis#syn-${r.ticker.toUpperCase()}`} className="inline-flex items-center rounded-full bg-accent-soft px-1.5 py-px text-[10px] font-semibold !text-accent ring-1 ring-accent-border hover:underline" title={`${VERDICT_LABEL[syn.verdict]} · ${syn.generatedAt.slice(0, 10)}${syn.stale ? " · stale" : ""}`}>
-                          {VERDICT_LABEL[syn.verdict]}{syn.stale ? " ·stale" : ""}
+                        <Link href={`/synthesis#syn-${r.ticker.toUpperCase()}`} className="text-[12px] !text-accent hover:underline" title={`${VERDICT_LABEL[syn.verdict]} · ${syn.generatedAt.slice(0, 10)}${syn.stale ? " · stale" : ""}`}>
+                          {VERDICT_LABEL[syn.verdict]}{syn.stale ? <span className="text-warn"> · stale</span> : null}
                         </Link>
                       ) : r.reports ? (
-                        <Link href={`/synthesis?ticker=${encodeURIComponent(r.ticker)}`} className="text-[11px] font-semibold !text-accent hover:underline" title="Reports on file, no synthesis yet — generate one on the Synthesis page">
-                          Needs synthesis →
+                        <Link href={`/synthesis?ticker=${encodeURIComponent(r.ticker)}`} className="inline-flex items-center gap-1 text-[12px] !text-accent hover:underline" title="Reports on file, no synthesis yet — generate one on the Synthesis page">
+                          Needs synthesis<AppIcon name="arrowR" size={11} />
                         </Link>
                       ) : (
-                        <span className="text-[11px] text-ink-faint" title="No analyst report on file yet — a synthesis would run on thin evidence. Request coverage first.">Awaiting reports</span>
+                        <span className="text-[12px] text-ink-faint" title="No analyst report on file yet — a synthesis would run on thin evidence. Request coverage first.">Awaiting reports</span>
                       )}
                     </td>
-                    <td className="py-2.5 pr-3 whitespace-nowrap">
-                      <span className="flex items-center gap-1.5">
+                    <td>
+                      <span className="inline-flex items-center gap-2 text-[11px]">
                         {/* Arrivals first: the reply-to-feed loop's visible end. */}
                         {(["rbc", "jpm", "morningstar"] as const).map((src) => {
                           const on = r.reports?.[src];
@@ -404,30 +430,31 @@ export function SuggestedFunnel({ onCountChange }: { onCountChange?: (n: number)
                           return (
                             <span
                               key={src}
-                              className={`rounded px-1 py-px text-[9px] font-bold ${on ? "bg-pos-soft text-pos ring-1 ring-pos-border" : "bg-surface-2 text-ink-faint"}`}
+                              className={on ? "inline-flex items-center gap-0.5 text-pos" : "text-ink-faint"}
                               title={on ? `${label} report on file (${on})` : `${label} report not received`}
                             >
-                              {label}{on ? " ✓" : ""}
+                              {label}{on && <AppIcon name="check" size={11} strokeWidth={2.25} />}
                             </span>
                           );
                         })}
                         {r.coverageRequestedAt ? (
-                          <span className="text-[10px] text-ink-3" title={`Coverage requested ${r.coverageRequestedAt.slice(0, 10)}`}>req {r.coverageRequestedAt.slice(5, 10)}</span>
+                          <span className="text-ink-3" title={`Coverage requested ${r.coverageRequestedAt.slice(0, 10)}`}>req {r.coverageRequestedAt.slice(5, 10)}</span>
                         ) : h ? null : (
-                          <button onClick={() => requestCov(r)} disabled={requesting === r.ticker} className="rounded border border-line px-2 py-0.5 text-[11px] font-semibold text-ink-2 hover:text-ink disabled:opacity-50" title="Queue the RBC/JPM coverage-request email to the desk">
+                          <button type="button" onClick={() => requestCov(r)} disabled={requesting === r.ticker} className={ROW_BTN} title="Queue the RBC/JPM coverage-request email to the desk">
                             {requesting === r.ticker ? "…" : "Request"}
                           </button>
                         )}
                       </span>
                     </td>
-                    <td className="py-2.5 text-right whitespace-nowrap">
+                    <td className="!text-right">
                       {showPassed ? (
-                        <button onClick={() => restore(r)} className="rounded border border-line px-2 py-1 text-[11px] font-semibold text-ink-2 hover:text-ink">Restore</button>
+                        <button type="button" onClick={() => restore(r)} className={ROW_BTN}>Restore</button>
                       ) : h ? (
-                        <span className="text-[11px] font-semibold text-ink-faint">{h}</span>
+                        <span className="text-[11.5px] text-ink-3">{h}</span>
                       ) : (
-                        <button onClick={() => promote(r)} disabled={adding === r.ticker} className="rounded bg-accent-soft px-2 py-1 text-[11px] font-bold text-accent hover:bg-accent hover:text-white transition-colors disabled:opacity-50">
-                          {adding === r.ticker ? "…" : "+ Watchlist"}
+                        <button type="button" onClick={() => promote(r)} disabled={adding === r.ticker} className={ROW_BTN}>
+                          <AppIcon name="plus" size={11} strokeWidth={2.25} />
+                          {adding === r.ticker ? "…" : "Watchlist"}
                         </button>
                       )}
                     </td>
@@ -439,20 +466,24 @@ export function SuggestedFunnel({ onCountChange }: { onCountChange?: (n: number)
         </div>
       )}
 
+      {/* AI adds & sector backdrops — folded one click away, persisted. */}
       {ai?.view && (aiAdds.length > 0 || Object.keys(ai.view.sectorBackdrops).length > 0) && (
-        <div className="mt-3 border-t border-line pt-3">
-          <button onClick={() => setShowAdds((v) => !v)} className="text-[11px] font-semibold text-ink-2 hover:text-ink">
-            {showAdds ? "▾" : "▸"} AI adds ({aiAdds.length}) &amp; sector backdrops
+        <div className="border-t border-line-soft">
+          <button type="button" onClick={toggleAdds} aria-expanded={showAdds} className="flex h-8 w-full items-center gap-1.5 px-3.5 text-[12px] text-ink-2 hover:text-ink">
+            <AppIcon name={showAdds ? "chevD" : "chevR"} size={12} strokeWidth={2} className="text-ink-3" />
+            AI adds <span className="font-mono text-[11px] text-ink-3">{aiAdds.length}</span>
+            <span className="text-ink-3">· sector backdrops</span>
           </button>
           {showAdds && (
-            <div className="mt-2 space-y-2">
+            <div className="flex flex-col gap-2 px-3.5 pb-3">
               {aiAdds.length > 0 && (
                 <div>
                   <p className="text-[11px] text-ink-3">Positioned names on fewer than {SUGGESTED_MIN_LISTS} lists — the model widening the funnel. Not on the Suggested list unless you add them.</p>
-                  <div className="mt-1 flex flex-wrap gap-1.5">
+                  <div className="mt-1.5 flex flex-wrap gap-x-4 gap-y-1">
                     {aiAdds.map(([t, v]) => (
-                      <span key={t} className="inline-flex items-center gap-1 rounded-md border border-pos-border bg-pos-soft px-1.5 py-0.5 text-[11px]" title={v.reason}>
-                        <TickerLink ticker={t} className="font-mono font-bold text-pos">{displayTicker(t)}</TickerLink>
+                      <span key={t} className="inline-flex items-center gap-1.5 text-[12px]" title={v.reason}>
+                        <span className="dot bg-pos" />
+                        <TickerLink ticker={t} className="font-mono font-medium text-ink hover:underline">{displayTicker(t)}</TickerLink>
                         <span className="text-ink-3">{v.listCount} list · {v.sector || "—"}</span>
                       </span>
                     ))}
@@ -460,12 +491,20 @@ export function SuggestedFunnel({ onCountChange }: { onCountChange?: (n: number)
                 </div>
               )}
               {Object.entries(ai.view.sectorBackdrops).map(([sector, text]) => (
-                <p key={sector} className="text-[11px] text-ink-2"><span className="font-semibold text-ink">{sector}:</span> {text}</p>
+                <p key={sector} className="text-[12px] leading-5 text-ink-2"><span className="font-medium text-ink">{sector}:</span> {text}</p>
               ))}
             </div>
           )}
         </div>
       )}
-    </div>
+
+      {/* Footer strip — same as the Holdings table. */}
+      {!loading && sorted.length > 0 && (
+        <div className="flex h-8 items-center justify-between border-t border-line-soft px-3.5 text-[11.5px] text-ink-3">
+          <span>{sorted.length} of {base.length} · sorted by {sortKey}</span>
+          <span className="hidden sm:inline">{cadCount} CAD · {usdCount} USD</span>
+        </div>
+      )}
+    </section>
   );
 }
