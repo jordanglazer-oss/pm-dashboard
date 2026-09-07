@@ -2,6 +2,7 @@
 
 import React from "react";
 import { useStocks } from "@/app/lib/StockContext";
+import { AppIcon } from "./AppIcon";
 
 /**
  * A card section whose body collapses/expands, with the state PERSISTED via
@@ -61,11 +62,12 @@ export function CollapsibleSection({
       id={prefKey}
       className={
         flush
-          ? `bg-white px-4 py-2 scroll-mt-24 ${className || ""}`
-          : `overflow-hidden rounded-card border bg-white shadow-card scroll-mt-24 ${className || "border-line"}`
+          ? `bg-surface px-4 py-2 scroll-mt-24 ${className || ""}`
+          : `overflow-hidden rounded-card border bg-surface scroll-mt-24 ${className || "border-line"}`
       }
     >
-      <div className={`flex items-center justify-between ${flush ? "" : `px-5 py-3 ${collapsed ? "" : "border-b border-line-soft"}`}`}>
+      {/* Panel header: 38px, 13px semibold title, meta beside it. */}
+      <div className={`flex items-center justify-between gap-3 ${flush ? "" : `min-h-[38px] px-3.5 ${collapsed ? "" : "border-b border-line-soft"}`}`}>
         {/* The whole title region (arrow + title + subtitle + the empty space up
             to the right-side controls) toggles — not just the arrow. Uses a div
             with role="button" rather than <button> so the `right` slot can hold
@@ -84,15 +86,15 @@ export function CollapsibleSection({
           aria-label={collapsed ? "Expand section" : "Collapse section"}
           className="flex flex-1 items-center gap-2 min-w-0 text-left cursor-pointer group"
         >
-          <span className={`text-ink-3 group-hover:text-ink-2 leading-none shrink-0 transition-transform duration-200 ${flush ? "w-3 text-[11px]" : "w-4 text-base"} ${collapsed ? "-rotate-90" : ""}`}>
-            ▾
+          <span className={`text-ink-3 group-hover:text-ink-2 leading-none shrink-0 transition-transform duration-200 ${collapsed ? "-rotate-90" : ""}`}>
+            <AppIcon name="chevD" size={flush ? 12 : 14} strokeWidth={2} />
           </span>
           {/* Flush rows keep title + subtitle on ONE line so a narrative row is
               the same height as the Brief's other collapsed rails (a `block`
               title pushed the subtitle onto a second line: 61px vs 42px). */}
-          <span className={`min-w-0 flex-1 ${flush ? "flex items-baseline gap-2 truncate" : ""}`}>
-            <span className={`${flush ? "shrink-0" : "block"} ${titleClass || (flush ? "text-[13px] font-bold text-ink" : "text-[15px] font-bold text-ink")}`}>{title}</span>
-            {subtitle && <span className={`text-xs text-ink-3 ${flush ? "min-w-0 truncate" : "block"}`}>{subtitle}</span>}
+          <span className="min-w-0 flex-1 flex items-baseline gap-2 truncate">
+            <span className={`shrink-0 ${titleClass || "text-[13px] font-semibold text-ink"}`}>{title}</span>
+            {subtitle && <span className="min-w-0 truncate text-[11.5px] text-ink-3">{subtitle}</span>}
           </span>
         </div>
         {right && (
@@ -104,7 +106,7 @@ export function CollapsibleSection({
           </div>
         )}
       </div>
-      {!collapsed && <div className={`animate-section-reveal ${flush ? "mt-2 pl-5" : "px-5 py-4"}`}>{children}</div>}
+      {!collapsed && <div className={`animate-section-reveal ${flush ? "mt-2 pl-5" : "px-3.5 py-3"}`}>{children}</div>}
     </section>
   );
 }

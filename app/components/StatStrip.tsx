@@ -29,11 +29,11 @@ export function StatStrip({
     : cols === 7 ? "grid-cols-2 sm:grid-cols-4 lg:grid-cols-7"
     : "grid-cols-2 sm:grid-cols-4 lg:grid-cols-8";
   return (
-    <div className={`grid ${colCls} overflow-hidden rounded-card border border-line-soft bg-white ${className || ""}`}>
+    <div className={`grid ${colCls} overflow-hidden rounded-card border border-line bg-surface ${className || ""}`}>
       {items.map((it, i) => (
-        <div key={i} className="-ml-px -mt-px min-w-0 border-l border-t border-line-soft px-3 py-2" title={it.title}>
-          <div className="truncate text-[10px] font-semibold uppercase tracking-wider text-ink-3">{it.label}</div>
-          <div className="mt-0.5 truncate text-sm font-semibold text-ink tabular-nums">{it.value}</div>
+        <div key={i} className="-ml-px -mt-px min-w-0 border-l border-t border-line-soft px-3.5 py-2" title={it.title}>
+          <div className="truncate text-[11px] text-ink-3">{it.label}</div>
+          <div className="mt-0.5 truncate font-mono text-[13px] font-medium text-ink tabular-nums">{it.value}</div>
         </div>
       ))}
     </div>
