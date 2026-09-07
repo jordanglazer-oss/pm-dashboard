@@ -124,10 +124,10 @@ export function BackCrumb() {
   // it sits where the eye lands after a jump — the previous fixed pill at the
   // bottom-left was never noticed ("there's no button to go back").
   return (
-    <div className="mx-auto w-full max-w-[1560px] px-4 pt-3 md:px-8 print:hidden">
+    <div className="w-full px-4 pt-3 md:px-5 print:hidden">
       <button
         onClick={() => window.history.back()}
-        className="inline-flex items-center gap-1.5 rounded-pill border border-line bg-surface px-3 py-1.5 text-[12px] font-semibold text-ink-2 shadow-sm transition-colors hover:bg-surface-hover hover:text-ink"
+        className="inline-flex h-7 items-center gap-1.5 rounded-control border border-line bg-surface px-2.5 text-[12px] font-medium text-ink-2 transition-colors hover:bg-surface-hover hover:text-ink"
         title={fromStock ? `Return to the ${prev.label} stock page (restores your place)` : `Back to ${prev.label} (restores your place)`}
       >
         <span aria-hidden>←</span> Back to {prev.label}

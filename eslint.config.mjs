@@ -12,6 +12,9 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // Design canvas working files (not app code).
+    "design-pro/**",
+    "design-streamline/**",
   ]),
 ]);
 

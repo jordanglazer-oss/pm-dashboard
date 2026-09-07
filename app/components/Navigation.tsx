@@ -7,19 +7,23 @@ import { usePathname, useRouter } from "next/navigation";
 import { QuickAddStock } from "./QuickAddStock";
 import { CommandPalette } from "./CommandPalette";
 import { NotificationTray } from "./NotificationTray";
+import { AppIcon } from "./AppIcon";
+import { NAV_GROUPS, NAV_UTILITIES, SYSTEM_LINKS, activeNavKey, navCrumb } from "@/app/lib/nav-model";
 import { useStocks } from "@/app/lib/StockContext";
 import { useNotifications } from "@/app/lib/NotificationsContext";
 
 /**
- * Consolidated navigation (redesign/streamline):
- *  - FOUR top tabs — Brief / Portfolio / Ideas / Research — plus an "Ask"
- *    action (Chat) and a "More" overflow (Appendix, Client Report,
- *    Methodology, Health). Every route survives; only grouping changed.
- *  - Mobile: the 11-item hamburger is replaced by a fixed bottom tab bar
- *    (Brief / Portfolio / Ideas / Research / More) with 44px+ targets.
- *  - The permanent keyboard-hint footer strip is gone; shortcuts live in a
- *    "?" overlay, and the three health chips collapse into one status dot
- *    that only turns amber/red when something is actually wrong.
+ * Workspace shell (redesign/workspace):
+ *  - A 200px LEFT RAIL lists every destination under Today / Portfolio /
+ *    Ideas / Research, with Ask + Client report + System in its footer.
+ *    No "More" menu and no per-hub segment rows: every page is one click
+ *    from every other. Routes are unchanged from the streamline nav.
+ *  - A 48px TOP BAR carries the crumb + page title, the ⌘K search, the
+ *    canonical regime read, price refresh, notifications and Add.
+ *  - Mobile keeps the bottom tab bar (Brief / Portfolio / Ideas / Research /
+ *    More) and gains a drawer copy of the rail behind the top-bar menu button.
+ *  - Shortcuts stay in the "?" overlay; the three health signals stay one
+ *    status dot, now on the rail's System row.
  */
 
 type HealthStatus = "ok" | "warning" | "critical" | "unknown";
@@ -117,29 +121,33 @@ function SystemHealthDot() {
       <button
         onClick={() => setOpen(!open)}
         aria-label="System health"
-        title="System health — backups, estimate refresh, Anthropic credits"
-        className="flex items-center justify-center w-8 h-8 rounded-control border border-line bg-surface hover:bg-surface-hover transition-colors"
+        title="System — backups, estimate refresh, Anthropic credits, methodology, appendix"
+        className={`flex h-7 w-full items-center gap-2.5 rounded-[5px] px-2.5 text-[13px] transition-colors hover:bg-surface-hover ${open ? "bg-surface-hover text-ink" : "text-ink-2"}`}
       >
-        <span className={`inline-block w-2 h-2 rounded-full ${dotCls}`} />
+        <AppIcon name="gear" size={15} className="text-ink-3" />
+        <span>System</span>
+        <span className={`ml-auto inline-block h-[7px] w-[7px] rounded-full ${dotCls}`} />
       </button>
       {open && (
-        <div className="absolute right-0 top-10 z-50 w-72 rounded-card border border-line bg-surface p-3 shadow-card">
-          <div className="mb-2 flex items-center justify-between">
-            <span className="text-xs font-bold text-ink">System health</span>
-            <Link href="/admin/health" onClick={() => setOpen(false)} className="text-[11px] font-medium text-accent hover:underline">
-              Full health page →
-            </Link>
-          </div>
+        <div className="absolute bottom-9 left-0 z-50 w-64 rounded-card border border-line bg-surface p-3 shadow-card">
+          <div className="mb-1 text-[12px] font-semibold text-ink">System health</div>
           {rows.map((r) => {
             const bad = r.status === "critical" || r.status === "credit-bad";
             const warn = r.status === "warning";
             return (
-              <div key={r.label} className="flex items-center justify-between gap-2 border-t border-line-soft py-1.5 text-xs">
+              <div key={r.label} className="flex items-center justify-between gap-2 border-t border-line-soft py-1.5 text-[12px]">
                 <span className="text-ink-2">{r.label}</span>
-                <span className={`font-mono ${bad ? "font-bold text-neg" : warn ? "font-semibold text-warn" : "text-ink-3"}`}>{r.value}</span>
+                <span className={`font-mono text-[11.5px] ${bad ? "font-semibold text-neg" : warn ? "font-medium text-warn" : "text-ink-3"}`}>{r.value}</span>
               </div>
             );
           })}
+          <div className="mt-2 flex flex-col border-t border-line-soft pt-2">
+            {SYSTEM_LINKS.map((l) => (
+              <Link key={l.href} href={l.href} onClick={() => setOpen(false)} className="rounded-[5px] px-2 py-1.5 text-[12.5px] text-ink-2 transition-colors hover:bg-surface-hover hover:text-ink">
+                {l.label}
+              </Link>
+            ))}
+          </div>
         </div>
       )}
     </div>
@@ -215,16 +223,36 @@ function TabIcon({ tab, className }: { tab: string; className?: string }) {
 export function Navigation() {
   const pathname = usePathname();
   const router = useRouter();
-  const [moreOpen, setMoreOpen] = useState(false);
   const [mobileMoreOpen, setMobileMoreOpen] = useState(false);
   const [quickAddOpen, setQuickAddOpen] = useState(false);
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
+  const [drawerOpen, setDrawerOpen] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+  // The canonical regime label (pm:market-regime composite) for the top bar —
+  // shown once here, with its dial on the Brief. Read-only, cached GET.
+  const [regime, setRegime] = useState<{ label: string; score: number | null } | null>(null);
+  useEffect(() => {
+    let alive = true;
+    const load = () =>
+      fetch("/api/market-regime", { cache: "no-store" })
+        .then((r) => r.json())
+        .then((j) => {
+          if (!alive) return;
+          const label = j?.composite?.label;
+          if (label === "Risk-On" || label === "Neutral" || label === "Risk-Off") {
+            const sc = j?.composite?.score100;
+            setRegime({ label, score: typeof sc === "number" ? Math.round(sc) : null });
+          }
+        })
+        .catch(() => {});
+    load();
+    const id = setInterval(load, 30 * 60 * 1000);
+    return () => { alive = false; clearInterval(id); };
+  }, []);
   // Transient inline confirmation on the Refresh button — replaces the
   // success toast (which still lands in the tray as a quiet event).
   const [refreshDone, setRefreshDone] = useState<string | null>(null);
-  const moreRef = useRef<HTMLDivElement>(null);
   const { refreshAllPrices, loading: stocksLoading } = useStocks();
   const { notify } = useNotifications();
 
@@ -270,15 +298,7 @@ export function Navigation() {
     }
   };
 
-  // Close the More dropdown on outside click.
-  useEffect(() => {
-    if (!moreOpen) return;
-    const onDown = (e: MouseEvent) => {
-      if (moreRef.current && !moreRef.current.contains(e.target as Node)) setMoreOpen(false);
-    };
-    document.addEventListener("mousedown", onDown);
-    return () => document.removeEventListener("mousedown", onDown);
-  }, [moreOpen]);
+  useEffect(() => { setDrawerOpen(false); }, [pathname]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -335,135 +355,140 @@ export function Navigation() {
         tabs.find((t) => t.href === pathname)?.label ??
         "Portfolio";
 
+  const crumb = navCrumb(pathname);
+  const activeKey = activeNavKey(pathname);
+
+  const rail = (onNavigate?: () => void) => (
+    <>
+      <div className="flex h-12 shrink-0 items-center gap-2.5 border-b border-line-soft px-4">
+        <span className="grid h-[22px] w-[22px] place-items-center rounded-[5px] bg-ink text-[11px] font-bold text-white">P</span>
+        <span className="text-[13px] font-semibold tracking-tight text-ink">PIM Workspace</span>
+      </div>
+      <div className="flex grow flex-col gap-0.5 overflow-y-auto px-1.5 pb-2 pt-0.5">
+        {NAV_GROUPS.map((g) => (
+          <div key={g.label} className="flex flex-col gap-px">
+            <div className="px-2.5 pb-1 pt-3.5 text-[10.5px] font-semibold tracking-[0.04em] text-ink-3">{g.label}</div>
+            {g.items.map((it) => {
+              const on = it.key === activeKey;
+              return (
+                <Link
+                  key={it.key}
+                  href={it.href}
+                  onClick={onNavigate}
+                  aria-current={on ? "page" : undefined}
+                  className={`flex h-7 items-center gap-2.5 rounded-[5px] px-2.5 text-[13px] transition-colors ${on ? "bg-accent-soft font-medium !text-accent-ink" : "!text-ink-2 hover:bg-surface-hover hover:!text-ink"}`}
+                >
+                  <AppIcon name={it.icon} size={15} className={on ? "" : "text-ink-3"} />
+                  <span>{it.label}</span>
+                </Link>
+              );
+            })}
+          </div>
+        ))}
+      </div>
+      <div className="flex flex-col gap-px border-t border-line-soft px-1.5 pb-2.5 pt-2">
+        {NAV_UTILITIES.map((it) => {
+          const on = it.key === activeKey;
+          return (
+            <Link
+              key={it.key}
+              href={it.href}
+              onClick={onNavigate}
+              className={`flex h-7 items-center gap-2.5 rounded-[5px] px-2.5 text-[13px] transition-colors ${on ? "bg-accent-soft font-medium !text-accent-ink" : "!text-ink-2 hover:bg-surface-hover hover:!text-ink"}`}
+            >
+              <AppIcon name={it.icon} size={15} className={on ? "" : "text-ink-3"} />
+              <span>{it.label}</span>
+            </Link>
+          );
+        })}
+        <SystemHealthDot />
+      </div>
+    </>
+  );
+
   return (
     <>
-    <header className="sticky top-0 z-40 bg-surface text-ink border-b border-line print:hidden">
-      <div className="mx-auto flex items-center justify-between px-4 py-2.5 md:px-6">
-        {/* Branding */}
-        <div className="flex items-center gap-2.5 shrink-0">
-          <span className="grid h-6 w-6 place-items-center rounded-[7px] bg-accent text-[12px] font-bold text-white">P</span>
-          <h1 className="text-[15px] font-semibold tracking-tight text-ink whitespace-nowrap">PIM Dashboard</h1>
+    {/* Desktop rail */}
+    <aside className="fixed inset-y-0 left-0 z-40 hidden w-[200px] flex-col border-r border-line bg-surface md:flex print:hidden">
+      {rail()}
+    </aside>
+
+    {/* Mobile drawer copy of the rail */}
+    {drawerOpen && (
+      <div className="md:hidden fixed inset-0 z-50 bg-ink/30 print:hidden" onClick={() => setDrawerOpen(false)}>
+        <aside className="absolute inset-y-0 left-0 flex w-[240px] flex-col bg-surface shadow-card" onClick={(e) => e.stopPropagation()}>
+          {rail(() => setDrawerOpen(false))}
+        </aside>
+      </div>
+    )}
+
+    {/* Top bar */}
+    <header className="sticky top-0 z-30 border-b border-line bg-surface text-ink md:ml-[200px] print:hidden">
+      <div className="flex h-12 items-center gap-3 px-3 md:gap-4 md:px-5">
+        <button
+          onClick={() => setDrawerOpen(true)}
+          aria-label="Menu"
+          className="md:hidden grid h-8 w-8 place-items-center rounded-control text-ink-2 hover:bg-surface-hover"
+        >
+          <AppIcon name="menu" size={18} />
+        </button>
+
+        <div className="flex min-w-0 items-baseline gap-2 md:min-w-[220px]">
+          <span className="hidden text-[12px] text-ink-3 md:inline">{crumb.group}</span>
+          <span className="hidden text-[12px] text-ink-faint md:inline">/</span>
+          <span className="truncate text-[14px] font-semibold tracking-tight text-ink">{crumb.title}</span>
         </div>
 
-        {/* Mobile action cluster — nav itself lives in the bottom tab bar. */}
-        <div className="md:hidden flex items-center gap-1">
-          <NotificationTray />
+        <button
+          onClick={() => setPaletteOpen(true)}
+          aria-label="Search"
+          title="Search (⌘K)"
+          className="mx-auto flex h-[30px] w-full max-w-[360px] items-center gap-2 rounded-control border border-line bg-surface-2 px-2.5 text-[12.5px] text-ink-3 transition-colors hover:bg-surface-hover hover:text-ink"
+        >
+          <AppIcon name="search" size={14} strokeWidth={2} />
+          <span className="hidden grow truncate text-left sm:inline">Jump to a name, page or action</span>
+          <kbd className="hidden rounded border border-line bg-surface px-1 py-px font-mono text-[10px] text-ink-3 sm:inline">⌘K</kbd>
+        </button>
+
+        <div className="flex shrink-0 items-center gap-2 md:min-w-[220px] md:justify-end md:gap-3.5">
+          {regime && (
+            <Link
+              href="/brief"
+              title="Canonical market regime — click for the dial"
+              className="hidden items-center gap-1.5 text-[12px] !text-ink-2 hover:!text-ink lg:flex"
+            >
+              <span className={`inline-block h-[7px] w-[7px] rounded-full ${regime.label === "Risk-On" ? "bg-pos" : regime.label === "Risk-Off" ? "bg-neg" : "bg-warn"}`} />
+              {regime.label}
+              {regime.score != null && <span className="font-mono text-ink-3">{regime.score}</span>}
+            </Link>
+          )}
           <button
             onClick={handleGlobalRefresh}
             disabled={refreshing}
-            aria-label="Refresh prices"
-            title="Refresh prices"
-            className="flex items-center justify-center w-9 h-9 rounded-control border border-line bg-surface text-ink-2 hover:bg-surface-hover hover:text-ink transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
+            className="flex items-center gap-1.5 rounded-control px-1.5 py-1 text-[12px] text-ink-3 transition-colors hover:bg-surface-hover hover:text-ink disabled:cursor-not-allowed disabled:opacity-60"
+            title="Refresh prices for every stock, ETF, and fund"
           >
-            <svg className={`w-5 h-5 ${refreshing ? "animate-spin" : ""}`} fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0 3.181 3.183a8.25 8.25 0 0 0 13.803-3.7M4.031 9.865a8.25 8.25 0 0 1 13.803-3.7l3.181 3.182" /></svg>
+            <AppIcon name="refresh" size={14} strokeWidth={2} className={refreshing ? "animate-spin" : ""} />
+            <span className="hidden font-mono md:inline">{refreshing ? "Refreshing" : refreshDone ? <span className="text-pos">{refreshDone}</span> : "Refresh"}</span>
           </button>
+          <NotificationTray />
           <button
             onClick={() => setQuickAddOpen(true)}
-            aria-label="Add stock"
-            title="Add stock"
-            className="flex items-center justify-center w-9 h-9 rounded-control bg-accent hover:bg-accent-ink transition-colors text-white"
+            className="flex h-7 items-center gap-1.5 rounded-control bg-ink px-2.5 pl-2 text-[12.5px] font-medium text-white transition-colors hover:bg-ink-2"
+            title="Add a stock (Shift+A)"
           >
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" /></svg>
+            <AppIcon name="plus" size={13} strokeWidth={2.25} />
+            Add
+          </button>
+          <button
+            onClick={() => setShortcutsOpen(true)}
+            aria-label="Keyboard shortcuts"
+            title="Keyboard shortcuts (?)"
+            className="hidden h-7 w-7 place-items-center rounded-control text-ink-3 transition-colors hover:bg-surface-hover hover:text-ink md:grid"
+          >
+            <AppIcon name="help" size={15} />
           </button>
         </div>
-
-        {/* Desktop nav */}
-        <nav className="hidden md:flex items-center gap-0.5 shrink-0 ml-4">
-          {tabs.map((tab) => {
-            const isActive = tab.label === activeTab;
-            return (
-              <Link
-                key={tab.label}
-                href={tab.href}
-                className={`px-3 py-1.5 text-[13px] transition-colors whitespace-nowrap border-b-2 -mb-px ${
-                  isActive
-                    ? "text-ink font-semibold border-accent"
-                    : "text-ink-2 hover:text-ink border-transparent"
-                }`}
-              >
-                {tab.label}
-              </Link>
-            );
-          })}
-
-          {/* More overflow */}
-          <div ref={moreRef} className="relative">
-            <button
-              onClick={() => setMoreOpen(!moreOpen)}
-              aria-expanded={moreOpen}
-              className={`px-3 py-1.5 text-[13px] transition-colors whitespace-nowrap border-b-2 -mb-px ${
-                activeTab === "More"
-                  ? "text-ink font-semibold border-accent"
-                  : "text-ink-2 hover:text-ink border-transparent"
-              }`}
-            >
-              More ⋯
-            </button>
-            {moreOpen && (
-              <div className="absolute left-0 top-9 z-50 w-48 rounded-card border border-line bg-surface py-1 shadow-card">
-                {MORE_LINKS.map((l) => (
-                  <Link
-                    key={l.href}
-                    href={l.href}
-                    onClick={() => setMoreOpen(false)}
-                    className={`block px-3.5 py-2 text-[13px] transition-colors ${
-                      pathname === l.href ? "bg-accent-soft text-accent-ink font-semibold" : "text-ink-2 hover:bg-surface-hover hover:text-ink"
-                    }`}
-                  >
-                    {l.label}
-                  </Link>
-                ))}
-              </div>
-            )}
-          </div>
-
-          {/* Search + Ask + Notifications + Refresh + Quick-Add + Health */}
-          <div className="ml-2 flex items-center gap-1.5">
-            <button
-              onClick={() => setPaletteOpen(true)}
-              aria-label="Search"
-              title="Search (⌘K)"
-              className="flex items-center gap-1.5 rounded-control border border-line bg-surface px-2.5 py-1.5 text-[12px] text-ink-3 hover:bg-surface-hover hover:text-ink transition-colors"
-            >
-              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="m21 21-4.34-4.34M17 11a6 6 0 1 1-12 0 6 6 0 0 1 12 0Z" /></svg>
-              <kbd className="rounded bg-surface-2 border border-line px-1 py-px text-[10px] text-ink-3">⌘K</kbd>
-            </button>
-            <Link
-              href="/chat"
-              title="Ask — chat with the book in context"
-              className="flex items-center gap-1 rounded-control border border-accent-border bg-accent-soft px-2.5 py-1.5 text-[13px] font-semibold !text-accent-ink hover:bg-accent hover:!text-white transition-colors whitespace-nowrap"
-            >
-              Ask
-            </Link>
-            <NotificationTray />
-            <button
-              onClick={handleGlobalRefresh}
-              disabled={refreshing}
-              className="flex items-center gap-1 rounded-control border border-line bg-surface text-ink-2 hover:bg-surface-hover hover:text-ink disabled:opacity-60 disabled:cursor-not-allowed px-2.5 py-1.5 text-[13px] font-medium transition-colors whitespace-nowrap"
-              title="Refresh prices for every stock, ETF, and fund"
-            >
-              <svg className={`w-3.5 h-3.5 ${refreshing ? "animate-spin" : ""}`} fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0 3.181 3.183a8.25 8.25 0 0 0 13.803-3.7M4.031 9.865a8.25 8.25 0 0 1 13.803-3.7l3.181 3.182" /></svg>
-              {refreshing ? "Refreshing..." : refreshDone ? <span className="text-pos">{refreshDone}</span> : "Refresh"}
-            </button>
-            <button
-              onClick={() => setQuickAddOpen(true)}
-              className="flex items-center gap-1 rounded-control bg-accent hover:bg-accent-ink px-2.5 py-1.5 text-[13px] font-semibold text-white transition-colors whitespace-nowrap"
-              title="Add a stock (Shift+A)"
-            >
-              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" /></svg>
-              Add
-            </button>
-            <SystemHealthDot />
-            <button
-              onClick={() => setShortcutsOpen(true)}
-              aria-label="Keyboard shortcuts"
-              title="Keyboard shortcuts (?)"
-              className="flex items-center justify-center w-8 h-8 rounded-control border border-line bg-surface text-[12px] text-ink-3 hover:bg-surface-hover hover:text-ink transition-colors"
-            >
-              ?
-            </button>
-          </div>
-        </nav>
       </div>
 
       <QuickAddStock open={quickAddOpen} onClose={() => setQuickAddOpen(false)} />

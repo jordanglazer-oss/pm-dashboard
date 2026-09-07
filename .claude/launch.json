@@ -4,8 +4,20 @@
     {
       "name": "pm-dashboard",
       "runtimeExecutable": "/bin/bash",
-      "runtimeArgs": ["-c", "export PATH=/usr/local/bin:$PATH && npm run dev"],
+      "runtimeArgs": [
+        "-c",
+        "export PATH=/usr/local/bin:$PATH && npm run dev"
+      ],
       "port": 3000
+    },
+    {
+      "name": "pm-dashboard-stub",
+      "runtimeExecutable": "/bin/bash",
+      "runtimeArgs": [
+        "-c",
+        "export PATH=/usr/local/bin:$PATH && export REDIS_URL=redis://127.0.0.1:6390 && npm run dev -- -p 3001"
+      ],
+      "port": 3001
     }
   ]
 }

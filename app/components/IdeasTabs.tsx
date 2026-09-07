@@ -1,17 +1,14 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useEffect } from "react";
 import { usePathname, useRouter } from "next/navigation";
 
-const useIsoLayoutEffect = typeof window !== "undefined" ? useLayoutEffect : useEffect;
-
 /**
- * Segmented switcher for the "Ideas" hub — one home for every surface that
- * feeds the watchlist. Synthesis / Pipeline / Screener / Factor Lab keep
- * their existing routes; Radar and Setups (previously embedded as buckets
- * inside the Rankings table) get proper routes of their own. Mirrors the
- * PortfolioTabs pattern, including the sliding pill and Shift+←/→.
+ * Ideas hub: Shift + ← / → still cycles every Ideas page, and the four
+ * screening pages (Screener / Radar / Setups / Factor Lab) show a MODE switch
+ * — they are one "Screen" entry in the rail. Synthesis and Pipeline
+ * (Funnel → Conviction) are rail items with no segment row.
  */
 const SEGMENTS: { label: string; href: string }[] = [
   { label: "Funnel", href: "/funnel" },
@@ -23,26 +20,19 @@ const SEGMENTS: { label: string; href: string }[] = [
   { label: "Factor Lab", href: "/factor-lab" },
 ];
 
+export const SCREEN_MODES: { label: string; href: string }[] = [
+  { label: "Technical", href: "/screener" },
+  { label: "Radar", href: "/radar" },
+  { label: "Setups", href: "/setups" },
+  { label: "Factor", href: "/factor-lab" },
+];
+
 export function IdeasTabs() {
   const pathname = usePathname();
   const router = useRouter();
   const isVisible = SEGMENTS.some((s) => s.href === pathname);
-  const activeIdx = Math.max(0, SEGMENTS.findIndex((s) => s.href === pathname));
+  const isScreen = SCREEN_MODES.some((s) => s.href === pathname);
 
-  const tabRefs = useRef<(HTMLAnchorElement | null)[]>([]);
-  const [pill, setPill] = useState<{ left: number; width: number } | null>(null);
-  const [ready, setReady] = useState(false);
-  useIsoLayoutEffect(() => {
-    const el = tabRefs.current[activeIdx];
-    if (el) setPill({ left: el.offsetLeft, width: el.offsetWidth });
-  }, [activeIdx, isVisible]);
-  useEffect(() => {
-    if (!isVisible) return;
-    const raf = requestAnimationFrame(() => setReady(true));
-    return () => cancelAnimationFrame(raf);
-  }, [isVisible]);
-
-  // Shift + ← / → jumps between Ideas segments, same as the Portfolio hub.
   useEffect(() => {
     if (!isVisible) return;
     function onKey(e: globalThis.KeyboardEvent) {
@@ -51,9 +41,7 @@ export function IdeasTabs() {
       const tag = t?.tagName?.toLowerCase();
       if (tag === "input" || tag === "textarea" || tag === "select" || t?.isContentEditable) return;
       const idx = Math.max(0, SEGMENTS.findIndex((s) => s.href === pathname));
-      const next = e.key === "ArrowRight"
-        ? (idx + 1) % SEGMENTS.length
-        : (idx - 1 + SEGMENTS.length) % SEGMENTS.length;
+      const next = e.key === "ArrowRight" ? (idx + 1) % SEGMENTS.length : (idx - 1 + SEGMENTS.length) % SEGMENTS.length;
       e.preventDefault();
       router.push(SEGMENTS[next].href);
     }
@@ -61,42 +49,16 @@ export function IdeasTabs() {
     return () => window.removeEventListener("keydown", onKey);
   }, [isVisible, pathname, router]);
 
-  if (!isVisible) return null;
+  if (!isScreen) return null;
 
   return (
-    <div className="bg-surface border-b border-line print:hidden">
-      <div className="mx-auto max-w-7xl px-4 md:px-8 pt-3.5">
-        <div>
-          <h1 className="text-[22px] font-bold tracking-tight text-ink leading-none">Ideas</h1>
-          <p className="mt-1.5 text-xs text-ink-3">Where the next name comes from — every feed into one watchlist</p>
-        </div>
-        <div className="flex items-center gap-2 overflow-x-auto pb-2 pt-2.5">
-          <div className="relative flex items-center gap-0.5 rounded-control border border-line bg-surface-2 p-0.5 shrink-0">
-            {pill && (
-              <span
-                aria-hidden
-                className={`absolute top-0.5 bottom-0.5 rounded-[6px] bg-surface shadow-sm ${ready ? "transition-all duration-300 ease-out" : ""}`}
-                style={{ left: pill.left, width: pill.width }}
-              />
-            )}
-            {SEGMENTS.map((seg, i) => {
-              const isActive = seg.href === pathname;
-              return (
-                <Link
-                  key={seg.label}
-                  href={seg.href}
-                  ref={(el) => { tabRefs.current[i] = el; }}
-                  aria-current={isActive ? "page" : undefined}
-                  className={`relative z-10 rounded-[6px] px-3 py-1 text-[13px] whitespace-nowrap transition-colors outline-none focus-visible:ring-2 focus-visible:ring-accent-border ${
-                    isActive ? "text-ink font-semibold" : "text-ink-2 hover:text-ink"
-                  }`}
-                >
-                  {seg.label}
-                </Link>
-              );
-            })}
-          </div>
-        </div>
+    <div className="px-4 pt-4 md:px-5 print:hidden">
+      <div className="seg">
+        {SCREEN_MODES.map((m) => (
+          <Link key={m.href} href={m.href} aria-current={pathname === m.href ? "page" : undefined} className={pathname === m.href ? "on" : ""}>
+            {m.label}
+          </Link>
+        ))}
       </div>
     </div>
   );
