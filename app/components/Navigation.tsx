@@ -433,7 +433,7 @@ export function Navigation() {
           <AppIcon name="menu" size={18} />
         </button>
 
-        <div className="flex min-w-0 items-baseline gap-2 md:min-w-[220px]">
+        <div className="flex shrink-0 items-baseline gap-2 md:min-w-[220px] md:shrink">
           <span className="hidden text-[12px] text-ink-3 md:inline">{crumb.group}</span>
           <span className="hidden text-[12px] text-ink-faint md:inline">/</span>
           <span className="truncate text-[14px] font-semibold tracking-tight text-ink">{crumb.title}</span>
@@ -443,7 +443,7 @@ export function Navigation() {
           onClick={() => setPaletteOpen(true)}
           aria-label="Search"
           title="Search (⌘K)"
-          className="mx-auto flex h-[30px] w-full max-w-[360px] items-center gap-2 rounded-control border border-line bg-surface-2 px-2.5 text-[12.5px] text-ink-3 transition-colors hover:bg-surface-hover hover:text-ink"
+          className="mx-auto flex h-[30px] w-full min-w-0 max-w-[360px] items-center gap-2 rounded-control border border-line bg-surface-2 px-2.5 text-[12.5px] text-ink-3 transition-colors hover:bg-surface-hover hover:text-ink"
         >
           <AppIcon name="search" size={14} strokeWidth={2} />
           <span className="hidden grow truncate text-left sm:inline">Jump to a name, page or action</span>

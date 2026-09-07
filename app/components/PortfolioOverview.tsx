@@ -2181,8 +2181,9 @@ function RankingTable({
         {displayRows.map((row) => {
           if (row.kind === "header") {
             return (
-              <div key={row.key} className="bg-surface-hover px-3 py-1.5 text-[11px] font-bold uppercase tracking-wider text-ink-3">
-                {row.label} · {row.count}
+              <div key={row.key} className="flex items-center gap-1.5 bg-surface-2 px-3 py-1.5 text-[11px] font-medium text-ink-3">
+                <AppIcon name={row.currencyKey === "cad" ? "flagCA" : "flagUS"} size={12} strokeWidth={1.5} />
+                {row.label} <span className="font-mono">· {row.count}</span>
               </div>
             );
           }
