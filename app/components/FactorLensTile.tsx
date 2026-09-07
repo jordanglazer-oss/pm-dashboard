@@ -1,5 +1,6 @@
 "use client";
 
+import { usePersistedOpen } from "@/app/lib/useCollapsed";
 import React, { useEffect, useState } from "react";
 import Link from "next/link";
 import { MAX_SCORE } from "@/app/lib/types";
@@ -64,7 +65,7 @@ export default function FactorLensTile({
   const [entry, setEntry] = useState<FactorEntry | null>(null);
   const [builtAt, setBuiltAt] = useState<string | null>(null);
   const [loaded, setLoaded] = useState(false);
-  const [open, setOpen] = useState(true);
+  const [open, toggleOpen] = usePersistedOpen("stock.factorLens.open", true);
 
   useEffect(() => {
     let alive = true;
@@ -97,7 +98,7 @@ export default function FactorLensTile({
 
   return (
     <div className={`rounded-card border border-line bg-white p-4 sm:p-5 shadow-sm ${className}`}>
-      <button onClick={() => setOpen((v) => !v)} className="flex w-full items-center justify-between text-left">
+      <button onClick={toggleOpen} className="flex w-full items-center justify-between text-left">
         <span className="flex items-center gap-2">
           <span className="text-sm font-semibold text-ink">Factor Lens</span>
           <span className="rounded bg-surface-2 px-1.5 py-0.5 text-[10px] font-medium text-ink-3">shadow · read-only</span>

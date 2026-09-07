@@ -172,6 +172,10 @@ export default function ThesisDeskPage() {
   };
 
   const setAll = (open: boolean) => {
+    // MUST write the pref too: isOpen() gives uiPrefs priority over the legacy
+    // blob, so writing only the blob left any previously-toggled name stuck
+    // open — "Collapse all" appeared to work, then came back on refresh.
+    rows.forEach((r) => setUiPref(`thesis.open.${r.ticker}`, open ? "1" : "0"));
     const next = Object.fromEntries(rows.map((r) => [r.ticker, open]));
     setOverrides(next);
     persist(next);

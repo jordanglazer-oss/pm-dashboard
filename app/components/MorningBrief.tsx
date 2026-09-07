@@ -1,5 +1,6 @@
 "use client";
 
+import { usePersistedOpen } from "@/app/lib/useCollapsed";
 import React, { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import type {
   MarketData,
@@ -732,7 +733,7 @@ export function MorningBrief({
   // Which view is showing: the generated "brief" (default) or the "input" form.
   const [briefMode, setBriefMode] = useState<"brief" | "input">("brief");
   // Catalyst watch — collapse a long event list to keep the brief uncluttered.
-  const [catalystExpanded, setCatalystExpanded] = useState(false);
+  const [catalystExpanded, toggleCatalyst] = usePersistedOpen("brief.catalyst.expanded", false);
   const [error, setError] = useState("");
   const [liveLoading, setLiveLoading] = useState(false);
   const [liveFields, setLiveFields] = useState<Record<string, LiveStatus>>({});
@@ -2491,7 +2492,7 @@ export function MorningBrief({
               </ul>
               {(catalystHiddenCount > 0 || catalystExpanded) && catalystEvents.length > CATALYST_COLLAPSED && (
                 <button
-                  onClick={() => setCatalystExpanded((v) => !v)}
+                  onClick={toggleCatalyst}
                   className="mt-2 text-[11px] font-semibold text-accent hover:text-accent-ink transition-colors"
                 >
                   {catalystExpanded ? "Show less" : `Show ${catalystHiddenCount} more`}

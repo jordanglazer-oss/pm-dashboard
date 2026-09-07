@@ -1,5 +1,6 @@
 "use client";
 
+import { usePersistedOpen } from "@/app/lib/useCollapsed";
 import React, { useState, useRef, useCallback, useEffect } from "react";
 
 export type BriefAttachment = {
@@ -88,7 +89,7 @@ export function ImageUpload({ section, sectionLabel, attachments, onAdd, onRemov
   // Default to collapsed only when collapsibleThumbs is on AND there are
   // already images to hide. A fresh empty section shouldn't render the toggle
   // at all (handled below), and non-collapsible sections behave as before.
-  const [thumbsExpanded, setThumbsExpanded] = useState(!collapsibleThumbs);
+  const [thumbsExpanded, toggleThumbs] = usePersistedOpen(`upload.thumbs.${section}`, !collapsibleThumbs);
   const inputRef = useRef<HTMLInputElement>(null);
 
   const sectionAttachments = attachments.filter((a) => a.section === section);
@@ -166,7 +167,7 @@ export function ImageUpload({ section, sectionLabel, attachments, onAdd, onRemov
         {collapsibleThumbs && sectionAttachments.length > 0 && (
           <button
             type="button"
-            onClick={() => setThumbsExpanded((v) => !v)}
+            onClick={toggleThumbs}
             className="ml-auto text-[11px] font-semibold text-accent hover:text-accent focus:outline-none focus:underline"
             title={thumbsExpanded ? "Hide thumbnails" : "Show thumbnails"}
           >

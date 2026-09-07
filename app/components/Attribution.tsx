@@ -1,5 +1,6 @@
 "use client";
 
+import { usePersistedOpen } from "@/app/lib/useCollapsed";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import type { PeriodKey, ReturnDecomposition, ContributionBreakdown } from "@/app/lib/attribution";
@@ -159,8 +160,8 @@ export function Attribution() {
 
   const profileData = data?.profiles[profileIdx] ?? null;
   const contrib = profileData?.contributionsByPeriod?.[period] ?? null;
-  const [showAllHoldings, setShowAllHoldings] = useState(false);
-  const [showAllNames, setShowAllNames] = useState(false);
+  const [showAllHoldings, toggleAllHoldings] = usePersistedOpen("attribution.showAllSectors", false);
+  const [showAllNames, toggleAllNames] = usePersistedOpen("attribution.showAllNames", false);
 
   // Rows for the current selection. Market + Selection follow the chosen
   // benchmark; Currency is benchmark-independent.
@@ -440,7 +441,7 @@ export function Attribution() {
               {contrib.holdings.filter((h) => h.contributionPct > 0).length > 10 ||
               contrib.holdings.filter((h) => h.contributionPct < 0).length > 10 ? (
                 <button
-                  onClick={() => setShowAllNames((v) => !v)}
+                  onClick={toggleAllNames}
                   className="self-start text-[11px] font-semibold text-accent hover:text-accent-ink transition-colors"
                 >
                   {showAllNames ? "Show top 10" : "Show every name"}
@@ -468,7 +469,7 @@ export function Attribution() {
                   ))}
                   {contrib.bySector.length > 4 && (
                     <button
-                      onClick={() => setShowAllHoldings((v) => !v)}
+                      onClick={toggleAllHoldings}
                       className="mt-0.5 self-start text-[11px] font-semibold text-accent hover:text-accent-ink transition-colors"
                     >
                       {showAllHoldings ? "Show less" : `Show ${contrib.bySector.length - 4} more`}

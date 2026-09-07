@@ -97,6 +97,29 @@ Concrete rules:
 - Refactors to `StockContext.tsx` must keep the bootstrap order: load from `/api/kv/*` first, only persist back after the initial load resolves.
 - **For any new historical / timeseries data, use the append-only pattern**: compose field keys by date (e.g. `YYYY-MM-DD:<dim1>:<dim2>`), validate on write that the leading date equals today's server date, and reject past-dated entries with 400. `pm:portfolio-snapshots` is the reference implementation — copy its `POST` handler's date-check invariant when adding similar stores.
 
+## Site rule: every collapse/expand persists
+
+Any section a user can collapse, expand, or "show all" MUST survive a refresh,
+and the state belongs in **`pm:ui-prefs`** (Redis-backed, so it also follows the
+PM across devices) — never a bare `useState`, never `localStorage`.
+
+- `useCollapsed(key)` → `[collapsed, toggle]` for sections that default OPEN.
+- `usePersistedOpen(key, defaultOpen)` → `[open, toggle]` for everything else
+  (a tile that starts open, a "show every row" expander that starts closed).
+- `CollapsibleSection` / the Brief's `Fold` already persist via `prefKey`.
+
+Reading an unset key never writes, so a default stays presentational until the
+user actually toggles. **Exempt** (deliberately transient): dropdown menus,
+modals, inline forms, one-at-a-time accordions, and row-selection state.
+
+Two traps that have already bitten:
+- If a component reads BOTH a pref and a legacy store, every writer must write
+  the pref. The Thesis Desk's "Collapse all" wrote only its localStorage blob
+  while `isOpen()` gave the pref priority, so collapsing appeared to work and
+  then reverted on refresh.
+- Don't gate already-collapsible prose behind a second "Show more". `ClampText`
+  used to; it now always renders the full text.
+
 ## Common Commands
 
 ```bash

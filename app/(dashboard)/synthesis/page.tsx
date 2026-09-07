@@ -1,5 +1,6 @@
 "use client";
 
+import { usePersistedOpen } from "@/app/lib/useCollapsed";
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { IdeasRail } from "@/app/components/IdeasRail";
 import { ClampText } from "@/app/components/ClampText";
@@ -301,7 +302,7 @@ function LeadershipTable({ title, rows }: { title: string; rows: LeadershipRow[]
 }
 
 function LeadershipStrip({ data }: { data: SectorLeadership }) {
-  const [open, setOpen] = useState(false);
+  const [open, toggleOpen] = usePersistedOpen("synthesis.leadership.open", false);
   const sectors = useMemo(
     () => [...data.rows.filter((r) => r.kind === "sector")].sort((a, b) => (b.r3m ?? -999) - (a.r3m ?? -999)),
     [data],
@@ -316,7 +317,7 @@ function LeadershipStrip({ data }: { data: SectorLeadership }) {
         <div className="text-xs font-semibold text-ink">
           Sector leadership <span className="font-normal text-ink-3">(3M, as of {data.builtAt.slice(0, 10)})</span>
         </div>
-        <button onClick={() => setOpen(!open)} className="text-[11px] text-accent hover:underline">
+        <button onClick={toggleOpen} className="text-[11px] text-accent hover:underline">
           {open ? "Collapse" : "Full table"}
         </button>
       </div>

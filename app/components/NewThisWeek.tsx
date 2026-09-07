@@ -1,5 +1,6 @@
 "use client";
 
+import { usePersistedOpen } from "@/app/lib/useCollapsed";
 import React, { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { displayTicker } from "@/app/lib/ticker";
@@ -37,7 +38,7 @@ type Props = {
 export function NewThisWeek({ portfolioTickers, watchlistTickers, listTickers }: Props) {
   const [data, setData] = useState<SiaMoverResult | null>(null);
   const [loaded, setLoaded] = useState(false);
-  const [showAll, setShowAll] = useState(false);
+  const [showAll, toggleShowAll] = usePersistedOpen("newThisWeek.showAll", false);
 
   useEffect(() => {
     let alive = true;
@@ -135,7 +136,7 @@ export function NewThisWeek({ portfolioTickers, watchlistTickers, listTickers }:
 
       {rows.length > shown.length && (
         <button
-          onClick={() => setShowAll(true)}
+          onClick={toggleShowAll}
           className="w-full border-t border-line px-4 py-2 text-[11px] font-semibold text-accent hover:bg-surface-2"
         >
           Show all {rows.length}
