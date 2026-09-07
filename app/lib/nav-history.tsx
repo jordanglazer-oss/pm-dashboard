@@ -119,13 +119,19 @@ export function BackCrumb() {
   if (pathname.startsWith("/stock/") || !prev) return null;
   const crossedHubs = hubOf(prev.path) !== hubOf(pathname);
   if (!prev.path.startsWith("/stock/") && !crossedHubs) return null;
+  const fromStock = prev.path.startsWith("/stock/");
+  // Rendered in the layout ABOVE the page content, in the content column, so
+  // it sits where the eye lands after a jump — the previous fixed pill at the
+  // bottom-left was never noticed ("there's no button to go back").
   return (
-    <button
-      onClick={() => window.history.back()}
-      className="fixed bottom-[76px] left-4 z-40 flex items-center gap-1.5 rounded-pill border border-line bg-surface px-3 py-1.5 text-[12px] font-semibold text-ink-2 shadow-card hover:bg-surface-hover hover:text-ink transition-colors md:bottom-4 print:hidden"
-      title={prev.path.startsWith("/stock/") ? `Return to the ${prev.label} stock page (restores your place)` : `Back to ${prev.label} (restores your place)`}
-    >
-      ← {prev.label}
-    </button>
+    <div className="mx-auto w-full max-w-[1560px] px-4 pt-3 md:px-8 print:hidden">
+      <button
+        onClick={() => window.history.back()}
+        className="inline-flex items-center gap-1.5 rounded-pill border border-line bg-surface px-3 py-1.5 text-[12px] font-semibold text-ink-2 shadow-sm transition-colors hover:bg-surface-hover hover:text-ink"
+        title={fromStock ? `Return to the ${prev.label} stock page (restores your place)` : `Back to ${prev.label} (restores your place)`}
+      >
+        <span aria-hidden>←</span> Back to {prev.label}
+      </button>
+    </div>
   );
 }

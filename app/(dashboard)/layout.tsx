@@ -24,8 +24,8 @@ export default function DashboardLayout({
         <IdeasTabs />
         <BriefTabs />
         <NavHistoryTracker />
-        <PageTransition>{children}</PageTransition>
         <BackCrumb />
+        <PageTransition>{children}</PageTransition>
         <ScrollToTop />
         <ToastHost />
       </Providers>
