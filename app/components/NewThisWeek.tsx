@@ -73,74 +73,70 @@ export function NewThisWeek({ portfolioTickers, watchlistTickers, listTickers }:
   const unknownCount = rows.filter((r) => !r.onList && !r.onWatchlist).length;
 
   return (
-    <section className="mb-5 overflow-hidden rounded-card border border-line bg-white shadow-sm">
-      <div className="flex flex-wrap items-center gap-2 border-b border-line px-4 py-3">
-        <span className="text-xs font-bold uppercase tracking-[0.22em] text-ink-3">New this week</span>
-        <span className="rounded-full border border-pos-border bg-pos-soft px-2 py-0.5 text-[10px] font-bold text-pos">
-          {rows.length} climbing
+    <section className="panel">
+      <div className="panel-h">
+        <span className="t">New this week</span>
+        <span className="m">
+          <span className="text-pos">{rows.length} climbing</span>
+          {unknownCount > 0 && <> · <span className="text-accent">{unknownCount} on no list</span></>}
         </span>
-        {unknownCount > 0 && (
-          <span className="rounded-full border border-accent-border bg-accent-soft px-2 py-0.5 text-[10px] font-bold text-accent">
-            {unknownCount} on no list
-          </span>
-        )}
-        <span className="ml-auto font-mono text-[11px] text-ink-faint">
-          SIA {data.date} · {data.universeSize} names
-        </span>
+        <span className="ml-auto font-mono text-[11.5px] text-ink-3">SIA {data.date} · {data.universeSize} names</span>
       </div>
 
-      <p className="border-b border-line-soft px-4 py-2 text-[11.5px] leading-5 text-ink-3">
+      <p className="border-b border-line-soft px-3.5 py-2 text-[11.5px] leading-5 text-ink-3">
         Climbed ≥20 places in SIA&apos;s weekly ranking of the full S&amp;P 500 / TSX, while holding a SMAX of 7+
         (so these are already-strong names still improving, not junk bouncing off the bottom). Names marked{" "}
-        <span className="font-semibold text-accent">on no list</span> appear nowhere in your research lists —
+        <span className="text-accent">on no list</span> appear nowhere in your research lists —
         those are the ones this lane exists to surface. Holdings are excluded.
       </p>
 
-      <div className="divide-y divide-line-soft">
-        {shown.map((r) => (
-          <div key={r.ticker} className="flex items-center gap-3 px-4 py-2">
-            <Link
-              href={`/stock/${encodeURIComponent(r.ticker)}`}
-              className="w-20 shrink-0 font-mono text-[13px] font-semibold text-ink hover:text-accent"
-            >
-              {displayTicker(r.ticker)}
-            </Link>
-            <span className="font-mono text-[12px] font-bold text-pos" title="Places climbed in SIA's ranking this week">
-              ▲{r.wChg}
-            </span>
-            <span className="font-mono text-[11px] text-ink-3">
-              rank {r.rank}
-              {r.smax != null ? ` · SMAX ${r.smax}` : ""}
-            </span>
-            {r.sector && <span className="truncate text-[11px] text-ink-faint">{r.sector}</span>}
-            <div className="ml-auto flex shrink-0 items-center gap-1.5">
-              {!r.onList && !r.onWatchlist && (
-                <span className="rounded-full border border-accent-border bg-accent-soft px-2 py-0.5 text-[10px] font-semibold text-accent">
-                  on no list
-                </span>
-              )}
-              {r.onList && (
-                <span className="rounded-full border border-line bg-surface-2 px-2 py-0.5 text-[10px] font-semibold text-ink-2">
-                  on a list
-                </span>
-              )}
-              {r.onWatchlist && (
-                <span className="rounded-full border border-line bg-surface-2 px-2 py-0.5 text-[10px] font-semibold text-ink-2">
-                  watchlist
-                </span>
-              )}
-            </div>
-          </div>
-        ))}
+      <div className="overflow-x-auto">
+        <table className="data-table">
+          <thead>
+            <tr>
+              <th className="pl-3.5">Name</th>
+              <th className="n" title="Places climbed in SIA's ranking this week">Climbed</th>
+              <th className="n">Rank</th>
+              <th className="n">SMAX</th>
+              <th>Sector</th>
+              <th className="pr-3.5 text-right">Known as</th>
+            </tr>
+          </thead>
+          <tbody>
+            {shown.map((r) => (
+              <tr key={r.ticker}>
+                <td className="pl-3.5">
+                  <Link href={`/stock/${encodeURIComponent(r.ticker)}`} className="font-mono font-medium text-ink hover:text-accent hover:underline">
+                    {displayTicker(r.ticker)}
+                  </Link>
+                </td>
+                <td className="n text-pos">+{r.wChg}</td>
+                <td className="n text-ink-2">{r.rank}</td>
+                <td className="n text-ink-2">{r.smax ?? "—"}</td>
+                <td className="text-[12px] text-ink-2">{r.sector ?? ""}</td>
+                <td className="pr-3.5 text-right text-[12px]">
+                  {!r.onList && !r.onWatchlist && <span className="text-accent">on no list</span>}
+                  {r.onList && <span className="text-ink-2">on a list</span>}
+                  {r.onList && r.onWatchlist && <span className="text-ink-3"> · </span>}
+                  {r.onWatchlist && <span className="text-ink-2">watchlist</span>}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
       </div>
 
       {rows.length > shown.length && (
-        <button
-          onClick={toggleShowAll}
-          className="w-full border-t border-line px-4 py-2 text-[11px] font-semibold text-accent hover:bg-surface-2"
-        >
-          Show all {rows.length}
-        </button>
+        <div className="flex h-8 items-center border-t border-line-soft px-3.5 text-[11.5px] text-ink-3">
+          {shown.length} of {rows.length}
+          <button onClick={toggleShowAll} className="ml-auto text-accent hover:underline">Show all {rows.length}</button>
+        </div>
+      )}
+      {showAll && rows.length > 12 && (
+        <div className="flex h-8 items-center border-t border-line-soft px-3.5 text-[11.5px] text-ink-3">
+          {rows.length} of {rows.length}
+          <button onClick={toggleShowAll} className="ml-auto text-accent hover:underline">Show fewer</button>
+        </div>
       )}
     </section>
   );

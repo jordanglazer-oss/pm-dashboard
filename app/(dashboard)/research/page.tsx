@@ -15,7 +15,8 @@ import {
 } from "@/app/lib/research-ranked";
 import { displayTicker } from "@/app/lib/ticker";
 import TickerLink from "@/app/components/TickerLink";
-import { CollapsibleSection } from "@/app/components/CollapsibleSection";
+import { AppIcon } from "@/app/components/AppIcon";
+import { EmptyState } from "@/app/components/EmptyState";
 import type { Stock, ScoreKey } from "@/app/lib/types";
 
 /** A promoted name starts unscored — the scoring flow fills it in. */
@@ -33,30 +34,26 @@ const ZERO_SCORES: Record<ScoreKey, number> = {
 const PREF_HIDE_HELD = "research.ranked.hideHeld";
 const PREF_MIN_LISTS = "research.ranked.minLists";
 const PREF_CCY = "research.ranked.ccy";
+/** CollapsibleSection-style pref ("1" = collapsed); default collapsed. */
+const PREF_FELL_OFF = "research.ranked.fellOff";
 
 type MinLists = 1 | 2 | 3;
 type Ccy = "Both" | "CAD" | "USD";
 
-function ListChip({ item: r }: { item: RankedListRef }) {
+/** One source citation — plain ink-2 text linking to the source pane. */
+function SourceRef({ item: r, bearish = false }: { item: RankedListRef; bearish?: boolean }) {
   return (
     <Link
       href={`/research/sources#${r.railKey}`}
-      title={`${r.label}${r.rank != null ? ` — rank ${r.rank}` : ""}${r.dateAdded ? ` · added ${r.dateAdded}` : ""}. Click to open the source pane.`}
-      className="rounded bg-accent-soft px-1.5 py-px text-[10px] font-medium !text-accent hover:bg-accent hover:!text-white transition-colors"
+      title={bearish
+        ? `${r.label} — bearish, not counted`
+        : `${r.label}${r.rank != null ? ` — rank ${r.rank}` : ""}${r.dateAdded ? ` · added ${r.dateAdded}` : ""}. Click to open the source pane.`}
+      className={bearish ? "!text-neg line-through hover:underline" : "!text-ink-2 hover:!text-accent hover:underline"}
       onClick={(e) => e.stopPropagation()}
     >
       {r.short}
-      {r.rank != null && <span className="ml-0.5 opacity-70">#{r.rank}</span>}
+      {!bearish && r.rank != null && <span className="font-mono text-ink-3"> #{r.rank}</span>}
     </Link>
-  );
-}
-
-function HeldBadge({ held }: { held: NonNullable<RankedRow["held"]> }) {
-  const cls = held === "Portfolio" ? "bg-pos-soft text-pos ring-pos-border" : "bg-warn-soft text-warn ring-warn-border";
-  return (
-    <span className={`inline-flex items-center rounded-full px-1.5 py-px text-[9px] font-bold uppercase tracking-wide ring-1 ${cls}`} title={`Already on the ${held}`}>
-      {held}
-    </span>
   );
 }
 
@@ -69,35 +66,33 @@ function RankedTable({
   resolvedNames,
 }: {
   title: string;
-  flag: string;
+  flag: "flagCA" | "flagUS";
   rows: RankedRow[];
   onWatch: (row: RankedRow) => void;
   adding: string | null;
   resolvedNames: Record<string, string>;
 }) {
-  const th = "pb-2 pr-3 text-left text-[11px] font-semibold uppercase tracking-wide text-ink-3";
   return (
-    <section className="rounded-card border border-line bg-white p-5 shadow-card">
-      <div className="mb-3 flex items-center justify-between gap-3">
-        <h2 className="text-base font-bold text-ink">
-          <span className="mr-1.5">{flag}</span>{title}
-          <span className="ml-2 text-sm font-normal text-ink-3">{rows.length}</span>
-        </h2>
+    <section className="panel">
+      <div className="panel-h">
+        <span className="text-ink-3"><AppIcon name={flag} size={14} /></span>
+        <span className="t">{title}</span>
+        <span className="m font-mono">{rows.length}</span>
       </div>
       {rows.length === 0 ? (
-        <p className="py-6 text-center text-xs text-ink-3">No names match the current filters.</p>
+        <EmptyState className="!py-8" glyph={<AppIcon name="list" size={18} />} title="No names match" body="Nothing on these lists passes the current filters." />
       ) : (
-        <div className="max-w-full overflow-x-auto">
-          <table className="w-full min-w-[760px] text-sm">
+        <div className="overflow-x-auto">
+          <table className="data-table min-w-[760px]">
             <thead>
-              <tr className="border-b border-line">
-                <th className={`${th} w-8 text-right`}>#</th>
-                <th className={th}>Ticker</th>
-                <th className={th}>Name</th>
-                <th className={th}>Sector</th>
-                <th className={`${th} text-right`} title="Number of bullish Research-tab lists the name is on">Lists</th>
-                <th className={th}>Sources</th>
-                <th className={`${th} text-right`}>Status</th>
+              <tr>
+                <th className="n w-10 !pl-3.5">#</th>
+                <th>Ticker</th>
+                <th>Name</th>
+                <th>Sector</th>
+                <th className="n" title="Number of bullish Research-tab lists the name is on">Lists</th>
+                <th>Sources</th>
+                <th className="n !pr-3.5">Status</th>
               </tr>
             </thead>
             <tbody>
@@ -105,52 +100,51 @@ function RankedTable({
                 const suggested = r.listCount >= SUGGESTED_MIN_LISTS;
                 const name = r.name || resolvedNames[r.ticker] || "";
                 return (
-                  <tr key={r.key} className={`border-b border-line-soft hover:bg-surface-hover ${suggested ? "" : "text-ink-2"}`}>
-                    <td className="py-2.5 pr-3 text-right font-mono text-[11px] text-ink-3">{i + 1}</td>
-                    <td className="py-2.5 pr-3 font-mono text-xs font-semibold text-ink whitespace-nowrap">
-                      <TickerLink ticker={r.heldTicker ?? r.ticker}>{displayTicker(r.ticker)}</TickerLink>
+                  <tr key={r.key} className={suggested ? "" : "text-ink-2"}>
+                    <td className="n !pl-3.5 text-ink-3">{i + 1}</td>
+                    <td>
+                      <TickerLink ticker={r.heldTicker ?? r.ticker} className="font-mono font-medium text-ink hover:text-accent hover:underline">{displayTicker(r.ticker)}</TickerLink>
                       {r.bearish.length > 0 && (
-                        <span
-                          className="ml-1.5 rounded-full bg-neg-soft px-1.5 py-px text-[9px] font-bold uppercase text-neg ring-1 ring-neg-border"
-                          title={`Bearish view: ${r.bearish.map((b) => b.label).join(", ")} (not counted)`}
-                        >
+                        <span className="ml-1.5 text-[11px] text-neg" title={`Bearish view: ${r.bearish.map((b) => b.label).join(", ")} (not counted)`}>
                           Bearish
                         </span>
                       )}
                     </td>
-                    <td className="max-w-[220px] truncate py-2.5 pr-3 text-ink" title={name}>{name || "—"}</td>
-                    <td className="py-2.5 pr-3 text-xs text-ink-2">{r.sector || "—"}</td>
-                    <td className="py-2.5 pr-3 text-right">
-                      <span className={`inline-flex min-w-[1.6rem] justify-center rounded-md px-1.5 py-0.5 font-mono text-xs font-bold tabular-nums ${suggested ? "bg-accent text-white" : "bg-surface-2 text-ink-2"}`} title={suggested ? `On ${r.listCount} lists — qualifies for the Suggested Watchlist` : `On ${r.listCount} list`}>
-                        {r.listCount}
-                      </span>
+                    <td className="max-w-[240px] truncate" title={name}>{name || "—"}</td>
+                    <td className="text-ink-2">{r.sector || "—"}</td>
+                    <td className={`n ${suggested ? "font-medium text-ink" : "text-ink-3"}`} title={suggested ? `On ${r.listCount} lists — qualifies for the Suggested Watchlist` : `On ${r.listCount} list`}>
+                      {r.listCount}
                     </td>
-                    <td className="py-2.5 pr-3">
-                      <span className="flex flex-wrap gap-1">
-                        {r.lists.map((l) => <ListChip key={l.key} item={l} />)}
+                    <td className="!whitespace-normal text-ink-2">
+                      <span className="inline-flex flex-wrap items-center gap-x-1">
+                        {r.lists.map((l, j) => (
+                          <React.Fragment key={l.key}>
+                            {j > 0 && <span className="text-ink-faint">·</span>}
+                            <SourceRef item={l} />
+                          </React.Fragment>
+                        ))}
                         {r.bearish.map((l) => (
-                          <Link
-                            key={l.key}
-                            href={`/research/sources#${l.railKey}`}
-                            className="rounded bg-neg-soft px-1.5 py-px text-[10px] font-medium !text-neg line-through hover:bg-neg hover:!text-white transition-colors"
-                            title={`${l.label} — bearish, not counted`}
-                          >
-                            {l.short}
-                          </Link>
+                          <React.Fragment key={l.key}>
+                            {(r.lists.length > 0) && <span className="text-ink-faint">·</span>}
+                            <SourceRef item={l} bearish />
+                          </React.Fragment>
                         ))}
                       </span>
                     </td>
-                    <td className="py-2.5 text-right whitespace-nowrap">
+                    <td className="!pr-3.5 !text-right">
                       {r.held ? (
-                        <HeldBadge held={r.held} />
+                        <span className="inline-flex items-center gap-1.5 text-[12px] text-ink-2" title={`Already on the ${r.held}`}>
+                          <span className={`dot ${r.held === "Portfolio" ? "bg-pos" : "bg-ink-3"}`} />
+                          {r.held}
+                        </span>
                       ) : (
                         <button
                           onClick={() => onWatch(r)}
                           disabled={adding === r.ticker}
-                          className="rounded bg-accent-soft px-2 py-1 text-[11px] font-bold text-accent hover:bg-accent hover:text-white transition-colors disabled:opacity-50"
+                          className="text-[12px] text-accent hover:underline disabled:opacity-50"
                           title="Add to the Watchlist directly (skips the Suggested stage)"
                         >
-                          {adding === r.ticker ? "…" : "+ Watch"}
+                          {adding === r.ticker ? "Adding…" : "Watch"}
                         </button>
                       )}
                     </td>
@@ -161,6 +155,9 @@ function RankedTable({
           </table>
         </div>
       )}
+      <div className="flex h-8 items-center px-3.5 text-[11.5px] text-ink-3">
+        {rows.length} of {rows.length} · sorted by list count
+      </div>
     </section>
   );
 }
@@ -220,6 +217,7 @@ export default function RankedResearchPage() {
   const hideHeld = uiPrefs[PREF_HIDE_HELD] === "1";
   const minLists = (Number(uiPrefs[PREF_MIN_LISTS]) || 1) as MinLists;
   const ccy = ((uiPrefs[PREF_CCY] as Ccy) || "Both") as Ccy;
+  const fellOffCollapsed = PREF_FELL_OFF in uiPrefs ? uiPrefs[PREF_FELL_OFF] === "1" : true;
 
   const filtered = useMemo(
     () => allRows.filter((r) => r.listCount >= minLists && (!hideHeld || !r.held)),
@@ -263,102 +261,106 @@ export default function RankedResearchPage() {
     setAdding(null);
   }, [addStock, resolvedNames]);
 
-  const chip = (active: boolean) =>
-    `rounded-[6px] px-2.5 py-1 text-xs font-semibold transition-colors ${active ? "bg-accent text-white" : "text-ink-2 hover:text-ink"}`;
-
   if (loadError) {
     return (
-      <main className="min-h-screen bg-ground px-4 py-6 md:px-8">
-        <div className="mx-auto max-w-[88rem] rounded-lg border border-neg-border bg-neg-soft p-4 text-sm text-neg">Failed to load research: {loadError}</div>
+      <main className="min-h-screen bg-ground text-ink">
+        <div className="rounded-card border border-neg-border bg-neg-soft px-3.5 py-2.5 text-[12.5px] text-neg">Failed to load research: {loadError}</div>
       </main>
     );
   }
   if (!research) {
-    return <main className="min-h-screen bg-ground px-4 py-6 text-sm text-ink-3 md:px-8"><div className="mx-auto max-w-[88rem]">Loading ranked research…</div></main>;
+    return <main className="min-h-screen bg-ground text-[12.5px] text-ink-3">Loading ranked research…</main>;
   }
 
   return (
-    <main className="min-h-screen bg-ground px-4 py-6 text-ink md:px-8 md:py-8 overflow-x-hidden">
-      <div className="mx-auto max-w-[88rem] space-y-5">
-        {/* Funnel strip — where this table sits and what flows out of it. */}
-        <section className="rounded-card border border-line bg-white p-4 shadow-card">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div className="flex flex-wrap items-center gap-x-5 gap-y-1 text-xs text-ink-2">
-              <span><span className="font-mono font-bold text-ink">{counts.total}</span> names across <span className="font-mono font-bold text-ink">{counts.listsLoaded}</span> lists</span>
-              <span>🇨🇦 <span className="font-mono font-bold text-ink">{counts.cad}</span> · 🇺🇸 <span className="font-mono font-bold text-ink">{counts.total - counts.cad}</span></span>
-              <span title={`Names on ${SUGGESTED_MIN_LISTS}+ lists feed the Suggested Watchlist on the Dashboard`}>
-                <span className="font-mono font-bold text-accent">{counts.suggested}</span> on {SUGGESTED_MIN_LISTS}+ lists → <Link href="/?bucket=Suggested" className="font-semibold !text-accent hover:underline">Suggested</Link>
-              </span>
-              <span><span className="font-mono font-bold text-ink">{counts.held}</span> already held</span>
-            </div>
-            <div className="flex flex-wrap items-center gap-2">
-              <span className="inline-flex items-center rounded-control border border-line bg-surface-2 p-0.5" title="Minimum number of lists">
-                {([1, 2, 3] as MinLists[]).map((n) => (
-                  <button key={n} onClick={() => setUiPref(PREF_MIN_LISTS, String(n))} className={chip(minLists === n)}>
-                    {n === 1 ? "All" : `${n}+ lists`}
-                  </button>
-                ))}
-              </span>
-              <span className="inline-flex items-center rounded-control border border-line bg-surface-2 p-0.5">
-                {(["Both", "CAD", "USD"] as Ccy[]).map((c) => (
-                  <button key={c} onClick={() => setUiPref(PREF_CCY, c)} className={chip(ccy === c)}>{c}</button>
-                ))}
-              </span>
-              <button
-                onClick={() => setUiPref(PREF_HIDE_HELD, hideHeld ? "0" : "1")}
-                className={`rounded-control border px-3 py-1.5 text-xs font-semibold transition-colors ${hideHeld ? "border-accent-border bg-accent-soft text-accent" : "border-line text-ink-2 hover:text-ink"}`}
-                title="Hide names already on the Portfolio or Watchlist (persists)"
-              >
-                {hideHeld ? "Held hidden" : "Hide held"}
+    <main className="min-h-screen bg-ground text-ink overflow-x-hidden">
+      <div className="flex flex-col gap-3.5">
+        {/* Toolbar — filters first, funnel counts as meta, no title row. */}
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="seg" title="Minimum number of lists">
+            {([1, 2, 3] as MinLists[]).map((n) => (
+              <button key={n} onClick={() => setUiPref(PREF_MIN_LISTS, String(n))} className={minLists === n ? "on" : ""} aria-pressed={minLists === n}>
+                {n === 1 ? "All" : `${n}+ lists`}
               </button>
-            </div>
+            ))}
           </div>
-        </section>
+          <div className="seg" title="Currency">
+            {(["Both", "CAD", "USD"] as Ccy[]).map((c) => (
+              <button key={c} onClick={() => setUiPref(PREF_CCY, c)} className={ccy === c ? "on" : ""} aria-pressed={ccy === c}>{c}</button>
+            ))}
+          </div>
+          <button
+            onClick={() => setUiPref(PREF_HIDE_HELD, hideHeld ? "0" : "1")}
+            aria-pressed={hideHeld}
+            className={`inline-flex h-7 items-center gap-1.5 rounded-control border px-2.5 text-[12.5px] transition-colors ${hideHeld ? "border-accent-border bg-accent-soft text-accent" : "border-line bg-surface text-ink-2 hover:bg-surface-hover"}`}
+            title="Hide names already on the Portfolio or Watchlist (persists)"
+          >
+            <AppIcon name={hideHeld ? "eyeOff" : "eye"} size={13} strokeWidth={2} />
+            {hideHeld ? "Held hidden" : "Hide held"}
+          </button>
+          <div className="ml-auto flex flex-wrap items-center gap-x-4 gap-y-1 text-[11.5px] text-ink-3">
+            <span><span className="font-mono text-ink">{counts.total}</span> names across <span className="font-mono text-ink">{counts.listsLoaded}</span> lists</span>
+            <span className="inline-flex items-center gap-1">
+              <AppIcon name="flagCA" size={13} /> <span className="font-mono text-ink">{counts.cad}</span>
+              <span className="ml-2 inline-flex items-center gap-1"><AppIcon name="flagUS" size={13} /> <span className="font-mono text-ink">{counts.total - counts.cad}</span></span>
+            </span>
+            <span title={`Names on ${SUGGESTED_MIN_LISTS}+ lists feed the Suggested Watchlist on the Dashboard`}>
+              <span className="font-mono text-ink">{counts.suggested}</span> on {SUGGESTED_MIN_LISTS}+ lists
+              <span className="text-ink-faint"> → </span>
+              <Link href="/?bucket=Suggested" className="!text-accent hover:underline">Suggested</Link>
+            </span>
+            <span><span className="font-mono text-ink">{counts.held}</span> held</span>
+          </div>
+        </div>
 
         {(ccy === "Both" || ccy === "CAD") && (
-          <RankedTable title="Canadian (CAD)" flag="🇨🇦" rows={cad} onWatch={addToWatchlist} adding={adding} resolvedNames={resolvedNames} />
+          <RankedTable title="Canadian" flag="flagCA" rows={cad} onWatch={addToWatchlist} adding={adding} resolvedNames={resolvedNames} />
         )}
         {(ccy === "Both" || ccy === "USD") && (
-          <RankedTable title="US (USD)" flag="🇺🇸" rows={usd} onWatch={addToWatchlist} adding={adding} resolvedNames={resolvedNames} />
+          <RankedTable title="US" flag="flagUS" rows={usd} onWatch={addToWatchlist} adding={adding} resolvedNames={resolvedNames} />
         )}
 
-        <CollapsibleSection
-          prefKey="research.ranked.fellOff"
-          defaultCollapsed
-          title={<span>Fell off <span className="ml-1 text-sm font-normal text-ink-3">{fellOff.length}</span></span>}
-          subtitle="Dropped from a list in the last 45 days and now on none — a fading name is worth seeing, not forgetting."
-        >
-          {fellOff.length === 0 ? (
-            <p className="py-4 text-center text-xs text-ink-3">Nothing has fallen off recently.</p>
-          ) : (
-            <div className="max-w-full overflow-x-auto">
-              <table className="w-full min-w-[520px] text-sm">
-                <thead>
-                  <tr className="border-b border-line">
-                    <th className="pb-2 pr-3 text-left text-[11px] font-semibold uppercase tracking-wide text-ink-3">Ticker</th>
-                    <th className="pb-2 pr-3 text-left text-[11px] font-semibold uppercase tracking-wide text-ink-3">Dropped from</th>
-                    <th className="pb-2 text-left text-[11px] font-semibold uppercase tracking-wide text-ink-3">Last drop</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {fellOff.map((f) => (
-                    <tr key={f.key} className="border-b border-line-soft">
-                      <td className="py-2 pr-3 font-mono text-xs font-semibold text-ink"><TickerLink ticker={f.ticker}>{displayTicker(f.ticker)}</TickerLink></td>
-                      <td className="py-2 pr-3">
-                        <span className="flex flex-wrap gap-1">
-                          {f.droppedFrom.map((l) => (
-                            <span key={l} className="rounded bg-neg-soft px-1.5 py-px text-[10px] font-medium text-neg line-through">{l}</span>
-                          ))}
-                        </span>
-                      </td>
-                      <td className="py-2 text-xs text-ink-3">{f.lastDroppedOn}</td>
+        {/* Fell off — persisted fold (default collapsed, same pref as before). */}
+        <section id={PREF_FELL_OFF} className="panel">
+          <div className={`panel-h ${fellOffCollapsed ? "border-b-0" : ""}`}>
+            <button
+              onClick={() => setUiPref(PREF_FELL_OFF, fellOffCollapsed ? "0" : "1")}
+              className="flex min-w-0 flex-1 items-center gap-2 text-left"
+              aria-expanded={!fellOffCollapsed}
+            >
+              <span className={`text-ink-3 transition-transform ${fellOffCollapsed ? "-rotate-90" : ""}`}><AppIcon name="chevD" size={14} strokeWidth={2} /></span>
+              <span className="t">Fell off</span>
+              <span className="m font-mono">{fellOff.length}</span>
+              <span className="m hidden truncate sm:inline">Dropped from a list in the last 45 days and now on none — a fading name is worth seeing, not forgetting.</span>
+            </button>
+          </div>
+          {!fellOffCollapsed && (
+            fellOff.length === 0 ? (
+              <EmptyState className="!py-6" glyph={<AppIcon name="check" size={18} />} title="Nothing has fallen off" body="No name dropped off every list in the last 45 days." />
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="data-table min-w-[520px]">
+                  <thead>
+                    <tr>
+                      <th className="!pl-3.5">Ticker</th>
+                      <th>Dropped from</th>
+                      <th>Last drop</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+                  </thead>
+                  <tbody>
+                    {fellOff.map((f) => (
+                      <tr key={f.key}>
+                        <td className="!pl-3.5"><TickerLink ticker={f.ticker} className="font-mono font-medium text-ink hover:text-accent hover:underline">{displayTicker(f.ticker)}</TickerLink></td>
+                        <td className="!whitespace-normal text-neg">{f.droppedFrom.join(" · ")}</td>
+                        <td className="font-mono text-ink-3">{f.lastDroppedOn}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )
           )}
-        </CollapsibleSection>
+        </section>
       </div>
     </main>
   );

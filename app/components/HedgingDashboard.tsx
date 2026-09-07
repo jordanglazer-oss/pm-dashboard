@@ -5,6 +5,9 @@ import { useStocks } from "@/app/lib/StockContext";
 import type { HedgingLiveData, HedgingQuote, CustomStrikeRow } from "@/app/api/hedging/route";
 import type { HedgingHistory, HedgingSnapshot } from "@/app/api/kv/hedging-history/route";
 import type { HedgingCustomStrikes } from "@/app/api/kv/hedging-custom-strikes/route";
+import { AppIcon } from "./AppIcon";
+import { StatStrip } from "./StatStrip";
+import { EmptyState } from "./EmptyState";
 
 type StrikeKey = "atm" | "otm5" | "otm10";
 
@@ -243,283 +246,227 @@ export default function HedgingDashboard() {
     [],
   );
 
+  const seg = [
+    { key: "current" as ViewMode, label: "Current" },
+    { key: "wow" as ViewMode, label: "Week over week" },
+    { key: "mom" as ViewMode, label: "Month over month" },
+  ];
+  const ref = view === "wow" ? wowSnap : view === "mom" ? momSnap : null;
+  const tdTone = (delta: number | null) =>
+    delta == null ? "text-ink-3" : delta > 0 ? "text-neg" : delta < 0 ? "text-pos" : "text-ink-3";
+
   return (
-    <main className="min-h-screen bg-[#f4f5f7] px-4 py-6 text-ink md:px-8 md:py-8 overflow-x-hidden">
-      <div className="mx-auto max-w-7xl">
-        {/* Header */}
-        <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-          <div>
-            <h1 className="text-[15px] font-bold text-ink">Hedging</h1>
-            <p className="text-sm text-ink-3 mt-1">
-              SPY protective put premiums · ATM / ~5% OTM / ~10% OTM · strikes rounded to nearest $5
-            </p>
-          </div>
-          <div className="flex items-center gap-2">
-            {data && (
-              <span className="text-xs text-ink-3 hidden sm:inline">
-                Updated {fmtFetchedAt(data.fetchedAt)}
-              </span>
-            )}
-            <button
-              onClick={handleRefresh}
-              disabled={refreshing || loading}
-              className="flex items-center gap-1.5 rounded-lg bg-accent px-4 py-2 text-sm font-semibold text-white hover:bg-accent transition-colors disabled:opacity-50"
-            >
-              <svg className={`w-3.5 h-3.5 ${refreshing ? "animate-spin" : ""}`} fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0 3.181 3.183a8.25 8.25 0 0 0 13.803-3.7M4.031 9.865a8.25 8.25 0 0 1 13.803-3.7l3.181 3.182" />
-              </svg>
-              {refreshing ? "Refreshing..." : "Refresh"}
-            </button>
-          </div>
-        </div>
-
-        {/* Spot + summary */}
-        {data && (
-          <div className="mb-5 grid grid-cols-2 overflow-hidden rounded-card border border-line bg-white shadow-sm sm:grid-cols-4">
-            <div className="-ml-px -mt-px border-l border-t border-line-soft px-3 py-2.5">
-              <div className="text-[10px] font-semibold text-ink-3 uppercase tracking-wider">SPY Spot</div>
-              <div className="text-sm font-bold mt-0.5 text-ink">${data.spotPrice.toFixed(2)}</div>
-            </div>
-            <div className="-ml-px -mt-px border-l border-t border-line-soft px-3 py-2.5">
-              <div className="text-[10px] font-semibold text-ink-3 uppercase tracking-wider">ATM Strike</div>
-              <div className="text-sm font-bold mt-0.5 text-ink">
-                ${data.quotes[0] ? data.quotes[0].atmStrike : "—"}
-              </div>
-            </div>
-            <div className="-ml-px -mt-px border-l border-t border-line-soft px-3 py-2.5">
-              <div className="text-[10px] font-semibold text-ink-3 uppercase tracking-wider">~5% OTM Strike</div>
-              <div className="text-sm font-bold mt-0.5 text-ink">
-                ${data.quotes[0] ? data.quotes[0].otm5Strike : "—"}
-              </div>
-            </div>
-            <div className="-ml-px -mt-px border-l border-t border-line-soft px-3 py-2.5">
-              <div className="text-[10px] font-semibold text-ink-3 uppercase tracking-wider">~10% OTM Strike</div>
-              <div className="text-sm font-bold mt-0.5 text-ink">
-                ${data.quotes[0] ? data.quotes[0].otm10Strike : "—"}
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* View toggle */}
-        <div className="flex gap-1 mb-4 bg-white rounded-card border border-line p-1 w-fit max-w-full overflow-x-auto">
-          {[
-            { key: "current" as ViewMode, label: "Current" },
-            { key: "wow" as ViewMode, label: "Week over Week" },
-            { key: "mom" as ViewMode, label: "Month over Month" },
-          ].map((v) => (
-            <button
-              key={v.key}
-              onClick={() => setView(v.key)}
-              className={`rounded-lg px-4 py-2 text-sm font-semibold transition-colors whitespace-nowrap ${
-                view === v.key ? "bg-ink text-white" : "text-ink-3 hover:text-ink hover:bg-surface-2"
-              }`}
-            >
+    // Full-width inside the shell's content column; the page title lives in
+    // the top bar. First row = the toolbar: view seg · updated · Refresh.
+    <main className="flex flex-col gap-3.5 text-ink">
+      <div className="flex flex-wrap items-center gap-2.5">
+        <div className="seg">
+          {seg.map((v) => (
+            <button key={v.key} type="button" className={view === v.key ? "on" : ""} onClick={() => setView(v.key)}>
               {v.label}
             </button>
           ))}
         </div>
+        <span className="text-[12px] text-ink-3">
+          SPY protective put premiums · ATM / ~5% OTM / ~10% OTM · strikes rounded to nearest $5
+        </span>
+        <div className="ml-auto flex items-center gap-2">
+          {data && <span className="text-[11.5px] text-ink-3">Updated {fmtFetchedAt(data.fetchedAt)}</span>}
+          <button
+            type="button"
+            onClick={handleRefresh}
+            disabled={refreshing || loading}
+            className="inline-flex h-7 items-center gap-1.5 rounded-control border border-line bg-surface px-2.5 text-[12.5px] text-ink-2 transition-colors hover:bg-surface-hover disabled:opacity-50"
+          >
+            <AppIcon name="refresh" size={13} className={refreshing ? "animate-spin" : ""} />
+            {refreshing ? "Refreshing…" : "Refresh"}
+          </button>
+        </div>
+      </div>
 
-        {error && (
-          <div className="mb-4 rounded-card bg-neg-soft px-4 py-3 text-sm font-medium text-neg">
-            {error}
+      {/* Spot + the three reference strikes, one hairline strip. */}
+      {data && (
+        <StatStrip
+          cols={4}
+          items={[
+            { label: "SPY spot", value: `$${data.spotPrice.toFixed(2)}` },
+            { label: "ATM strike", value: data.quotes[0] ? `$${data.quotes[0].atmStrike}` : "—" },
+            { label: "~5% OTM strike", value: data.quotes[0] ? `$${data.quotes[0].otm5Strike}` : "—" },
+            { label: "~10% OTM strike", value: data.quotes[0] ? `$${data.quotes[0].otm10Strike}` : "—" },
+          ]}
+        />
+      )}
+
+      {error && <div className="panel px-3.5 py-2.5 text-[12.5px] text-neg">{error}</div>}
+
+      {loading ? (
+        <div className="panel py-10 text-center text-[12.5px] text-ink-3">Loading SPY option chain…</div>
+      ) : !data || data.quotes.length === 0 ? (
+        <section className="panel">
+          <EmptyState glyph={<AppIcon name="umbrella" size={18} />} title="No hedging data" body="The SPY option chain did not come back. Refresh to try again." />
+        </section>
+      ) : (
+        <section className="panel">
+          <div className="panel-h">
+            <span className="t">Put chain</span>
+            <span className="m">
+              {view === "current" ? "mid premium · % of spot" : view === "wow" ? "premium vs ~7 days ago" : "premium vs ~30 days ago"}
+            </span>
+            {view !== "current" && (
+              <span className="m ml-auto">
+                <span className="dot bg-neg mr-1.5 align-[1px]" />more expensive · <span className="dot bg-pos mr-1.5 align-[1px]" />cheaper
+              </span>
+            )}
           </div>
-        )}
+          <div className="overflow-x-auto">
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th className="pl-3.5">Strike</th>
+                  <th className="n">$</th>
+                  {data.quotes.map((q) => (
+                    <th key={q.expiry} className="n">
+                      {q.expiryLabel} <span className="font-mono text-ink-faint">{q.daysToExpiry}d</span>
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {STRIKE_ROWS.map((row) => (
+                  <tr key={row.key}>
+                    <td className="pl-3.5 text-ink-2">{row.label}</td>
+                    <td className="n text-ink-2">${strikeOf(data.quotes[0], row.key)}</td>
+                    {data.quotes.map((q) => {
+                      if (view === "current") {
+                        return (
+                          <td key={q.expiry} className="n">
+                            {fmtDollar(premiumOf(q, row.key))}
+                            <span className="ml-1.5 text-[11px] text-ink-3">{fmtPct(pctOf(q, row.key))}</span>
+                          </td>
+                        );
+                      }
+                      const delta = deltaFor(q, row.key, ref);
+                      const prior = ref ? premiumFromSnapshot(ref, q.expiry, row.key) : null;
+                      const curr = premiumOf(q, row.key);
+                      return (
+                        <td key={q.expiry} className={`n ${tdTone(delta)}`}>
+                          {fmtDelta(delta)}
+                          <span className="ml-1.5 text-[11px] text-ink-3">
+                            {prior != null && curr != null ? `${fmtDollar(prior)} → ${fmtDollar(curr)}` : "—"}
+                          </span>
+                        </td>
+                      );
+                    })}
+                  </tr>
+                ))}
 
-        {loading ? (
-          <div className="text-center py-12 text-ink-3 text-sm">Loading SPY option chain...</div>
-        ) : !data || data.quotes.length === 0 ? (
-          <div className="rounded-card border border-line bg-white shadow-sm p-8 text-center">
-            <p className="text-ink-3 text-sm">No hedging data available.</p>
+                {/* Custom user-added strike rows */}
+                {(data.customRows || []).map((row) => (
+                  <tr key={`custom-${row.strike}`}>
+                    <td className="pl-3.5 text-ink-2">
+                      <span className="inline-flex items-center gap-1.5">
+                        Custom
+                        <button
+                          type="button"
+                          onClick={() => handleRemoveStrike(row.strike)}
+                          className="grid h-5 w-5 place-items-center rounded-control text-ink-faint hover:bg-surface-hover hover:text-neg"
+                          aria-label={`Remove ${row.strike}`}
+                          title="Remove row"
+                        >
+                          <AppIcon name="x" size={12} />
+                        </button>
+                      </span>
+                    </td>
+                    <td className="n text-ink-2">${row.strike}</td>
+                    {data.quotes.map((q) => {
+                      const cq = row.quotes.find((r) => r.expiry === q.expiry);
+                      if (view === "current") {
+                        return (
+                          <td key={q.expiry} className="n">
+                            {fmtDollar(cq?.premium ?? null)}
+                            <span className="ml-1.5 text-[11px] text-ink-3">{fmtPct(cq?.pctOfSpot ?? null)}</span>
+                          </td>
+                        );
+                      }
+                      const delta = customDeltaFor(row, q.expiry, ref);
+                      const prior = ref ? customPremiumFromSnapshot(ref, row.strike, q.expiry) : null;
+                      const curr = cq?.premium ?? null;
+                      return (
+                        <td key={q.expiry} className={`n ${tdTone(delta)}`}>
+                          {fmtDelta(delta)}
+                          <span className="ml-1.5 text-[11px] text-ink-3">
+                            {prior != null && curr != null ? `${fmtDollar(prior)} → ${fmtDollar(curr)}` : "—"}
+                          </span>
+                        </td>
+                      );
+                    })}
+                  </tr>
+                ))}
+
+                {/* Add-custom-strike input row */}
+                <tr>
+                  <td className="pl-3.5 text-ink-3">Add strike</td>
+                  <td className="text-right" colSpan={1 + data.quotes.length}>
+                    <div className="flex items-center justify-end gap-2">
+                      <label className="inline-flex h-7 items-center rounded-control border border-line bg-surface px-2.5 text-[12.5px] focus-within:border-accent-border">
+                        <span className="mr-1 text-ink-3">$</span>
+                        <input
+                          type="number"
+                          inputMode="decimal"
+                          step="1"
+                          min="1"
+                          placeholder="e.g. 680"
+                          value={newStrikeInput}
+                          onChange={(e) => setNewStrikeInput(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter") {
+                              e.preventDefault();
+                              handleAddStrike();
+                            }
+                          }}
+                          className="w-20 bg-transparent font-mono text-[12.5px] text-ink outline-none"
+                        />
+                      </label>
+                      <button
+                        type="button"
+                        onClick={handleAddStrike}
+                        disabled={!newStrikeInput.trim()}
+                        className="inline-flex h-7 items-center rounded-control bg-ink px-3 text-[12.5px] font-medium text-white hover:bg-ink-2 disabled:cursor-not-allowed disabled:opacity-40"
+                      >
+                        Add
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
           </div>
-        ) : (
-          <>
-            {/* Main table */}
-            <div className="rounded-card border border-line bg-white shadow-sm overflow-hidden">
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="border-b border-line-soft bg-surface-2 text-xs text-ink-3">
-                      <th className="text-left py-2.5 pl-5 pr-2 font-semibold">Strike</th>
-                      <th className="text-right py-2.5 px-2 font-semibold">$</th>
-                      {data.quotes.map((q) => (
-                        <th key={q.expiry} className="text-right py-2.5 px-2 font-semibold">
-                          <div>{q.expiryLabel}</div>
-                          <div className="text-[9px] font-normal text-ink-3">{q.daysToExpiry}d</div>
-                        </th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {STRIKE_ROWS.map((row) => (
-                      <tr key={row.key} className="border-b border-line-soft hover:bg-surface-2/50 transition-colors">
-                        <td className="py-2.5 pl-5 pr-2 font-semibold text-ink-2 text-xs">{row.label}</td>
-                        <td className="py-2.5 px-2 text-right font-mono text-xs font-semibold text-ink-2">
-                          ${strikeOf(data.quotes[0], row.key)}
-                        </td>
-                        {data.quotes.map((q) => {
-                          if (view === "current") {
-                            const prem = premiumOf(q, row.key);
-                            const pct = pctOf(q, row.key);
-                            return (
-                              <td key={q.expiry} className="py-2.5 px-2 text-right">
-                                <div className="font-mono text-xs font-semibold text-ink">
-                                  {fmtDollar(prem)}
-                                </div>
-                                <div className="font-mono text-[10px] text-ink-3">
-                                  {fmtPct(pct)}
-                                </div>
-                              </td>
-                            );
-                          }
-                          const ref = view === "wow" ? wowSnap : momSnap;
-                          const delta = deltaFor(q, row.key, ref);
-                          const prior = ref ? premiumFromSnapshot(ref, q.expiry, row.key) : null;
-                          const curr = premiumOf(q, row.key);
-                          return (
-                            <td key={q.expiry} className="py-2.5 px-2 text-right">
-                              <div className={`font-mono text-xs font-semibold ${
-                                delta == null ? "text-ink-3" :
-                                delta > 0 ? "text-neg" :
-                                delta < 0 ? "text-pos" : "text-ink-3"
-                              }`}>
-                                {fmtDelta(delta)}
-                              </div>
-                              <div className="font-mono text-[10px] text-ink-3">
-                                {prior != null && curr != null ? `${fmtDollar(prior)} → ${fmtDollar(curr)}` : "—"}
-                              </div>
-                            </td>
-                          );
-                        })}
-                      </tr>
-                    ))}
-
-                    {/* Custom user-added strike rows */}
-                    {(data.customRows || []).map((row) => (
-                      <tr key={`custom-${row.strike}`} className="border-b border-line-soft hover:bg-surface-2/50 transition-colors">
-                        <td className="py-2.5 pl-5 pr-2 font-semibold text-ink-2 text-xs">
-                          <div className="flex items-center gap-1.5">
-                            <span>Custom</span>
-                            <button
-                              type="button"
-                              onClick={() => handleRemoveStrike(row.strike)}
-                              className="text-ink-faint hover:text-neg transition-colors text-[11px]"
-                              aria-label={`Remove ${row.strike}`}
-                              title="Remove row"
-                            >
-                              <svg className="w-3 h-3" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-                              </svg>
-                            </button>
-                          </div>
-                        </td>
-                        <td className="py-2.5 px-2 text-right font-mono text-xs font-semibold text-ink-2">
-                          ${row.strike}
-                        </td>
-                        {data.quotes.map((q) => {
-                          const cq = row.quotes.find((r) => r.expiry === q.expiry);
-                          if (view === "current") {
-                            return (
-                              <td key={q.expiry} className="py-2.5 px-2 text-right">
-                                <div className="font-mono text-xs font-semibold text-ink">
-                                  {fmtDollar(cq?.premium ?? null)}
-                                </div>
-                                <div className="font-mono text-[10px] text-ink-3">
-                                  {fmtPct(cq?.pctOfSpot ?? null)}
-                                </div>
-                              </td>
-                            );
-                          }
-                          const ref = view === "wow" ? wowSnap : momSnap;
-                          const delta = customDeltaFor(row, q.expiry, ref);
-                          const prior = ref ? customPremiumFromSnapshot(ref, row.strike, q.expiry) : null;
-                          const curr = cq?.premium ?? null;
-                          return (
-                            <td key={q.expiry} className="py-2.5 px-2 text-right">
-                              <div className={`font-mono text-xs font-semibold ${
-                                delta == null ? "text-ink-3" :
-                                delta > 0 ? "text-neg" :
-                                delta < 0 ? "text-pos" : "text-ink-3"
-                              }`}>
-                                {fmtDelta(delta)}
-                              </div>
-                              <div className="font-mono text-[10px] text-ink-3">
-                                {prior != null && curr != null ? `${fmtDollar(prior)} → ${fmtDollar(curr)}` : "—"}
-                              </div>
-                            </td>
-                          );
-                        })}
-                      </tr>
-                    ))}
-
-                    {/* Add-custom-strike input row */}
-                    <tr className="bg-surface-2/30">
-                      <td className="py-2 pl-5 pr-2 text-xs text-ink-3 font-medium">Add strike</td>
-                      <td className="py-2 px-2 text-right" colSpan={1 + data.quotes.length}>
-                        <div className="flex items-center justify-end gap-2">
-                          <div className="flex items-center rounded-md border border-line bg-white px-2 py-1 focus-within:border-accent-border focus-within:ring-1 focus-within:ring-accent-border">
-                            <span className="text-xs text-ink-3 mr-1">$</span>
-                            <input
-                              type="number"
-                              inputMode="decimal"
-                              step="1"
-                              min="1"
-                              placeholder="e.g. 680"
-                              value={newStrikeInput}
-                              onChange={(e) => setNewStrikeInput(e.target.value)}
-                              onKeyDown={(e) => {
-                                if (e.key === "Enter") {
-                                  e.preventDefault();
-                                  handleAddStrike();
-                                }
-                              }}
-                              className="w-20 text-xs font-mono text-ink-2 outline-none bg-transparent"
-                            />
-                          </div>
-                          <button
-                            type="button"
-                            onClick={handleAddStrike}
-                            disabled={!newStrikeInput.trim()}
-                            className="rounded-md bg-ink px-3 py-1 text-xs font-semibold text-white hover:bg-ink-2 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-                          >
-                            Add
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  </tbody>
-                </table>
-              </div>
-              {(view === "wow" || view === "mom") && (
-                <div className="px-5 py-2.5 border-t border-line-soft text-[11px] text-ink-3">
-                  {view === "wow" ? (
-                    wowSnap ? (
-                      <>Comparing to snapshot from {wowSnap.date} (SPY ${wowSnap.spotPrice.toFixed(2)})</>
-                    ) : (
-                      <>No snapshot ~7 days ago yet — keep refreshing to build history.</>
-                    )
-                  ) : momSnap ? (
-                    <>Comparing to snapshot from {momSnap.date} (SPY ${momSnap.spotPrice.toFixed(2)})</>
-                  ) : (
-                    <>No snapshot ~30 days ago yet — keep refreshing to build history.</>
-                  )}
-                  {view === "wow" || view === "mom" ? (
-                    <span className="ml-2 text-ink-3">· Red = more expensive · Green = cheaper</span>
-                  ) : null}
-                </div>
+          {(view === "wow" || view === "mom") && (
+            <div className="flex h-8 items-center border-t border-line-soft px-3.5 text-[11.5px] text-ink-3">
+              {view === "wow" ? (
+                wowSnap ? (
+                  <>Comparing to the snapshot from {wowSnap.date} (SPY ${wowSnap.spotPrice.toFixed(2)})</>
+                ) : (
+                  <>No snapshot ~7 days ago yet — keep refreshing to build history.</>
+                )
+              ) : momSnap ? (
+                <>Comparing to the snapshot from {momSnap.date} (SPY ${momSnap.spotPrice.toFixed(2)})</>
+              ) : (
+                <>No snapshot ~30 days ago yet — keep refreshing to build history.</>
               )}
             </div>
+          )}
+        </section>
+      )}
 
-            {/* Footnote */}
-            <p className="mt-3 text-[11px] text-ink-3">
-              Premiums are mid-prices (bid+ask)/2 where available, else last traded price. Strikes round to
-              nearest $5 from the live SPY spot. One expiry per calendar month (3rd-Friday preferred).
-              Custom strikes are priced only if that exact strike is listed on CBOE; otherwise the cell shows &quot;—&quot;.
-              Snapshots are captured on every refresh and stored permanently for week/month comparisons.
-            </p>
-          </>
-        )}
-      </div>
+      {!loading && data && data.quotes.length > 0 && (
+        <p className="text-[11.5px] leading-[1.5] text-ink-3">
+          Premiums are mid-prices (bid+ask)/2 where available, else last traded price. Strikes round to
+          nearest $5 from the live SPY spot. One expiry per calendar month (3rd-Friday preferred).
+          Custom strikes are priced only if that exact strike is listed on CBOE; otherwise the cell shows &quot;—&quot;.
+          Snapshots are captured on every refresh and stored permanently for week/month comparisons.
+        </p>
+      )}
     </main>
   );
 }

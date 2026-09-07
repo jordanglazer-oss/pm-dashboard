@@ -1,8 +1,6 @@
 "use client";
 
 import React, { useMemo, useState } from "react";
-import { useStocks } from "@/app/lib/StockContext";
-
 
 /** Structural shape: the Brief passes a ForwardLookingBundle whose members are
  *  optional, so accept any object of optional points rather than tying this
@@ -18,12 +16,11 @@ type Pt = {
 type PointBag = Partial<Record<string, Pt | undefined>>;
 
 /**
- * Macro Board — the dense metric grid from the "sticky command bar" redesign.
- *
- * Four labeled bands (Breadth & Trend · Valuation & Growth · Rates & Curve ·
- * Credit & Volatility), six tiles per row, with group filter pills above.
- * Replaces three loosely-packed cards that showed a handful of the same
- * numbers.
+ * Macro board — the Board tab of the Brief's bottom panel, to the canvas:
+ * four bands (Breadth & trend · Valuation & growth · Rates & curve · Credit &
+ * volatility) side by side, each a compact 3-column grid of label / value
+ * cells. Band and horizon filters sit in a row above the grid; the LIVE
+ * count and provenance go in the tab row (`macroStatus`).
  *
  * NO EMPTY TILES (Jordan's rule): a tile whose ForwardPoint has no value is
  * dropped entirely rather than rendered blank, and a band with no surviving
@@ -32,19 +29,21 @@ type PointBag = Partial<Record<string, Pt | undefined>>;
 
 type Band = "breadth" | "valuation" | "rates" | "credit";
 
-const BAND_META: Record<Band, { label: string; blurb: string; dot: string }> = {
-  breadth:   { label: "Breadth & Trend",     blurb: "SPX trajectory and how broadly the move participates", dot: "bg-accent" },
-  valuation: { label: "Valuation & Growth",  blurb: "SPY multiples and the growth priced in at today's level", dot: "bg-pos" },
-  rates:     { label: "Rates & Curve",       blurb: "Treasury yields and curve shape — the discount-rate backdrop", dot: "bg-warn" },
-  credit:    { label: "Credit & Volatility", blurb: "Where stress shows up before it hits price", dot: "bg-neg" },
+const BAND_META: Record<Band, { label: string; blurb: string }> = {
+  breadth:   { label: "Breadth & trend",     blurb: "SPX trajectory and how broadly the move participates" },
+  valuation: { label: "Valuation & growth",  blurb: "SPY multiples and the growth priced in at today's level" },
+  rates:     { label: "Rates & curve",       blurb: "Treasury yields and curve shape — the discount-rate backdrop" },
+  credit:    { label: "Credit & volatility", blurb: "Where stress shows up before it hits price" },
 };
 
-type TileSpec = {
+type Horizon = "1–3M" | "3–6M" | "6–12M";
+
+export type MacroTileSpec = {
   band: Band;
   label: string;
   point?: Pt | undefined;
-  /** Which horizon this metric informs — shown as a small chip. */
-  horizon?: "1–3M" | "3–6M" | "6–12M";
+  /** Which horizon this metric informs — shown as a small suffix. */
+  horizon?: Horizon;
   /** Unit suffix shown small beside the value. */
   unit?: string;
   /** Decimal places; default 1. */
@@ -63,7 +62,72 @@ type TileSpec = {
 const fmtNum = (v: number, dp: number) =>
   v.toLocaleString("en-US", { minimumFractionDigits: dp, maximumFractionDigits: dp });
 
-function Tile({ spec }: { spec: TileSpec }) {
+function isLive(p: Pt): boolean {
+  return !p.status || p.status === "live" || p.status === "ok";
+}
+
+/** Every tile the board can show, with the valueless ones already dropped. */
+export function buildMacroTiles(fwd: PointBag | null): MacroTileSpec[] {
+  if (!fwd) return [];
+  const t: MacroTileSpec[] = [
+    // ── Breadth & trend ──
+    { band: "breadth", label: "S&P 500 YTD", point: fwd.spxYtd, unit: "%", noDelta: true, horizon: "3–6M" },
+    { band: "breadth", label: "S&P week", point: fwd.spxWeek, unit: "%", noDelta: true, horizon: "1–3M" },
+    { band: "breadth", label: "> 200d wk", point: fwd.breadth200Wk, deltaAbs: true, horizon: "3–6M" },
+    { band: "breadth", label: "> 200d mo", point: fwd.breadth200Mo, deltaAbs: true, horizon: "3–6M" },
+    { band: "breadth", label: "> 50d wk", point: fwd.breadth50Wk, deltaAbs: true, horizon: "1–3M" },
+    { band: "breadth", label: "Broad > 200 wk", point: fwd.breadthBroad_200Wk, deltaAbs: true },
+    { band: "breadth", label: "Broad > 200 mo", point: fwd.breadthBroad_200Mo, deltaAbs: true },
+    { band: "breadth", label: "Broad > 50 wk", point: fwd.breadthBroad_50Wk, deltaAbs: true },
+    { band: "breadth", label: "NYSE new highs", point: fwd.newHighsWk, dp: 0, deltaAbs: true },
+    { band: "breadth", label: "NYSE new lows", point: fwd.newLowsWk, dp: 0, deltaAbs: true, inverse: true },
+    { band: "breadth", label: "NYSE up vol", point: fwd.upVolumePct, unit: "%", deltaAbs: true },
+    // ── Valuation & growth ──
+    { band: "valuation", label: "SPY fwd P/E", point: fwd.spyForwardPE, inverse: true, horizon: "6–12M" },
+    { band: "valuation", label: "SPY trail P/E", point: fwd.spyTrailingPE, inverse: true, horizon: "6–12M" },
+    { band: "valuation", label: "Implied 1Y EPS", point: fwd.impliedEpsGrowth, unit: "%", horizon: "3–6M" },
+    { band: "valuation", label: "Est 3-5Y EPS", point: fwd.eps35Growth, unit: "%", horizon: "6–12M" },
+    // ── Rates & curve ──
+    { band: "rates", label: "10Y", point: fwd.yield10y, dp: 2, deltaAbs: false },
+    { band: "rates", label: "2Y", point: fwd.yield2y, dp: 2 },
+    { band: "rates", label: "3M bill", point: fwd.yield3m, dp: 2 },
+    { band: "rates", label: "2s10s", point: fwd.curve10y2y, dp: 0, unit: "bp" },
+    { band: "rates", label: "3m10s", point: fwd.curve10y3m, dp: 0, unit: "bp" },
+    // ── Credit & volatility ──
+    { band: "credit", label: "HY OAS", point: fwd.hyOasTrend, dp: 0, inverse: true, deltaAbs: true },
+    { band: "credit", label: "IG OAS", point: fwd.igOasTrend, dp: 0, inverse: true, deltaAbs: true },
+    { band: "credit", label: "VIX", point: fwd.vixWeek, inverse: true },
+    { band: "credit", label: "MOVE", point: fwd.moveWeek, inverse: true },
+  ];
+  return t.filter((x) => x.point && x.point.value != null);
+}
+
+/** "LIVE · 24 of 24 · FRED + Yahoo · 6:40" for the tab row. */
+export function macroStatus(tiles: MacroTileSpec[], asOf?: string, fredEnabled?: boolean): string | null {
+  if (tiles.length === 0) return null;
+  const live = tiles.filter((t) => t.point && isLive(t.point)).length;
+  const time = asOf ? new Date(asOf).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" }) : null;
+  return [live === tiles.length ? "LIVE" : "STALE", `${live} of ${tiles.length}`, fredEnabled === false ? "Yahoo" : "FRED + Yahoo", time]
+    .filter(Boolean)
+    .join(" · ");
+}
+
+/** Hairlines between band cells: stacked → a rule under each; 2-up at md
+ *  (when all four show) → rules under the top pair and right of the odd
+ *  cells; 4-up at xl → rules to the right only. */
+function cellBorder(i: number, n: number): string {
+  const last = i === n - 1;
+  const out: string[] = [last ? "" : "border-b"];
+  if (n >= 4) {
+    out.push(i >= 2 ? "md:border-b-0" : "md:border-b", i % 2 === 0 ? "md:border-r" : "md:border-r-0");
+    out.push("xl:border-b-0", last ? "xl:border-r-0" : "xl:border-r");
+  } else if (n > 1) {
+    out.push("md:border-b-0", last ? "" : "md:border-r");
+  }
+  return out.filter(Boolean).join(" ");
+}
+
+function Tile({ spec }: { spec: MacroTileSpec }) {
   const p = spec.point;
   if (!p || p.value == null) return null; // no blank tiles
   const dp = spec.dp ?? 1;
@@ -71,67 +135,44 @@ function Tile({ spec }: { spec: TileSpec }) {
   const delta = spec.noDelta || prev == null || !isFinite(prev) ? null : p.value - prev;
   const deltaPct = delta != null && prev ? (delta / Math.abs(prev)) * 100 : null;
   const good = delta == null ? null : spec.inverse ? delta < 0 : delta > 0;
-  const stale = p.status === "stale";
-
-  const ok = !p.status || p.status === "live" || p.status === "ok";
-  const horizonTone =
-    spec.horizon === "1–3M" ? "bg-accent-soft text-accent"
-    : spec.horizon === "3–6M" ? "bg-pos-soft text-pos"
-    : "bg-violet-soft text-violet";
-
+  const live = isLive(p);
+  const tone = good == null ? "text-ink" : good ? "text-pos" : "text-neg";
+  const title = [
+    p.sourceLabel,
+    p.asOf,
+    live ? "live" : `${p.status} — the source may not have refreshed`,
+    spec.horizon ? `informs the ${spec.horizon} horizon` : null,
+  ]
+    .filter(Boolean)
+    .join(" · ");
+  const label = (
+    <>
+      {spec.label}
+      {spec.horizon && <span className="ml-1 text-ink-faint">{spec.horizon}</span>}
+    </>
+  );
   return (
-    <div className="group border-b border-r border-line bg-white px-3 py-2.5 transition-colors last:border-r-0 hover:bg-surface-2">
-      <div className="flex items-center gap-1.5">
-        <span className="truncate text-[10px] font-semibold uppercase tracking-[0.05em] text-ink-3">
-          {spec.label}
-        </span>
-        {spec.horizon && (
-          <span className={`shrink-0 rounded-pill px-1 py-px text-[8px] font-semibold ${horizonTone}`}>
-            {spec.horizon}
-          </span>
+    <div className="min-w-0" title={title}>
+      <div className={`flex items-center gap-1 whitespace-nowrap text-[10.5px] ${live ? "text-ink-3" : "text-warn"}`}>
+        {!live && <span className="dot bg-warn" />}
+        {p.source ? (
+          <a href={p.source} target="_blank" rel="noopener noreferrer" className="truncate hover:text-accent" title={`Verify at ${p.sourceLabel ?? "source"}`}>
+            {label}
+          </a>
+        ) : (
+          <span className="truncate">{label}</span>
         )}
-        <span className="ml-auto flex shrink-0 items-center gap-1">
-          {/* Status: LIVE when fetched cleanly, STALE otherwise — kept from the
-              old panel because knowing a number is old matters more than the
-              number itself. */}
-          <span
-            title={p.sourceLabel ? `${p.sourceLabel}${p.asOf ? ` · ${p.asOf}` : ""}` : undefined}
-            className={`rounded px-1 text-[8px] font-bold uppercase ${ok ? "bg-pos-soft text-pos" : "bg-warn-soft text-warn"}`}
-          >
-            {ok ? "live" : "stale"}
-          </span>
-          {p.source && (
-            <a
-              href={p.source}
-              target="_blank"
-              rel="noopener noreferrer"
-              title={`Verify at ${p.sourceLabel ?? "source"}`}
-              className="text-ink-faint opacity-0 transition-opacity hover:text-accent group-hover:opacity-100"
-            >
-              <svg className="h-2.5 w-2.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" d="M13.5 6H5.25A2.25 2.25 0 003 8.25v10.5A2.25 2.25 0 005.25 21h10.5A2.25 2.25 0 0018 18.75V10.5m-10.5 6L21 3m0 0h-5.25M21 3v5.25" />
-              </svg>
-            </a>
-          )}
-        </span>
       </div>
-      <div className="mt-1 flex items-baseline gap-1.5">
-        <span className="font-mono text-[19px] font-semibold tracking-[-0.02em] text-ink">
-          {fmtNum(p.value, dp)}
-        </span>
-        {spec.unit && <span className="text-[11px] text-ink-3">{spec.unit}</span>}
+      <div className={`flex items-baseline gap-1 font-mono text-[12.5px] font-medium tabular-nums ${tone}`}>
+        {fmtNum(p.value, dp)}
+        {spec.unit && <span className="text-[10.5px] font-normal text-ink-3">{spec.unit}</span>}
         {delta != null && (
-          <span className={`font-mono text-[11px] font-semibold ${good ? "text-pos" : "text-neg"}`}>
+          <span className="text-[10.5px] font-normal">
             {delta > 0 ? "+" : "−"}
-            {spec.deltaAbs
-              ? fmtNum(Math.abs(delta), 0)
-              : `${fmtNum(Math.abs(deltaPct ?? delta), 1)}${deltaPct != null ? "%" : ""}`}
+            {spec.deltaAbs ? fmtNum(Math.abs(delta), 0) : `${fmtNum(Math.abs(deltaPct ?? delta), 1)}${deltaPct != null ? "%" : ""}`}
           </span>
         )}
       </div>
-      {p.sourceLabel && (
-        <div className="mt-0.5 truncate text-[9px] text-ink-faint">{p.sourceLabel}</div>
-      )}
     </div>
   );
 }
@@ -140,58 +181,23 @@ export function MacroBoard({
   fwd,
   termStructure,
   vvix,
-  asOf,
   regime,
 }: {
   fwd: PointBag | null;
   termStructure?: string;
   vvix?: number | null;
-  asOf?: string;
-  /** Live regime blob, for the cross-asset chips in the summary strip. */
+  /** Live regime blob, for the cross-asset line under the grid. */
   regime?: { crossAsset?: { dxy?: unknown; oil?: unknown }; global?: { stoxx?: unknown; nikkei?: unknown } } | null;
 }) {
+  // Filters are a view of the same data, not a fold — transient by design.
   const [band, setBand] = useState<Band | "all">("all");
-  const [horizon, setHorizon] = useState<"all" | "1–3M" | "3–6M" | "6–12M">("all");
+  const [horizon, setHorizon] = useState<"all" | Horizon>("all");
 
-  const tiles: TileSpec[] = useMemo(() => {
-    if (!fwd) return [];
-    const t: TileSpec[] = [
-      // ── Breadth & Trend ──
-      { band: "breadth", label: "S&P 500 YTD", point: fwd.spxYtd, unit: "%", noDelta: true, horizon: "3–6M" },
-      { band: "breadth", label: "S&P Week", point: fwd.spxWeek, unit: "%", noDelta: true, horizon: "1–3M" },
-      { band: "breadth", label: ">200DMA wk", point: fwd.breadth200Wk, deltaAbs: true, horizon: "3–6M" },
-      { band: "breadth", label: ">200DMA mo", point: fwd.breadth200Mo, deltaAbs: true, horizon: "3–6M" },
-      { band: "breadth", label: ">50DMA wk", point: fwd.breadth50Wk, deltaAbs: true, horizon: "1–3M" },
-      { band: "breadth", label: "Broad >200 wk", point: fwd.breadthBroad_200Wk, deltaAbs: true },
-      { band: "breadth", label: "Broad >200 mo", point: fwd.breadthBroad_200Mo, deltaAbs: true },
-      { band: "breadth", label: "Broad >50 wk", point: fwd.breadthBroad_50Wk, deltaAbs: true },
-      { band: "breadth", label: "NYSE new highs", point: fwd.newHighsWk, dp: 0, deltaAbs: true },
-      { band: "breadth", label: "NYSE new lows", point: fwd.newLowsWk, dp: 0, deltaAbs: true, inverse: true },
-      { band: "breadth", label: "NYSE up vol", point: fwd.upVolumePct, unit: "%", deltaAbs: true },
-      // ── Valuation & Growth ──
-      { band: "valuation", label: "SPY fwd P/E", point: fwd.spyForwardPE, inverse: true, horizon: "6–12M" },
-      { band: "valuation", label: "SPY trail P/E", point: fwd.spyTrailingPE, inverse: true, horizon: "6–12M" },
-      { band: "valuation", label: "Implied 1Y EPS", point: fwd.impliedEpsGrowth, unit: "%", horizon: "3–6M" },
-      { band: "valuation", label: "Est 3-5Y EPS", point: fwd.eps35Growth, unit: "%", horizon: "6–12M" },
-      // ── Rates & Curve ──
-      { band: "rates", label: "10Y Treasury", point: fwd.yield10y, dp: 2, deltaAbs: false },
-      { band: "rates", label: "2Y Treasury", point: fwd.yield2y, dp: 2 },
-      { band: "rates", label: "3M T-Bill", point: fwd.yield3m, dp: 2 },
-      { band: "rates", label: "10Y−2Y", point: fwd.curve10y2y, dp: 0, unit: "bps" },
-      { band: "rates", label: "10Y−3M", point: fwd.curve10y3m, dp: 0, unit: "bps" },
-      // ── Credit & Volatility ──
-      { band: "credit", label: "HY OAS", point: fwd.hyOasTrend, dp: 0, inverse: true, deltaAbs: true },
-      { band: "credit", label: "IG OAS", point: fwd.igOasTrend, dp: 0, inverse: true, deltaAbs: true },
-      { band: "credit", label: "VIX", point: fwd.vixWeek, inverse: true },
-      { band: "credit", label: "MOVE", point: fwd.moveWeek, inverse: true },
-    ];
-    return t.filter((x) => x.point && x.point.value != null);
-  }, [fwd]);
+  const tiles = useMemo(() => buildMacroTiles(fwd), [fwd]);
 
-  // Headline chips. Each is sourced from a value already on the board (or the
-  // regime blob) — nothing here is a separate fetch or a restatement dressed up
-  // as new information. Missing inputs drop their chip.
-  const summaryChips = useMemo(() => {
+  // The headline reads. Each is sourced from a value already on the board (or
+  // the regime blob) — nothing here is a separate fetch. Missing inputs drop.
+  const summary = useMemo(() => {
     const out: { label: string; value: string; note?: string; tone: "pos" | "neg" | "flat" }[] = [];
     const pick = (label: string) => tiles.find((t) => t.label === label)?.point;
     const num = (v: unknown): number | null => (typeof v === "number" && isFinite(v) ? v : null);
@@ -199,16 +205,16 @@ export function MacroBoard({
     const hy = pick("HY OAS");
     if (hy && num(hy.value) != null) {
       const hprev = num(hy.previous ?? null); const d = hprev == null ? null : num(hy.value)! - hprev;
-      out.push({ label: "Credit", value: `${Math.round(num(hy.value)!)}bps`, note: d == null ? undefined : d < 0 ? "tightening" : "widening", tone: d == null ? "flat" : d < 0 ? "pos" : "neg" });
+      out.push({ label: "Credit", value: `${Math.round(num(hy.value)!)}bp`, note: d == null ? undefined : d < 0 ? "tightening" : "widening", tone: d == null ? "flat" : d < 0 ? "pos" : "neg" });
     }
     const vix = pick("VIX");
     if (vix && num(vix.value) != null) {
       out.push({ label: "Vol", value: `VIX ${num(vix.value)!.toFixed(1)}`, note: termStructure || undefined, tone: num(vix.value)! >= 25 ? "neg" : num(vix.value)! <= 18 ? "pos" : "flat" });
     }
-    const br = pick(">50DMA wk");
+    const br = pick("> 50d wk");
     if (br && num(br.value) != null) {
       const bprev = num(br.previous ?? null); const d = bprev == null ? null : num(br.value)! - bprev;
-      out.push({ label: "Breadth", value: `${num(br.value)!.toFixed(0)}% >50DMA`, note: d == null ? undefined : `${d > 0 ? "+" : ""}${d.toFixed(1)}pp`, tone: d == null ? "flat" : d < 0 ? "neg" : "pos" });
+      out.push({ label: "Breadth", value: `${num(br.value)!.toFixed(0)}% > 50d`, note: d == null ? undefined : `${d > 0 ? "+" : ""}${d.toFixed(1)}pp`, tone: d == null ? "flat" : d < 0 ? "neg" : "pos" });
     }
     if (vvix != null) out.push({ label: "VVIX", value: String(vvix), tone: "flat" });
 
@@ -232,135 +238,89 @@ export function MacroBoard({
     return out;
   }, [tiles, termStructure, vvix, regime]);
 
-  // Canvas: the board condenses to the summary-chip band by default; the
-  // full tile grid is one click away (persisted). Hook runs before the
-  // early return below (Rules of Hooks).
-  const { uiPrefs, setUiPref } = useStocks();
-  const boardCollapsed = (uiPrefs["brief.macroBoard.collapsed"] ?? "1") === "1";
-
-  if (!fwd || tiles.length === 0) return null;
+  if (!fwd || tiles.length === 0) {
+    return <p className="px-3.5 py-5 text-center text-[12px] text-ink-3">No macro data yet — the forward-looking fetch fills the board.</p>;
+  }
   const bands: Band[] = ["breadth", "valuation", "rates", "credit"];
-  // Horizon filter, as the design shows beside the provenance. Tiles with no
-  // horizon tag are kept under "all" only — filtering to a horizon should show
-  // what informs THAT horizon, not everything plus untagged noise.
+  // Tiles with no horizon tag are kept under "all" only — filtering to a
+  // horizon should show what informs THAT horizon, not everything plus noise.
   const shown = horizon === "all" ? tiles : tiles.filter((t) => t.horizon === horizon);
   const visible = bands.filter((b) => (band === "all" || band === b) && shown.some((t) => t.band === b));
-  const time = asOf ? new Date(asOf).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" }) : null;
+  const colCls =
+    visible.length >= 4 ? "md:grid-cols-2 xl:grid-cols-4"
+    : visible.length === 3 ? "md:grid-cols-3"
+    : visible.length === 2 ? "md:grid-cols-2"
+    : "";
 
   return (
-    <section className="overflow-hidden rounded-card border border-line bg-surface-2 shadow-sm">
-      {/* Filter pills + provenance */}
-      <div className="flex flex-wrap items-center gap-x-3 gap-y-2 border-b border-line bg-white px-3 py-2">
-        <button
-          onClick={() => setUiPref("brief.macroBoard.collapsed", boardCollapsed ? "0" : "1")}
-          className="flex items-center gap-1.5 cursor-pointer hover:opacity-80 transition-opacity"
-          aria-expanded={!boardCollapsed}
-        >
-          <svg className={`h-3.5 w-3.5 text-ink-3 transition-transform ${boardCollapsed ? "-rotate-90" : ""}`} fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" /></svg>
-          <span className="text-[11px] font-bold uppercase tracking-[0.22em] text-ink-3">Macro board</span>
-        </button>
-        {boardCollapsed && (
-          <button
-            onClick={() => setUiPref("brief.macroBoard.collapsed", "0")}
-            className="text-[11px] font-semibold text-accent hover:underline"
-          >
-            Show all {tiles.length} tiles
-          </button>
-        )}
-        {!boardCollapsed && <div className="inline-flex items-center gap-0.5 rounded-control border border-line bg-surface-2 p-0.5">
-          {([["all", `All ${tiles.length}`], ["breadth", "Breadth"], ["valuation", "Valuation"], ["rates", "Rates"], ["credit", "Credit & Vol"]] as [Band | "all", string][])
+    <div>
+      {/* Filters: band seg · horizon seg */}
+      <div className="flex flex-wrap items-center gap-2 border-b border-line-soft px-3.5 py-2">
+        <div className="seg">
+          {([["all", "All"], ["breadth", "Breadth"], ["valuation", "Valuation"], ["rates", "Rates"], ["credit", "Credit & vol"]] as [Band | "all", string][])
             .filter(([k]) => k === "all" || tiles.some((t) => t.band === k))
             .map(([k, lbl]) => (
-              <button
-                key={k}
-                onClick={() => setBand(k)}
-                className={`rounded-[6px] px-2.5 py-1 text-xs font-medium transition-colors ${
-                  band === k ? "bg-white text-ink shadow-sm" : "text-ink-2 hover:text-ink"
-                }`}
-              >
+              <button key={k} type="button" className={band === k ? "on" : ""} onClick={() => setBand(k)}>
                 {lbl}
+                {k === "all" && <span className="c">{tiles.length}</span>}
               </button>
             ))}
-        </div>}
-        <div className="ml-auto flex items-center gap-1.5">
-          <span className="text-[10px] text-ink-faint">horizon</span>
+        </div>
+        <span className="ml-1 text-[11px] text-ink-3">horizon</span>
+        <div className="seg">
+          <button type="button" className={horizon === "all" ? "on" : ""} onClick={() => setHorizon("all")}>
+            Any
+          </button>
           {(["1–3M", "3–6M", "6–12M"] as const)
             .filter((h) => tiles.some((t) => t.horizon === h))
             .map((h) => (
-              <button
-                key={h}
-                onClick={() => setHorizon(horizon === h ? "all" : h)}
-                className={`rounded-pill px-1.5 py-0.5 text-[10px] font-semibold transition-colors ${
-                  horizon === h
-                    ? h === "1–3M" ? "bg-accent-soft text-accent"
-                      : h === "3–6M" ? "bg-pos-soft text-pos"
-                      : "bg-violet-soft text-violet"
-                    : "text-ink-3 hover:text-ink"
-                }`}
-              >
+              <button key={h} type="button" className={horizon === h ? "on" : ""} onClick={() => setHorizon(h)}>
                 {h}
               </button>
             ))}
-          <span className="ml-1.5 text-[10px] text-ink-faint">
-            FRED + Yahoo{time ? ` · ${time}` : ""}
-          </span>
         </div>
       </div>
 
-      {/* Summary strip — the headline read above the detail, as the design
-          shows. Every chip is a real value already on the board or in the
-          regime blob; chips whose data is missing are dropped rather than
-          rendered blank. */}
-      {summaryChips.length > 0 && (
-        <div className={`flex flex-wrap items-center gap-1.5 bg-white px-3 py-2 ${boardCollapsed ? "" : "border-b border-line"}`}>
-          {summaryChips.map((c) => (
-            <span
-              key={c.label}
-              className={`rounded-pill border px-2 py-0.5 text-[11px] ${
-                c.tone === "pos" ? "border-pos-border bg-pos-soft text-pos"
-                : c.tone === "neg" ? "border-neg-border bg-neg-soft text-neg"
-                : "border-line bg-surface-2 text-ink-2"
-              }`}
-            >
-              <span className="font-semibold">{c.label}</span>{" "}
-              <span className="font-mono">{c.value}</span>
-              {c.note ? <span className="ml-1 opacity-80">{c.note}</span> : null}
+      {/* Four bands across, compact 3-col cells inside each. */}
+      {visible.length === 0 ? (
+        <p className="px-3.5 py-5 text-center text-[12px] text-ink-3">Nothing on the board informs that horizon.</p>
+      ) : (
+        <div className={`grid grid-cols-1 ${colCls}`}>
+          {visible.map((b, i) => {
+            const rows = shown.filter((t) => t.band === b);
+            return (
+              <div key={b} className={`min-w-0 border-line-soft px-3.5 pb-3 pt-2.5 ${cellBorder(i, visible.length)}`}>
+                <div className="mb-2 text-[11px] text-ink-3" title={BAND_META[b].blurb}>
+                  {BAND_META[b].label}
+                </div>
+                <div className="grid grid-cols-3 gap-x-2.5 gap-y-2">
+                  {rows.map((t) => <Tile key={`${t.band}-${t.label}`} spec={t} />)}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* The headline reads + the values that aren't ForwardPoints but belong
+          on the board (term structure, VVIX, cross-asset). */}
+      {(summary.length > 0 || termStructure) && (
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-1 border-t border-line-soft px-3.5 py-2 text-[11.5px] text-ink-2">
+          {summary.map((c) => (
+            <span key={c.label} className="inline-flex items-baseline gap-1">
+              <span className="text-ink-3">{c.label}</span>
+              <span className={`font-mono ${c.tone === "pos" ? "text-pos" : c.tone === "neg" ? "text-neg" : "text-ink"}`}>{c.value}</span>
+              {c.note && <span className="text-ink-3">{c.note}</span>}
             </span>
           ))}
-        </div>
-      )}
-
-      {!boardCollapsed && visible.map((b) => {
-        const rows = shown.filter((t) => t.band === b);
-        return (
-          <div key={b}>
-            <div className="flex items-baseline gap-2 border-b border-line bg-white px-3 py-1.5">
-              <span className={`h-1.5 w-1.5 rounded-full ${BAND_META[b].dot}`} />
-              <span className="text-[11px] font-semibold text-ink">{BAND_META[b].label}</span>
-              <span className="truncate text-[10px] text-ink-faint">{BAND_META[b].blurb}</span>
-            </div>
-            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6">
-              {rows.map((t) => <Tile key={`${t.band}-${t.label}`} spec={t} />)}
-            </div>
-          </div>
-        );
-      })}
-
-      {/* Values that aren't ForwardPoints but belong on the board. */}
-      {!boardCollapsed && (termStructure || vvix != null) && (
-        <div className="flex flex-wrap items-center gap-2 border-t border-line bg-white px-3 py-2 text-[11px]">
-          {termStructure && (
-            <span className="rounded-pill border border-line px-2 py-0.5 text-ink-2">
-              Term structure <span className="font-semibold text-ink">{termStructure}</span>
-            </span>
-          )}
-          {vvix != null && (
-            <span className="rounded-pill border border-line px-2 py-0.5 text-ink-2">
-              VVIX <span className="font-mono font-semibold text-ink">{vvix}</span>
+          {termStructure && !summary.some((c) => c.label === "Vol") && (
+            <span className="inline-flex items-baseline gap-1">
+              <span className="text-ink-3">Term structure</span>
+              <span className="text-ink">{termStructure}</span>
             </span>
           )}
         </div>
       )}
-    </section>
+    </div>
   );
 }

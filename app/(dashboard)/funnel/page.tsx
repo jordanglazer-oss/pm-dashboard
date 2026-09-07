@@ -1,288 +1,279 @@
 "use client";
 
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useMemo } from "react";
 import Link from "next/link";
-import { useStocks } from "@/app/lib/StockContext";
-import { isScoreable } from "@/app/lib/scoring";
 import { displayTicker } from "@/app/lib/ticker";
 import TickerLink from "@/app/components/TickerLink";
-import { rankResearch, SUGGESTED_MIN_LISTS, type RankedRow } from "@/app/lib/research-ranked";
-import type { ResearchState } from "@/app/lib/defaults";
-import type { SuggestedRow } from "@/app/lib/suggested-watchlist";
-import { VERDICT_LABEL, type SynthesisVerdict } from "@/app/lib/synthesis-screen-display";
-import type { ThesisHealth } from "@/app/lib/thesis-health";
+import { AppIcon } from "@/app/components/AppIcon";
+import { EmptyState } from "@/app/components/EmptyState";
+import { PipelineStages, buildStages, usePipelineData, type EntryRowLite } from "@/app/components/PipelineStages";
+import { VERDICT_LABEL } from "@/app/lib/synthesis-screen-display";
 
 /**
- * Funnel — the one page that shows the idea pipeline as a PIPELINE:
+ * Pipeline (/funnel) — the one page that shows the idea pipeline as a PIPELINE:
  *
  *   Research (ranked lists) → Suggested (2+ lists) → Synthesis (AI base/bull/
  *   bear) → Watchlist → Portfolio → Underwritten (thesis + kill conditions)
  *   → monitored (thesis health, kill-condition sweep) → Review queue.
  *
  * Every number is read from the surface that owns it (same endpoints, no new
- * stores), so this page can never disagree with the stage it summarises. It
- * writes nothing.
+ * stores — see `usePipelineData`), so this page can never disagree with the
+ * stage it summarises. It writes nothing.
  */
 
-type SynthRow = {
-  ticker: string;
-  displayTicker?: string;
-  name: string;
-  bucket: "Portfolio" | "Watchlist" | "Suggested";
-  entry: { generatedAt: string; result: { verdict: SynthesisVerdict; verdictReason?: string } } | null;
-  stale: string[];
-  decision?: { verdict: "advance" | "watch" | "pass"; expiresOn: string } | null;
-};
+const BTN = "inline-flex h-7 items-center gap-1.5 rounded-control border border-line bg-surface px-2.5 text-[12.5px] !text-ink-2 hover:bg-surface-hover hover:!text-ink";
+const BTN22 = "inline-flex h-[22px] items-center gap-1 rounded-control border border-line bg-surface px-1.5 text-[11.5px] !text-ink-2 hover:bg-surface-hover hover:!text-ink";
+const BTN22_NEG = "inline-flex h-[22px] items-center gap-1 rounded-control border border-line bg-surface px-1.5 text-[11.5px] !text-neg hover:bg-neg-soft";
 
-type KillRow = { ticker: string; tripped: number; auto: number; underwrittenAt?: string; reUnderwriteBy?: string; checks: Array<{ status: string; reading: string; condition: { kind: string; theme?: string; note?: string } }> };
-type Coverage = { portfolioCount: number; underwritten: number; missing: Array<{ ticker: string; name?: string; hasProse: boolean }> };
-type Health = { counts: { broken: number; eroding: number; intact: number }; holdings: Array<ThesisHealth & { name?: string }> };
-type EntryRowLite = { ticker: string; name: string; sector: string; bucket: "Watchlist" | "Suggested"; met: number; known: number; ready: boolean; strength: string; readySince?: string; why?: string; signals: Array<{ key: string; label: string; status: string; reading: string }> };
-type EntryScanLite = { builtAt: string; rows: EntryRowLite[]; newlyReady: string[] };
-
-function StageCard({ title, count, sub, href, tone = "ink" }: { title: string; count: number | string; sub?: React.ReactNode; href: string; tone?: "ink" | "accent" | "pos" | "warn" | "neg" }) {
-  const toneCls = { ink: "text-ink", accent: "text-accent", pos: "text-pos", warn: "text-warn", neg: "text-neg" }[tone];
+function Panel({ title, count, sub, children, className = "" }: { title: string; count: number; sub?: string; children: React.ReactNode; className?: string }) {
   return (
-    <Link href={href} className="group flex min-w-[150px] flex-1 flex-col rounded-card border border-line bg-white px-4 py-3 shadow-card transition-colors hover:border-accent-border">
-      <span className="text-[10px] font-bold uppercase tracking-wide text-ink-3 group-hover:text-accent">{title}</span>
-      <span className={`mt-1 font-mono text-2xl font-bold tabular-nums ${toneCls}`}>{count}</span>
-      {sub && <span className="mt-0.5 text-[11px] leading-snug text-ink-2">{sub}</span>}
-    </Link>
-  );
-}
-
-const Arrow = () => <span className="hidden shrink-0 self-center text-ink-faint md:block">→</span>;
-
-function Section({ title, sub, count, children }: { title: string; sub?: string; count: number; children: React.ReactNode }) {
-  return (
-    <section className="rounded-card border border-line bg-white shadow-card">
-      <div className="flex items-center justify-between border-b border-line px-4 py-2.5">
-        <div>
-          <h2 className="text-[13px] font-bold text-ink">{title} <span className="ml-1 font-mono text-xs font-normal text-ink-3">{count}</span></h2>
-          {sub && <p className="text-[11px] text-ink-3">{sub}</p>}
-        </div>
+    <section className={`panel ${className}`}>
+      <div className="panel-h flex-wrap gap-y-1 py-1.5">
+        <span className="t">
+          {title} <span className="ml-1 font-mono text-[11.5px] font-normal text-ink-3">{count}</span>
+        </span>
+        {sub && <span className="m min-w-0 flex-1">{sub}</span>}
       </div>
-      <div className="divide-y divide-line-soft">{children}</div>
+      {children}
     </section>
   );
 }
 
-const Empty = ({ text }: { text: string }) => <p className="px-4 py-4 text-center text-xs text-ink-3">{text}</p>;
+function Empty({ text, icon = "check" }: { text: string; icon?: string }) {
+  return <EmptyState className="!py-6" glyph={<AppIcon name={icon} size={18} />} title={text} />;
+}
+
+const NameCell = ({ ticker, name }: { ticker: string; name?: string }) => (
+  <td className="pl-3.5">
+    <TickerLink ticker={ticker} className="font-mono font-medium text-ink hover:text-accent hover:underline">{displayTicker(ticker)}</TickerLink>
+    {name && <span className="ml-2 text-[12px] text-ink-3">{name}</span>}
+  </td>
+);
+
+const Improving = () => (
+  <span className="inline-flex items-center gap-0.5 text-pos">
+    <AppIcon name="chevU" size={11} strokeWidth={2.25} />improving
+  </span>
+);
+
+/** Entry-signal chips: met = ink-2, not met = faint + struck. */
+function Signals({ r }: { r: EntryRowLite }) {
+  return (
+    <span className="inline-flex flex-wrap items-center gap-x-2 gap-y-0.5">
+      <span className="font-mono text-[12px] font-medium text-pos" title={`${r.met} of ${r.known} known signals met`}>
+        {r.met}<span className="text-ink-faint">/{r.known}</span>
+      </span>
+      {r.signals.filter((x) => x.status !== "unknown").map((x) => (
+        <span key={x.key} className={`text-[11px] ${x.status === "met" ? "text-ink-2" : "text-ink-faint line-through"}`} title={x.reading}>{x.label}</span>
+      ))}
+    </span>
+  );
+}
 
 export default function FunnelPage() {
-  const { stocks } = useStocks();
-  const [research, setResearch] = useState<Partial<ResearchState> | null>(null);
-  const [suggested, setSuggested] = useState<{ rows: SuggestedRow[]; passed: SuggestedRow[] } | null>(null);
-  const [synth, setSynth] = useState<SynthRow[] | null>(null);
-  const [kill, setKill] = useState<{ holdings: KillRow[]; coverage: Coverage } | null>(null);
-  const [health, setHealth] = useState<Health | null>(null);
-  const [entry, setEntry] = useState<EntryScanLite | null>(null);
-  const [aiPositioned, setAiPositioned] = useState<number | null>(null);
+  const d = usePipelineData();
+  const stages = useMemo(() => buildStages(d), [d]);
+  const {
+    loading, entry, health, synthByTicker, awaitingSynthesis, readyToAdvance, thesisMissing,
+    review, readyRows, buildingRows, watching, trippedCount,
+  } = d;
 
-  useEffect(() => {
-    let alive = true;
-    const get = (url: string) => fetch(url, { cache: "no-store" }).then((r) => (r.ok ? r.json() : null)).catch(() => null);
-    get("/api/kv/research").then((j) => alive && setResearch((j?.research ?? {}) as Partial<ResearchState>));
-    get("/api/suggested-watchlist").then((j) => alive && setSuggested({ rows: j?.rows ?? [], passed: j?.passed ?? [] }));
-    get("/api/synthesis-screen").then((j) => alive && setSynth(Array.isArray(j?.rows) ? j.rows : []));
-    get("/api/thesis-watch").then((j) => alive && setKill({ holdings: j?.holdings ?? [], coverage: j?.coverage ?? { portfolioCount: 0, underwritten: 0, missing: [] } }));
-    get("/api/thesis-health").then((j) => alive && setHealth(j?.thesisHealth ?? null));
-    get("/api/entry-scan").then((j) => alive && setEntry(Array.isArray(j?.rows) ? j : null));
-    get("/api/suggested-ai").then((j) => alive && setAiPositioned(j?.view?.names ? Object.values(j.view.names as Record<string, { tier: string }>).filter((n) => n.tier === "positioned").length : null));
-    return () => { alive = false; };
-  }, []);
-
-  const ranked: RankedRow[] = useMemo(() => (research ? rankResearch(research, stocks) : []), [research, stocks]);
-  const portfolio = stocks.filter((s) => s.bucket === "Portfolio" && isScoreable(s));
-  const watchlist = stocks.filter((s) => s.bucket === "Watchlist" && isScoreable(s));
-
-  const suggestedRows = suggested?.rows ?? [];
-  const synthByTicker = useMemo(() => new Map((synth ?? []).map((r) => [r.ticker.toUpperCase(), r])), [synth]);
-  const suggestedSynth = (synth ?? []).filter((r) => r.bucket === "Suggested");
-  const generatedSuggested = suggestedSynth.filter((r) => r.entry);
-  const verdictCounts = generatedSuggested.reduce<Record<string, number>>((acc, r) => {
-    const v = r.entry!.result.verdict;
-    acc[v] = (acc[v] ?? 0) + 1;
-    return acc;
-  }, {});
-
-  // Action lists.
-  const awaitingSynthesis = suggestedRows
-    .filter((r) => !synthByTicker.get(r.ticker.toUpperCase())?.entry && r.decision?.verdict !== "watch")
-    .slice(0, 12);
-  const readyToAdvance = suggestedSynth.filter((r) => r.entry?.result.verdict === "advance" && !r.decision);
-  const thesisMissing = kill?.coverage.missing ?? [];
-  const review = useMemo(() => {
-    const rows: Array<{ ticker: string; name?: string; reasons: string[]; tone: "neg" | "warn" }> = [];
-    const byTicker = new Map<string, { name?: string; reasons: string[]; tone: "neg" | "warn" }>();
-    const add = (t: string, reason: string, tone: "neg" | "warn", name?: string) => {
-      const k = t.toUpperCase();
-      const e = byTicker.get(k) ?? { name, reasons: [], tone };
-      e.reasons.push(reason);
-      if (tone === "neg") e.tone = "neg";
-      if (name && !e.name) e.name = name;
-      byTicker.set(k, e);
-    };
-    for (const h of health?.holdings ?? []) {
-      if (h.verdict === "broken") add(h.ticker, `Thesis health: BROKEN — ${h.summary}`, "neg", h.name);
-      else if (h.verdict === "eroding") add(h.ticker, `Thesis health: eroding — ${h.summary}`, "warn", h.name);
-    }
-    for (const k of kill?.holdings ?? []) {
-      if (k.tripped > 0) {
-        const tripped = k.checks.filter((c) => c.status === "tripped").map((c) => `${c.condition.theme ?? c.condition.kind}: ${c.reading}`);
-        add(k.ticker, `${k.tripped} of ${k.auto} kill condition${k.auto === 1 ? "" : "s"} tripped — ${tripped.join("; ")}`, "neg");
-      }
-      if (k.reUnderwriteBy && k.reUnderwriteBy < new Date().toISOString().slice(0, 10)) add(k.ticker, `Re-underwrite overdue (due ${k.reUnderwriteBy})`, "warn");
-    }
-    for (const s of synth ?? []) {
-      if (s.bucket === "Portfolio" && s.entry?.result.verdict === "exit-watch") add(s.ticker, `Synthesis: Exit watch — ${s.entry.result.verdictReason ?? ""}`, "neg", s.name);
-      else if (s.bucket === "Portfolio" && s.entry?.result.verdict === "review") add(s.ticker, `Synthesis: Review — ${s.entry.result.verdictReason ?? ""}`, "warn", s.name);
-    }
-    for (const [ticker, e] of byTicker) rows.push({ ticker, ...e });
-    rows.sort((a, b) => (a.tone === b.tone ? b.reasons.length - a.reasons.length : a.tone === "neg" ? -1 : 1));
-    return rows;
-  }, [health, kill, synth]);
-
-  const readyRows = (entry?.rows ?? []).filter((r) => r.ready);
-  const buildingRows = (entry?.rows ?? []).filter((r) => !r.ready && r.strength === "building").slice(0, 8);
-  const underwritten = kill?.coverage.underwritten ?? 0;
-  const portfolioCount = kill?.coverage.portfolioCount ?? portfolio.length;
-  const loading = !research || !suggested || !synth || !kill;
+  const reviewTone = review.some((r) => r.tone === "neg") ? "bg-neg" : review.length > 0 ? "bg-warn" : "bg-pos";
 
   return (
-    <div className="mx-auto max-w-[1400px] px-4 py-6 md:px-6">
-      <div className="mb-4">
-        <h1 className="text-[15px] font-bold text-ink">Funnel</h1>
-        <p className="text-xs text-ink-3">
-          One path from research to a monitored position. Each count is read from the stage that owns it; click a stage to work it.
-        </p>
+    <div className="flex flex-col gap-3.5">
+      <PipelineStages stages={stages} loading={loading} />
+
+      {/* ── Toolbar ── */}
+      <div className="flex flex-wrap items-center gap-3">
+        <a href="#review" className="inline-flex items-center gap-2 text-[12.5px] text-ink-2 hover:text-ink" title="Portfolio names whose thesis is under pressure">
+          <span className={`dot ${reviewTone}`} />
+          Review queue <span className="font-mono text-ink">{review.length}</span>
+        </a>
+        <span className="text-[11.5px] text-ink-3">
+          {health?.counts.broken ?? 0} broken · {health?.counts.eroding ?? 0} eroding · {trippedCount} tripped
+        </span>
+        {loading && <span className="text-[11.5px] text-ink-3">Loading stages…</span>}
+        <div className="ml-auto flex items-center gap-2">
+          <Link href="/conviction" className={BTN}>
+            Conviction ranking <AppIcon name="arrowR" size={13} strokeWidth={2} />
+          </Link>
+        </div>
       </div>
 
-      {/* ── Stage strip ── */}
-      <div className="flex flex-col gap-2 md:flex-row md:items-stretch">
-        <StageCard title="Research" count={ranked.length} href="/research" sub={<>{ranked.filter((r) => r.currency === "CAD").length} CAD · {ranked.filter((r) => r.currency === "USD").length} USD · ranked by list count</>} />
-        <Arrow />
-        <StageCard title="Suggested" count={suggestedRows.length} href="/?bucket=Suggested" tone="accent" sub={<>{SUGGESTED_MIN_LISTS}+ lists · {suggestedRows.filter((r) => r.isNew).length} new · {suggested?.passed.length ?? 0} passed (30d){aiPositioned != null ? <> · <span className="font-semibold text-pos">{aiPositioned} AI-positioned</span></> : null}</>} />
-        <Arrow />
-        <StageCard title="Synthesis" count={`${generatedSuggested.length}/${suggestedSynth.length}`} href="/synthesis" sub={<>{verdictCounts.advance ?? 0} advance · {verdictCounts.watch ?? 0} watch · {verdictCounts.pass ?? 0} pass</>} />
-        <Arrow />
-        <StageCard title="Watchlist" count={watchlist.length} href="/?bucket=Watchlist" tone={readyRows.length > 0 ? "pos" : "ink"} sub={<>{(synth ?? []).filter((r) => r.bucket === "Watchlist" && r.entry).length} with a synthesis · <span className={readyRows.length > 0 ? "font-semibold text-pos" : ""}>{readyRows.length} ready to buy</span></>} />
-        <Arrow />
-        <StageCard title="Portfolio" count={portfolio.length} href="/" sub="scoreable stocks (ETFs / funds excluded)" />
-        <Arrow />
-        <StageCard title="Underwritten" count={`${underwritten}/${portfolioCount}`} href="/thesis" tone={thesisMissing.length > 0 ? "warn" : "pos"} sub={thesisMissing.length > 0 ? <>{thesisMissing.length} owe a thesis</> : "every position monitored"} />
-        <Arrow />
-        <StageCard title="Review" count={review.length} href="#review" tone={review.some((r) => r.tone === "neg") ? "neg" : review.length > 0 ? "warn" : "pos"} sub={<>{health?.counts.broken ?? 0} broken · {health?.counts.eroding ?? 0} eroding · {(kill?.holdings ?? []).filter((k) => k.tripped > 0).length} tripped</>} />
-      </div>
-
-      {loading && <p className="mt-4 text-xs text-ink-3">Loading stages…</p>}
-
-      <div className="mt-5 grid gap-4 lg:grid-cols-2">
-        {/* ── Review queue ── */}
-        <div id="review" className="scroll-mt-24 lg:col-span-2">
-          <Section title="Review queue" count={review.length} sub="Portfolio names whose thesis is under pressure — broken/eroding health, tripped kill conditions, an Exit-watch or Review synthesis, or an overdue re-underwrite. Leads to the Sell decision.">
-            {review.length === 0 ? <Empty text="Nothing under review — every monitored thesis is intact." /> : review.map((r) => (
-              <div key={r.ticker} className="flex flex-wrap items-start gap-3 px-4 py-2.5">
-                <div className="w-28 shrink-0">
-                  <div className="font-mono text-xs font-bold text-ink"><TickerLink ticker={r.ticker}>{displayTicker(r.ticker)}</TickerLink></div>
-                  {r.name && <div className="truncate text-[10px] text-ink-3">{r.name}</div>}
-                </div>
-                <ul className="min-w-0 flex-1 space-y-0.5 text-xs text-ink-2">
-                  {r.reasons.map((reason, i) => (
-                    <li key={i} className={reason.includes("BROKEN") || reason.includes("tripped") || reason.includes("Exit watch") ? "text-neg" : ""}>{reason}</li>
+      {/* ── Review queue ── */}
+      <div id="review" className="scroll-mt-24">
+        <Panel title="Review queue" count={review.length} sub="Portfolio names whose thesis is under pressure — broken/eroding health, tripped kill conditions, an Exit-watch or Review synthesis, or an overdue re-underwrite. Leads to the Sell decision.">
+          {review.length === 0 ? <Empty text="Nothing under review — every monitored thesis is intact." /> : (
+            <div className="overflow-x-auto">
+              <table className="data-table">
+                <thead><tr><th className="pl-3.5">Name</th><th>Status</th><th>Why</th><th className="text-right pr-3.5">Action</th></tr></thead>
+                <tbody>
+                  {review.map((r) => (
+                    <tr key={r.ticker}>
+                      <NameCell ticker={r.ticker} name={r.name} />
+                      <td className={r.tone === "neg" ? "text-neg" : "text-warn"}>
+                        <span className={`dot mr-1.5 ${r.tone === "neg" ? "bg-neg" : "bg-warn"}`} />{r.tone === "neg" ? "Thesis tripped" : "Eroding"}
+                      </td>
+                      <td className="whitespace-normal py-2 text-[12px] text-ink-2">
+                        <ul className="space-y-0.5">
+                          {r.reasons.map((reason, i) => (
+                            <li key={i} className={reason.includes("BROKEN") || reason.includes("tripped") || reason.includes("Exit watch") ? "text-neg" : ""}>{reason}</li>
+                          ))}
+                        </ul>
+                      </td>
+                      <td className="pr-3.5 text-right">
+                        <span className="inline-flex gap-1">
+                          <Link href={`/stock/${encodeURIComponent(r.ticker)}#thesis-tile`} className={BTN22}>Thesis</Link>
+                          <Link href={`/synthesis?ticker=${encodeURIComponent(r.ticker)}`} className={BTN22}>Synthesis</Link>
+                          <Link href="/portfolio" className={BTN22_NEG}>Buy / Sell</Link>
+                        </span>
+                      </td>
+                    </tr>
                   ))}
-                </ul>
-                <div className="flex shrink-0 items-center gap-1.5">
-                  <Link href={`/stock/${encodeURIComponent(r.ticker)}#thesis-tile`} className="rounded-md border border-line bg-surface px-2 py-1 text-[10px] font-semibold !text-ink-2 hover:!text-ink">Thesis</Link>
-                  <Link href={`/synthesis?ticker=${encodeURIComponent(r.ticker)}`} className="rounded-md border border-line bg-surface px-2 py-1 text-[10px] font-semibold !text-ink-2 hover:!text-ink">Synthesis</Link>
-                  <Link href="/portfolio" className="rounded-md border border-neg-border bg-neg-soft px-2 py-1 text-[10px] font-semibold !text-neg hover:bg-neg hover:!text-white">Buy / Sell</Link>
-                </div>
-              </div>
-            ))}
-          </Section>
-        </div>
-
-        {/* ── Ready to buy: the entry scorecard's push ── */}
-        <div className="lg:col-span-2">
-          <Section title="Ready to buy" count={readyRows.length} sub={`Watchlist and Suggested names where ${5}+ entry signals are met (200-day, 50/200, no critical alert, SIA level/trend, Equate, MarketEdge, revisions, synthesis Advance, catalyst, list confluence). A flip into ready raises a HIGH alert in the digest.${entry ? ` Scanned ${entry.builtAt.slice(0, 16).replace("T", " ")}.` : ""}`}>
-            {readyRows.length === 0 ? <Empty text="Nothing reads ready yet." /> : readyRows.map((r) => (
-              <div key={r.ticker} className="flex flex-wrap items-start gap-3 px-4 py-2.5">
-                <div className="w-28 shrink-0">
-                  <div className="font-mono text-xs font-bold text-ink"><TickerLink ticker={r.ticker}>{displayTicker(r.ticker)}</TickerLink></div>
-                  <div className="truncate text-[10px] text-ink-3">{r.name} · {r.bucket}</div>
-                </div>
-                <div className="min-w-0 flex-1">
-                  <div className="flex flex-wrap items-center gap-1">
-                    <span className="mr-1 rounded-md bg-pos px-1.5 py-0.5 font-mono text-[10px] font-bold text-white" title={`${r.met} of ${r.known} known signals met`}>{r.met}/{r.known}</span>
-                    {r.signals.filter((x) => x.status !== "unknown").map((x) => (
-                      <span key={x.key} className={`rounded px-1.5 py-px text-[10px] font-medium ${x.status === "met" ? "bg-pos-soft text-pos" : "bg-surface-2 text-ink-3 line-through"}`} title={x.reading}>{x.label}</span>
-                    ))}
-                  </div>
-                  {r.why && <div className="mt-0.5 text-[11px] text-ink-2">Watching because: {r.why}</div>}
-                  {r.readySince && <div className="text-[10px] text-ink-3">ready since {r.readySince}{entry?.newlyReady.includes(r.ticker) ? " · NEW" : ""}</div>}
-                </div>
-                <div className="flex shrink-0 items-center gap-1.5">
-                  <Link href={`/synthesis?ticker=${encodeURIComponent(r.ticker)}`} className="rounded-md border border-line bg-surface px-2 py-1 text-[10px] font-semibold !text-ink-2 hover:!text-ink">Synthesis</Link>
-                  {r.bucket === "Watchlist" ? (
-                    <Link href="/portfolio" className="rounded-md border border-pos-border bg-pos-soft px-2 py-1 text-[10px] font-semibold !text-pos hover:bg-pos hover:!text-white">Buy / Sell</Link>
-                  ) : (
-                    <Link href="/?bucket=Suggested" className="rounded-md border border-accent-border bg-accent-soft px-2 py-1 text-[10px] font-semibold !text-accent hover:bg-accent hover:!text-white">Advance</Link>
-                  )}
-                </div>
-              </div>
-            ))}
-            {buildingRows.length > 0 && (
-              <div className="px-4 py-2 text-[11px] text-ink-3">
-                Building: {buildingRows.map((r) => `${displayTicker(r.ticker)} ${r.met}/${r.known}`).join(" · ")}
-              </div>
-            )}
-          </Section>
-        </div>
-
-        {/* ── Thesis required ── */}
-        <Section title="Thesis required" count={thesisMissing.length} sub="Portfolio positions with no kill conditions on file — unmonitored until underwritten.">
-          {thesisMissing.length === 0 ? <Empty text="Every Portfolio stock is underwritten." /> : thesisMissing.map((m) => (
-            <div key={m.ticker} className="flex items-center gap-3 px-4 py-2">
-              <span className="w-28 shrink-0 font-mono text-xs font-bold text-ink"><TickerLink ticker={m.ticker}>{displayTicker(m.ticker)}</TickerLink></span>
-              <span className="min-w-0 flex-1 truncate text-xs text-ink-2">{m.name ?? ""}{m.hasProse ? " · written, no kill conditions" : " · no thesis"}</span>
-              <Link href={`/stock/${encodeURIComponent(m.ticker)}#thesis-tile`} className="rounded-md border border-warn-border bg-warn-soft px-2 py-1 text-[10px] font-semibold !text-warn hover:bg-warn hover:!text-white">Underwrite →</Link>
+                </tbody>
+              </table>
             </div>
-          ))}
-        </Section>
+          )}
+        </Panel>
+      </div>
+
+      {/* ── Ready to buy: the entry scorecard's push ── */}
+      <Panel title="Ready to buy" count={readyRows.length} sub={`Watchlist and Suggested names where ${5}+ entry signals are met (200-day, 50/200, no critical alert, SIA level/trend, Equate, MarketEdge, revisions, synthesis Advance, catalyst, list confluence). A flip into ready raises a HIGH alert in the digest.${entry ? ` Scanned ${entry.builtAt.slice(0, 16).replace("T", " ")}.` : ""}`}>
+        {readyRows.length === 0 ? <Empty text="Nothing reads ready yet." icon="clock" /> : (
+          <div className="overflow-x-auto">
+            <table className="data-table">
+              <thead><tr><th className="pl-3.5">Name</th><th>Stage</th><th>Signals</th><th>Why</th><th>Ready since</th><th className="text-right pr-3.5">Action</th></tr></thead>
+              <tbody>
+                {readyRows.map((r) => (
+                  <tr key={r.ticker}>
+                    <NameCell ticker={r.ticker} name={r.name} />
+                    <td className="text-ink-2">{r.bucket}</td>
+                    <td className="whitespace-normal py-2"><Signals r={r} /></td>
+                    <td className="whitespace-normal py-2 text-[12px] text-ink-2">{r.why ?? <span className="text-ink-faint">—</span>}</td>
+                    <td className="text-[12px] text-ink-3">
+                      {r.readySince ?? "—"}{r.readySince && entry?.newlyReady.includes(r.ticker) ? <span className="ml-1 text-pos">new</span> : null}
+                    </td>
+                    <td className="pr-3.5 text-right">
+                      <span className="inline-flex gap-1">
+                        <Link href={`/synthesis?ticker=${encodeURIComponent(r.ticker)}`} className={BTN22}>Synthesis</Link>
+                        {r.bucket === "Watchlist" ? (
+                          <Link href="/portfolio" className={BTN22}>Buy / Sell</Link>
+                        ) : (
+                          <Link href="/?bucket=Suggested" className={BTN22}>Advance</Link>
+                        )}
+                      </span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+        {buildingRows.length > 0 && (
+          <div className="flex min-h-8 items-center border-t border-line-soft px-3.5 py-1.5 text-[11.5px] text-ink-3">
+            Building: {buildingRows.map((r) => `${displayTicker(r.ticker)} ${r.met}/${r.known}`).join(" · ")}
+          </div>
+        )}
+      </Panel>
+
+      <div className="grid grid-cols-1 items-start gap-3.5 lg:grid-cols-2">
+        {/* ── Thesis required ── */}
+        <Panel title="Thesis required" count={thesisMissing.length} sub="Portfolio positions with no kill conditions on file — unmonitored until underwritten.">
+          {thesisMissing.length === 0 ? <Empty text="Every Portfolio stock is underwritten." icon="filecheck" /> : (
+            <div className="overflow-x-auto">
+              <table className="data-table">
+                <thead><tr><th className="pl-3.5">Name</th><th>Status</th><th className="text-right pr-3.5">Action</th></tr></thead>
+                <tbody>
+                  {thesisMissing.map((m) => (
+                    <tr key={m.ticker}>
+                      <NameCell ticker={m.ticker} name={m.name} />
+                      <td className="text-warn"><span className="dot mr-1.5 bg-warn" />{m.hasProse ? "Written, no kill conditions" : "No thesis"}</td>
+                      <td className="pr-3.5 text-right">
+                        <Link href={`/stock/${encodeURIComponent(m.ticker)}#thesis-tile`} className={BTN22}>Underwrite <AppIcon name="arrowR" size={11} strokeWidth={2} /></Link>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </Panel>
 
         {/* ── Ready to advance ── */}
-        <Section title="Ready to advance" count={readyToAdvance.length} sub="Suggested names whose synthesis says Advance and that you haven't acted on yet.">
-          {readyToAdvance.length === 0 ? <Empty text="No Advance verdicts waiting." /> : readyToAdvance.map((r) => (
-            <div key={r.ticker} className="flex items-center gap-3 px-4 py-2">
-              <span className="w-28 shrink-0 font-mono text-xs font-bold text-ink"><TickerLink ticker={r.ticker}>{displayTicker(r.displayTicker ?? r.ticker)}</TickerLink></span>
-              <span className="min-w-0 flex-1 truncate text-xs text-ink-2" title={r.entry?.result.verdictReason}>{r.entry?.result.verdictReason ?? r.name}</span>
-              <Link href={`/synthesis?ticker=${encodeURIComponent(r.ticker)}`} className="rounded-md border border-pos-border bg-pos-soft px-2 py-1 text-[10px] font-semibold !text-pos hover:bg-pos hover:!text-white">Decide →</Link>
+        <Panel title="Ready to advance" count={readyToAdvance.length} sub="Suggested names whose synthesis says Advance and that you haven't acted on yet.">
+          {readyToAdvance.length === 0 ? <Empty text="No Advance verdicts waiting." /> : (
+            <div className="overflow-x-auto">
+              <table className="data-table">
+                <thead><tr><th className="pl-3.5">Name</th><th>Why</th><th className="text-right pr-3.5">Action</th></tr></thead>
+                <tbody>
+                  {readyToAdvance.map((r) => (
+                    <tr key={r.ticker}>
+                      <NameCell ticker={r.displayTicker ?? r.ticker} />
+                      <td className="max-w-[420px] truncate text-[12px] text-ink-2" title={r.entry?.result.verdictReason}>{r.entry?.result.verdictReason ?? r.name}</td>
+                      <td className="pr-3.5 text-right">
+                        <Link href={`/synthesis?ticker=${encodeURIComponent(r.ticker)}`} className={BTN22}>Decide <AppIcon name="arrowR" size={11} strokeWidth={2} /></Link>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
-          ))}
-        </Section>
+          )}
+        </Panel>
 
         {/* ── Awaiting synthesis ── */}
-        <Section title="Awaiting synthesis" count={awaitingSynthesis.length} sub="Suggested names with no synthesis yet (Watch-decided names excluded), strongest confluence first.">
-          {awaitingSynthesis.length === 0 ? <Empty text="Every Suggested name has a synthesis." /> : awaitingSynthesis.map((r) => (
-            <div key={r.key} className="flex items-center gap-3 px-4 py-2">
-              <span className="w-28 shrink-0 font-mono text-xs font-bold text-ink"><TickerLink ticker={r.ticker}>{displayTicker(r.ticker)}</TickerLink></span>
-              <span className="min-w-0 flex-1 truncate text-xs text-ink-2">{r.name || ""} · {r.listCount} lists{r.improving.length > 0 ? " · ▲ improving" : ""}{r.reports ? ` · reports: ${[r.reports.rbc && "RBC", r.reports.jpm && "JPM", r.reports.morningstar && "MS"].filter(Boolean).join("/")}` : r.coverageRequestedAt ? " · coverage requested, no report yet" : " · no report"}</span>
-              <Link href={`/synthesis?ticker=${encodeURIComponent(r.ticker)}`} className="rounded-md border border-accent-border bg-accent-soft px-2 py-1 text-[10px] font-semibold !text-accent hover:bg-accent hover:!text-white">Generate →</Link>
+        <Panel title="Awaiting synthesis" count={awaitingSynthesis.length} sub="Suggested names with no synthesis yet (Watch-decided names excluded), strongest confluence first.">
+          {awaitingSynthesis.length === 0 ? <Empty text="Every Suggested name has a synthesis." icon="spark" /> : (
+            <div className="overflow-x-auto">
+              <table className="data-table">
+                <thead><tr><th className="pl-3.5">Name</th><th className="n">Lists</th><th>Reports</th><th className="text-right pr-3.5">Action</th></tr></thead>
+                <tbody>
+                  {awaitingSynthesis.map((r) => (
+                    <tr key={r.key}>
+                      <NameCell ticker={r.ticker} name={r.name || undefined} />
+                      <td className="n">{r.listCount}{r.improving.length > 0 && <span className="ml-1.5 text-[11px]"><Improving /></span>}</td>
+                      <td className="text-[12px] text-ink-2">
+                        {r.reports
+                          ? [r.reports.rbc && "RBC", r.reports.jpm && "JPM", r.reports.morningstar && "MS"].filter(Boolean).join(" / ")
+                          : r.coverageRequestedAt
+                            ? <span className="text-ink-3">Coverage requested, no report yet</span>
+                            : <span className="text-ink-3">No report</span>}
+                      </td>
+                      <td className="pr-3.5 text-right">
+                        <Link href={`/synthesis?ticker=${encodeURIComponent(r.ticker)}`} className={BTN22}>Generate <AppIcon name="arrowR" size={11} strokeWidth={2} /></Link>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
-          ))}
-        </Section>
+          )}
+        </Panel>
 
         {/* ── Watched (quiet) ── */}
-        <Section title="Watching (30-day quiet)" count={suggestedRows.filter((r) => r.decision?.verdict === "watch").length} sub="Suggested names you marked Watch — kept on the list, not nagged for a fresh synthesis until the memory expires.">
-          {suggestedRows.filter((r) => r.decision?.verdict === "watch").length === 0 ? <Empty text="None." /> : suggestedRows.filter((r) => r.decision?.verdict === "watch").map((r) => (
-            <div key={r.key} className="flex items-center gap-3 px-4 py-2">
-              <span className="w-28 shrink-0 font-mono text-xs font-bold text-ink"><TickerLink ticker={r.ticker}>{displayTicker(r.ticker)}</TickerLink></span>
-              <span className="min-w-0 flex-1 truncate text-xs text-ink-2">{r.name || ""} · {r.listCount} lists{r.improving.length > 0 ? " · ▲ improving" : ""}</span>
-              <span className="text-[10px] text-ink-3">until {r.decision?.expiresOn}</span>
-              {(() => { const s = synthByTicker.get(r.ticker.toUpperCase()); return s?.entry ? <span className="text-[10px] font-semibold text-ink-3">{VERDICT_LABEL[s.entry.result.verdict]}</span> : null; })()}
+        <Panel title="Watching (30-day quiet)" count={watching.length} sub="Suggested names you marked Watch — kept on the list, not nagged for a fresh synthesis until the memory expires.">
+          {watching.length === 0 ? <Empty text="None." icon="eye" /> : (
+            <div className="overflow-x-auto">
+              <table className="data-table">
+                <thead><tr><th className="pl-3.5">Name</th><th className="n">Lists</th><th>Verdict</th><th className="text-right pr-3.5">Until</th></tr></thead>
+                <tbody>
+                  {watching.map((r) => {
+                    const s = synthByTicker.get(r.ticker.toUpperCase());
+                    return (
+                      <tr key={r.key}>
+                        <NameCell ticker={r.ticker} name={r.name || undefined} />
+                        <td className="n">{r.listCount}{r.improving.length > 0 && <span className="ml-1.5 text-[11px]"><Improving /></span>}</td>
+                        <td className="text-[12px] text-ink-2">{s?.entry ? VERDICT_LABEL[s.entry.result.verdict] : <span className="text-ink-faint">—</span>}</td>
+                        <td className="pr-3.5 text-right font-mono text-[12px] text-ink-3">{r.decision?.expiresOn}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
             </div>
-          ))}
-        </Section>
+          )}
+        </Panel>
       </div>
     </div>
   );

@@ -7,6 +7,9 @@ import { useStocks } from "@/app/lib/StockContext";
 import { displayTicker } from "@/app/lib/ticker";
 import { computeConviction, type ConvictionSignal, type ConvictionEntry } from "@/app/lib/conviction";
 import { NewThisWeek } from "@/app/components/NewThisWeek";
+import { AppIcon } from "@/app/components/AppIcon";
+import { EmptyState } from "@/app/components/EmptyState";
+import { usePersistedOpen } from "@/app/lib/useCollapsed";
 import { IDEA_STATUS_LABELS, type IdeaPipelineStore, type IdeaPipelineEntry, type IdeaStatus } from "@/app/lib/idea-pipeline";
 import type { ResearchState } from "@/app/lib/defaults";
 import type { Stock, ScoreKey } from "@/app/lib/types";
@@ -20,51 +23,43 @@ const ZERO_SCORES: Record<ScoreKey, number> = {
   trackRecord: 0, ownershipTrends: 0,
 };
 
-const KIND_STYLE: Record<ConvictionSignal["kind"], string> = {
-  rating: "bg-accent-soft text-accent border-accent-border",
-  upside: "bg-pos-soft text-pos border-pos-border",
-  external: "bg-accent-soft text-accent border-accent-border",
-  list: "bg-warn-soft text-warn border-warn-border",
-  // Distinct tones: the quant rank and the technical setup are different KINDS
-  // of evidence from a research list, and a board whose badges all look alike
-  // hides where the agreement actually comes from.
-  quant: "bg-violet-soft text-violet border-violet-border",
-  setup: "bg-pos-soft text-pos border-pos-border",
-};
+const BTN = "inline-flex h-7 items-center gap-1.5 rounded-control border border-line bg-surface px-2.5 text-[12.5px] text-ink-2 hover:bg-surface-hover";
+const BTN22 = "inline-flex h-[22px] items-center gap-1 rounded-control border border-line bg-surface px-1.5 text-[11.5px] text-ink-2 hover:bg-surface-hover hover:text-ink disabled:opacity-40";
 
-function SignalBadge({ sig }: { sig: ConvictionSignal }) {
+/** One signal as text: label + mono points. Negative points read neg; the
+ *  KIND (list / quant / setup / rating …) is carried in the title so the
+ *  source of the agreement is still one hover away. */
+function SignalText({ sig }: { sig: ConvictionSignal }) {
   const neg = sig.points < 0;
-  const cls = neg ? "bg-neg-soft text-neg border-neg-border" : KIND_STYLE[sig.kind];
   return (
-    <span className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-medium ${cls}`} title={`${sig.points >= 0 ? "+" : ""}${sig.points}`}>
+    <span className={`inline-flex items-baseline gap-1 text-[11.5px] ${neg ? "text-neg" : "text-ink-2"}`} title={`${sig.kind} · ${sig.points >= 0 ? "+" : ""}${sig.points}`}>
       {sig.label}
-      <span className="font-mono opacity-70">{sig.points >= 0 ? `+${sig.points}` : sig.points}</span>
+      <span className={`font-mono text-[11px] ${neg ? "text-neg" : "text-ink-3"}`}>{sig.points >= 0 ? `+${sig.points}` : sig.points}</span>
     </span>
   );
 }
 
-/** Regime-fit badge from the AI synthesis (how the name fits the current market regime). */
-function RegimeBadge({ fit }: { fit: string }) {
-  const map: Record<string, { cls: string; label: string }> = {
-    high: { cls: "bg-pos-soft text-pos border-pos-border", label: "Regime ✓" },
-    medium: { cls: "bg-surface-2 text-ink-2 border-line", label: "Regime ~" },
-    low: { cls: "bg-warn-soft text-warn border-warn-border", label: "Regime ✕" },
-    contrary: { cls: "bg-neg-soft text-neg border-neg-border", label: "Contrarian" },
+/** Regime fit from the AI synthesis (how the name fits the current market regime) — dot + word. */
+function RegimeFit({ fit }: { fit: string }) {
+  const map: Record<string, { dot: string; cls: string; label: string }> = {
+    high: { dot: "bg-pos", cls: "text-pos", label: "Fits regime" },
+    medium: { dot: "bg-ink-faint", cls: "text-ink-3", label: "Regime neutral" },
+    low: { dot: "bg-warn", cls: "text-warn", label: "Against regime" },
+    contrary: { dot: "bg-neg", cls: "text-neg", label: "Contrarian" },
   };
   const m = map[fit];
   if (!m) return null;
-  return <span className={`inline-block rounded-full border px-1.5 py-0.5 text-[9px] font-semibold ${m.cls}`} title={`Regime fit: ${fit}`}>{m.label}</span>;
+  return (
+    <span className={`inline-flex items-center gap-1.5 text-[11px] ${m.cls}`} title={`Regime fit: ${fit}`}>
+      <span className={`dot ${m.dot}`} />{m.label}
+    </span>
+  );
 }
 
-/** Conviction total pill — colored by magnitude. */
-function TotalPill({ total }: { total: number }) {
-  const cls =
-    total >= 6 ? "bg-pos text-white"
-    : total >= 3 ? "bg-pos-soft text-pos border border-pos-border"
-    : total >= 1 ? "bg-surface-2 text-ink border border-line"
-    : total <= -2 ? "bg-neg text-white"
-    : "bg-surface-2 text-ink-3 border border-line";
-  return <span className={`inline-block rounded-lg px-2.5 py-1 text-sm font-bold tabular-nums ${cls}`}>{total > 0 ? `+${total}` : total}</span>;
+/** Conviction total — mono text, coloured by magnitude. */
+function Total({ total }: { total: number }) {
+  const cls = total >= 3 ? "text-pos" : total <= -2 ? "text-neg" : total >= 1 ? "text-ink" : "text-ink-3";
+  return <span className={`font-mono font-medium ${cls}`}>{total > 0 ? `+${total}` : total}</span>;
 }
 
 type BucketFilter = "ideas" | "all" | "Portfolio" | "Watchlist" | "Research";
@@ -133,6 +128,7 @@ export default function ConvictionPage() {
     syncUrl(filter, v);
   };
   const [query, setQuery] = useState("");
+  const [howOpen, toggleHow] = usePersistedOpen("conviction.howScored.open", false);
   const [loaded, setLoaded] = useState(false);
   const [expanded, setExpanded] = useState<string | null>(null);
   // Synthesis narrative keyed by normalized ticker (AI thesis + regime fit) —
@@ -354,30 +350,74 @@ export default function ConvictionPage() {
   }, [entries]);
 
   return (
-    <div className="mx-auto max-w-[1400px] px-4 py-6 md:px-6">
-      <div className="mb-4">
-        <h1 className="text-[15px] font-bold text-ink">Pipeline</h1>
-        <p className="text-sm text-ink-3">
-          Research-list names (the idea universe that feeds the Watchlist) ranked by how many independent signals
-          align — composite rating, upside to the FactSet mean analyst target, SIA / BoostedAI / MarketEdge,
-          estimate revisions, and each research list. Rows with a 💡 carry the AI synthesis thesis + regime fit —
-          click to expand. Individual stocks only. Higher = more sources agree.
-        </p>
-        <details className="mt-2 text-[12.5px] text-ink-3">
-          <summary className="cursor-pointer font-semibold text-accent hover:text-accent-ink">How the conviction score is computed</summary>
-          <div className="mt-2 flex flex-col gap-1 rounded-control bg-surface-2/50 px-3 py-2.5">
-            <p className="text-ink-2">It&apos;s the <span className="font-semibold">sum of points</span> from independent signals — the more that agree (and the stronger), the higher the score:</p>
-            <ul className="ml-1 flex flex-col gap-0.5">
-              <li>• <span className="font-semibold">Composite rating:</span> Strong Buy +3 · Buy +2 · Hold 0 · Underweight −1 · Sell −2</li>
-              <li>• <span className="font-semibold">Analyst upside</span> (to FactSet mean target): ≥ +25% → +2 · ≥ +10% → +1 · ≤ −10% → −1</li>
-              <li>• <span className="font-semibold">SIA · BoostedAI · MarketEdge:</span> bullish +1 / bearish −1 (each)</li>
-              <li>• <span className="font-semibold">Estimate revisions</span> (FactSet FY+1): net ≥ +2 up → +1 · net ≤ −2 down → −1</li>
-              <li>• <span className="font-semibold">Each research list</span> it appears on: bullish list +1 · bearish list −1</li>
-            </ul>
-            <p className="text-ink-faint">Total = sum of all of the above. It measures how good a name looks <em>right now</em> (a level) — the &ldquo;Improving&rdquo; flag below is the separate momentum/forward view.</p>
-          </div>
-        </details>
+    <div className="flex flex-col gap-3.5">
+      {/* ── Toolbar ── */}
+      <div className="flex flex-wrap items-center gap-2.5">
+        <div className="seg" role="group" aria-label="Bucket">
+          {FILTERS.map((b) => (
+            <button
+              key={b}
+              onClick={() => selectFilter(b)}
+              className={filter === b ? "on" : ""}
+              title={b === "ideas" ? "Names on at least one research list — the idea universe that feeds the Watchlist" : undefined}
+            >
+              {b === "ideas" ? "Ideas" : b === "all" ? "All" : b} <span className="c">{counts[b]}</span>
+            </button>
+          ))}
+        </div>
+        <label className="relative">
+          <AppIcon name="search" size={13} strokeWidth={2} className="pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 text-ink-3" />
+          <input
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Filter by ticker or name"
+            className="h-7 w-56 rounded-control border border-line bg-surface pl-7 pr-2.5 text-[12.5px] outline-none placeholder:text-ink-3 focus:border-accent-border"
+          />
+        </label>
+        <button
+          onClick={toggleImproving}
+          aria-pressed={improvingOnly}
+          title="Only names with a positive momentum signal — rising FY+1 estimate revisions and/or breaking out near their 52-week high. Narrows the funnel to what's getting better."
+          className={`${BTN} ${improvingOnly ? "!border-accent-border !bg-accent-soft !text-accent" : ""}`}
+        >
+          <AppIcon name="chevU" size={13} strokeWidth={2.25} />
+          Improving only
+        </button>
+        <button onClick={toggleHow} aria-expanded={howOpen} className={BTN}>
+          <AppIcon name="help" size={13} strokeWidth={2} />
+          How the score is computed
+          <AppIcon name={howOpen ? "chevU" : "chevD"} size={12} strokeWidth={2} className="text-ink-3" />
+        </button>
+        <span className="ml-auto text-[11.5px] text-ink-3">
+          {filtered.length} names · sorted by conviction
+        </span>
       </div>
+
+      {howOpen && (
+        <section className="panel">
+          <div className="panel-h">
+            <span className="t">How the conviction score is computed</span>
+            <span className="m">a level, not a trend — the Improving flag is the separate forward view</span>
+          </div>
+          <div className="flex flex-col gap-1.5 px-3.5 py-3 text-[12.5px] leading-[1.5] text-ink-2">
+            <p>
+              Research-list names (the idea universe that feeds the Watchlist) ranked by how many independent signals
+              align — composite rating, upside to the FactSet mean analyst target, SIA / BoostedAI / MarketEdge,
+              estimate revisions, and each research list. Rows with a <AppIcon name="spark" size={12} className="inline align-[-2px] text-ink-3" /> carry the AI synthesis thesis + regime fit —
+              click to expand. Individual stocks only. Higher = more sources agree.
+            </p>
+            <p>It&apos;s the <span className="font-medium text-ink">sum of points</span> from independent signals — the more that agree (and the stronger), the higher the score:</p>
+            <ul className="ml-1 flex flex-col gap-0.5">
+              <li>· <span className="font-medium text-ink">Composite rating:</span> Strong Buy +3 · Buy +2 · Hold 0 · Underweight −1 · Sell −2</li>
+              <li>· <span className="font-medium text-ink">Analyst upside</span> (to FactSet mean target): ≥ +25% → +2 · ≥ +10% → +1 · ≤ −10% → −1</li>
+              <li>· <span className="font-medium text-ink">SIA · BoostedAI · MarketEdge:</span> bullish +1 / bearish −1 (each)</li>
+              <li>· <span className="font-medium text-ink">Estimate revisions</span> (FactSet FY+1): net ≥ +2 up → +1 · net ≤ −2 down → −1</li>
+              <li>· <span className="font-medium text-ink">Each research list</span> it appears on: bullish list +1 · bearish list −1</li>
+            </ul>
+            <p className="text-ink-3">Total = sum of all of the above. It measures how good a name looks <em>right now</em> (a level) — the &ldquo;Improving&rdquo; flag is the separate momentum/forward view.</p>
+          </div>
+        </section>
+      )}
 
       {/* Nomination lane — the only path into the funnel that does NOT
           require a research list to have named the stock first. */}
@@ -387,153 +427,120 @@ export default function ConvictionPage() {
         listTickers={laneTickers.lists}
       />
 
-      <div className="mb-4 flex flex-wrap items-center gap-3">
-        <div className="inline-flex rounded-lg border border-line bg-white p-0.5">
-          {FILTERS.map((b) => (
-            <button
-              key={b}
-              onClick={() => selectFilter(b)}
-              className={`rounded-md px-3 py-1 text-xs font-semibold transition-colors ${
-                filter === b ? "bg-ink text-white" : "text-ink-3 hover:bg-surface-2"
-              }`}
-              title={b === "ideas" ? "Names on at least one research list — the idea universe that feeds the Watchlist" : undefined}
-            >
-              {b === "ideas" ? "💡 Ideas" : b === "all" ? "All" : b} <span className="opacity-60">{counts[b]}</span>
-            </button>
-          ))}
+      <section className="panel">
+        <div className="panel-h">
+          <span className="t">Conviction</span>
+          <span className="m">{filter === "ideas" ? "research-list candidates you don't own" : filter === "all" ? "every tracked name" : filter} · sorted by conviction</span>
         </div>
-        <input
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          placeholder="Filter by ticker or name…"
-          className="w-56 rounded-lg border border-line bg-white px-3 py-1.5 text-sm outline-none focus:border-line"
-        />
-        <button
-          onClick={toggleImproving}
-          title="Only names with a positive momentum signal — rising FY+1 estimate revisions and/or breaking out near their 52-week high. Narrows the funnel to what's getting better."
-          className={`rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors ${
-            improvingOnly ? "bg-pos text-white" : "border border-line text-ink-3 hover:bg-surface-2"
-          }`}
-        >
-          ⬆ Improving only
-        </button>
-        <span className="ml-auto text-xs text-ink-3">
-          {filtered.length} names · sorted by conviction
-        </span>
-      </div>
-
-      <div className="overflow-x-auto rounded-card border border-line bg-white shadow-sm">
-        <table className="w-full min-w-[1000px] text-sm">
-          <thead className="bg-surface-2 text-xs uppercase tracking-wider text-ink-3">
-            <tr>
-              <th className="px-3 py-2 text-left w-10">#</th>
-              <th className="px-3 py-2 text-left">Ticker</th>
-              <th className="px-3 py-2 text-left">Name</th>
-              <th className="px-3 py-2 text-center w-20">Bucket</th>
-              <th className="px-3 py-2 text-center w-24">Conviction</th>
-              <th className="px-3 py-2 text-left">Signals</th>
-              <th className="px-3 py-2 text-right w-24" title="Upside to the FactSet mean analyst price target — (mean target − current price) / current price. Only shown once a name has been rescored (that's when the target is pulled).">Analyst upside</th>
-              <th className="px-3 py-2 text-right w-28">Watchlist</th>
-            </tr>
-          </thead>
-          <tbody>
-            {!loaded && (
-              <tr><td colSpan={8} className="px-3 py-8 text-center text-ink-3">Loading…</td></tr>
-            )}
-            {loaded && filtered.length === 0 && (
-              <tr><td colSpan={8} className="px-3 py-8 text-center text-ink-3 italic">No names match.</td></tr>
-            )}
-            {filtered.map((e, i) => {
-              const syn = synthesisByKey.get(e.key);
-              const hasThesis = !!syn?.thesis;
-              const isOpen = expanded === e.key;
-              return (
-              <Fragment key={e.key}>
-              <tr className={`border-t border-line-soft ${i % 2 ? "bg-surface-hover" : "bg-white"} hover:bg-surface-2`}>
-                <td className="px-3 py-2 text-ink-3 tabular-nums">{i + 1}</td>
-                <td className="px-3 py-2">
-                  <div className="flex items-center gap-1.5">
-                    {hasThesis && (
-                      <button
-                        onClick={() => setExpanded(isOpen ? null : e.key)}
-                        className="text-xs leading-none"
-                        title="Show the AI synthesis thesis + regime fit"
-                      >💡</button>
-                    )}
-                    <Link href={`/stock/${e.ticker.toLowerCase()}`} className="font-mono font-bold text-ink hover:underline">
-                      {displayTicker(e.ticker)}
-                    </Link>
-                    {syn?.regimeFit && <RegimeBadge fit={syn.regimeFit} />}
-                    {(() => {
-                      const imp = improvingFor(e.ticker);
-                      return imp.strength ? (
-                        <span
-                          className={`inline-flex items-center rounded px-1 py-0.5 text-[9px] font-bold uppercase tracking-wide ${imp.strength === "strong" ? "bg-pos text-white" : "bg-pos-soft text-pos"}`}
-                          title={`Improving — ${imp.signals.join(" · ")}`}
-                        >
-                          ⬆ {imp.strength}
-                        </span>
-                      ) : null;
-                    })()}
-                  </div>
-                </td>
-                <td className="px-3 py-2 text-ink-2 truncate max-w-[200px]" title={e.name || e.ticker}>{e.name || <span className="text-ink-faint">—</span>}</td>
-                <td className="px-3 py-2 text-center">
-                  <span className={`inline-block rounded px-1.5 py-0.5 text-[10px] font-semibold ${
-                    e.bucket === "Portfolio" ? "bg-accent-soft text-accent border border-accent-border"
-                    : e.bucket === "Watchlist" ? "bg-surface-2 text-ink-2 border border-line"
-                    : "bg-warn-soft text-warn border border-warn-border"
-                  }`}>{e.bucket}</span>
-                </td>
-                <td className="px-3 py-2 text-center"><TotalPill total={e.total} /></td>
-                <td className="px-3 py-2">
-                  <div className="flex flex-wrap gap-1">
-                    {e.signals.length === 0 ? <span className="text-ink-faint text-xs">—</span> : e.signals.map((sig, k) => <SignalBadge key={k} sig={sig} />)}
-                  </div>
-                </td>
-                <td className="px-3 py-2 text-right font-mono tabular-nums whitespace-nowrap">
-                  {typeof e.upsidePct === "number" ? (
-                    <span className={e.upsidePct >= 0 ? "text-pos" : "text-neg"}>
-                      {e.upsidePct >= 0 ? "+" : ""}{e.upsidePct.toFixed(0)}%
-                    </span>
-                  ) : <span className="text-ink-faint">—</span>}
-                </td>
-                <td className="px-3 py-2 text-right">
-                  {e.bucket === "Research" ? (
-                    <button
-                      onClick={() => addToWatchlist(e.ticker, e.name)}
-                      className="rounded-control border border-line px-2 py-1 text-[11px] font-semibold text-accent hover:bg-accent-soft transition-colors"
-                      title={`Add ${e.ticker} to the Watchlist`}
-                    >
-                      + Watchlist
-                    </button>
-                  ) : e.bucket === "Watchlist" ? (
-                    <span className="text-[11px] text-ink-3">On watchlist</span>
-                  ) : (
-                    <span className="text-[11px] text-ink-faint">Held</span>
-                  )}
-                </td>
-              </tr>
-              {isOpen && hasThesis && (
-                <tr className="bg-accent-soft/40">
-                  <td></td>
-                  <td colSpan={7} className="px-3 pb-3 pt-1">
-                    <div className="rounded-lg border border-accent-border bg-white px-3 py-2">
-                      <div className="text-[10px] font-bold uppercase tracking-wider text-accent">Synthesis thesis</div>
-                      <p className="mt-0.5 text-sm text-ink leading-relaxed">{syn!.thesis}</p>
-                      {syn!.regimeFitRationale && (
-                        <p className="mt-1 text-xs text-ink-3"><span className="font-semibold">Regime fit:</span> {syn!.regimeFitRationale}</p>
-                      )}
-                    </div>
-                  </td>
+        {loaded && filtered.length === 0 ? (
+          <EmptyState className="!py-8" glyph={<AppIcon name="branch" size={18} />} title="No names match" body="Try another bucket, clear the search, or turn off Improving only." />
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="data-table min-w-[1000px]">
+              <thead>
+                <tr>
+                  <th className="n pl-3.5 w-10">#</th>
+                  <th>Name</th>
+                  <th>Bucket</th>
+                  <th className="n">Conviction</th>
+                  <th>Signals</th>
+                  <th className="n" title="Upside to the FactSet mean analyst price target — (mean target − current price) / current price. Only shown once a name has been rescored (that's when the target is pulled).">Analyst upside</th>
+                  <th className="pr-3.5 text-right">Watchlist</th>
                 </tr>
-              )}
-              </Fragment>
-              );
-            })}
-          </tbody>
-        </table>
-      </div>
+              </thead>
+              <tbody>
+                {!loaded && (
+                  <tr><td colSpan={7} className="py-6 text-center text-ink-3">Loading…</td></tr>
+                )}
+                {filtered.map((e, i) => {
+                  const syn = synthesisByKey.get(e.key);
+                  const hasThesis = !!syn?.thesis;
+                  const isOpen = expanded === e.key;
+                  const imp = improvingFor(e.ticker);
+                  return (
+                  <Fragment key={e.key}>
+                  <tr className={isOpen ? "sel" : ""}>
+                    <td className="n pl-3.5 text-ink-3">{i + 1}</td>
+                    <td>
+                      <div className="flex items-center gap-2">
+                        <Link href={`/stock/${e.ticker.toLowerCase()}`} className="font-mono font-medium text-ink hover:text-accent hover:underline">
+                          {displayTicker(e.ticker)}
+                        </Link>
+                        <span className="max-w-[200px] truncate text-[12px] text-ink-3" title={e.name || e.ticker}>{e.name || ""}</span>
+                        {hasThesis && (
+                          <button
+                            onClick={() => setExpanded(isOpen ? null : e.key)}
+                            className="grid h-[22px] w-[22px] place-items-center rounded-control text-ink-3 hover:bg-surface-hover hover:text-ink"
+                            title="Show the AI synthesis thesis + regime fit"
+                            aria-expanded={isOpen}
+                          >
+                            <AppIcon name="spark" size={13} strokeWidth={2} />
+                          </button>
+                        )}
+                        {syn?.regimeFit && <RegimeFit fit={syn.regimeFit} />}
+                        {imp.strength && (
+                          <span
+                            className={`inline-flex items-center gap-0.5 text-[11px] ${imp.strength === "strong" ? "text-pos" : "text-pos/80"}`}
+                            title={`Improving — ${imp.signals.join(" · ")}`}
+                          >
+                            <AppIcon name="chevU" size={11} strokeWidth={2.25} />{imp.strength}
+                          </span>
+                        )}
+                      </div>
+                    </td>
+                    <td className="text-ink-2">{e.bucket}</td>
+                    <td className="n"><Total total={e.total} /></td>
+                    <td className="whitespace-normal py-1.5">
+                      <div className="flex flex-wrap gap-x-3 gap-y-0.5">
+                        {e.signals.length === 0 ? <span className="text-ink-faint">—</span> : e.signals.map((sig, k) => <SignalText key={k} sig={sig} />)}
+                      </div>
+                    </td>
+                    <td className="n">
+                      {typeof e.upsidePct === "number" ? (
+                        <span className={e.upsidePct >= 0 ? "text-pos" : "text-neg"}>
+                          {e.upsidePct >= 0 ? "+" : ""}{e.upsidePct.toFixed(0)}%
+                        </span>
+                      ) : <span className="text-ink-faint">—</span>}
+                    </td>
+                    <td className="pr-3.5 text-right">
+                      {e.bucket === "Research" ? (
+                        <button
+                          onClick={() => addToWatchlist(e.ticker, e.name)}
+                          className={BTN22}
+                          title={`Add ${e.ticker} to the Watchlist`}
+                        >
+                          <AppIcon name="plus" size={11} strokeWidth={2.25} /> Watchlist
+                        </button>
+                      ) : e.bucket === "Watchlist" ? (
+                        <span className="text-[11.5px] text-ink-3">On watchlist</span>
+                      ) : (
+                        <span className="text-[11.5px] text-ink-faint">Held</span>
+                      )}
+                    </td>
+                  </tr>
+                  {isOpen && hasThesis && (
+                    <tr>
+                      <td></td>
+                      <td colSpan={6} className="whitespace-normal pb-3 pt-1 pr-3.5">
+                        <div className="text-[11px] text-ink-3">Synthesis thesis</div>
+                        <p className="mt-0.5 text-[12.5px] leading-[1.5] text-ink-2">{syn!.thesis}</p>
+                        {syn!.regimeFitRationale && (
+                          <p className="mt-1 text-[11.5px] text-ink-3"><span className="text-ink-2">Regime fit:</span> {syn!.regimeFitRationale}</p>
+                        )}
+                      </td>
+                    </tr>
+                  )}
+                  </Fragment>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+        <div className="flex h-8 items-center border-t border-line-soft px-3.5 text-[11.5px] text-ink-3">
+          {filtered.length} of {entries.length} · sorted by conviction
+        </div>
+      </section>
     </div>
   );
 }

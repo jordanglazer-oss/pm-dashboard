@@ -3,6 +3,9 @@
 import React, { useRef, useEffect, useState, useCallback } from "react";
 import type { TechnicalIndicators } from "@/app/lib/technicals";
 import { useStocks } from "@/app/lib/StockContext";
+import { usePersistedOpen } from "@/app/lib/useCollapsed";
+import { AppIcon } from "@/app/components/AppIcon";
+import RatioVsSpxSparkline, { useRatioVsSpx } from "@/app/components/RatioVsSpxSparkline";
 
 type ViewRange = "1mo" | "3mo" | "6mo" | "1y" | "2y" | "5y" | "10y" | "all";
 
@@ -40,13 +43,45 @@ type Props = {
   ticker: string;
   technicals?: TechnicalIndicators;
   className?: string;
+  /** Latest-bar change vs the prior close (%), reported once the bars land
+   *  so the identity row can show a signed day move without a second fetch.
+   *  Null when fewer than two bars are available. */
+  onDayChange?: (pct: number | null) => void;
 };
 
-export default function StockChart({ ticker, technicals, className = "" }: Props) {
+// Chart-library colours have to be literals (lightweight-charts paints a
+// canvas), so these mirror the @theme tokens in app/globals.css.
+const C = {
+  surface: "#ffffff",
+  ink3: "#8a93a2",
+  inkFaint: "#c4cad3",
+  line: "#e4e7ec",
+  lineSoft: "#eef0f4",
+  accent: "#2d5bd0",
+  pos: "#12805c",
+  neg: "#cc3f57",
+  posSoft: "rgba(18, 128, 92, 0.28)",
+  negSoft: "rgba(204, 63, 87, 0.28)",
+};
+
+const CHART_HEIGHT = 320;
+
+const OUTLOOK_TONE: Record<string, string> = {
+  Bullish: "bg-pos-soft text-pos",
+  Bearish: "bg-neg-soft text-neg",
+};
+
+const BTN = "inline-flex h-7 items-center gap-1.5 rounded-control border border-line bg-surface px-2.5 text-[12.5px] text-ink-2 hover:bg-surface-hover transition-colors disabled:opacity-50";
+
+export default function StockChart({ ticker, technicals, className = "", onDayChange }: Props) {
   const { chartAnalyses, setChartAnalysis, clearChartAnalysis, uiPrefs, setUiPref } = useStocks();
   // Analysis body collapses to just the header (persisted) — the chart
   // section was eating half the page.
   const chartAnalysisCollapsed = (uiPrefs["stock.chartAnalysis.collapsed"] ?? "1") === "1";
+  // Relative-strength sparkline sits one persisted click away under the
+  // chart; the one-line read lives in the panel header regardless.
+  const [ratioOpen, toggleRatio] = usePersistedOpen("stock.ratioVsSpx.open", false);
+  const ratio = useRatioVsSpx(ticker);
   const containerRef = useRef<HTMLDivElement>(null);
   const tooltipRef = useRef<HTMLDivElement>(null);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -84,6 +119,20 @@ export default function StockChart({ ticker, technicals, className = "" }: Props
   useEffect(() => {
     fetchData();
   }, [fetchData]);
+
+  // Surface the latest bar's move to the parent (identity row). Derived from
+  // bars already fetched — no extra request.
+  const onDayChangeRef = useRef(onDayChange);
+  onDayChangeRef.current = onDayChange;
+  useEffect(() => {
+    const cb = onDayChangeRef.current;
+    if (!cb) return;
+    const bars = chartData?.bars;
+    if (!bars || bars.length < 2) { cb(null); return; }
+    const last = bars[bars.length - 1];
+    const prev = bars[bars.length - 2];
+    cb(prev.close ? ((last.close - prev.close) / prev.close) * 100 : null);
+  }, [chartData]);
 
   // Zoom to the selected range
   const zoomToRange = useCallback((r: ViewRange) => {
@@ -139,27 +188,27 @@ export default function StockChart({ ticker, technicals, className = "" }: Props
 
       const chart = lc.createChart(containerRef.current, {
         width: containerRef.current.clientWidth,
-        height: 420,
+        height: CHART_HEIGHT,
         layout: {
-          background: { color: "#ffffff" },
-          textColor: "#64748b",
+          background: { color: C.surface },
+          textColor: C.ink3,
           fontFamily: "ui-monospace, monospace",
           fontSize: 11,
         },
         grid: {
-          vertLines: { color: "#f1f5f9" },
-          horzLines: { color: "#f1f5f9" },
+          vertLines: { color: C.lineSoft },
+          horzLines: { color: C.lineSoft },
         },
         crosshair: {
           mode: lc.CrosshairMode.Normal,
-          vertLine: { color: "#94a3b8", width: 1, style: lc.LineStyle.Dashed },
-          horzLine: { color: "#94a3b8", width: 1, style: lc.LineStyle.Dashed },
+          vertLine: { color: C.inkFaint, width: 1, style: lc.LineStyle.Dashed },
+          horzLine: { color: C.inkFaint, width: 1, style: lc.LineStyle.Dashed },
         },
         rightPriceScale: {
-          borderColor: "#e2e8f0",
+          borderColor: C.line,
         },
         timeScale: {
-          borderColor: "#e2e8f0",
+          borderColor: C.line,
           timeVisible: false,
         },
       });
@@ -168,12 +217,12 @@ export default function StockChart({ ticker, technicals, className = "" }: Props
 
       // Candlestick series
       const candleSeries = chart.addSeries(lc.CandlestickSeries, {
-        upColor: "#10b981",
-        downColor: "#ef4444",
-        borderUpColor: "#10b981",
-        borderDownColor: "#ef4444",
-        wickUpColor: "#10b981",
-        wickDownColor: "#ef4444",
+        upColor: C.pos,
+        downColor: C.neg,
+        borderUpColor: C.pos,
+        borderDownColor: C.neg,
+        wickUpColor: C.pos,
+        wickDownColor: C.neg,
       });
 
       candleSeries.setData(
@@ -200,14 +249,14 @@ export default function StockChart({ ticker, technicals, className = "" }: Props
         chartData.bars.map((b) => ({
           time: b.date,
           value: b.volume,
-          color: b.close >= b.open ? "rgba(16, 185, 129, 0.3)" : "rgba(239, 68, 68, 0.3)",
+          color: b.close >= b.open ? C.posSoft : C.negSoft,
         }))
       );
 
-      // SMA 50 overlay (blue)
+      // SMA 50 overlay (accent)
       if (chartData.sma50.length > 0) {
         const sma50Series = chart.addSeries(lc.LineSeries, {
-          color: "#3b82f6",
+          color: C.accent,
           lineWidth: 2,
           priceLineVisible: false,
           lastValueVisible: false,
@@ -218,10 +267,10 @@ export default function StockChart({ ticker, technicals, className = "" }: Props
         );
       }
 
-      // SMA 200 overlay (red)
+      // SMA 200 overlay (neg)
       if (chartData.sma200.length > 0) {
         const sma200Series = chart.addSeries(lc.LineSeries, {
-          color: "#ef4444",
+          color: C.neg,
           lineWidth: 2,
           priceLineVisible: false,
           lastValueVisible: false,
@@ -357,261 +406,260 @@ export default function StockChart({ ticker, technicals, className = "" }: Props
     ? Math.round((new Date(chartData!.bars[totalBars - 1].date).getTime() - new Date(chartData!.bars[0].date).getTime()) / (365.25 * 24 * 60 * 60 * 1000))
     : 0;
 
+  const relPct = ratio.pctChange;
+  const relMeta =
+    ratio.isBenchmark ? null
+    : ratio.loading ? "vs S&P 500 · loading…"
+    : ratio.error || ratio.series.length < 2 || relPct == null ? "vs S&P 500 · no overlap"
+    : null;
+  const analysisRangeLabel = savedAnalysis?.range
+    ? RANGES.find((r) => r.key === savedAnalysis.range)?.label || savedAnalysis.range
+    : RANGES.find((r) => r.key === viewRange)?.label;
+
   return (
-    <div className={className}>
-      <div className="rounded-card border border-line bg-white p-5 shadow-sm">
-        {/* Header row */}
-        <div className="flex flex-col gap-2 mb-4">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <h2 className="text-[15px] font-bold text-ink">Price Chart</h2>
-              <div className="hidden sm:flex items-center gap-3 text-xs text-ink-3">
-                <span className="flex items-center gap-1">
-                  <span className="inline-block w-3 h-0.5 bg-accent rounded" /> SMA 50
-                </span>
-                <span className="flex items-center gap-1">
-                  <span className="inline-block w-3 h-0.5 bg-neg rounded" /> SMA 200
-                </span>
-              </div>
-            </div>
-            {totalBars > 0 && (
-              <span className="text-[10px] text-ink-3">{yearsOfData}+ yrs &middot; scroll to explore</span>
-            )}
-          </div>
-
-          <div className="flex items-center gap-2 flex-wrap">
-            {/* Timeframe selector — zoom only, no re-fetch */}
-            <div className="flex rounded-card border border-line overflow-hidden">
-              {RANGES.map((r) => (
-                <button
-                  key={r.key}
-                  onClick={() => setViewRange(r.key)}
-                  className={`px-2 py-1.5 text-[11px] font-semibold transition-colors ${
-                    viewRange === r.key
-                      ? "bg-ink text-white"
-                      : "text-ink-3 hover:bg-surface-2"
-                  }`}
-                >
-                  {r.label}
-                </button>
-              ))}
-            </div>
-
-            {/* Analyze button */}
-            <button
-              onClick={handleAnalyze}
-              disabled={analyzing || loading || !chartData}
-              className="rounded-card bg-violet px-3 py-1.5 text-[11px] font-semibold text-white hover:bg-violet transition-colors disabled:opacity-50 flex items-center gap-1.5"
-            >
-              {analyzing && (
-                <span className="inline-block w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin" />
-              )}
-              {analyzing ? "Analyzing..." : "Analyze Chart"}
+    <section className={`panel ${className}`}>
+      {/* Header: title · range switcher · SMA legend · relative read · analyze */}
+      <div className="panel-h flex-wrap gap-y-1.5 py-1.5">
+        <span className="t">Price</span>
+        <div className="seg">
+          {RANGES.map((r) => (
+            <button key={r.key} type="button" onClick={() => setViewRange(r.key)} className={viewRange === r.key ? "on" : ""}>
+              {r.label}
             </button>
-
-            {/* SMA legend on mobile */}
-            <div className="flex sm:hidden items-center gap-2 text-[10px] text-ink-3 ml-auto">
-              <span className="flex items-center gap-1">
-                <span className="inline-block w-2 h-0.5 bg-accent rounded" /> 50
-              </span>
-              <span className="flex items-center gap-1">
-                <span className="inline-block w-2 h-0.5 bg-neg rounded" /> 200
-              </span>
-            </div>
-          </div>
+          ))}
         </div>
+        <span className="hidden items-center gap-3 text-[11.5px] text-ink-3 sm:inline-flex">
+          <span className="inline-flex items-center gap-1"><span className="inline-block h-0.5 w-3 rounded bg-accent" /> SMA 50</span>
+          <span className="inline-flex items-center gap-1"><span className="inline-block h-0.5 w-3 rounded bg-neg" /> SMA 200</span>
+        </span>
+        {totalBars > 0 && (
+          <span className="m hidden lg:inline" title="Scroll or drag inside the chart to explore the full history">{yearsOfData}+ yrs · scroll to explore</span>
+        )}
+        <div className="ml-auto flex items-center gap-2">
+          {relMeta ? (
+            <span className="m">{relMeta}</span>
+          ) : relPct != null ? (
+            <span className="m" title="Stock / SPY ratio, normalized to 1.00 at the start of the window. Open the relative-strength row under the chart for the line.">
+              vs S&amp;P 500 · relative{" "}
+              <span className={`font-mono font-medium ${relPct >= 0 ? "text-pos" : "text-neg"}`}>
+                {relPct >= 0 ? "+" : ""}{relPct.toFixed(1)}%
+              </span>{" "}
+              {ratio.windowLabel}
+            </span>
+          ) : null}
+          <button
+            type="button"
+            onClick={handleAnalyze}
+            disabled={analyzing || loading || !chartData}
+            className={BTN}
+            title="One vision model call reads the visible chart (with the technicals) and writes a structured bull / bear / levels read. Saved per ticker."
+          >
+            <AppIcon name="spark" size={13} />
+            {analyzing ? "Analyzing…" : "Analyze chart"}
+          </button>
+        </div>
+      </div>
 
-        {/* Chart container */}
+      {/* Chart body */}
+      <div className="px-2 pb-1 pt-2">
         {loading && (
-          <div className="flex items-center justify-center h-[420px] text-ink-3">
-            <span className="inline-block w-5 h-5 border-2 border-line border-t-transparent rounded-full animate-spin mr-2" />
-            Loading chart data...
+          <div className="flex items-center justify-center gap-2 text-[12.5px] text-ink-3" style={{ height: CHART_HEIGHT }}>
+            <span className="inline-block h-4 w-4 animate-spin rounded-full border-2 border-line border-t-transparent" />
+            Loading chart data…
           </div>
         )}
         {error && (
-          <div className="flex items-center justify-center h-[420px] text-neg text-sm">
+          <div className="flex items-center justify-center text-[12.5px] text-neg" style={{ height: CHART_HEIGHT }}>
             {error}
           </div>
         )}
         <div className={`relative w-full ${loading || error ? "hidden" : ""}`}>
-          <div ref={containerRef} className="w-full" style={{ minHeight: 420 }} />
+          <div ref={containerRef} className="w-full" style={{ minHeight: CHART_HEIGHT }} />
           <div
             ref={tooltipRef}
             style={{ display: "none" }}
-            className="pointer-events-none absolute z-20 rounded-md border border-line bg-white/95 px-2 py-1 text-[11px] leading-tight shadow-card"
+            className="pointer-events-none absolute z-20 rounded-control border border-line bg-surface/95 px-2 py-1 text-[11px] leading-tight shadow-[var(--shadow-pop)]"
           />
         </div>
       </div>
 
-      {/* Analysis result */}
-      {analysisError && (
-        <div className="mt-4 rounded-card border border-neg-border bg-neg-soft p-5 shadow-sm">
-          <p className="text-sm text-neg">{analysisError}</p>
+      {/* Relative strength vs the tape — one persisted click away */}
+      {!ratio.isBenchmark && (
+        <div className="border-t border-line-soft">
+          <div className="flex items-center gap-2 px-3.5 py-1.5">
+            <span className="text-[12.5px] font-medium text-ink">Relative strength vs S&amp;P 500</span>
+            {relPct != null && !ratio.loading && !ratio.error && (
+              <span className={`inline-flex items-center gap-1.5 text-[11.5px] ${relPct >= 0 ? "text-pos" : "text-neg"}`}>
+                <span className={`dot ${relPct >= 0 ? "bg-pos" : "bg-neg"}`} /> {relPct >= 0 ? "Outperforming" : "Underperforming"} {ratio.windowLabel}
+              </span>
+            )}
+            <button
+              type="button"
+              onClick={toggleRatio}
+              className="ml-auto grid h-7 w-7 place-items-center rounded-control text-ink-3 hover:bg-surface-hover hover:text-ink"
+              aria-expanded={ratioOpen}
+              aria-label={ratioOpen ? "Hide relative-strength line" : "Show relative-strength line"}
+              title={ratioOpen ? "Hide the stock / SPY ratio line" : "Show the stock / SPY ratio line"}
+            >
+              <AppIcon name={ratioOpen ? "chevU" : "chevD"} size={14} />
+            </button>
+          </div>
+          {ratioOpen && (
+            <div className="px-3.5 pb-3">
+              <RatioVsSpxSparkline ticker={ticker} data={ratio} />
+            </div>
+          )}
         </div>
       )}
+
+      {/* Analysis result */}
+      {analysisError && (
+        <div className="border-t border-line-soft bg-neg-soft px-3.5 py-2 text-[12.5px] text-neg">{analysisError}</div>
+      )}
       {analysis && (
-        <div className="mt-4 rounded-card border border-line bg-white p-5 shadow-sm">
-          <div className={`flex items-center gap-2 ${chartAnalysisCollapsed ? "" : "mb-3"}`}>
+        <div className="border-t border-line-soft">
+          <div className="flex flex-wrap items-center gap-2 px-3.5 py-1.5">
             <button
+              type="button"
               onClick={() => setUiPref("stock.chartAnalysis.collapsed", chartAnalysisCollapsed ? "0" : "1")}
-              className="flex items-center gap-1.5 cursor-pointer hover:opacity-80 transition-opacity"
+              className="inline-flex items-center gap-1.5 text-[12.5px] font-medium text-ink hover:text-accent"
               aria-expanded={!chartAnalysisCollapsed}
+              title={chartAnalysisCollapsed ? "Show the saved chart analysis" : "Hide the saved chart analysis"}
             >
-              <svg className={`w-3.5 h-3.5 text-ink-3 transition-transform ${chartAnalysisCollapsed ? "-rotate-90" : ""}`} fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" /></svg>
-              <h3 className="text-[15px] font-bold text-ink">Chart Analysis</h3>
+              <AppIcon name={chartAnalysisCollapsed ? "chevR" : "chevD"} size={14} className="text-ink-3" />
+              Chart analysis
             </button>
             {savedAnalysis?.outlook && (
-              <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${
-                savedAnalysis.outlook === "Bullish" ? "bg-pos-soft text-pos"
-                : savedAnalysis.outlook === "Bearish" ? "bg-neg-soft text-neg"
-                : "bg-surface-2 text-ink-2"
-              }`}>{savedAnalysis.outlook}</span>
+              <span className={`inline-flex h-[18px] items-center rounded px-1.5 text-[11px] font-medium ${OUTLOOK_TONE[savedAnalysis.outlook] ?? "bg-surface-2 text-ink-2"}`}>
+                {savedAnalysis.outlook}
+              </span>
             )}
-            <span className="rounded-full bg-violet-soft text-violet px-2 py-0.5 text-[10px] font-semibold">
-              AI Generated
-            </span>
-            <span className="text-xs text-ink-3 ml-auto">
-              {ticker} &middot; {savedAnalysis?.range ? RANGES.find((r) => r.key === savedAnalysis.range)?.label || savedAnalysis.range : RANGES.find((r) => r.key === viewRange)?.label} chart
+            <span className="text-[11.5px] text-ink-3">
+              AI · {ticker} · {analysisRangeLabel} chart
               {savedAnalysis?.analyzedAt && (
-                <> &middot; {new Date(savedAnalysis.analyzedAt).toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit", hour12: true })}</>
+                <> · {new Date(savedAnalysis.analyzedAt).toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit", hour12: true })}</>
               )}
             </span>
             <button
+              type="button"
               onClick={() => {
-                if (!confirm("Clear this saved chart analysis? You can always regenerate it with the Analyze Chart button.")) return;
+                if (!confirm("Clear this saved chart analysis? You can always regenerate it with the Analyze chart button.")) return;
                 clearChartAnalysis(ticker);
               }}
-              className="rounded-md border border-line bg-white px-2 py-1 text-[11px] font-semibold text-ink-3 hover:bg-neg-soft hover:text-neg hover:border-neg-border transition-colors"
+              className="ml-auto inline-flex h-7 items-center gap-1 rounded-control border border-line bg-surface px-2 text-[12px] text-ink-3 hover:border-neg-border hover:bg-neg-soft hover:text-neg transition-colors"
               title="Delete this saved AI chart analysis (Redis-backed, syncs across devices)"
             >
-              Clear
+              <AppIcon name="trash" size={12} /> Clear
             </button>
           </div>
 
-          {!chartAnalysisCollapsed && (<>
-          {/* Structured summary — renders only when the saved analysis has
-              the new fields. Old analyses fall through to the prose block. */}
-          {savedAnalysis?.outlook && (
-            <div className="mb-4 rounded-card border border-line bg-surface-2 p-4">
-              <div className="flex flex-wrap items-baseline gap-3 mb-3">
-                <span className={`text-lg font-semibold tracking-tight ${
-                  savedAnalysis.outlook === "Bullish"
-                    ? "text-pos"
-                    : savedAnalysis.outlook === "Bearish"
-                      ? "text-neg"
-                      : "text-ink-2"
-                }`}>
-                  {savedAnalysis.outlook}
-                </span>
-                {typeof savedAnalysis.confidence === "number" && (
-                  <span className="text-xs font-medium text-ink-3">
-                    Confidence {Math.round(savedAnalysis.confidence * 100)}%
-                  </span>
-                )}
-                {savedAnalysis.nextAction && (
-                  <span className="ml-auto text-sm text-ink-2 italic">
-                    {savedAnalysis.nextAction}
-                  </span>
-                )}
-              </div>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-3">
-                {savedAnalysis.bullCase && (
-                  <div className="rounded-md bg-pos-soft border border-pos-border p-3">
-                    <div className="text-[10px] font-bold uppercase tracking-wider text-pos mb-1">
-                      Bull Case
-                    </div>
-                    <p className="text-xs leading-5 text-ink-2">{savedAnalysis.bullCase}</p>
+          {!chartAnalysisCollapsed && (
+            <div className="px-3.5 pb-3">
+              {/* Structured summary — renders only when the saved analysis has
+                  the new fields. Old analyses fall through to the prose block. */}
+              {savedAnalysis?.outlook && (
+                <div className="mb-3 rounded-control border border-line bg-surface-2 px-3 py-2.5">
+                  <div className="mb-2 flex flex-wrap items-baseline gap-3">
+                    <span className={`text-[13px] font-semibold ${
+                      savedAnalysis.outlook === "Bullish" ? "text-pos" : savedAnalysis.outlook === "Bearish" ? "text-neg" : "text-ink-2"
+                    }`}>
+                      {savedAnalysis.outlook}
+                    </span>
+                    {typeof savedAnalysis.confidence === "number" && (
+                      <span className="text-[11.5px] text-ink-3">Confidence <span className="font-mono">{Math.round(savedAnalysis.confidence * 100)}%</span></span>
+                    )}
+                    {savedAnalysis.nextAction && (
+                      <span className="ml-auto text-[12.5px] text-ink-2">{savedAnalysis.nextAction}</span>
+                    )}
                   </div>
-                )}
-                {savedAnalysis.bearCase && (
-                  <div className="rounded-md bg-neg-soft border border-neg-border p-3">
-                    <div className="text-[10px] font-bold uppercase tracking-wider text-neg mb-1">
-                      Bear Case
-                    </div>
-                    <p className="text-xs leading-5 text-ink-2">{savedAnalysis.bearCase}</p>
+                  <div className="mb-2 grid grid-cols-1 gap-2 md:grid-cols-2">
+                    {savedAnalysis.bullCase && (
+                      <div className="rounded-control bg-pos-soft px-3 py-2">
+                        <div className="mb-0.5 text-[11px] text-pos">Bull case</div>
+                        <p className="text-[12.5px] leading-[1.5] text-ink-2">{savedAnalysis.bullCase}</p>
+                      </div>
+                    )}
+                    {savedAnalysis.bearCase && (
+                      <div className="rounded-control bg-neg-soft px-3 py-2">
+                        <div className="mb-0.5 text-[11px] text-neg">Bear case</div>
+                        <p className="text-[12.5px] leading-[1.5] text-ink-2">{savedAnalysis.bearCase}</p>
+                      </div>
+                    )}
                   </div>
-                )}
-              </div>
-              {((savedAnalysis.support && savedAnalysis.support.length > 0) ||
-                (savedAnalysis.resistance && savedAnalysis.resistance.length > 0) ||
-                typeof savedAnalysis.stopBelow === "number") && (
-                <div className="flex flex-wrap gap-x-6 gap-y-1 text-xs">
-                  {savedAnalysis.support && savedAnalysis.support.length > 0 && (
-                    <span>
-                      <span className="font-semibold text-pos">Support:</span>{" "}
-                      <span className="font-mono text-ink-2">
-                        {savedAnalysis.support.map((s) => s.toFixed(2)).join(", ")}
-                      </span>
-                    </span>
-                  )}
-                  {savedAnalysis.resistance && savedAnalysis.resistance.length > 0 && (
-                    <span>
-                      <span className="font-semibold text-neg">Resistance:</span>{" "}
-                      <span className="font-mono text-ink-2">
-                        {savedAnalysis.resistance.map((r) => r.toFixed(2)).join(", ")}
-                      </span>
-                    </span>
-                  )}
-                  {typeof savedAnalysis.stopBelow === "number" && (
-                    <span>
-                      <span className="font-semibold text-ink-2">Stop below:</span>{" "}
-                      <span className="font-mono text-ink-2">{savedAnalysis.stopBelow.toFixed(2)}</span>
-                    </span>
+                  {((savedAnalysis.support && savedAnalysis.support.length > 0) ||
+                    (savedAnalysis.resistance && savedAnalysis.resistance.length > 0) ||
+                    typeof savedAnalysis.stopBelow === "number") && (
+                    <div className="flex flex-wrap gap-x-6 gap-y-1 text-[12px]">
+                      {savedAnalysis.support && savedAnalysis.support.length > 0 && (
+                        <span><span className="text-ink-3">Support</span>{" "}
+                          <span className="font-mono text-ink">{savedAnalysis.support.map((s) => s.toFixed(2)).join(", ")}</span>
+                        </span>
+                      )}
+                      {savedAnalysis.resistance && savedAnalysis.resistance.length > 0 && (
+                        <span><span className="text-ink-3">Resistance</span>{" "}
+                          <span className="font-mono text-ink">{savedAnalysis.resistance.map((r) => r.toFixed(2)).join(", ")}</span>
+                        </span>
+                      )}
+                      {typeof savedAnalysis.stopBelow === "number" && (
+                        <span><span className="text-ink-3">Stop below</span>{" "}
+                          <span className="font-mono text-ink">{savedAnalysis.stopBelow.toFixed(2)}</span>
+                        </span>
+                      )}
+                    </div>
                   )}
                 </div>
               )}
+
+              <div className="space-y-0.5 text-[12.5px] leading-[1.5] text-ink-2">
+                {analysis.split("\n").map((line, i) => {
+                  // Skip horizontal rules and empty decorative lines
+                  if (line.trim() === "---" || line.trim() === "***") return null;
+                  // Section headers: **Bold Header** on its own line or ## / ###
+                  if (/^#{1,3}\s/.test(line)) {
+                    const text = line.replace(/^#{1,3}\s/, "").replace(/\*\*/g, "");
+                    return <p key={i} className="mb-0.5 mt-2.5 font-medium text-ink">{text}</p>;
+                  }
+                  if (/^\*\*[^*]+\*\*\s*$/.test(line.trim())) {
+                    return <p key={i} className="mb-0.5 mt-2.5 font-medium text-ink">{line.replace(/\*\*/g, "")}</p>;
+                  }
+                  // Bullet points
+                  if (line.startsWith("- ") || line.startsWith("* ")) {
+                    const content = line.slice(2).replace(/\*\*(.*?)\*\*/g, "$1");
+                    return <p key={i} className="ml-3 border-l border-line pl-2 text-ink-2">{content}</p>;
+                  }
+                  // Table rows
+                  if (line.includes("|") && line.trim().startsWith("|")) {
+                    // Skip separator rows
+                    if (/^\|[\s\-|]+\|$/.test(line.trim())) return null;
+                    const cells = line.split("|").filter(c => c.trim()).map(c => c.trim());
+                    if (cells.length === 0) return null;
+                    return (
+                      <div key={i} className="grid grid-cols-3 gap-2 py-0.5 font-mono text-[12px]">
+                        {cells.map((cell, j) => (
+                          <span key={j} className={j === 0 ? "font-medium text-ink-2" : "text-ink-3"}>{cell}</span>
+                        ))}
+                      </div>
+                    );
+                  }
+                  // Empty lines — minimal spacing
+                  if (line.trim() === "") return <div key={i} className="h-1" />;
+                  // Regular text — inline bold handling
+                  const parts = line.split(/(\*\*.*?\*\*)/g);
+                  return (
+                    <p key={i} className="text-ink-2">
+                      {parts.map((part, j) =>
+                        part.startsWith("**") && part.endsWith("**")
+                          ? <span key={j} className="font-medium text-ink">{part.slice(2, -2)}</span>
+                          : part
+                      )}
+                    </p>
+                  );
+                })}
+              </div>
             </div>
           )}
-
-          <div className="text-sm leading-relaxed text-ink-2 space-y-0.5">
-            {analysis.split("\n").map((line, i) => {
-              // Skip horizontal rules and empty decorative lines
-              if (line.trim() === "---" || line.trim() === "***") return null;
-              // Section headers: **Bold Header** on its own line or ## / ###
-              if (/^#{1,3}\s/.test(line)) {
-                const text = line.replace(/^#{1,3}\s/, "").replace(/\*\*/g, "");
-                return <p key={i} className="font-semibold text-ink mt-3 mb-0.5 text-sm">{text}</p>;
-              }
-              if (/^\*\*[^*]+\*\*\s*$/.test(line.trim())) {
-                return <p key={i} className="font-semibold text-ink mt-3 mb-0.5 text-sm">{line.replace(/\*\*/g, "")}</p>;
-              }
-              // Bullet points
-              if (line.startsWith("- ") || line.startsWith("* ")) {
-                const content = line.slice(2).replace(/\*\*(.*?)\*\*/g, "$1");
-                return <p key={i} className="ml-3 text-ink-2 pl-2 border-l-2 border-line">{content}</p>;
-              }
-              // Table rows
-              if (line.includes("|") && line.trim().startsWith("|")) {
-                // Skip separator rows
-                if (/^\|[\s\-|]+\|$/.test(line.trim())) return null;
-                const cells = line.split("|").filter(c => c.trim()).map(c => c.trim());
-                if (cells.length === 0) return null;
-                return (
-                  <div key={i} className="grid grid-cols-3 gap-2 text-xs py-0.5 font-mono">
-                    {cells.map((cell, j) => (
-                      <span key={j} className={j === 0 ? "text-ink-2 font-medium" : "text-ink-3"}>{cell}</span>
-                    ))}
-                  </div>
-                );
-              }
-              // Empty lines — minimal spacing
-              if (line.trim() === "") return <div key={i} className="h-1" />;
-              // Regular text — inline bold handling
-              const parts = line.split(/(\*\*.*?\*\*)/g);
-              return (
-                <p key={i} className="text-ink-2">
-                  {parts.map((part, j) =>
-                    part.startsWith("**") && part.endsWith("**")
-                      ? <span key={j} className="font-medium text-ink">{part.slice(2, -2)}</span>
-                      : part
-                  )}
-                </p>
-              );
-            })}
-          </div>
-          </>)}
         </div>
       )}
-    </div>
+    </section>
   );
 }

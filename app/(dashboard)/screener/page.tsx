@@ -14,11 +14,5 @@ export default function ScreenerPage() {
     addStock(stock);
   }, [scoredStocks, addStock]);
 
-  return (
-    <main className="min-h-screen bg-ground px-4 py-6 text-ink md:px-8 md:py-8 overflow-x-hidden">
-      <div className="mx-auto max-w-7xl">
-        <TechnicalScreener stocks={scoredStocks} onAddToWatchlist={handleAddToWatchlist} />
-      </div>
-    </main>
-  );
+  return <TechnicalScreener stocks={scoredStocks} onAddToWatchlist={handleAddToWatchlist} />;
 }

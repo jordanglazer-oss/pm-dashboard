@@ -1320,16 +1320,12 @@ export function MorningBrief({
         onRunInBackground={() => setGenModalOpen(false)}
         hasPreviousBrief={Boolean(brief?.bottomLine)}
       />
+      {/* The regime read, its score and the section rail moved into the
+          decision panel + rail shell; the command bar now carries only the
+          date line, the Brief / Daily-input toggle and Regenerate. */}
       <BriefCommandBar
         date={brief?.date || marketData.date}
         generatedAt={brief?.generatedAt}
-        regime={brief?.marketRegime}
-        regimeScore={brief?.regimeScore}
-        regimeSignals={brief?.regimeSignals}
-        boundaryGap={regimeTransition?.boundaryGap}
-        score100={marketRegime?.composite?.score100 ?? null}
-        pending={marketRegime?.composite?.pending ?? null}
-        sections={variant === "summary" ? sections : undefined}
         briefMode={briefMode}
         onModeChange={setBriefMode}
         onRegenerate={() => generateBrief(true)}
@@ -2361,7 +2357,6 @@ export function MorningBrief({
         fwd={(activeForward ?? null) as never}
         termStructure={marketData.termStructure}
         vvix={brief?.hedgeChecklist?.vvix ?? null}
-        asOf={activeForward?.fetchedAt as string | undefined}
         regime={marketRegime}
       />
 

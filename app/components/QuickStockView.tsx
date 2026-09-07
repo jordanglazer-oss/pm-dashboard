@@ -4,6 +4,8 @@ import React, { useEffect, useState } from "react";
 import Link from "next/link";
 import StockChart from "@/app/components/StockChart";
 import { displayTicker } from "@/app/lib/ticker";
+import { AppIcon } from "@/app/components/AppIcon";
+import { EmptyState } from "@/app/components/EmptyState";
 
 type Quote = {
   price: number | null;
@@ -70,25 +72,24 @@ export default function QuickStockView({
     <Link
       href={backHref}
       onClick={goBack}
-      className="inline-flex items-center gap-1.5 rounded-pill border border-line bg-white px-3 py-1.5 text-[12px] font-semibold text-ink-2 shadow-sm hover:bg-surface-hover hover:text-ink transition-colors"
+      className="inline-flex h-7 items-center gap-1.5 rounded-control border border-line bg-surface px-2.5 text-[12.5px] text-ink-2 hover:bg-surface-hover transition-colors"
       title={`Return to ${backLabel} (restores your place)`}
     >
-      ← {backLabel}
+      <AppIcon name="arrowL" size={13} /> {backLabel}
     </Link>
   );
 
   if (state === "unknown") {
     return (
-      <main className="min-h-screen bg-[#f4f5f7] px-4 py-6 text-ink md:px-8 md:py-8">
-        <div className="mx-auto max-w-5xl">
-          <div className="mb-4">{backLink}</div>
-          <div className="rounded-card border border-line bg-white p-8 text-center shadow-sm">
-            <h1 className="text-2xl font-semibold text-ink">{displayTicker(ticker)} not found</h1>
-            <p className="mt-2 text-ink-3">
-              Not in your book, and no quote data came back for this symbol.
-            </p>
-          </div>
-        </div>
+      <main className="flex flex-col gap-3.5 text-ink">
+        <div className="flex h-7 items-center">{backLink}</div>
+        <section className="panel">
+          <EmptyState
+            glyph={<AppIcon name="search" size={18} />}
+            title={`${displayTicker(ticker)} not found`}
+            body="Not in your book, and no quote data came back for this symbol."
+          />
+        </section>
       </main>
     );
   }
@@ -100,51 +101,43 @@ export default function QuickStockView({
   const changeColor = change == null ? "text-ink-3" : change >= 0 ? "text-pos" : "text-neg";
 
   return (
-    <main className="min-h-screen bg-[#f4f5f7] px-4 py-6 text-ink md:px-8 md:py-8">
-      <div className="mx-auto max-w-5xl space-y-4">
-        <div className="flex items-center justify-between gap-3">
-          {backLink}
-          <span
-            className="rounded-pill bg-surface-2 px-3 py-1 text-[11px] font-semibold uppercase tracking-wide text-ink-3"
-            title="This ticker is not in your Portfolio or Watchlist — showing a live quote and chart only. Nothing is saved."
-          >
-            Quick view · not in book
-          </span>
-        </div>
+    <main className="flex flex-col gap-3.5 text-ink">
+      {/* Quiet rail: the back control, then the quick-view note. */}
+      <div className="flex h-7 items-center gap-3">
+        {backLink}
+        <span
+          className="inline-flex items-center gap-1.5 text-[11.5px] text-ink-3"
+          title="This ticker is not in your Portfolio or Watchlist — showing a live quote and chart only. Nothing is saved."
+        >
+          <span className="dot bg-ink-faint" /> Quick view · not in book
+        </span>
+      </div>
 
-        <div className="rounded-card border border-line bg-white p-5 shadow-sm md:p-6">
-          {state === "loading" ? (
-            <div className="animate-pulse space-y-3">
-              <div className="h-7 w-40 rounded bg-surface-2" />
-              <div className="h-4 w-64 rounded bg-surface-2" />
-            </div>
-          ) : (
-            <div className="flex flex-wrap items-baseline gap-x-4 gap-y-1">
-              <h1 className="font-mono text-2xl font-bold text-ink">{displayTicker(ticker)}</h1>
-              {quote?.name && <span className="text-base text-ink-2">{quote.name}</span>}
-              {price != null && (
-                <span className="ml-auto flex items-baseline gap-2">
-                  <span className="font-mono text-2xl font-bold tabular-nums text-ink">
-                    {price.toFixed(2)}
-                    {quote?.currency && quote.currency !== "USD" && (
-                      <span className="ml-1 text-sm font-semibold text-ink-3">{quote.currency}</span>
-                    )}
-                  </span>
-                  {change != null && changePct != null && (
-                    <span className={`font-mono text-sm font-semibold tabular-nums ${changeColor}`}>
-                      {change >= 0 ? "+" : ""}
-                      {change.toFixed(2)} ({change >= 0 ? "+" : ""}
-                      {changePct.toFixed(2)}%)
-                    </span>
-                  )}
+      {/* Identity row */}
+      {state === "loading" ? (
+        <div className="flex animate-pulse items-center gap-3.5">
+          <div className="h-6 w-28 rounded bg-surface-2" />
+          <div className="h-4 w-56 rounded bg-surface-2" />
+        </div>
+      ) : (
+        <div className="flex flex-wrap items-baseline gap-x-3.5 gap-y-1">
+          <span className="font-mono text-[20px] font-semibold tracking-tight text-ink">{displayTicker(ticker)}</span>
+          {quote?.name && <span className="text-[14px] text-ink-2">{quote.name}</span>}
+          {price != null && (
+            <span className="ml-1 inline-flex items-baseline gap-2">
+              <span className="font-mono text-[18px] font-semibold tabular-nums text-ink">{price.toFixed(2)}</span>
+              {change != null && changePct != null && (
+                <span className={`font-mono text-[13px] tabular-nums ${changeColor}`}>
+                  {change >= 0 ? "+" : ""}{change.toFixed(2)} ({change >= 0 ? "+" : ""}{changePct.toFixed(2)}%)
                 </span>
               )}
-            </div>
+            </span>
           )}
+          {quote?.currency && <span className="text-[12px] text-ink-3">{quote.currency} · not in book</span>}
         </div>
+      )}
 
-        <StockChart ticker={ticker} />
-      </div>
+      <StockChart ticker={ticker} />
     </main>
   );
 }

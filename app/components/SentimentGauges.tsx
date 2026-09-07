@@ -9,6 +9,7 @@ import type {
 import { SignalPill } from "./SignalPill";
 import { Sparkline } from "./Sparkline";
 import { ClampText } from "./ClampText";
+import { AppIcon } from "./AppIcon";
 
 // Render the multi-horizon delta line shown under each sentiment sparkline.
 // Uses whichever deltas are available in the bundle so a fresh oscillator
@@ -36,11 +37,10 @@ function trendCaption(t: TrendStatsBundle | undefined): string | null {
 }
 
 /**
- * One gauge, laid out VERTICALLY: label row, big read, fluid sparkline,
- * caption. The previous cards put a fixed 80px dial beside the text, which
- * left the copy ~96px wide inside the Brief's sentiment column and wrapped it
- * one word per line. Nothing here has a fixed width, so all four stay legible
- * at any column width and read as one set.
+ * One gauge, laid out VERTICALLY as a cell: label row, big read, fluid
+ * sparkline, caption. Nothing here has a fixed width, so all four stay
+ * legible at any column width and read as one set. Rendered as a cell of a
+ * hairline grid — the panel and the header belong to the tab that holds it.
  */
 function GaugeCard({
   label,
@@ -50,7 +50,6 @@ function GaugeCard({
   unit,
   read,
   readTone,
-  readStyle,
   spark,
   caption,
   detail,
@@ -63,36 +62,36 @@ function GaugeCard({
   unit?: string;
   read: string;
   readTone: string;
-  readStyle?: React.CSSProperties;
   spark?: React.ReactNode;
   caption?: string | null;
   detail: string;
   children?: React.ReactNode;
 }) {
   return (
-    <div className="flex min-w-0 flex-col rounded-control border border-line-soft bg-surface-2 p-2.5">
-      <div className="mb-1 flex items-center gap-1.5">
-        <span className="min-w-0 truncate text-[10px] font-semibold uppercase tracking-wide text-ink-3">{label}</span>
-        <a href={href} target="_blank" rel="noopener noreferrer" className="shrink-0 text-accent hover:text-accent-ink" title={`${label} source`}>
-          <svg className="h-3 w-3" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
+    <div className="flex min-w-0 flex-col px-3.5 py-3">
+      <div className="mb-1 flex items-center gap-1.5 text-[11px] text-ink-3">
+        <a href={href} target="_blank" rel="noopener noreferrer" className="inline-flex min-w-0 items-center gap-1 truncate hover:text-accent" title={`${label} source`}>
+          <span className="truncate">{label}</span>
+          <AppIcon name="external" size={11} />
         </a>
         {badge && (
-          <span className={`ml-auto shrink-0 rounded-pill px-1.5 py-[1px] text-[9px] font-bold uppercase ${badge === "live" ? "bg-pos-soft text-pos" : "bg-accent-soft text-accent"}`}>
-            {badge}
+          <span className="ml-auto inline-flex shrink-0 items-center gap-1.5">
+            <span className={`dot ${badge === "live" ? "bg-pos" : "bg-accent"}`} />
+            {badge === "live" ? "Live" : "Logged"}
           </span>
         )}
       </div>
       <div className="flex items-baseline gap-1.5">
         <span className="font-mono text-[20px] font-semibold leading-none text-ink">{value}</span>
-        {unit && <span className="text-[10px] text-ink-faint">{unit}</span>}
-        <span className={`ml-auto truncate text-[12px] font-semibold ${readTone}`} style={readStyle}>{read}</span>
+        {unit && <span className="text-[11px] text-ink-3">{unit}</span>}
+        <span className={`ml-auto truncate text-[12.5px] font-medium ${readTone}`}>{read}</span>
       </div>
       {children}
       {spark && <div className="mt-1.5">{spark}</div>}
-      {caption && <div className="mt-0.5 font-mono text-[9.5px] leading-tight text-ink-3">{caption}</div>}
+      {caption && <div className="mt-0.5 font-mono text-[10.5px] leading-tight text-ink-3">{caption}</div>}
       {/* Bounded to two lines — the full sentence is on hover, and the
-          Contrarian Take below carries the joined-up read. */}
-      <p className="mt-1.5 line-clamp-2 text-[11px] leading-snug text-ink-3" title={detail}>
+          Contrarian take below carries the joined-up read. */}
+      <p className="mt-1.5 line-clamp-2 text-[11.5px] leading-snug text-ink-3" title={detail}>
         {detail}
       </p>
     </div>
@@ -252,9 +251,11 @@ export function SentimentGauges({ marketData, aaiiBull = 30, aaiiNeutral = 17, a
   const overall = overallContrarianRating(fgValue, aaiiBullBearValue, oscValue, marketData.putCall);
   const fgLabel = fearGreedLabel(fgValue);
 
-  // Color for the donut gauge
-  const fgColor =
-    fgValue <= 25 ? "#ef4444" : fgValue <= 50 ? "#f59e0b" : "#22c55e";
+  // Colour by job: fear reads neg, the middle warn, greed pos — the same
+  // token drives the read and the sparkline stroke.
+  const fgToken = fgValue <= 25 ? "neg" : fgValue <= 50 ? "warn" : "pos";
+  const fgColor = `var(--color-${fgToken})`;
+  const fgReadTone = fgToken === "neg" ? "text-neg" : fgToken === "warn" ? "text-warn" : "text-pos";
 
   // SVG donut for F&G
   const oscRead =
@@ -280,14 +281,11 @@ export function SentimentGauges({ marketData, aaiiBull = 30, aaiiNeutral = 17, a
 
 
   return (
-    <section className="rounded-card border border-line bg-white p-4 shadow-sm">
-      {/* Design header: tracked uppercase label + the overall read as a pill,
-          with the inverse-reading explainer demoted to the right rather than
-          taking its own full-width line. */}
-      <div className="mb-3 flex flex-wrap items-center gap-2">
-        <h3 className="text-xs font-bold uppercase tracking-[0.22em] text-ink-3">Contrarian sentiment</h3>
+    <div>
+      {/* The overall read, and the reminder that these are read inversely. */}
+      <div className="flex flex-wrap items-center gap-2 border-b border-line-soft px-3.5 py-2 text-[11.5px] text-ink-3">
         <SignalPill tone={overall.tone}>{overall.label}</SignalPill>
-        <span className="ml-auto text-[11px] text-ink-faint">counter-signal · read extremes inversely</span>
+        <span>counter-signal · read extremes inversely</span>
       </div>
       <p className="sr-only">
         Sentiment extremes read <strong className="text-ink-2">inversely</strong> — crowd fear = opportunity, crowd greed = warning. A counterweight to the regime read above, not another summary of it.
@@ -295,7 +293,7 @@ export function SentimentGauges({ marketData, aaiiBull = 30, aaiiNeutral = 17, a
 
       {/* Two across, never four: inside the Brief's sentiment column four
           columns left ~96px per card. Two keeps every card readable. */}
-      <div className="grid gap-2.5 grid-cols-1 sm:grid-cols-2">
+      <div className="grid grid-cols-1 sm:grid-cols-2 sm:[&>*:nth-child(odd)]:border-r [&>*:not(:last-child)]:border-b sm:[&>*:nth-last-child(-n+2)]:border-b-0 [&>*]:border-line-soft">
         <GaugeCard
           label="CNN Fear & Greed"
           href="https://www.cnn.com/markets/fear-and-greed"
@@ -303,10 +301,9 @@ export function SentimentGauges({ marketData, aaiiBull = 30, aaiiNeutral = 17, a
           value={String(Math.round(fgValue))}
           unit="/100"
           read={fgLabel}
-          readTone=""
-          readStyle={{ color: fgColor }}
+          readTone={fgReadTone}
           spark={fgHistory.length >= 2 ? (
-            <Sparkline points={fgHistory} width={420} height={26} stroke={fgColor} fill={`${fgColor}22`} yMin={0} yMax={100} referenceY={50} />
+            <Sparkline points={fgHistory} width={420} height={26} stroke={fgColor} yMin={0} yMax={100} referenceY={50} />
           ) : null}
           caption={[fgHistory.length >= 2 ? "trailing 1Y" : null, trendCaption(forwardData?.fearGreed?.trend)].filter(Boolean).join(" · ") || null}
           detail={fgData.detail}
@@ -321,7 +318,7 @@ export function SentimentGauges({ marketData, aaiiBull = 30, aaiiNeutral = 17, a
           read={aaiiData.signal}
           readTone={aaiiData.tone === "green" ? "text-pos" : aaiiData.tone === "red" ? "text-neg" : "text-warn"}
           spark={aaiiBullBearHistory.length >= 2 ? (
-            <Sparkline points={aaiiBullBearHistory} width={420} height={26} stroke="#6366f1" fill="rgba(99, 102, 241, 0.12)" referenceY={0} />
+            <Sparkline points={aaiiBullBearHistory} width={420} height={26} referenceY={0} />
           ) : null}
           caption={[aaiiBullBearHistory.length >= 2 ? "spread, trailing 52wk" : null, trendCaption(forwardData?.aaiiBullBear?.trend)].filter(Boolean).join(" · ") || null}
           detail={aaiiData.detail}
@@ -333,11 +330,11 @@ export function SentimentGauges({ marketData, aaiiBull = 30, aaiiNeutral = 17, a
               ["Bear", effAaiiBear, "bg-neg"],
             ] as const).map(([name, pctVal, bar]) => (
               <div key={name} className="flex items-center gap-1.5">
-                <span className="w-7 shrink-0 text-[10px] text-ink-3">{name}</span>
-                <span className="h-1.5 min-w-0 flex-1 overflow-hidden rounded-full bg-line">
-                  <span className={`block h-full rounded-full ${bar}`} style={{ width: `${pctVal}%` }} />
+                <span className="w-7 shrink-0 text-[11px] text-ink-3">{name}</span>
+                <span className="h-1 min-w-0 flex-1 overflow-hidden rounded-[2px] bg-line-soft">
+                  <span className={`block h-full ${bar}`} style={{ width: `${pctVal}%` }} />
                 </span>
-                <span className="w-9 shrink-0 text-right font-mono text-[10px] font-semibold">{pctVal.toFixed(1)}</span>
+                <span className="w-9 shrink-0 text-right font-mono text-[11px] text-ink-2">{pctVal.toFixed(1)}</span>
               </div>
             ))}
           </div>
@@ -351,7 +348,7 @@ export function SentimentGauges({ marketData, aaiiBull = 30, aaiiNeutral = 17, a
           read={oscRead.label}
           readTone={oscRead.tone}
           spark={oscHistory.length >= 2 ? (
-            <Sparkline points={oscHistory} width={420} height={26} stroke="#0ea5e9" fill="rgba(14, 165, 233, 0.12)" referenceY={0} />
+            <Sparkline points={oscHistory} width={420} height={26} referenceY={0} />
           ) : null}
           caption={[oscHistory.length >= 2 ? "logged entries, 6mo" : null, trendCaption(forwardData?.spOscillator?.trend)].filter(Boolean).join(" · ") || null}
           detail={oscRead.detail}
@@ -365,7 +362,7 @@ export function SentimentGauges({ marketData, aaiiBull = 30, aaiiNeutral = 17, a
           read={pcRead.label}
           readTone={pcRead.tone}
           spark={pcHistory.length >= 2 ? (
-            <Sparkline points={pcHistory} width={420} height={26} stroke="#8b5cf6" fill="rgba(139, 92, 246, 0.12)" referenceY={0.85} />
+            <Sparkline points={pcHistory} width={420} height={26} referenceY={0.85} />
           ) : null}
           caption={[pcHistory.length >= 2 ? "logged entries, 6mo" : null, trendCaption(forwardData?.putCallRatio?.trend)].filter(Boolean).join(" · ") || null}
           detail={pcRead.detail}
@@ -374,14 +371,11 @@ export function SentimentGauges({ marketData, aaiiBull = 30, aaiiNeutral = 17, a
 
       {/* Claude's contrarian analysis */}
       {contrarianAnalysis && (
-        <div className="mt-3 border-t border-line-soft pt-3">
-          <div className="flex items-center gap-2 mb-1.5">
-            <span className="text-xs font-bold uppercase tracking-wider text-ink-3">Contrarian Take</span>
-            <SignalPill tone={overall.tone}>{overall.label}</SignalPill>
-          </div>
-          <ClampText text={contrarianAnalysis} />
+        <div className="border-t border-line-soft px-3.5 py-3">
+          <div className="mb-1 text-[11px] text-ink-3">Contrarian take</div>
+          <ClampText text={contrarianAnalysis} textClassName="text-[12.5px] leading-[1.5] text-ink-2" />
         </div>
       )}
-    </section>
+    </div>
   );
 }

@@ -11,12 +11,13 @@
  * button frequently did nothing at all.
  *
  * Now it renders the full text. `lines` and `threshold` are accepted and
- * ignored so the call sites did not have to change in lockstep.
+ * ignored so the call sites did not have to change in lockstep. Default type
+ * is the workspace's AI-prose size: 12.5px / 1.5 ink-2.
  */
 export function ClampText({
   text,
   className = "",
-  textClassName = "text-sm leading-6 text-ink-2",
+  textClassName = "text-[12.5px] leading-[1.5] text-ink-2",
 }: {
   text: string | null | undefined;
   /** @deprecated no longer clamped — accepted so call sites keep compiling. */

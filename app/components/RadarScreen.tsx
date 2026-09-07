@@ -4,6 +4,8 @@ import React, { useEffect, useState, useCallback } from "react";
 import { useStocks } from "@/app/lib/StockContext";
 import { displayTicker } from "@/app/lib/ticker";
 import TickerLink from "@/app/components/TickerLink";
+import { AppIcon } from "@/app/components/AppIcon";
+import { EmptyState } from "@/app/components/EmptyState";
 import { useTableSort, currencyOf } from "@/app/lib/useTableSort";
 import type { ScoreKey } from "@/app/lib/types";
 import type { RadarName, RadarPayload } from "@/app/lib/radar";
@@ -95,7 +97,7 @@ export function RadarScreen({ onCountChange }: { onCountChange?: (n: number) => 
   const cadCount = all.filter((n) => currencyOf(n.ticker) === "CAD").length;
   const usdCount = all.length - cadCount;
 
-  const { sorted, toggle, arrow } = useTableSort(
+  const { sorted, key: sortKey, dir: sortDir, toggle } = useTableSort(
     filtered,
     {
       ticker: (n) => n.ticker,
@@ -108,146 +110,150 @@ export function RadarScreen({ onCountChange }: { onCountChange?: (n: number) => 
   );
 
   const regimeLabel = data?.regime?.label ?? "Neutral";
-  const regimeTone =
-    regimeLabel === "Risk-On" ? "bg-pos-soft text-pos ring-pos-border"
-    : regimeLabel === "Risk-Off" ? "bg-neg-soft text-neg ring-neg-border"
-    : "bg-surface-2 text-ink-2 ring-line";
+  const regimeDot = regimeLabel === "Risk-On" ? "bg-pos" : regimeLabel === "Risk-Off" ? "bg-neg" : "bg-ink-faint";
   const weightsLine = data?.weights
     ? GROUP_ORDER.map((g) => `${GROUP_SHORT[g]} ${Math.round((data.weights[g] ?? 0) * 100)}%`).join(" · ")
     : "";
+  const SORT_LABEL: Record<string, string> = { ticker: "ticker", sector: "sector", fit: "regime fit", quant: "quant", conf: "confidence" };
 
-  const th = "pb-2 pr-3 text-left text-[11px] font-semibold uppercase tracking-wide text-ink-3";
-  const thSort = `${th} cursor-pointer select-none hover:text-ink`;
+  const Th = ({ id, label, className = "", title }: { id?: string; label: string; className?: string; title?: string }) => (
+    <th className={className} title={title}>
+      {id ? (
+        <button type="button" onClick={() => toggle(id)} className={`inline-flex items-center gap-0.5 hover:text-ink ${sortKey === id ? "text-ink-2" : ""}`}>
+          {label}
+          {sortKey === id && <AppIcon name={sortDir === "asc" ? "chevU" : "chevD"} size={11} strokeWidth={2} />}
+        </button>
+      ) : label}
+    </th>
+  );
 
   return (
-    <div className="rounded-card border border-line bg-white p-5 shadow-card">
-      <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h2 className="text-base font-bold text-ink">
-            Radar
-            <span className={`ml-2 rounded-full px-2 py-0.5 text-[10px] font-bold uppercase ring-1 ${regimeTone}`}>
-              {regimeLabel}
-            </span>
-          </h2>
-          <p className="text-xs text-ink-3">
-            {data?.builtAt
-              ? `Own factor model over the S&P 500 + TSX 60, tilted for the current regime (${weightsLine}) · universe built ${new Date(data.builtAt).toLocaleDateString()}`
-              : "Self-computed screen — populates after the weekly factor-universe build."}
-          </p>
-        </div>
-        <span className="inline-flex items-center rounded-control border border-line bg-surface-2 p-0.5 text-xs">
+    <div className="flex flex-col gap-3.5">
+      {/* ── Toolbar ── */}
+      <div className="flex flex-wrap items-center gap-2.5">
+        <span className="inline-flex items-center gap-2 text-[12.5px] text-ink">
+          <span className={`dot ${regimeDot}`} />
+          {regimeLabel} tilt
+        </span>
+        <span className="text-[11.5px] text-ink-3">
+          {data?.builtAt
+            ? `own factor model over the S&P 500 + TSX 60, tilted for the current regime (${weightsLine}) · universe built ${new Date(data.builtAt).toLocaleDateString()}`
+            : "self-computed screen — populates after the weekly factor-universe build"}
+        </span>
+        <div className="seg ml-auto" role="group" aria-label="Currency">
           {(["All", "CAD", "USD"] as const).map((c) => (
-            <button
-              key={c}
-              onClick={() => setCcy(c)}
-              className={`rounded-[6px] px-2.5 py-1 font-semibold transition-colors ${ccy === c ? "bg-accent text-white" : "text-ink-2 hover:text-ink"}`}
-            >
+            <button key={c} onClick={() => setCcy(c)} className={ccy === c ? "on" : ""}>
               {c}
-              {c !== "All" && (
-                <span className={`ml-1 font-normal ${ccy === c ? "text-white/70" : "text-ink-3"}`}>
-                  {c === "CAD" ? cadCount : usdCount}
-                </span>
-              )}
+              {c !== "All" && <span className="c">{c === "CAD" ? cadCount : usdCount}</span>}
             </button>
           ))}
-        </span>
+        </div>
       </div>
 
       {/* Sector heat strip — where the market's momentum is, from the same
           universe (median 12-1m momentum per GICS sector). */}
       {(data?.sectors?.length ?? 0) > 0 && (
-        <div className="mb-4 flex flex-wrap gap-1.5">
-          {data!.sectors.map((s) => {
+        <div className="panel flex items-stretch overflow-x-auto">
+          {data!.sectors.map((s, i) => {
             const v = s.medMom12;
-            const tone =
-              v == null ? "bg-surface-2 text-ink-3 ring-line"
-              : v >= 0 ? "bg-pos-soft text-pos ring-pos-border"
-              : "bg-neg-soft text-neg ring-neg-border";
+            const cls = v == null ? "text-ink-3" : v >= 0 ? "text-pos" : "text-neg";
             return (
-              <span
+              <div
                 key={s.sector}
                 title={`Median 12-1m momentum ${v == null ? "n/a" : `${v.toFixed(1)}%`} · 6-1m ${s.medMom6 == null ? "n/a" : `${s.medMom6.toFixed(1)}%`} · ${s.n} names`}
-                className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ring-1 ${tone}`}
+                className={`flex min-w-0 flex-1 flex-col px-3 py-2 ${i < data!.sectors.length - 1 ? "border-r border-line-soft" : ""}`}
               >
-                {s.sector}
-                {v != null && (
-                  <span className="ml-1 font-mono font-normal">{v > 0 ? "+" : ""}{v.toFixed(0)}%</span>
-                )}
-              </span>
+                <span className="truncate text-[11px] text-ink-3">{s.sector}</span>
+                <span className={`mt-0.5 font-mono text-[13px] font-medium tabular-nums ${cls}`}>{v == null ? "—" : `${v > 0 ? "+" : ""}${v.toFixed(0)}%`}</span>
+              </div>
             );
           })}
         </div>
       )}
 
-      {loading ? (
-        <p className="py-8 text-center text-xs text-ink-3">Loading…</p>
-      ) : sorted.length === 0 ? (
-        <p className="py-8 text-center text-xs text-ink-3">
-          {data?.hint ?? "No names to show — every screened name is already tracked."}
-        </p>
-      ) : (
-        <div className="max-w-full overflow-x-auto">
-          <table className="w-full min-w-[760px] text-sm">
-            <thead>
-              <tr className="border-b border-line">
-                <th className={thSort} onClick={() => toggle("ticker")}>Ticker{arrow("ticker")}</th>
-                <th className={th}>Name</th>
-                <th className={thSort} onClick={() => toggle("sector")}>Sector{arrow("sector")}</th>
-                <th className={`${thSort} text-right`} onClick={() => toggle("fit")} title="Percentile under the current regime's factor tilts">Regime fit{arrow("fit")}</th>
-                <th className={`${thSort} text-right`} onClick={() => toggle("quant")} title="Baseline quant percentile (untitled weights)">Quant{arrow("quant")}</th>
-                {GROUP_ORDER.map((g) => (
-                  <th key={g} className={`${th} text-right`} title={`Mean sector-neutral z, ${g}`}>{GROUP_SHORT[g]}</th>
-                ))}
-                <th className={`${thSort} text-right`} onClick={() => toggle("conf")} title="Data coverage × cross-group agreement">Conf{arrow("conf")}</th>
-                <th className={`${th} text-right`}>Action</th>
-              </tr>
-            </thead>
-            <tbody>
-              {sorted.map((n) => (
-                <tr key={n.ticker} className="border-b border-line-soft hover:bg-surface-hover">
-                  <td className="py-2.5 pr-3 font-mono text-xs font-semibold text-ink">
-                    <TickerLink ticker={n.ticker}>{displayTicker(n.ticker)}</TickerLink>
-                    {n.distress === "grey" && (
-                      <span
-                        title={`Altman-style Z ${n.altmanZ ?? "?"} — grey zone; balance sheet warrants a look`}
-                        className="ml-1.5 rounded-full bg-warn-soft px-1.5 py-px text-[9px] font-bold uppercase text-warn ring-1 ring-warn-border"
-                      >
-                        Z
-                      </span>
-                    )}
-                  </td>
-                  <td className="max-w-[200px] truncate py-2.5 pr-3 text-ink">{names[n.ticker] || "—"}</td>
-                  <td className="py-2.5 pr-3 text-xs text-ink-2">{n.sector}</td>
-                  <td className="py-2.5 pr-3 text-right font-mono font-semibold tabular-nums text-ink">{n.regimeFit}</td>
-                  <td className="py-2.5 pr-3 text-right font-mono tabular-nums text-ink-2">{n.quant}</td>
-                  {GROUP_ORDER.map((g) => {
-                    const z = n.groups[g];
-                    return (
-                      <td key={g} className={`py-2.5 pr-3 text-right font-mono text-xs tabular-nums ${z == null ? "text-ink-faint" : z >= 0 ? "text-pos" : "text-neg"}`}>
-                        {z == null ? "—" : `${z > 0 ? "+" : ""}${z.toFixed(1)}`}
-                      </td>
-                    );
-                  })}
-                  <td className="py-2.5 pr-3 text-right font-mono text-xs tabular-nums text-ink-3">{n.confidence}</td>
-                  <td className="py-2.5 text-right">
-                    {held(n.ticker) ? (
-                      <span className="text-[11px] font-semibold text-ink-faint">Tracked</span>
-                    ) : (
-                      <button
-                        onClick={() => promote(n)}
-                        disabled={adding === n.ticker}
-                        className="rounded bg-accent-soft px-2 py-1 text-[11px] font-bold text-accent disabled:opacity-50"
-                      >
-                        {adding === n.ticker ? "…" : "+ Watchlist"}
-                      </button>
-                    )}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+      <section className="panel">
+        <div className="panel-h">
+          <span className="t">Radar</span>
+          <span className="m">top regime-fit names not yet tracked · sorted by {SORT_LABEL[sortKey] ?? sortKey}</span>
         </div>
-      )}
+        {loading ? (
+          <p className="px-3.5 py-3 text-[12.5px] text-ink-3">Loading…</p>
+        ) : sorted.length === 0 ? (
+          <EmptyState
+            className="!py-8"
+            glyph={<AppIcon name="spark" size={18} />}
+            title="Nothing on the radar"
+            body={data?.hint ?? "No names to show — every screened name is already tracked."}
+          />
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="data-table min-w-[760px]">
+              <thead>
+                <tr>
+                  <Th id="ticker" label="Ticker" className="pl-3.5" />
+                  <Th label="Name" />
+                  <Th id="sector" label="Sector" />
+                  <Th id="fit" label="Regime fit" className="n" title="Percentile under the current regime's factor tilts" />
+                  <Th id="quant" label="Quant" className="n" title="Baseline quant percentile (untilted weights)" />
+                  {GROUP_ORDER.map((g) => (
+                    <Th key={g} label={GROUP_SHORT[g]} className="n" title={`Mean sector-neutral z, ${g}`} />
+                  ))}
+                  <Th id="conf" label="Conf" className="n" title="Data coverage × cross-group agreement" />
+                  <th className="pr-3.5 text-right">Action</th>
+                </tr>
+              </thead>
+              <tbody>
+                {sorted.map((n) => (
+                  <tr key={n.ticker}>
+                    <td className="pl-3.5">
+                      <TickerLink ticker={n.ticker} className="font-mono font-medium text-ink hover:text-accent hover:underline">{displayTicker(n.ticker)}</TickerLink>
+                      {n.distress === "grey" && (
+                        <span
+                          title={`Altman-style Z ${n.altmanZ ?? "?"} — grey zone; balance sheet warrants a look`}
+                          className="ml-2 inline-flex items-center gap-1 text-[11px] text-warn"
+                        >
+                          <span className="dot bg-warn" />Z grey
+                        </span>
+                      )}
+                    </td>
+                    <td className="max-w-[200px] truncate text-[12px] text-ink-3">{names[n.ticker] || "—"}</td>
+                    <td className="text-[12px] text-ink-2">{n.sector}</td>
+                    <td className="n font-medium">{n.regimeFit}</td>
+                    <td className="n text-ink-2">{n.quant}</td>
+                    {GROUP_ORDER.map((g) => {
+                      const z = n.groups[g];
+                      return (
+                        <td key={g} className={`n ${z == null ? "text-ink-faint" : z >= 0 ? "text-pos" : "text-neg"}`}>
+                          {z == null ? "—" : `${z > 0 ? "+" : ""}${z.toFixed(1)}`}
+                        </td>
+                      );
+                    })}
+                    <td className="n text-ink-3">{n.confidence}</td>
+                    <td className="pr-3.5 text-right">
+                      {held(n.ticker) ? (
+                        <span className="text-[11.5px] text-ink-faint">Tracked</span>
+                      ) : (
+                        <button
+                          onClick={() => promote(n)}
+                          disabled={adding === n.ticker}
+                          className="inline-flex h-[22px] items-center gap-1 rounded-control border border-line bg-surface px-1.5 text-[11.5px] text-ink-2 hover:bg-surface-hover hover:text-ink disabled:opacity-40"
+                        >
+                          <AppIcon name="plus" size={11} strokeWidth={2.25} />{adding === n.ticker ? "…" : "Watchlist"}
+                        </button>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+        {!loading && sorted.length > 0 && (
+          <div className="flex h-8 items-center border-t border-line-soft px-3.5 text-[11.5px] text-ink-3">
+            {sorted.length} of {all.length} · {cadCount} CAD · {usdCount} USD
+          </div>
+        )}
+      </section>
     </div>
   );
 }

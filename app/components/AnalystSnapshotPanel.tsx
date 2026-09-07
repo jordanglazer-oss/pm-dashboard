@@ -33,6 +33,9 @@ const RATING_OPTIONS: { value: AnalystRating; label: string }[] = [
   { value: "not-covered", label: "Not covered" },
 ];
 
+const BLOCK = "rounded-control border border-line bg-surface px-3 py-2.5";
+const INPUT = "h-7 w-full rounded-control border border-line bg-surface px-2 text-[12.5px] text-ink outline-none focus:border-accent-border";
+
 export function AnalystSnapshotPanel({ ticker, stockCurrency, snapshot, breakdown, reports, onChange, onUpload, onRemoveReport, onConvertTarget }: Props) {
   const [local, setLocal] = useState<TickerSnapshot>(() => snapshot ?? {});
   const [uploading, setUploading] = useState<{ source: "rbc" | "jpm" | "morningstar" } | null>(null);
@@ -118,26 +121,22 @@ export function AnalystSnapshotPanel({ ticker, stockCurrency, snapshot, breakdow
     const isUploading = uploading?.source === which;
     const errMsg = uploadError?.source === which ? uploadError.message : null;
     return (
-      <div className="rounded-lg border border-line bg-white p-3">
-        <div className="flex items-center justify-between mb-2">
-          <div className="flex items-center gap-2 flex-wrap">
-            <span className="text-xs font-semibold text-ink-2">{label}</span>
-            {/* Freshness chip removed — the underlying multiplier is now
-                always 1.0 (no decay), so the chip would only ever read
-                "FRESH" and added visual noise without information. */}
-            {contribution && (
-              <span className="text-[10px] text-ink-3">
-                {contribution.contribution.toFixed(2)} pts
-              </span>
-            )}
-            {report && (
-              <span className="text-[10px] text-ink-3" title={`Uploaded ${report.uploadedAt.slice(0, 10)} · ${report.label}`}>
-                · PDF: {report.label.length > 30 ? report.label.slice(0, 27) + "..." : report.label}
-              </span>
-            )}
-          </div>
-          <div className="flex items-center gap-2">
-            <label className={`text-[10px] cursor-pointer ${isUploading ? "text-ink-faint" : "text-accent hover:text-accent"}`}>
+      <div className={BLOCK}>
+        <div className="mb-2 flex flex-wrap items-center gap-x-2 gap-y-1">
+          <span className="text-[12.5px] font-medium text-ink">{label}</span>
+          {/* Freshness chip removed — the underlying multiplier is now
+              always 1.0 (no decay), so the chip would only ever read
+              "FRESH" and added visual noise without information. */}
+          {contribution && (
+            <span className="font-mono text-[11.5px] text-ink-3">{contribution.contribution.toFixed(2)} pts</span>
+          )}
+          {report && (
+            <span className="text-[11.5px] text-ink-3" title={`Uploaded ${report.uploadedAt.slice(0, 10)} · ${report.label}`}>
+              · PDF: {report.label.length > 30 ? report.label.slice(0, 27) + "..." : report.label}
+            </span>
+          )}
+          <div className="ml-auto flex items-center gap-2.5">
+            <label className={`cursor-pointer text-[12px] ${isUploading ? "text-ink-faint" : "text-accent hover:underline"}`}>
               <input
                 type="file"
                 accept="application/pdf"
@@ -155,7 +154,7 @@ export function AnalystSnapshotPanel({ ticker, stockCurrency, snapshot, breakdow
               <button
                 type="button"
                 onClick={() => void onRemoveReport(which)}
-                className="text-[10px] text-ink-3 hover:text-neg"
+                className="text-[12px] text-ink-3 hover:text-neg"
                 title="Remove the uploaded PDF and clear extracted fields"
               >
                 Remove PDF
@@ -164,20 +163,20 @@ export function AnalystSnapshotPanel({ ticker, stockCurrency, snapshot, breakdow
           </div>
         </div>
         {errMsg && (
-          <p className="text-[10px] text-neg mb-2">{errMsg}</p>
+          <p className="mb-2 text-[11.5px] text-neg">{errMsg}</p>
         )}
         {!report ? (
-          <p className="text-[11px] text-ink-3 italic">
-            No PDF uploaded. Click <span className="font-medium">Upload PDF</span> above to extract rating, target, and report date.
+          <p className="text-[12px] text-ink-3">
+            No PDF uploaded. Click <span className="text-ink-2">Upload PDF</span> above to extract rating, target, and report date.
           </p>
         ) : (
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-[11px]">
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
             <label className="flex flex-col gap-0.5">
-              <span className="text-ink-3">Rating</span>
+              <span className="text-[11px] text-ink-3">Rating</span>
               <select
                 value={entry?.rating ?? "not-covered"}
                 onChange={(e) => patchAnalyst(which, { rating: e.target.value as AnalystRating })}
-                className="rounded border border-line bg-white px-1.5 py-1 outline-none focus:border-accent-border"
+                className={INPUT}
               >
                 {RATING_OPTIONS.map((o) => (
                   <option key={o.value} value={o.value}>{o.label}</option>
@@ -185,24 +184,24 @@ export function AnalystSnapshotPanel({ ticker, stockCurrency, snapshot, breakdow
               </select>
             </label>
             <div className="flex flex-col gap-0.5">
-              <span className="text-ink-3">Target price ({stockCurrency})</span>
-              <div className="flex items-center gap-1">
+              <span className="text-[11px] text-ink-3">Target price ({stockCurrency})</span>
+              <div className="flex items-center gap-1.5">
                 <input
                   type="number"
                   step="0.01"
                   value={entry?.target ?? ""}
                   onChange={(e) => patchAnalyst(which, { target: e.target.value === "" ? undefined : Number(e.target.value) })}
                   placeholder="$"
-                  className="rounded border border-line bg-white px-1.5 py-1 outline-none focus:border-accent-border flex-1 min-w-0"
+                  className={`${INPUT} min-w-0 flex-1 font-mono`}
                 />
                 {entry?.targetOriginal && entry.targetCurrency && (
-                  <span className="text-[9px] text-ink-3 whitespace-nowrap" title={`Converted from ${entry.targetCurrency} $${entry.targetOriginal.toFixed(2)} at report-date rate ${entry.targetCurrency}${stockCurrency}=${entry.fxRate?.toFixed(4) ?? "?"}`}>
+                  <span className="whitespace-nowrap font-mono text-[11px] text-ink-3" title={`Converted from ${entry.targetCurrency} $${entry.targetOriginal.toFixed(2)} at report-date rate ${entry.targetCurrency}${stockCurrency}=${entry.fxRate?.toFixed(4) ?? "?"}`}>
                     ({entry.targetCurrency} ${entry.targetOriginal.toFixed(2)})
                   </span>
                 )}
                 {entry?.target && !entry.targetOriginal && !entry.targetCurrency && (
                   <select
-                    className="text-[9px] border border-line rounded px-0.5 py-0.5 bg-white text-accent cursor-pointer shrink-0"
+                    className="h-7 shrink-0 cursor-pointer rounded-control border border-line bg-surface px-1 text-[11px] text-accent"
                     defaultValue=""
                     disabled={converting === which}
                     onChange={async (e) => {
@@ -219,10 +218,10 @@ export function AnalystSnapshotPanel({ ticker, stockCurrency, snapshot, breakdow
                       .map((c) => <option key={c} value={c}>{c}</option>)}
                   </select>
                 )}
-                {converting === which && <span className="text-[9px] text-ink-3">…</span>}
+                {converting === which && <span className="text-[11px] text-ink-3">…</span>}
                 {entry?.preferredCurrency && converting !== which && (
                   <span
-                    className="whitespace-nowrap text-[9px] font-semibold text-accent"
+                    className="whitespace-nowrap text-[11px] text-ink-3"
                     title={`Future ${which.toUpperCase()} reports for this name will assume ${entry.preferredCurrency} targets instead of guessing from the listing exchange. Pick another currency to change it.`}
                   >
                     {entry.preferredCurrency} default
@@ -231,51 +230,51 @@ export function AnalystSnapshotPanel({ ticker, stockCurrency, snapshot, breakdow
               </div>
             </div>
             <label className="flex flex-col gap-0.5">
-              <span className="text-ink-3">Report date</span>
+              <span className="text-[11px] text-ink-3">Report date</span>
               <input
                 type="date"
                 value={entry?.asOf ?? ""}
                 onChange={(e) => patchAnalyst(which, { asOf: e.target.value || undefined })}
-                className="rounded border border-line bg-white px-1.5 py-1 outline-none focus:border-accent-border"
+                className={INPUT}
               />
             </label>
             <div className="flex flex-col gap-0.5">
-              <span className="text-ink-3" title="Underlying price captured at upload time.">
+              <span className="text-[11px] text-ink-3" title="Underlying price captured at upload time.">
                 Price at report
               </span>
-              <span className="rounded border border-line-soft bg-surface-2 px-1.5 py-1 text-ink-2">
-                {entry?.priceAtReport ? `$${entry.priceAtReport.toFixed(2)}` : <span className="italic text-ink-3">—</span>}
+              <span className="flex h-7 items-center font-mono text-[12.5px] text-ink">
+                {entry?.priceAtReport ? `$${entry.priceAtReport.toFixed(2)}` : <span className="text-ink-3">—</span>}
               </span>
             </div>
           </div>
         )}
         {report && (report.extracted.thesis?.length || report.extracted.risks?.length || report.extracted.sectorView || report.extracted.keyMetrics?.length) && (
-          <div className="mt-3 pt-3 border-t border-line-soft space-y-2">
+          <div className="mt-2.5 space-y-2 border-t border-line-soft pt-2.5">
             {report.extracted.sectorView && (
-              <p className="text-[11px] text-ink-2 italic">{report.extracted.sectorView}</p>
+              <p className="text-[12px] leading-[1.5] text-ink-2">{report.extracted.sectorView}</p>
             )}
             {report.extracted.thesis && report.extracted.thesis.length > 0 && (
               <div>
-                <p className="text-[9px] font-semibold uppercase tracking-wider text-ink-3 mb-1">Thesis</p>
-                <ul className="text-[11px] text-ink-2 space-y-0.5 list-disc list-inside">
+                <p className="mb-0.5 text-[11px] text-ink-3">Thesis</p>
+                <ul className="list-inside list-disc space-y-0.5 text-[12px] leading-[1.5] text-ink-2">
                   {report.extracted.thesis.map((t, i) => <li key={i}>{t}</li>)}
                 </ul>
               </div>
             )}
             {report.extracted.risks && report.extracted.risks.length > 0 && (
               <div>
-                <p className="text-[9px] font-semibold uppercase tracking-wider text-ink-3 mb-1">Risks</p>
-                <ul className="text-[11px] text-ink-2 space-y-0.5 list-disc list-inside">
+                <p className="mb-0.5 text-[11px] text-ink-3">Risks</p>
+                <ul className="list-inside list-disc space-y-0.5 text-[12px] leading-[1.5] text-ink-2">
                   {report.extracted.risks.map((r, i) => <li key={i}>{r}</li>)}
                 </ul>
               </div>
             )}
             {report.extracted.keyMetrics && report.extracted.keyMetrics.length > 0 && (
               <div>
-                <p className="text-[9px] font-semibold uppercase tracking-wider text-ink-3 mb-1">Key metrics</p>
-                <ul className="text-[11px] text-ink-2 space-y-0.5">
+                <p className="mb-0.5 text-[11px] text-ink-3">Key metrics</p>
+                <ul className="space-y-0.5 text-[12px] text-ink-2">
                   {report.extracted.keyMetrics.map((m, i) => (
-                    <li key={i}><span className="text-ink-3">{m.label}:</span> <span className="font-medium">{m.value}</span></li>
+                    <li key={i}><span className="text-ink-3">{m.label}</span> <span className="font-mono font-medium text-ink">{m.value}</span></li>
                   ))}
                 </ul>
               </div>
@@ -288,43 +287,41 @@ export function AnalystSnapshotPanel({ ticker, stockCurrency, snapshot, breakdow
 
   const factset = local.factset;
   return (
-    <div className="ml-1 mt-3 mb-1 space-y-3">
-      <p className="text-[10px] font-semibold uppercase tracking-wider text-ink-3">
-        Analyst Snapshot · {displayTicker(ticker)}
-      </p>
+    <div className="mt-2.5 space-y-2.5">
+      <p className="text-[11px] text-ink-3">Analyst snapshot · {displayTicker(ticker)}</p>
 
       {/* FactSet street consensus */}
-      <div className="rounded-lg border border-line bg-white p-3">
-        <div className="flex items-center justify-between mb-2">
-          <span className="text-xs font-semibold text-ink-2">FactSet street consensus</span>
-          <span className="text-[9px] font-medium uppercase tracking-wider text-accent" title="Auto-populated from the FactSet Formula API on every rescore. Not manually editable.">Auto · FactSet</span>
+      <div className={BLOCK}>
+        <div className="mb-2 flex items-center justify-between gap-2">
+          <span className="text-[12.5px] font-medium text-ink">FactSet street consensus</span>
+          <span className="text-[11px] text-ink-3" title="Auto-populated from the FactSet Formula API on every rescore. Not manually editable.">Auto · FactSet</span>
         </div>
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-[11px]">
+        <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
           <div className="flex flex-col gap-0.5">
-            <span className="text-ink-3">Avg target price</span>
-            <span className="rounded border border-line-soft bg-surface-2 px-1.5 py-1 font-mono text-ink-2">
+            <span className="text-[11px] text-ink-3">Avg target price</span>
+            <span className="font-mono text-[12.5px] font-medium text-ink">
               {typeof factset?.averageTarget === "number" ? `$${factset.averageTarget.toFixed(2)}` : "—"}
             </span>
           </div>
           <div className="flex flex-col gap-0.5">
-            <span className="text-ink-3"># of analysts</span>
-            <span className="rounded border border-line-soft bg-surface-2 px-1.5 py-1 font-mono text-ink-2">
+            <span className="text-[11px] text-ink-3">Analysts</span>
+            <span className="font-mono text-[12.5px] font-medium text-ink">
               {typeof factset?.analystCount === "number" ? String(factset.analystCount) : "—"}
             </span>
           </div>
           <div className="flex flex-col gap-0.5">
-            <span className="text-ink-3">As of</span>
-            <span className="rounded border border-line-soft bg-surface-2 px-1.5 py-1 font-mono text-ink-2">
+            <span className="text-[11px] text-ink-3">As of</span>
+            <span className="font-mono text-[12.5px] font-medium text-ink">
               {factset?.asOf || "—"}
             </span>
           </div>
         </div>
         {breakdown.upside.target && breakdown.upside.upsidePercent !== undefined && (
-          <p className="mt-2 text-[10px] text-ink-3">
-            Implied upside: {breakdown.upside.upsidePercent >= 0 ? "+" : ""}
-            {breakdown.upside.upsidePercent.toFixed(1)}% → contribution {breakdown.upside.contribution.toFixed(2)} pts
+          <p className="mt-2 text-[11.5px] text-ink-3">
+            Implied upside <span className="font-mono">{breakdown.upside.upsidePercent >= 0 ? "+" : ""}{breakdown.upside.upsidePercent.toFixed(1)}%</span>
+            {" "}→ contribution <span className="font-mono">{breakdown.upside.contribution.toFixed(2)}</span> pts
             {breakdown.upside.targetSource === "none" && (
-              <span className="ml-1 italic">(no FactSet target entered — upside not computed)</span>
+              <span className="ml-1">(no FactSet target entered — upside not computed)</span>
             )}
           </p>
         )}
@@ -345,12 +342,12 @@ export function AnalystSnapshotPanel({ ticker, stockCurrency, snapshot, breakdow
         if (Math.abs(clipped) < 0.01) return null;
         const over = clipped > 0;
         return (
-          <div className={`rounded-lg border px-3 py-2 text-[11px] ${over ? "border-warn-border bg-warn-soft" : "border-line bg-surface-2"}`}>
-            <span className={`font-semibold ${over ? "text-warn" : "text-ink-2"}`}>
+          <div className={`rounded-control px-3 py-2 text-[11.5px] ${over ? "bg-warn-soft" : "bg-surface-2"}`}>
+            <span className={`font-medium ${over ? "text-warn" : "text-ink-2"}`}>
               {over ? "At the ceiling" : "At the floor"}
             </span>{" "}
             <span className="text-ink-2">
-              raw {breakdown.rawScore.toFixed(2)} → capped to {breakdown.score.toFixed(2)}
+              raw <span className="font-mono">{breakdown.rawScore.toFixed(2)}</span> → capped to <span className="font-mono">{breakdown.score.toFixed(2)}</span>
               {" · "}
               <span className="font-mono">{over ? "+" : ""}{clipped.toFixed(2)}</span> of signal not reflected
             </span>
@@ -374,23 +371,21 @@ export function AnalystSnapshotPanel({ ticker, stockCurrency, snapshot, breakdow
         const isUploading = uploading?.source === "morningstar";
         const errMsg = uploadError?.source === "morningstar" ? uploadError.message : null;
         return (
-          <div className="rounded-lg border border-line bg-white p-3">
-            <div className="mb-2 flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <span className="text-xs font-semibold text-ink-2">Morningstar</span>
-                {breakdown.morningstar && (
-                  <span className="text-[10px] text-ink-3">
-                    {breakdown.morningstar.stars}★ → {breakdown.morningstar.contribution >= 0 ? "+" : ""}{breakdown.morningstar.contribution.toFixed(2)} pts
-                  </span>
-                )}
-                {report && (
-                  <span className="text-[10px] text-ink-3" title={`Uploaded ${report.uploadedAt.slice(0, 10)} · ${report.label}`}>
-                    · PDF: {report.label.length > 30 ? report.label.slice(0, 27) + "..." : report.label}
-                  </span>
-                )}
-              </div>
-              <div className="flex items-center gap-2">
-                <label className={`cursor-pointer text-[10px] ${isUploading ? "text-ink-faint" : "text-accent"}`}>
+          <div className={BLOCK}>
+            <div className="mb-2 flex flex-wrap items-center gap-x-2 gap-y-1">
+              <span className="text-[12.5px] font-medium text-ink">Morningstar</span>
+              {breakdown.morningstar && (
+                <span className="font-mono text-[11.5px] text-ink-3">
+                  {breakdown.morningstar.stars}/5 stars → {breakdown.morningstar.contribution >= 0 ? "+" : ""}{breakdown.morningstar.contribution.toFixed(2)} pts
+                </span>
+              )}
+              {report && (
+                <span className="text-[11.5px] text-ink-3" title={`Uploaded ${report.uploadedAt.slice(0, 10)} · ${report.label}`}>
+                  · PDF: {report.label.length > 30 ? report.label.slice(0, 27) + "..." : report.label}
+                </span>
+              )}
+              <div className="ml-auto flex items-center gap-2.5">
+                <label className={`cursor-pointer text-[12px] ${isUploading ? "text-ink-faint" : "text-accent hover:underline"}`}>
                   <input
                     type="file"
                     accept="application/pdf"
@@ -405,24 +400,24 @@ export function AnalystSnapshotPanel({ ticker, stockCurrency, snapshot, breakdow
                   {isUploading ? "Extracting…" : report ? "Replace PDF" : "Upload PDF"}
                 </label>
                 {report && (
-                  <button onClick={() => void onRemoveReport("morningstar")} className="text-[10px] text-ink-3 hover:text-neg">
+                  <button type="button" onClick={() => void onRemoveReport("morningstar")} className="text-[12px] text-ink-3 hover:text-neg">
                     Remove
                   </button>
                 )}
               </div>
             </div>
-            {errMsg && <p className="mb-1 text-[10px] text-neg">{errMsg}</p>}
+            {errMsg && <p className="mb-1 text-[11.5px] text-neg">{errMsg}</p>}
             {ms ? (
-              <div className="flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-ink-2">
-                {ms.stars != null && <span>Stars: <span className="font-semibold text-ink">{ms.stars}★</span></span>}
-                {ms.moat && <span>Moat: <span className="font-semibold text-ink">{ms.moat}</span>{ms.moatTrend ? ` (${ms.moatTrend})` : ""}</span>}
-                {ms.capitalAllocation && <span>Capital allocation: <span className="font-semibold text-ink">{ms.capitalAllocation}</span></span>}
-                {ms.fairValue != null && <span>FVE: <span className="font-mono font-semibold text-ink">{ms.fairValue}</span> <span className="text-ink-faint">(cross-check only)</span></span>}
-                {ms.uncertainty && <span>Uncertainty: {ms.uncertainty}</span>}
+              <div className="flex flex-wrap gap-x-4 gap-y-1 text-[12px] text-ink-2">
+                {ms.stars != null && <span>Stars <span className="font-mono font-medium text-ink">{ms.stars}<span className="text-ink-faint">/5</span></span></span>}
+                {ms.moat && <span>Moat <span className="font-medium text-ink">{ms.moat}</span>{ms.moatTrend ? ` (${ms.moatTrend})` : ""}</span>}
+                {ms.capitalAllocation && <span>Capital allocation <span className="font-medium text-ink">{ms.capitalAllocation}</span></span>}
+                {ms.fairValue != null && <span>FVE <span className="font-mono font-medium text-ink">{ms.fairValue}</span> <span className="text-ink-faint">(cross-check only)</span></span>}
+                {ms.uncertainty && <span>Uncertainty {ms.uncertainty}</span>}
                 {ms.asOf && <span className="text-ink-3">as of {ms.asOf}</span>}
               </div>
             ) : (
-              <p className="text-[11px] text-ink-3">
+              <p className="text-[12px] text-ink-3">
                 No Morningstar report. Upload the PDF — stars, moat, capital allocation, FVE and uncertainty are extracted automatically. Stars tilt analystConsensus ±0.5; moat and capital allocation become scoring evidence.
               </p>
             )}
@@ -430,7 +425,7 @@ export function AnalystSnapshotPanel({ ticker, stockCurrency, snapshot, breakdow
         );
       })()}
 
-      <p className="text-[10px] text-ink-3 italic">
+      <p className="text-[11.5px] text-ink-3">
         RBC / JPM edits save automatically. The FactSet street consensus is auto-populated from the FactSet Formula API on every rescore and drives the analystConsensus score.
       </p>
     </div>
