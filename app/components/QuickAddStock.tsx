@@ -25,6 +25,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import type { Stock, InstrumentType, ScoreKey } from "@/app/lib/types";
 import { useStocks } from "@/app/lib/StockContext";
+import { AppIcon } from "./AppIcon";
 
 const ZERO_SCORES: Record<ScoreKey, number> = {
   brand: 0, secular: 0, researchCoverage: 0, marketEdge: 0,
@@ -138,34 +139,32 @@ export function QuickAddStock({ open, onClose }: Props) {
   return (
     <div
       // Backdrop — click anywhere outside the panel to dismiss.
-      className="fixed inset-0 z-[100] flex items-start justify-center bg-ink/60 backdrop-blur-sm pt-10 sm:pt-24 px-4"
+      className="fixed inset-0 z-[100] flex items-start justify-center bg-ink/40 px-4 pt-10 backdrop-blur-[2px] sm:pt-24"
       onClick={onClose}
     >
       <div
         // Stop propagation so clicks inside the panel don't bubble to the
         // backdrop and close the modal mid-typing.
         onClick={(e) => e.stopPropagation()}
-        className="w-full max-w-md rounded-card bg-white shadow-2xl border border-line p-5"
+        className="w-full max-w-[400px] overflow-hidden rounded-card border border-line bg-surface shadow-[var(--shadow-pop)]"
       >
-        <div className="flex items-start justify-between mb-4 gap-3">
-          <div>
-            <h2 className="text-base font-bold text-ink">Add to Watchlist</h2>
-            <p className="text-[11px] text-ink-3 mt-0.5">
-              New names land on the Watchlist. Promote to Portfolio via the Buy / Sell flow on Positioning.
-            </p>
-          </div>
+        <div className="panel-h">
+          <span className="t">Add to Watchlist</span>
           <button
             onClick={onClose}
             aria-label="Close"
-            className="text-ink-3 hover:text-ink-2 shrink-0"
+            className="ml-auto grid h-7 w-7 place-items-center rounded-control text-ink-3 transition-colors hover:bg-surface-hover hover:text-ink"
           >
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M6 18 18 6M6 6l12 12" /></svg>
+            <AppIcon name="x" size={14} />
           </button>
         </div>
 
-        <form onSubmit={handleSubmit} className="space-y-4">
+        <form onSubmit={handleSubmit} className="flex flex-col gap-3 px-3.5 py-3.5 text-[12.5px]">
+          <p className="text-[11.5px] leading-[1.45] text-ink-3">
+            New names land on the Watchlist. Promote to Portfolio via the Buy / Sell flow on Positioning.
+          </p>
           <div>
-            <label className="block text-xs font-semibold text-ink-3 uppercase tracking-wider mb-1">
+            <label className="mb-1 block text-[11px] text-ink-3">
               Ticker
             </label>
             <input
@@ -176,37 +175,36 @@ export function QuickAddStock({ open, onClose }: Props) {
               placeholder="AAPL, MSFT.TO, etc."
               autoComplete="off"
               spellCheck={false}
-              className="w-full rounded-lg border border-line bg-white text-ink px-3 py-2 text-sm font-mono uppercase placeholder:font-sans placeholder:normal-case placeholder:text-ink-3 focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
+              className="h-7 w-full rounded-control border border-line bg-surface px-2.5 font-mono text-[12.5px] uppercase text-ink outline-none placeholder:font-sans placeholder:normal-case placeholder:text-ink-3 focus:border-accent-border"
             />
-            <p className="text-[11px] text-ink-3 mt-1">
-              Use the Yahoo-style ticker (e.g. <code>.TO</code> for TSX listings).
+            <p className="mt-1 text-[11.5px] text-ink-3">
+              Use the Yahoo-style ticker (e.g. <code className="font-mono">.TO</code> for TSX listings).
               Name and sector auto-fill.
             </p>
           </div>
 
           {error && (
-            <div className="rounded-lg bg-neg-soft border border-neg-border px-3 py-2 text-xs text-neg">
+            <div className="flex items-center gap-2 text-[12.5px] text-neg">
+              <span className="dot bg-neg" />
               {error}
             </div>
           )}
 
-          <div className="flex items-center justify-end gap-2 pt-2">
+          <div className="flex items-center justify-end gap-2 pt-1">
             <button
               type="button"
               onClick={onClose}
-              className="rounded-lg px-4 py-2 text-sm font-semibold text-ink-2 hover:bg-surface-2 transition-colors"
+              className="h-7 rounded-control border border-line bg-surface px-2.5 text-[12.5px] text-ink-2 transition-colors hover:bg-surface-hover"
             >
               Cancel
             </button>
             <button
               type="submit"
               disabled={submitting || !ticker.trim()}
-              className="rounded-lg bg-accent px-4 py-2 text-sm font-semibold text-white hover:bg-accent disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center gap-2"
+              className="flex h-7 items-center gap-1.5 rounded-control bg-ink px-2.5 text-[12.5px] font-medium text-white transition-colors hover:bg-ink-2 disabled:cursor-not-allowed disabled:opacity-50"
             >
-              {submitting && (
-                <svg className="w-3.5 h-3.5 animate-spin" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0 3.181 3.183a8.25 8.25 0 0 0 13.803-3.7M4.031 9.865a8.25 8.25 0 0 1 13.803-3.7l3.181 3.182" /></svg>
-              )}
-              {submitting ? "Adding..." : "Add to Watchlist"}
+              {submitting && <AppIcon name="refresh" size={12} className="animate-spin" />}
+              {submitting ? "Adding" : "Add to Watchlist"}
             </button>
           </div>
         </form>

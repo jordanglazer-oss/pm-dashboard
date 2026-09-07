@@ -14,6 +14,8 @@
  */
 
 import React, { useCallback, useEffect, useMemo, useState } from "react";
+import { AppIcon } from "@/app/components/AppIcon";
+import { StatStrip } from "@/app/components/StatStrip";
 
 type Status = "ok" | "warn" | "fail" | "skipped";
 type Category = "prices" | "sentiment" | "macro" | "ai" | "infra";
@@ -33,11 +35,12 @@ type HealthResponse = {
   checks: CheckResult[];
 };
 
-const STATUS_STYLES: Record<Status, { badge: string; row: string; label: string }> = {
-  ok:      { badge: "bg-emerald-100 text-emerald-700 border-emerald-200", row: "border-l-emerald-400",  label: "OK" },
-  warn:    { badge: "bg-amber-100 text-amber-700 border-amber-200",       row: "border-l-amber-400",    label: "WARN" },
-  fail:    { badge: "bg-red-100 text-red-700 border-red-200",             row: "border-l-red-400",      label: "FAIL" },
-  skipped: { badge: "bg-slate-100 text-slate-500 border-slate-200",       row: "border-l-slate-300",    label: "SKIP" },
+/** Status = a dot and a word. Colour carries the meaning; the word names it. */
+const STATUS: Record<Status, { dot: string; text: string; word: string }> = {
+  ok:      { dot: "bg-pos",       text: "text-pos",   word: "OK" },
+  warn:    { dot: "bg-warn",      text: "text-warn",  word: "Warn" },
+  fail:    { dot: "bg-neg",       text: "text-neg",   word: "Fail" },
+  skipped: { dot: "bg-ink-faint", text: "text-ink-3", word: "Skipped" },
 };
 
 const CATEGORY_LABELS: Record<Category, string> = {
@@ -125,103 +128,104 @@ export default function AdminHealthPage() {
   }, [data]);
 
   return (
-    <div className="mx-auto max-w-4xl p-4 sm:p-6 space-y-5">
-      <header className="flex items-baseline justify-between gap-3 flex-wrap">
-        <div>
-          <h1 className="text-2xl font-bold text-slate-800">Health</h1>
-          <p className="text-sm text-slate-500 mt-0.5">
-            Status of every upstream data source. Auto-refreshes every 60 seconds.
-          </p>
-        </div>
-        <div className="flex items-center gap-3">
+    <div className="flex flex-col gap-3.5">
+      {/* Toolbar */}
+      <div className="flex flex-wrap items-center gap-3">
+        <span className="text-[11.5px] text-ink-3">
+          Status of every upstream data source · auto-refreshes every 60 seconds
           {data && (
-            <span className="text-xs text-slate-400" suppressHydrationWarning>
-              Updated {fmtRel(data.generatedAt)}
-            </span>
+            <span suppressHydrationWarning> · updated {fmtRel(data.generatedAt)}</span>
           )}
-          <button
-            onClick={load}
-            disabled={loading}
-            className="rounded-lg bg-slate-800 hover:bg-slate-700 text-white px-3 py-1.5 text-xs font-semibold disabled:opacity-50 flex items-center gap-1.5"
-          >
-            <svg className={`w-3.5 h-3.5 ${loading ? "animate-spin" : ""}`} fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0 3.181 3.183a8.25 8.25 0 0 0 13.803-3.7M4.031 9.865a8.25 8.25 0 0 1 13.803-3.7l3.181 3.182" /></svg>
-            {loading ? "Checking..." : "Re-check now"}
-          </button>
-        </div>
-      </header>
+        </span>
+        <button
+          onClick={load}
+          disabled={loading}
+          className="ml-auto flex h-7 items-center gap-1.5 rounded-control bg-ink px-2.5 text-[12.5px] font-medium text-white transition-colors hover:bg-ink-2 disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          <AppIcon name="refresh" size={13} strokeWidth={2} className={loading ? "animate-spin" : ""} />
+          {loading ? "Checking" : "Re-check now"}
+        </button>
+      </div>
 
       {data && (
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-          <SummaryTile label="OK" count={data.summary.ok} tone="ok" />
-          <SummaryTile label="Warn" count={data.summary.warn} tone="warn" />
-          <SummaryTile label="Fail" count={data.summary.fail} tone="fail" />
-          <SummaryTile label="Skipped" count={data.summary.skipped} tone="skipped" />
-        </div>
+        <StatStrip
+          cols={4}
+          items={[
+            { label: "OK", value: <span className={data.summary.ok > 0 ? "text-pos" : undefined}>{data.summary.ok}</span> },
+            { label: "Warn", value: <span className={data.summary.warn > 0 ? "text-warn" : undefined}>{data.summary.warn}</span> },
+            { label: "Fail", value: <span className={data.summary.fail > 0 ? "text-neg" : undefined}>{data.summary.fail}</span> },
+            { label: "Skipped", value: <span className="text-ink-3">{data.summary.skipped}</span> },
+          ]}
+        />
       )}
 
       {error && (
-        <div className="rounded-lg bg-red-50 border border-red-200 px-3 py-2 text-sm text-red-700">
+        <div className="flex items-center gap-2 text-[12.5px] text-neg">
+          <span className="dot bg-neg" />
           {error}
         </div>
       )}
 
-      {grouped.map(({ category, checks }) => (
-        <section key={category} className="space-y-2">
-          <h2 className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
-            {CATEGORY_LABELS[category]}
-          </h2>
-          <div className="space-y-1.5">
-            {checks.map((c) => {
-              const styles = STATUS_STYLES[c.status];
-              return (
-                <div
-                  key={c.name}
-                  className={`flex items-start gap-3 rounded-lg border border-slate-200 border-l-4 bg-white px-3 py-2 ${styles.row}`}
-                >
-                  <span
-                    className={`rounded-full border px-2 py-0.5 text-[10px] font-bold tracking-wider mt-0.5 ${styles.badge}`}
-                  >
-                    {styles.label}
-                  </span>
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-baseline gap-2 flex-wrap">
-                      <span className="text-sm font-semibold text-slate-800">{c.name}</span>
-                      {c.latencyMs != null && (
-                        <span className="text-[11px] text-slate-400">{c.latencyMs}ms</span>
-                      )}
-                      {c.sourceUrl && (
-                        <a
-                          href={c.sourceUrl}
-                          target="_blank"
-                          rel="noreferrer noopener"
-                          className="text-[11px] text-blue-600 hover:underline"
-                        >
-                          source ↗
-                        </a>
-                      )}
-                    </div>
-                    <p className="text-xs text-slate-500 mt-0.5 break-words">{c.message}</p>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </section>
-      ))}
+      {grouped.map(({ category, checks }) => {
+        const okCount = checks.filter((c) => c.status === "ok").length;
+        return (
+          <section key={category} className="panel">
+            <div className="panel-h">
+              <span className="t">{CATEGORY_LABELS[category]}</span>
+              <span className="m">{okCount} of {checks.length} OK</span>
+            </div>
+            <div className="overflow-x-auto">
+              <table className="data-table">
+                <thead>
+                  <tr>
+                    <th className="pl-3.5">Status</th>
+                    <th>Source</th>
+                    <th className="n">Latency</th>
+                    <th className="w-full">Message</th>
+                    <th />
+                  </tr>
+                </thead>
+                <tbody>
+                  {checks.map((c) => {
+                    const st = STATUS[c.status];
+                    return (
+                      <tr key={c.name}>
+                        <td className="pl-3.5">
+                          <span className={`inline-flex items-center gap-2 ${st.text}`}>
+                            <span className={`dot ${st.dot}`} />
+                            {st.word}
+                          </span>
+                        </td>
+                        <td className="font-medium">{c.name}</td>
+                        <td className="n text-ink-3">{c.latencyMs != null ? `${c.latencyMs}ms` : "—"}</td>
+                        <td className="whitespace-normal text-[12px] leading-[1.45] text-ink-2">{c.message}</td>
+                        <td className="pr-3.5 text-right">
+                          {c.sourceUrl && (
+                            <a
+                              href={c.sourceUrl}
+                              target="_blank"
+                              rel="noreferrer noopener"
+                              title="Open source"
+                              aria-label="Open source"
+                              className="inline-grid h-7 w-7 place-items-center rounded-control text-ink-3 transition-colors hover:bg-surface-hover hover:text-ink"
+                            >
+                              <AppIcon name="external" size={14} />
+                            </a>
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </section>
+        );
+      })}
 
       {!data && !error && (
-        <div className="text-sm text-slate-400">Loading health checks...</div>
+        <div className="text-[12.5px] text-ink-3">Loading health checks</div>
       )}
-    </div>
-  );
-}
-
-function SummaryTile({ label, count, tone }: { label: string; count: number; tone: Status }) {
-  const styles = STATUS_STYLES[tone];
-  return (
-    <div className={`rounded-lg border bg-white px-3 py-2 ${styles.badge.replace("100", "50").replace("700", "700")} border-l-4 ${styles.row}`}>
-      <div className="text-[10px] uppercase tracking-wider text-slate-500 font-semibold">{label}</div>
-      <div className="text-xl font-bold text-slate-800 mt-0.5">{count}</div>
     </div>
   );
 }

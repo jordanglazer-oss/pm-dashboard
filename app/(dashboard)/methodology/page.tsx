@@ -12,26 +12,25 @@ import Link from "next/link";
 
 function Sect({ n, title, children }: { n?: string; title: string; children: React.ReactNode }) {
   return (
-    <section className="rounded-card border border-line bg-white p-5 shadow-sm">
-      <h2 className="flex items-baseline gap-2 text-sm font-semibold text-ink">
-        {n && <span className="font-mono text-xs text-ink-3">{n}</span>}
-        {title}
-      </h2>
-      <div className="mt-2 space-y-2 text-[13.5px] leading-6 text-ink-2">{children}</div>
+    <section className="panel">
+      <div className="panel-h">
+        {n && <span className="font-mono text-[11px] text-ink-3">{n.padStart(2, "0")}</span>}
+        <span className="t">{title}</span>
+      </div>
+      <div className="flex max-w-[76ch] flex-col gap-2 px-3.5 py-3 text-[13px] leading-[1.55] text-ink-2 [&_b]:font-medium [&_b]:text-ink [&_a]:text-accent [&_a:hover]:underline">
+        {children}
+      </div>
     </section>
   );
 }
 
 export default function MethodologyPage() {
   return (
-    <main className="min-h-screen bg-[#f4f5f7] px-4 py-6 text-ink md:px-8 md:py-8">
-      <div className="mx-auto max-w-3xl space-y-4">
-        <div>
-          <h1 className="text-[17px] font-semibold tracking-[-0.02em]">How the process works</h1>
-          <p className="text-xs text-ink-3">
-            the selection &amp; discipline stack, in plain language — for anyone reviewing how decisions get made here
-          </p>
-        </div>
+    <main className="text-ink">
+      <div className="flex flex-col gap-3.5">
+        <p className="text-[11.5px] text-ink-3">
+          The selection &amp; discipline stack, in plain language — for anyone reviewing how decisions get made here.
+        </p>
 
         <Sect title="The one-paragraph version">
           <p>
@@ -66,7 +65,7 @@ export default function MethodologyPage() {
             predictive power is validated against forward returns before it earns any formal weight.
           </p>
           <p className="text-ink-3">
-            Where you see it: <Link href="/factor-lab" className="text-accent hover:underline">Factor Lab</Link>,
+            Where you see it: <Link href="/factor-lab">Factor Lab</Link>,
             including the side-by-side comparison against the 41-point score.
           </p>
         </Sect>
@@ -113,7 +112,7 @@ export default function MethodologyPage() {
 
         <Sect n="6" title="Attribution — every decision is graded against its sector">
           <p>
-            The <Link href="/journal" className="text-accent hover:underline">Decision Journal</Link> measures
+            The <Link href="/journal">Decision Journal</Link> measures
             each logged decision 1 and 3 months later against the name&rsquo;s sector ETF. Buys that
             outperformed their sector were right; trims where the name then underperformed were right. Hit
             rates count <b>completed windows only</b> — pending windows show &ldquo;so far&rdquo; and are
@@ -147,7 +146,7 @@ export default function MethodologyPage() {
           <p>
             <b>Factor screen:</b> two moving parts, both fully deterministic code.
           </p>
-          <ul className="list-disc space-y-1 pl-5">
+          <ul className="flex list-disc flex-col gap-1 pl-5">
             <li>
               <b>The measuring stick (universe):</b> roughly the S&amp;P 500 plus the S&amp;P/TSX 60 —
               ~560 names — with raw fundamentals pulled from the FactSet Formula API. Rebuilt <b>weekly</b>

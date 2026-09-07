@@ -4,6 +4,7 @@ import React, { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { canonicalTicker, displayTicker } from "@/app/lib/ticker";
+import { AppIcon } from "@/app/components/AppIcon";
 
 /**
  * "Thesis required" — funnel stage 4 → 5.
@@ -23,7 +24,7 @@ import { canonicalTicker, displayTicker } from "@/app/lib/ticker";
 
 type MissingRow = { ticker: string; name?: string; hasProse: boolean };
 
-const BADGE = "inline-flex items-center gap-1 rounded-full bg-white px-2 py-0.5 text-[11px] font-mono font-bold !text-warn ring-1 ring-warn-border hover:bg-warn hover:!text-white transition-colors";
+const BADGE = "inline-flex h-6 items-center gap-1 rounded-control border border-warn-border bg-surface px-2 font-mono text-[11.5px] font-medium !text-warn hover:bg-warn-soft transition-colors";
 
 export function ThesisRequiredBanner({ ticker, className }: { ticker?: string; className?: string }) {
   const [missing, setMissing] = useState<MissingRow[] | null>(null);
@@ -51,22 +52,24 @@ export function ThesisRequiredBanner({ ticker, className }: { ticker?: string; c
     if (!me) return null;
     const scrollToTile = () => document.getElementById("thesis-tile")?.scrollIntoView({ behavior: "smooth", block: "start" });
     return (
-      <div className={`flex flex-wrap items-center gap-3 rounded-card border border-warn-border bg-warn-soft px-4 py-3 ${className ?? ""}`}>
-        <span className="text-xs font-bold uppercase tracking-wide text-warn">Thesis required</span>
-        <span className="text-xs text-ink-2">
+      <div className={`flex flex-wrap items-center gap-3 rounded-card border border-warn-border bg-warn-soft px-3.5 py-2 ${className ?? ""}`}>
+        <span className="inline-flex items-center gap-1.5 text-[12.5px] font-medium text-warn">
+          <span className="dot bg-warn" /> Thesis required
+        </span>
+        <span className="text-[12.5px] text-ink-2">
           {displayTicker(ticker)} is in the Portfolio but isn&apos;t underwritten
           {me.hasProse ? " — the thesis is written but has no kill conditions, so nothing is monitoring it" : " — no thesis, no kill conditions, nothing is monitoring it"}.
         </span>
         <span className="ml-auto flex items-center gap-2">
-          <button onClick={scrollToTile} className="rounded-md border border-warn-border bg-white px-2.5 py-1 text-[11px] font-semibold text-warn hover:bg-warn hover:text-white transition-colors">
+          <button onClick={scrollToTile} className="inline-flex h-7 items-center rounded-control border border-warn-border bg-surface px-2.5 text-[12.5px] text-warn hover:bg-warn hover:text-white transition-colors">
             {me.hasProse ? "Add kill conditions" : "Write thesis"}
           </button>
           <button
             onClick={() => { scrollToTile(); window.dispatchEvent(new CustomEvent("thesis:draft", { detail: { ticker } })); }}
-            className="rounded-md bg-warn px-2.5 py-1 text-[11px] font-semibold !text-white hover:opacity-90 transition-opacity"
+            className="inline-flex h-7 items-center gap-1.5 rounded-control bg-ink px-2.5 text-[12.5px] font-medium !text-white hover:bg-ink-2 transition-colors"
             title="One AI call proposes a thesis + kill conditions from the evidence on file; you edit and sign"
           >
-            ✦ Draft with AI
+            <AppIcon name="spark" size={13} /> Draft with AI
           </button>
         </span>
       </div>
@@ -75,20 +78,22 @@ export function ThesisRequiredBanner({ ticker, className }: { ticker?: string; c
 
   // Dashboard mode: every gap, one line.
   return (
-    <div className={`flex flex-wrap items-center gap-2 rounded-card border border-warn-border bg-warn-soft px-4 py-2.5 ${className ?? ""}`}>
-      <span className="text-xs font-bold uppercase tracking-wide text-warn">Thesis required</span>
-      <span className="text-xs text-ink-2">
+    <div className={`flex flex-wrap items-center gap-2 rounded-card border border-warn-border bg-warn-soft px-3.5 py-2 ${className ?? ""}`}>
+      <span className="inline-flex items-center gap-1.5 text-[12.5px] font-medium text-warn">
+        <span className="dot bg-warn" /> Thesis required
+      </span>
+      <span className="text-[12.5px] text-ink-2">
         {missing.length} position{missing.length === 1 ? "" : "s"} in the Portfolio {missing.length === 1 ? "is" : "are"} not underwritten — unmonitored until a thesis and kill conditions are on file.
       </span>
       <span className="flex flex-wrap items-center gap-1.5">
         {missing.map((m) => (
           <Link key={m.ticker} href={`/stock/${encodeURIComponent(m.ticker)}#thesis-tile`} className={BADGE} title={`${m.name ?? m.ticker}${m.hasProse ? " — written, no kill conditions" : " — no thesis"}. Open the stock page to write or draft it.`}>
             {displayTicker(m.ticker)}
-            {m.hasProse && <span className="font-sans font-normal opacity-70">prose only</span>}
+            {m.hasProse && <span className="font-sans font-normal text-ink-3">prose only</span>}
           </Link>
         ))}
       </span>
-      <Link href="/thesis" className="ml-auto text-[11px] font-semibold !text-warn hover:underline">Thesis desk →</Link>
+      <Link href="/thesis" className="ml-auto inline-flex items-center gap-1 text-[12px] !text-accent hover:underline">Thesis desk <AppIcon name="arrowR" size={12} /></Link>
     </div>
   );
 }

@@ -14,6 +14,7 @@ import { SCORE_GROUPS, INSTRUMENT_LABELS } from "@/app/lib/types";
 import type { ScoredStock, ScoreKey, HealthData, FundHolding, FundSectorWeight } from "@/app/lib/types";
 import type { TechnicalIndicators, RiskAlert } from "@/app/lib/technicals";
 import { groupTotal, isScoreable, normalizeSector, computeScores } from "@/app/lib/scoring";
+import { AppIcon } from "./AppIcon";
 import { displayTicker, canonicalTicker } from "@/app/lib/ticker";
 import { VERDICT_LABEL, type SynthesisVerdict } from "@/app/lib/synthesis-screen-display";
 import { useSearchParams, useRouter, usePathname } from "next/navigation";
@@ -172,7 +173,17 @@ function FundSortIcon({ field, sortField, sortDir }: { field: FundSortField; sor
 type RankBucket = "Portfolio" | "Watchlist" | "Suggested" | "Movers";
 const RANK_BUCKETS: readonly RankBucket[] = ["Portfolio", "Watchlist", "Suggested", "Movers"];
 
-export function PortfolioOverview({ sidebar }: { sidebar?: React.ReactNode } = {}) {
+export function PortfolioOverview({
+  sidebar,
+  selectedTicker,
+  onSelectTicker,
+}: {
+  sidebar?: React.ReactNode;
+  /** Docked-inspector selection (canvas): the highlighted row. */
+  selectedTicker?: string | null;
+  /** Row click opens the inspector when provided (else the stock page). */
+  onSelectTicker?: (ticker: string) => void;
+} = {}) {
   const {
     portfolioStocks,
     watchlistStocks,
@@ -1157,42 +1168,47 @@ export function PortfolioOverview({ sidebar }: { sidebar?: React.ReactNode } = {
     }))
     .sort((a, b) => b.weight - a.weight);
 
-  return (
-    <div className="space-y-6">
-      {/* Top toolbar: Refresh All Data. The instrument filter moved into the
-          Fund & ETF Holdings section (it only applies to funds/ETFs now). */}
-      <div className="flex items-center gap-3 flex-wrap">
-        <div className="ml-auto flex items-center gap-2">
-          {refreshAllAt && !refreshingAll && !refreshProgress && (
-            <span className="text-[11px] text-ink-3">Last refreshed {formatRelTimestamp(refreshAllAt)}</span>
-          )}
+  const bucketSeg = (
+    <div className="seg">
+      {RANK_BUCKETS.map((b) => {
+        const active = rankBucket === b;
+        const count =
+          b === "Portfolio" ? scoreablePortfolio.length
+          : b === "Watchlist" ? scoreableWatchlist.length
+          : b === "Suggested" ? suggestedCount
+          : moversCount;
+        return (
+          <button key={b} onClick={() => selectRankBucket(b)} className={active ? "on" : ""} aria-pressed={active}>
+            {b} <span className="c">{count}</span>
+          </button>
+        );
+      })}
+    </div>
+  );
+
+  const refreshButton = (
+    <>
+      {refreshAllAt && !refreshingAll && !refreshProgress && (
+        <span className="hidden text-[11.5px] text-ink-3 xl:inline">Refreshed {formatRelTimestamp(refreshAllAt)}</span>
+      )}
           <button
             onClick={handleRefreshAll}
             disabled={refreshingAll || scoringAny}
-            className="flex items-center gap-1.5 rounded-control bg-pos px-4 py-2 text-xs font-semibold text-white hover:bg-pos disabled:opacity-50 transition-colors"
-            title="Refresh prices, technicals, health data, fund metadata and risk alerts for every position (no AI scoring)"
+            className="flex h-7 items-center gap-1.5 rounded-control border border-line bg-surface px-2.5 text-[12.5px] text-ink-2 hover:bg-surface-hover hover:text-ink disabled:opacity-50 transition-colors"
+            title={`Refresh prices, technicals, health data, fund metadata and risk alerts for every position (no AI scoring)${refreshAllAt ? ` · last ${formatRelTimestamp(refreshAllAt)}` : ""}`}
           >
-            {refreshingAll ? (
-              <>
-                <svg className="w-3.5 h-3.5 animate-spin" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0 3.181 3.183a8.25 8.25 0 0 0 13.803-3.7M4.031 9.865a8.25 8.25 0 0 1 13.803-3.7l3.181 3.182" /></svg>
-                {refreshProgress || "Refreshing..."}
-              </>
-            ) : refreshProgress ? (
-              <>{refreshProgress}</>
-            ) : (
-              <>
-                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0 3.181 3.183a8.25 8.25 0 0 0 13.803-3.7M4.031 9.865a8.25 8.25 0 0 1 13.803-3.7l3.181 3.182" /></svg>
-                Refresh All Data
-              </>
-            )}
+            <AppIcon name="refresh" size={13} strokeWidth={2} className={refreshingAll ? "animate-spin" : ""} />
+            {refreshingAll ? (refreshProgress || "Refreshing…") : refreshProgress ? refreshProgress : "Refresh all data"}
           </button>
-        </div>
-      </div>
+    </>
+  );
 
+  return (
+    <div className="flex flex-col gap-3.5">
       {/* ── Holdings full-width (canvas); Change Monitor + Sector Exposure
           keep everything they had, in a two-up band below the table. ── */}
-      <div className="space-y-5">
-        <div className="min-w-0 space-y-5">
+      <div className="flex flex-col gap-3.5">
+        <div className="min-w-0 flex flex-col gap-3.5">
 
       {/* Rankings — one table with a Portfolio / Watchlist / Suggested / Movers
           toggle. Suggested (research confluence, funnel stage 2) and Movers
@@ -1201,24 +1217,9 @@ export function PortfolioOverview({ sidebar }: { sidebar?: React.ReactNode } = {
           rhythm but not the data. */}
       {rankBucket === "Suggested" || rankBucket === "Movers" ? (
         <div>
-          <div className="mb-3 inline-flex items-center rounded-control border border-line bg-surface-2 p-0.5">
-            {RANK_BUCKETS.map((b) => {
-              const active = rankBucket === b;
-              const count =
-                b === "Portfolio" ? scoreablePortfolio.length
-                : b === "Watchlist" ? scoreableWatchlist.length
-                : b === "Suggested" ? suggestedCount
-                : moversCount;
-              return (
-                <button
-                  key={b}
-                  onClick={() => selectRankBucket(b)}
-                  className={`rounded-[6px] px-3.5 py-1.5 text-[13px] font-semibold transition-colors ${active ? "bg-accent text-white shadow-sm" : "text-ink-2 hover:bg-surface hover:text-ink"}`}
-                >
-                  {b} <span className={`font-normal ${active ? "text-white/70" : "text-ink-3"}`}>{count}</span>
-                </button>
-              );
-            })}
+          <div className="flex flex-wrap items-center gap-2">
+            {bucketSeg}
+            <div className="ml-auto flex items-center gap-2">{refreshButton}</div>
           </div>
           {rankBucket === "Suggested" ? (
             <SuggestedFunnel onCountChange={setSuggestedCount} />
@@ -1230,27 +1231,10 @@ export function PortfolioOverview({ sidebar }: { sidebar?: React.ReactNode } = {
       <RankingTable
         title={rankBucket === "Portfolio" ? "Portfolio Rankings" : "Watchlist Rankings"}
         subtitle={rankBucket === "Portfolio" ? "Bottom 3 flagged for review" : "Top 3 flagged as buy candidates"}
-        bucketTabs={
-          <div className="inline-flex items-center rounded-control border border-line bg-surface-2 p-0.5">
-            {RANK_BUCKETS.map((b) => {
-              const active = rankBucket === b;
-              const count =
-                b === "Portfolio" ? scoreablePortfolio.length
-                : b === "Watchlist" ? scoreableWatchlist.length
-                : b === "Suggested" ? suggestedCount
-                : moversCount;
-              return (
-                <button
-                  key={b}
-                  onClick={() => selectRankBucket(b)}
-                  className={`rounded-[6px] px-3.5 py-1.5 text-[13px] font-semibold transition-colors ${active ? "bg-accent text-white shadow-sm" : "text-ink-2 hover:bg-surface hover:text-ink"}`}
-                >
-                  {b} <span className={`font-normal ${active ? "text-white/70" : "text-ink-3"}`}>{count}</span>
-                </button>
-              );
-            })}
-          </div>
-        }
+        bucketTabs={bucketSeg}
+        toolbarRight={refreshButton}
+        selectedTicker={selectedTicker}
+        onSelectTicker={onSelectTicker}
         synthesisByTicker={synthesisByTicker}
         thesisByTicker={thesisByTicker}
         stocks={rankBucket === "Portfolio" ? scoreablePortfolio : scoreableWatchlist}
@@ -1287,60 +1271,46 @@ export function PortfolioOverview({ sidebar }: { sidebar?: React.ReactNode } = {
 
         {/* Below the table: Change Monitor (injected from the page) + the
             Sector-Exposure-vs-S&P panel — two-up on desktop. */}
-        <div className="grid items-start gap-5 lg:grid-cols-2">
+        <div className="grid items-start gap-3.5 lg:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)]">
           {sidebar}
-          <section className="rounded-card border border-line bg-surface p-4 shadow-sm">
-            <div className="flex items-baseline justify-between gap-2 mb-3">
-              <h2 className="text-[13px] font-bold text-ink">
-                Sector Exposure <span className="font-normal text-ink-3">vs S&amp;P</span>
-              </h2>
+          <section className="panel">
+            <div className="panel-h">
+              <span className="t">Sector vs S&amp;P 500</span>
+              <span className="m">active tilt</span>
               {portfolioBeta != null && (
-                <span className="text-[11px] text-ink-3" title="Weighted average beta across individual stocks only (excludes ETFs/mutual funds).">
+                <span className="m ml-auto font-mono" title="Weighted average beta across individual stocks only (excludes ETFs/mutual funds).">
                   β {portfolioBeta.toFixed(2)}
                 </span>
               )}
             </div>
-            <div className="space-y-2">
+            <div className="grid grid-cols-[96px_minmax(0,1fr)_52px_52px] items-center gap-x-2.5 gap-y-[7px] px-3.5 pb-2.5 pt-2 text-[12px]">
+              <span /><span /><span className="text-right text-[11px] text-ink-3">Book</span><span className="text-right text-[11px] text-ink-3">Tilt</span>
               {sectorExposure.map((s, i) => {
                 const spWeight = sp500Weights[s.sector] || 0;
                 const diff = s.weight - spWeight;
                 const over = diff > 1.5;
                 const under = diff < -1.5;
-                // Bar color by magnitude (#05): >25% concentration flag → warn,
-                // else largest sector → accent, rest → faint. The over/under-vs-
-                // S&P signal is preserved in the text badges below.
-                const barColor = s.weight > 25 ? "bg-warn" : i === 0 ? "bg-accent" : "bg-ink-faint";
+                const maxW = Math.max(32, ...sectorExposure.map((x) => x.weight));
                 return (
-                  <div key={s.sector}>
-                    <div className="flex items-baseline justify-between gap-2 text-[12px] mb-0.5">
-                      <span className="truncate text-ink-2">
-                        {s.sector}
-                        {/* Active tilt vs S&P: overweight green (you own more),
-                            underweight red (you own less), in-line grey. */}
-                        {over && <span className="ml-1 text-[9px] font-bold uppercase text-pos">Over</span>}
-                        {under && <span className="ml-1 text-[9px] font-bold uppercase text-neg">Under</span>}
-                        {!over && !under && <span className="ml-1 text-[9px] font-bold uppercase text-ink-3">In-line</span>}
-                      </span>
-                      <span className="whitespace-nowrap font-mono text-ink">
-                        <span className="font-semibold">{s.weight}%</span>{" "}
-                        <span className="text-ink-faint">/ {spWeight.toFixed(0)}</span>
-                      </span>
-                    </div>
-                    <div className="h-1.5 overflow-hidden rounded-full bg-line-soft">
+                  <React.Fragment key={s.sector}>
+                    <span className="truncate text-ink-2" title={`${s.sector} · ${over ? "overweight" : under ? "underweight" : "in line"} vs S&P`}>{s.sector}</span>
+                    <div className="h-1 overflow-hidden rounded-full bg-line-soft">
                       <div
-                        className={`animate-bar-grow h-full ${barColor}`}
-                        style={{ width: `${Math.min(100, s.weight * 2)}%`, animationDelay: `${i * 70}ms` }}
+                        className={`animate-bar-grow h-full rounded-full ${s.weight > 25 ? "bg-warn" : "bg-ink-2"}`}
+                        style={{ width: `${Math.min(100, (s.weight / maxW) * 100)}%`, animationDelay: `${i * 70}ms` }}
                       />
                     </div>
-                  </div>
+                    <span className="text-right font-mono text-ink">{s.weight.toFixed(1)}</span>
+                    <span className={`text-right font-mono ${over ? "text-pos" : under ? "text-neg" : "text-ink-3"}`}>{diff > 0 ? "+" : diff < 0 ? "−" : ""}{Math.abs(diff).toFixed(1)}</span>
+                  </React.Fragment>
                 );
               })}
               {sectorExposure.length === 0 && (
-                <p className="text-[12px] text-ink-3">No scored holdings yet.</p>
+                <p className="col-span-4 text-[12px] text-ink-3">No scored holdings yet.</p>
               )}
             </div>
-            <p className="mt-3 text-[10px] text-ink-3">
-              Alpha picks · {alphaCount} stocks · S&amp;P {marketData.sp500SectorWeightsAt ? `updated ${formatTimeAgo(marketData.sp500SectorWeightsAt)}` : "fallback (Refresh All Data)"}
+            <p className="border-t border-line-soft px-3.5 py-2 text-[11px] text-ink-3">
+              Alpha picks · {alphaCount} stocks · S&amp;P {marketData.sp500SectorWeightsAt ? `updated ${formatTimeAgo(marketData.sp500SectorWeightsAt)}` : "fallback (Refresh all data)"}
             </p>
           </section>
         </div>
@@ -1381,37 +1351,31 @@ export function PortfolioOverview({ sidebar }: { sidebar?: React.ReactNode } = {
           return fundSortDir === "asc" ? cmp : -cmp;
         });
 
-        const fThClass = "pb-2 font-semibold cursor-pointer select-none hover:text-ink transition-colors whitespace-nowrap";
+        const fThClass = "cursor-pointer select-none hover:text-ink transition-colors";
 
         return (
-          <section className="rounded-card border border-line bg-white p-5 shadow-sm">
-            <div className={`flex items-center gap-3 ${fundCollapsed ? "" : "mb-4"}`}>
+          <section className="panel">
+            <div className={`panel-h ${fundCollapsed ? "border-b-0" : ""}`}>
               <button
                 onClick={toggleFundCollapsed}
-                className="flex items-center gap-2 cursor-pointer hover:opacity-80 transition-opacity"
+                className="flex items-center gap-2 cursor-pointer text-left"
                 aria-expanded={!fundCollapsed}
                 aria-label={fundCollapsed ? "Expand Fund & ETF Holdings" : "Collapse Fund & ETF Holdings"}
               >
-                <svg className={`w-4 h-4 text-ink-3 transition-transform ${fundCollapsed ? "-rotate-90" : ""}`} fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
-                </svg>
-                <h2 className="text-[15px] font-bold text-ink">Fund & ETF Holdings</h2>
+                <span className={`text-ink-3 transition-transform ${fundCollapsed ? "-rotate-90" : ""}`}><AppIcon name="chevD" size={14} strokeWidth={2} /></span>
+                <span className="t">Funds &amp; ETFs</span>
               </button>
-              <span className="text-sm text-ink-3">{fundPortfolio.length} holdings</span>
+              <span className="m">{fundPortfolio.length} holdings</span>
               {!fundCollapsed && (
-                <div className="ml-auto flex items-center gap-1 flex-wrap">
+                <div className="seg ml-auto">
                   {(Object.keys(FUND_FILTER_LABELS) as FundFilter[]).map((key) => {
                     const count = fundFilterCounts[key];
                     if (key !== "all" && count === 0) return null;
                     const active = dashFilter === key;
                     return (
-                      <button
-                        key={key}
-                        onClick={() => setDashFilter(key)}
-                        className={`flex items-center gap-1 rounded-lg px-2.5 py-1 text-[11px] font-semibold transition-colors ${active ? "bg-ink text-white" : "bg-surface-2 text-ink-3 hover:bg-line hover:text-ink"}`}
-                      >
+                      <button key={key} onClick={() => setDashFilter(key)} className={active ? "on" : ""} aria-pressed={active}>
                         {FUND_FILTER_LABELS[key]}
-                        <span className={`rounded-full px-1 py-0.5 text-[9px] font-bold ${active ? "bg-white/20 text-white" : "bg-line text-ink-3"}`}>{count}</span>
+                        <span className="c">{count}</span>
                       </button>
                     );
                   })}
@@ -1420,7 +1384,7 @@ export function PortfolioOverview({ sidebar }: { sidebar?: React.ReactNode } = {
             </div>
             {!fundCollapsed && (
             <div className="overflow-x-auto">
-              <table className="w-full min-w-[800px] text-left text-sm">
+              <table className="data-table min-w-[800px]">
                 <thead>
                   <tr className="border-b border-line text-xs text-ink-3">
                     <th className={fThClass} onClick={() => handleFundSort("ticker")}>
@@ -1472,7 +1436,7 @@ export function PortfolioOverview({ sidebar }: { sidebar?: React.ReactNode } = {
                     const hasMer = validMer(autoMer) || validMer(manualMer);
                     return (
                       <tr key={s.ticker} className="border-b border-line-soft hover:bg-surface-hover transition-colors">
-                        <td className="py-3">
+                        <td>
                           <div className="flex items-center gap-2">
                             <Link href={`/stock/${s.ticker.toLowerCase()}`} className="font-bold text-ink hover:underline font-mono">
                               {displayTicker(s.ticker)}
@@ -1513,13 +1477,13 @@ export function PortfolioOverview({ sidebar }: { sidebar?: React.ReactNode } = {
                             )}
                           </div>
                         </td>
-                        <td className="py-3 text-ink-2 max-w-[180px] truncate">{s.name}</td>
-                        <td className="py-3">
+                        <td className="max-w-[180px] truncate text-ink-2">{s.name}</td>
+                        <td>
                           <span className={`rounded-md px-2 py-0.5 text-[10px] font-bold ${s.instrumentType === "etf" ? "bg-accent-soft text-accent" : "bg-violet-soft text-violet"}`}>
                             {INSTRUMENT_LABELS[s.instrumentType || "stock"]}
                           </span>
                         </td>
-                        <td className="py-3">
+                        <td>
                           {(() => {
                             // Only show Core/Alpha for equity-class ETFs/MFs
                             const nl = (s.name || "").toLowerCase();
@@ -1541,12 +1505,12 @@ export function PortfolioOverview({ sidebar }: { sidebar?: React.ReactNode } = {
                             );
                           })()}
                         </td>
-                        <td className="py-3 text-right text-ink-2">{s.price != null ? `$${s.price.toFixed(2)}` : "—"}</td>
-                        <td className={`py-3 text-right text-xs font-semibold ${fundReturnColor(perf?.ytd)}`}>{fundReturnFmt(perf?.ytd)}</td>
-                        <td className={`py-3 text-right text-xs font-semibold ${fundReturnColor(perf?.oneYear)}`}>{fundReturnFmt(perf?.oneYear)}</td>
-                        <td className={`py-3 text-right text-xs font-semibold ${fundReturnColor(perf?.threeYear)}`}>{fundReturnFmt(perf?.threeYear)}</td>
-                        <td className={`py-3 text-right text-xs font-semibold ${fundReturnColor(perf?.fiveYear)}`}>{fundReturnFmt(perf?.fiveYear)}</td>
-                        <td className={`py-3 text-right text-xs font-semibold ${fundReturnColor(perf?.tenYear)}`}>{fundReturnFmt(perf?.tenYear)}</td>
+                        <td className="n">{s.price != null ? s.price.toFixed(2) : "—"}</td>
+                        <td className={`n ${fundReturnColor(perf?.ytd)}`}>{fundReturnFmt(perf?.ytd)}</td>
+                        <td className={`n ${fundReturnColor(perf?.oneYear)}`}>{fundReturnFmt(perf?.oneYear)}</td>
+                        <td className={`n ${fundReturnColor(perf?.threeYear)}`}>{fundReturnFmt(perf?.threeYear)}</td>
+                        <td className={`n ${fundReturnColor(perf?.fiveYear)}`}>{fundReturnFmt(perf?.fiveYear)}</td>
+                        <td className={`n ${fundReturnColor(perf?.tenYear)}`}>{fundReturnFmt(perf?.tenYear)}</td>
                       </tr>
                     );
                   })}
@@ -1601,10 +1565,18 @@ function RankingTable({
   liveWeights,
   showWeight = true,
   bucketTabs,
+  toolbarRight,
+  selectedTicker,
+  onSelectTicker,
   loading,
   synthesisByTicker,
   thesisByTicker,
 }: {
+  /** Right-aligned toolbar extras (the Refresh-all-data button). */
+  toolbarRight?: React.ReactNode;
+  /** Docked-inspector selection + handler (canvas). */
+  selectedTicker?: string | null;
+  onSelectTicker?: (ticker: string) => void;
   title: string;
   subtitle: string;
   /** True while the app is still hydrating from KV — drives the skeleton. */
@@ -1857,16 +1829,16 @@ function RankingTable({
     prevTops.current = nextTops;
   }, [orderKey]);
 
-  const thClass = "pb-2 pr-3 pt-2 cursor-pointer hover:text-ink select-none whitespace-nowrap";
+  const thClass = "cursor-pointer hover:text-ink select-none";
   // Sticky first column — ticker + company name stay visible while the rest of
   // the row scrolls horizontally. `left-0` pins it to the scroll container.
   // The explicit bg matches the row background (white, or the hover tint via
   // the `group` pattern on the parent <tr>) so the scrolled-under columns
   // don't bleed through. `z-10` on body cells, `z-20` on header to stay above.
   const stickyHeadCls =
-    "pb-2 pl-4 pr-4 pt-2 cursor-pointer hover:text-ink select-none whitespace-nowrap sticky left-0 z-20 bg-white";
+    "cursor-pointer hover:text-ink select-none sticky left-0 z-20 bg-surface !pl-3.5";
   const stickyCellCls =
-    "py-3 pl-4 pr-4 sticky left-0 z-10 bg-white group-hover:bg-surface-hover align-top";
+    "sticky left-0 z-10 bg-surface group-hover:bg-surface-hover !pl-3.5 group-[.sel]:bg-accent-soft";
 
   const scoreableCount = stocks.filter((s) => isScoreable(s)).length;
   const chartingNonZeroCount = stocks.filter((s) => isScoreable(s) && (s.scores?.charting ?? 0) > 0).length;
@@ -1946,47 +1918,79 @@ function RankingTable({
   };
 
   return (
-    <section className="rounded-card border border-line bg-white shadow-sm overflow-hidden">
-      <div className={`flex items-center gap-3 flex-wrap px-4 py-3 ${collapsed ? "" : "border-b border-line-soft"}`}>
-        {bucketTabs || <h2 className="text-[15px] font-bold text-ink">{title}</h2>}
-        {/* Stale / Flagged filter chips */}
-        <button
-          onClick={() => setChipFilter(chipFilter === "stale" ? "all" : "stale")}
-          className={`rounded-pill border px-2.5 py-1 text-[12px] font-semibold transition-colors ${chipFilter === "stale" ? "border-warn-border bg-warn-soft text-warn" : "border-line bg-white text-ink-2 hover:text-ink"}`}
-          title="Only names whose score is older than 30 days"
-        >
-          Stale
-        </button>
-        <button
-          onClick={() => setChipFilter(chipFilter === "flagged" ? "all" : "flagged")}
-          className={`rounded-pill border px-2.5 py-1 text-[12px] font-semibold transition-colors ${chipFilter === "flagged" ? "border-neg-border bg-neg-soft text-neg" : "border-line bg-white text-ink-2 hover:text-ink"}`}
-          title="Only names with a risk flag, a value-trap haircut, or a tripped thesis"
-        >
-          Flagged
-        </button>
+    <section className="flex flex-col gap-3.5">
+      {/* Toolbar row (canvas): bucket switcher · attention chips · search ·
+          Score all · overflow menu · refresh. Sits above the panel, not in it. */}
+      <div className="flex flex-wrap items-center gap-2">
+        {bucketTabs || <h2 className="text-[13px] font-semibold text-ink">{title}</h2>}
+        {(() => {
+          const flaggedN = stocks.filter((s) => thesisByTicker?.has(s.ticker.toUpperCase()) || riskScanByTicker?.get(normalizeRiskTicker(s.ticker)) || s.valueTrap).length;
+          const staleN = stocks.filter((s) => isScoreable(s) && staleDaysOf(s) > 30).length;
+          return (
+            <>
+              <button
+                onClick={() => setChipFilter(chipFilter === "flagged" ? "all" : "flagged")}
+                aria-pressed={chipFilter === "flagged"}
+                className={`inline-flex h-7 items-center gap-1.5 rounded-control border px-2.5 text-[12.5px] transition-colors ${chipFilter === "flagged" ? "border-warn-border bg-warn-soft text-warn" : flaggedN > 0 ? "border-warn-soft bg-warn-soft text-warn hover:border-warn-border" : "border-line bg-surface text-ink-2 hover:bg-surface-hover"}`}
+                title="Only names with a risk flag, a value-trap haircut, or a tripped thesis"
+              >
+                <span className={`dot ${flaggedN > 0 ? "bg-warn" : "bg-ink-faint"}`} />
+                {flaggedN > 0 ? `${flaggedN} need attention` : "Flagged"}
+              </button>
+              <button
+                onClick={() => setChipFilter(chipFilter === "stale" ? "all" : "stale")}
+                aria-pressed={chipFilter === "stale"}
+                className={`inline-flex h-7 items-center gap-1.5 rounded-control border px-2.5 text-[12.5px] transition-colors ${chipFilter === "stale" ? "border-warn-border bg-warn-soft text-warn" : "border-line bg-surface text-ink-2 hover:bg-surface-hover"}`}
+                title="Only names whose score is older than 30 days"
+              >
+                Stale <span className="font-mono text-[11px] text-ink-3">{staleN}</span>
+              </button>
+            </>
+          );
+        })()}
         <span className="flex-grow" />
         <div className="relative">
-          <svg className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-ink-3" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="m21 21-4.34-4.34M17 11a6 6 0 1 1-12 0 6 6 0 0 1 12 0Z" /></svg>
+          <span className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-ink-3"><AppIcon name="search" size={13} strokeWidth={2} /></span>
           <input
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             placeholder={`Filter ${stocks.length} holdings`}
-            className="w-44 rounded-control border border-line bg-white py-1.5 pl-8 pr-2 text-[12px] outline-none placeholder:text-ink-3 focus:border-accent"
+            className="h-7 w-44 rounded-control border border-line bg-surface pl-7 pr-2 text-[12.5px] outline-none placeholder:text-ink-3 focus:border-accent"
           />
         </div>
-        {/* ⋯ menu — the full action cluster (Score All, rescores, exports),
-            unchanged, one click away instead of permanently in the header. */}
+        {onScoreAll && (
+          <button
+            onClick={() => onScoreAll?.(selectedInView.length > 0 ? selectedInView : undefined)}
+            disabled={scoreAllDisabled || scoreableCount === 0}
+            className="inline-flex h-7 items-center gap-1.5 rounded-control bg-ink px-2.5 text-[12.5px] font-medium text-white transition-colors hover:bg-ink-2 disabled:opacity-50"
+            title={
+              selectedInView.length > 0
+                ? `Full rescore of ONLY the ${selectedInView.length} checked name${selectedInView.length === 1 ? "" : "s"} (uncheck all to score the whole list)`
+                : `Score all ${title.toLowerCase()} stocks with Claude`
+            }
+          >
+            {scoring ? (
+              <><AppIcon name="refresh" size={13} strokeWidth={2} className="animate-spin" />{scoreProgress || "Scoring…"}</>
+            ) : selectedInView.length > 0 ? (
+              <>Score selected <span className="font-mono opacity-70">{selectedInView.length}</span></>
+            ) : (
+              <>Score all <span className="font-mono opacity-70">{scoreableCount}</span></>
+            )}
+          </button>
+        )}
+        {/* Overflow menu — the rest of the action cluster (rescore
+            fundamentals, exports, clear charting), unchanged, one click away. */}
         <div ref={menuRef} className="relative">
           <button
             onClick={() => setMenuOpen(!menuOpen)}
             aria-expanded={menuOpen}
             aria-label="Table actions"
-            className="flex h-8 w-8 items-center justify-center rounded-control border border-line bg-white text-ink-2 hover:bg-surface-hover hover:text-ink transition-colors"
+            className="grid h-7 w-7 place-items-center rounded-control border border-line bg-surface text-ink-2 hover:bg-surface-hover hover:text-ink transition-colors"
           >
-            ⋯
+            <AppIcon name="more" size={14} strokeWidth={2} />
           </button>
           {menuOpen && (
-            <div className="absolute right-0 top-10 z-30 w-max max-w-[26rem] rounded-card border border-line bg-white p-3 shadow-card">
+            <div className="absolute right-0 top-9 z-30 w-max max-w-[26rem] rounded-card border border-line bg-surface p-3 shadow-[var(--shadow-pop)]">
         {onScoreAll && (
           <div className="flex max-w-md flex-wrap items-center gap-2">
             {lastScoredAt && !scoring && (
@@ -2041,30 +2045,6 @@ function RankingTable({
                 </button>
               </>
             )}
-            <button
-              onClick={() => onScoreAll?.(selectedInView.length > 0 ? selectedInView : undefined)}
-              disabled={scoreAllDisabled || scoreableCount === 0}
-              className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold text-white transition-colors disabled:opacity-50 ${
-                flagType === "review" ? "bg-accent hover:bg-accent-ink" : "bg-ink hover:bg-ink"
-              }`}
-              title={
-                selectedInView.length > 0
-                  ? `Full rescore of ONLY the ${selectedInView.length} checked name${selectedInView.length === 1 ? "" : "s"} (uncheck all to score the whole list)`
-                  : `Score all ${title.toLowerCase()} stocks with Claude`
-              }
-            >
-              {scoring ? (
-                <>
-                  <svg className="w-3.5 h-3.5 animate-spin" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0 3.181 3.183a8.25 8.25 0 0 0 13.803-3.7M4.031 9.865a8.25 8.25 0 0 1 13.803-3.7l3.181 3.182" /></svg>
-                  {scoreProgress || "Scoring..."}
-                </>
-              ) : (
-                <>
-                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M9.813 15.904 9 18.75l-.813-2.846a4.5 4.5 0 0 0-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 0 0 3.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 0 0 3.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 0 0-3.09 3.09ZM18.259 8.715 18 9.75l-.259-1.035a3.375 3.375 0 0 0-2.455-2.456L14.25 6l1.036-.259a3.375 3.375 0 0 0 2.455-2.456L18 2.25l.259 1.035a3.375 3.375 0 0 0 2.456 2.456L21.75 6l-1.035.259a3.375 3.375 0 0 0-2.456 2.456Z" /></svg>
-                  {selectedInView.length > 0 ? `Score selected (${selectedInView.length})` : `Score All (${scoreableCount})`}
-                </>
-              )}
-            </button>
             {/* Partial rescore — fundamentals only. The credit-saver after a
                 methodology change touching growth/valuation: ~3 categories of
                 output instead of 19, no web search, no narrative rewrite. */}
@@ -2092,10 +2072,12 @@ function RankingTable({
             </div>
           )}
         </div>
+        {toolbarRight}
       </div>
+      <div className={`panel ${collapsed ? "hidden" : ""}`}>
       {/* Score All failure banner — persists until dismissed */}
       {!scoring && scoreFailures && scoreFailures.length > 0 && (
-        <div className="mx-4 mt-2 flex items-center gap-2 rounded-lg bg-neg-soft border border-neg-border px-3 py-2 text-xs text-neg">
+        <div className="m-3 flex items-center gap-2 rounded-control bg-neg-soft border border-neg-border px-3 py-2 text-xs text-neg">
           <svg className="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126ZM12 15.75h.007v.008H12v-.008Z" /></svg>
           <span className="font-medium">{scoreFailures.length} stock{scoreFailures.length > 1 ? "s" : ""} failed to score: {scoreFailures.join(", ")}</span>
           <span className="text-neg">— try scoring individually from the stock page</span>
@@ -2113,7 +2095,7 @@ function RankingTable({
         );
         if (missingSummaries.length === 0 && !backfilling) return null;
         return (
-          <div className="mx-4 mt-2 flex items-center gap-2 rounded-lg bg-warn-soft border border-warn-border px-3 py-2 text-xs text-warn">
+          <div className="m-3 flex items-center gap-2 rounded-control bg-warn-soft border border-warn-border px-3 py-2 text-xs text-warn">
             {backfilling ? (
               <>
                 <svg className="w-3.5 h-3.5 animate-spin flex-shrink-0" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0 3.181 3.183a8.25 8.25 0 0 0 13.803-3.7M4.031 9.865a8.25 8.25 0 0 1 13.803-3.7l3.181 3.182" /></svg>
@@ -2149,7 +2131,7 @@ function RankingTable({
         );
         if (stocksWithGaps.length === 0 && !fillingGaps) return null;
         return (
-          <div className="mx-4 mt-2 flex items-center gap-2 rounded-lg bg-violet-50 border border-violet-border px-3 py-2 text-xs text-violet">
+          <div className="m-3 flex items-center gap-2 rounded-control bg-violet-soft border border-violet-border px-3 py-2 text-xs text-violet">
             {fillingGaps ? (
               <>
                 <svg className="w-3.5 h-3.5 animate-spin flex-shrink-0" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0 3.181 3.183a8.25 8.25 0 0 0 13.803-3.7M4.031 9.865a8.25 8.25 0 0 1 13.803-3.7l3.181 3.182" /></svg>
@@ -2232,9 +2214,9 @@ function RankingTable({
         })}
       </div>
       <div className="hidden md:block max-h-[80vh] overflow-auto">
-        <table className="w-full text-left text-sm">
-          <thead className="sticky top-0 z-20 bg-white shadow-[0_1px_0_0_rgb(226_232_240)]">
-            <tr className="border-b border-line text-xs text-ink-3">
+        <table className="data-table">
+          <thead className="sticky top-0 z-20 bg-surface">
+            <tr>
               <th className={stickyHeadCls} onClick={() => toggleSort("ticker")}>
                 <input
                   type="checkbox"
@@ -2247,30 +2229,30 @@ function RankingTable({
                 Ticker{arrow("ticker")}
               </th>
               <th className={thClass} onClick={() => toggleSort("sector")}>Sector{arrow("sector")}</th>
-              {showWeight && <th className={`${thClass} text-right`}>Weight</th>}
+              {showWeight && <th className={`${thClass} text-right`}>Wt %</th>}
               <th className={`${thClass} text-right`} onClick={() => toggleSort("price")}>Price{arrow("price")}</th>
               <th className={`${thClass} text-right`}>Day</th>
-              <th className={`${thClass} hidden lg:table-cell`}>Synthesis</th>
+              <th className={`${thClass} hidden lg:table-cell`}>Verdict</th>
               <th className={`${thClass} text-right`} onClick={() => toggleSort("adjusted")}>Score{arrow("adjusted")}</th>
               <th className={thClass}>Status</th>
-              <th className="pb-2 pr-2 w-8" aria-label="Detail"></th>
+              <th className="w-8" aria-label="Detail"></th>
             </tr>
           </thead>
           <tbody>
             {displayRows.map((row, rowIdx) => {
               if (row.kind === "header") {
                 return (
-                  <tr key={row.key} className="bg-surface-hover">
-                    <td colSpan={40} className="p-0 sticky left-0 bg-surface-hover z-10">
+                  <tr key={row.key} className="bg-surface-2">
+                    <td colSpan={40} className="!h-7 !p-0 sticky left-0 bg-surface-2 z-10">
                       <button
                         type="button"
                         onClick={() => collapseKey && setUiPref(`${collapseKey}.${row.currencyKey}`, row.collapsed ? "0" : "1")}
-                        className="flex w-full items-center gap-1.5 py-1.5 px-2 text-[11px] font-bold uppercase tracking-wider text-ink-3 hover:bg-surface-2 transition-colors text-left"
+                        className="flex h-7 w-full items-center gap-1.5 px-3.5 text-[11px] font-medium text-ink-3 hover:text-ink transition-colors text-left"
                         aria-expanded={!row.collapsed}
                         title={row.collapsed ? "Expand" : "Collapse"}
                       >
-                        <span className={`text-ink-3 transition-transform ${row.collapsed ? "-rotate-90" : ""}`}>{"▾"}</span>
-                        {row.label} <span className="font-medium normal-case text-ink-3">· {row.count}</span>
+                        <span className={`text-ink-3 transition-transform ${row.collapsed ? "-rotate-90" : ""}`}><AppIcon name="chevD" size={12} strokeWidth={2} /></span>
+                        {row.label} <span className="font-mono">· {row.count}</span>
                       </button>
                     </td>
                   </tr>
@@ -2288,14 +2270,17 @@ function RankingTable({
                     Score column already convey best/worst). */}
                 <tr
                   ref={(el) => { const m = rowElRefs.current; if (el) m.set(s.ticker, el); else m.delete(s.ticker); }}
-                  className="animate-row-in group cursor-pointer border-b border-l-2 border-l-transparent border-line-soft transition-colors hover:bg-surface-hover hover:border-l-accent [&>td]:align-top"
+                  className={`animate-row-in group cursor-pointer transition-colors ${selectedTicker && canonicalTicker(selectedTicker) === canonicalTicker(s.ticker) ? "sel" : ""}`}
                   style={{ animationDelay: `${Math.min(rowIdx, 12) * 28}ms` }}
+                  aria-selected={selectedTicker != null && canonicalTicker(selectedTicker) === canonicalTicker(s.ticker)}
                   onClick={(e) => {
-                    // Whole row opens the stock page — unless the click hit a
-                    // real control (checkbox, links, expand chevron, chips).
+                    // Whole row selects the name into the docked inspector
+                    // (canvas) — or opens the stock page when no inspector is
+                    // mounted — unless the click hit a real control.
                     const el = e.target as HTMLElement;
                     if (el.closest("a, button, input, [role='button']")) return;
-                    router.push(`/stock/${s.ticker.toLowerCase()}`);
+                    if (onSelectTicker) onSelectTicker(s.ticker);
+                    else router.push(`/stock/${s.ticker.toLowerCase()}`);
                   }}
                 >
                   <td className={stickyCellCls}>
@@ -2308,8 +2293,8 @@ function RankingTable({
                         className="h-3.5 w-3.5 shrink-0 cursor-pointer accent-accent"
                         title={`Include ${displayTicker(s.ticker)} in a targeted rescore (scopes the Score all / Rescore fundamentals buttons)`}
                       />
-                      <Link href={`/stock/${s.ticker.toLowerCase()}`} className="hover:underline block">
-                        <div className="font-bold text-ink font-mono flex items-center gap-1.5">
+                      <Link href={`/stock/${s.ticker.toLowerCase()}`} className="block hover:underline" onClick={(e) => { if (onSelectTicker) { e.preventDefault(); onSelectTicker(s.ticker); } }}>
+                        <div className="flex items-center gap-1.5 font-mono font-medium text-ink">
                           {displayTicker(s.ticker)}
                           {(() => {
                             const risk = riskScanByTicker?.get(normalizeRiskTicker(s.ticker));
@@ -2323,10 +2308,10 @@ function RankingTable({
                                   : "bg-warn-soft text-warn border-warn-border";
                             return (
                               <span
-                                className={`rounded-md border px-1 py-0 text-[8px] font-bold uppercase tracking-wider ${tone}`}
+                                className={`inline-flex h-4 items-center rounded border px-1 text-[10px] font-medium ${tone}`}
                                 title={`Today's brief — ${risk.priority} risk. ${risk.summary} Action: ${risk.action}`}
                               >
-                                ⚠ {risk.priority === "Medium-High" ? "MH" : risk.priority.slice(0, 3).toUpperCase()}
+                                {risk.priority === "Medium-High" ? "MH" : risk.priority.slice(0, 3)}
                               </span>
                             );
                           })()}
@@ -2334,30 +2319,30 @@ function RankingTable({
                               is never applied silently. */}
                           {s.valueTrap && (
                             <span
-                              className="rounded-md border px-1 py-0 text-[8px] font-bold uppercase tracking-wider bg-warn-soft text-warn border-warn-border"
+                              className="inline-flex h-4 items-center rounded border px-1 text-[10px] font-medium bg-warn-soft text-warn border-warn-border"
                               title={`Value-trap haircut: FY+1 estimates being cut (net revisions ${s.valueTrap.net}) — valuation categories ×0.5 (${s.valueTrap.pointsRemoved} pts removed). Lifts automatically when revisions recover.`}
                             >
                               VT
                             </span>
                           )}
                         </div>
-                        <div className="text-xs text-ink-3 max-w-[160px] truncate" title={s.name}>{s.name}</div>
+                        <div className="max-w-[160px] truncate text-[12px] text-ink-3" title={s.name}>{s.name}</div>
                       </Link>
                     </div>
                   </td>
-                  <td className="py-3 pr-3 text-ink-2 text-xs whitespace-nowrap">{s.sector || "—"}</td>
+                  <td className="text-ink-2">{s.sector || "—"}</td>
                   {showWeight && (
-                    <td className="py-3 pr-3 text-right font-medium text-ink tabular-nums whitespace-nowrap">
+                    <td className="n">
                       {(() => {
                         const w = liveWeights?.get(canonicalTicker(s.ticker));
                         return w != null ? `${w.toFixed(1)}%` : <span className="text-ink-faint">—</span>;
                       })()}
                     </td>
                   )}
-                  <td className="py-3 pr-3 text-right text-ink-2 tabular-nums">
-                    <FlashValue value={s.price ?? null}>{s.price != null ? `$${s.price.toFixed(2)}` : "—"}</FlashValue>
+                  <td className="n">
+                    <FlashValue value={s.price ?? null}>{s.price != null ? s.price.toFixed(2) : "—"}</FlashValue>
                   </td>
-                  <td className="py-3 pr-3 text-right tabular-nums whitespace-nowrap">
+                  <td className="n">
                     {(() => {
                       const pc = livePreviousCloses[s.ticker];
                       if (s.price == null || pc == null || pc <= 0) return <span className="text-ink-faint">—</span>;
@@ -2365,10 +2350,10 @@ function RankingTable({
                       return <span className={chg >= 0 ? "text-pos" : "text-neg"}>{chg >= 0 ? "+" : ""}{chg.toFixed(1)}%</span>;
                     })()}
                   </td>
-                  <td className="py-3 pr-3 hidden lg:table-cell">
+                  <td className="hidden lg:table-cell">
                     {(() => {
                       const sv = synthesisByTicker?.get(canonicalTicker(s.ticker));
-                      if (!sv) return <span className="text-ink-faint text-[11px]">—</span>;
+                      if (!sv) return <span className="text-ink-faint">—</span>;
                       const tone =
                         sv.verdict === "advance" || sv.verdict === "thesis-intact" ? "bg-pos-soft text-pos"
                         : sv.verdict === "pass" || sv.verdict === "exit-watch" ? "bg-neg-soft text-neg"
@@ -2377,7 +2362,7 @@ function RankingTable({
                         <Link
                           href="/synthesis"
                           onClick={(e) => e.stopPropagation()}
-                          className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-bold whitespace-nowrap ${tone}`}
+                          className={`inline-flex h-[18px] items-center gap-1 rounded px-1.5 text-[11px] font-medium whitespace-nowrap ${tone}`}
                           title={`Latest synthesis verdict${sv.stale ? " (stale — regenerate on the Synthesis screen)" : ""} — click to open Ideas › Synthesis`}
                         >
                           {VERDICT_LABEL[sv.verdict] ?? sv.verdict}
@@ -2387,49 +2372,54 @@ function RankingTable({
                     })()}
                   </td>
                   {/* Score = adjusted composite (with regime delta) */}
-                  <td className="py-3 pr-3 text-right whitespace-nowrap">
-                    <span className="font-bold text-ink tabular-nums">{Number(s.adjusted.toFixed(1))}</span>
-                    <span className="text-ink-faint text-[11px]">/41</span>
-                    <span className={`ml-1 text-[11px] ${adj >= 0 ? "text-pos" : "text-neg"}`}>
-                      {adj >= 0 ? "+" : ""}{adj}
+                  <td className="n">
+                    <span className="font-medium text-ink">{Number(s.adjusted.toFixed(1))}</span>
+                    <span className="text-[11px] text-ink-faint">/41</span>
+                    <span className={`ml-1 text-[11px] ${adj > 0 ? "text-pos" : adj < 0 ? "text-neg" : "text-ink-faint"}`} title="Regime adjustment vs the raw score">
+                      {adj > 0 ? "+" : ""}{adj}
                     </span>
                   </td>
-                  <td className="py-3 pr-3 whitespace-nowrap">
+                  <td>
                     {(() => {
                       // Status (canvas): thesis tripped > risk flag > value trap > stale > current.
                       const thesis = thesisByTicker?.get(s.ticker.toUpperCase());
-                      if (thesis) return <span className="rounded-full bg-neg-soft px-2 py-0.5 text-[10px] font-bold text-neg">Thesis {thesis === "broken" ? "tripped" : "eroding"}</span>;
+                      const cell = (dot: string, text: string, cls: string, title?: string) => (
+                        <span className="inline-flex items-center gap-1.5 text-[12px]" title={title}>
+                          <span className={`dot ${dot}`} /><span className={cls}>{text}</span>
+                        </span>
+                      );
+                      if (thesis) return cell(thesis === "broken" ? "bg-neg" : "bg-warn", `Thesis ${thesis === "broken" ? "tripped" : "eroding"}`, thesis === "broken" ? "text-neg" : "text-warn");
                       const risk = riskScanByTicker?.get(normalizeRiskTicker(s.ticker));
-                      if (risk) return <span className="rounded-full bg-neg-soft px-2 py-0.5 text-[10px] font-bold text-neg">Risk · {risk.priority}</span>;
-                      if (s.valueTrap) return <span className="rounded-full bg-warn-soft px-2 py-0.5 text-[10px] font-bold text-warn">Revisions ↓</span>;
+                      if (risk) return cell("bg-neg", `Risk · ${risk.priority}`, "text-neg", `${risk.summary} Action: ${risk.action}`);
+                      if (s.valueTrap) return cell("bg-warn", "Revisions down", "text-warn", `Value-trap haircut: net revisions ${s.valueTrap.net} — valuation categories ×0.5 (${s.valueTrap.pointsRemoved} pts removed)`);
                       const d = staleDaysOf(s);
-                      if (isScoreable(s) && d > 30) return <span className="rounded-full bg-warn-soft px-2 py-0.5 text-[10px] font-bold text-warn">Stale {Number.isFinite(d) ? `${Math.round(d)}d` : ""}</span>;
-                      return <span className="rounded-full bg-pos-soft px-2 py-0.5 text-[10px] font-bold text-pos">Current</span>;
+                      if (isScoreable(s) && d > 30) return cell("bg-warn", `Stale ${Number.isFinite(d) ? `${Math.round(d)}d` : ""}`, "text-warn");
+                      return cell("bg-ink-faint", "Current", "text-ink-3");
                     })()}
                   </td>
-                  <td className="py-3 pr-2 text-right">
+                  <td className="!pr-2 text-right">
                     <button
                       type="button"
                       onClick={() => toggleRowExpanded(s.ticker)}
-                      className="text-ink-3 hover:text-ink transition-colors"
+                      className="grid h-6 w-6 place-items-center rounded text-ink-3 hover:bg-surface-hover hover:text-ink transition-colors"
                       aria-expanded={expanded}
                       title={expanded ? "Hide detail" : "Show What They Do / Why Own It / category scores"}
                     >
-                      <svg className={`w-4 h-4 transition-transform ${expanded ? "rotate-180" : ""}`} fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" /></svg>
+                      <AppIcon name="chevD" size={14} strokeWidth={2} className={`transition-transform ${expanded ? "rotate-180" : ""}`} />
                     </button>
                   </td>
                 </tr>
                 {expanded && (
-                  <tr className="border-b border-line-soft bg-surface-2/70">
-                    <td colSpan={9} className="px-4 py-3">
+                  <tr className="bg-surface-2">
+                    <td colSpan={9} className="!h-auto whitespace-normal !px-3.5 !py-3 align-top">
                       <div className="grid gap-4 md:grid-cols-2">
                         <div>
-                          <div className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-ink-3">What They Do</div>
-                          <p className="text-xs leading-relaxed text-ink-2">{s.companySummary || <span className="text-ink-faint">—</span>}</p>
+                          <div className="mb-1 text-[11px] text-ink-3">What they do</div>
+                          <p className="text-[12.5px] leading-[1.5] text-ink-2">{s.companySummary || <span className="text-ink-faint">—</span>}</p>
                         </div>
                         <div>
-                          <div className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-ink-3">Why Own It</div>
-                          <p className="text-xs leading-relaxed text-ink-2">{s.investmentThesis || <span className="text-ink-faint">—</span>}</p>
+                          <div className="mb-1 text-[11px] text-ink-3">Why own it</div>
+                          <p className="text-[12.5px] leading-[1.5] text-ink-2">{s.investmentThesis || <span className="text-ink-faint">—</span>}</p>
                         </div>
                       </div>
                       <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px]">
@@ -2451,12 +2441,13 @@ function RankingTable({
           </tbody>
         </table>
       </div>
-      <div className="flex items-center justify-between border-t border-line bg-surface-2 px-4 py-2 text-[11px] text-ink-3">
-        <span>Showing {effSorted.length} of {stocks.length} · sorted by {String(sort.key)}</span>
-        <span className="hidden sm:inline">click a row to open the stock page</span>
+      <div className="flex h-8 items-center justify-between border-t border-line-soft px-3.5 text-[11.5px] text-ink-3">
+        <span>{effSorted.length} of {stocks.length} · sorted by {String(sort.key)}</span>
+        <span className="hidden sm:inline">{onSelectTicker ? "click a row to inspect it · ↗ ticker opens the page" : "click a row to open the stock page"}</span>
       </div>
       </>
       )}
+      </div>
     </section>
   );
 }

@@ -3,7 +3,7 @@
 import React from "react";
 import { useStocks } from "@/app/lib/StockContext";
 import { MorningBrief } from "@/app/components/MorningBrief";
-import { DailySummaryView, SUMMARY_SECTIONS } from "@/app/components/brief/DailySummaryView";
+import { DailySummaryView } from "@/app/components/brief/DailySummaryView";
 
 export default function BriefPage() {
   const { stocks, scoredStocks, marketData, brief, offensiveExposure, setBrief, updateMarketData } = useStocks();
@@ -28,7 +28,6 @@ export default function BriefPage() {
           onBriefGenerated={setBrief}
           onUpdateMarketData={updateMarketData}
           variant="summary"
-          sections={SUMMARY_SECTIONS}
           summary={<DailySummaryView />}
         />
       </div>

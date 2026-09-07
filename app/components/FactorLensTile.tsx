@@ -4,6 +4,7 @@ import { usePersistedOpen } from "@/app/lib/useCollapsed";
 import React, { useEffect, useState } from "react";
 import Link from "next/link";
 import { MAX_SCORE } from "@/app/lib/types";
+import { AppIcon } from "@/app/components/AppIcon";
 
 /**
  * Factor Lens (shadow) — per-name read-out of the quantitative factor model
@@ -11,6 +12,10 @@ import { MAX_SCORE } from "@/app/lib/types";
  * pm:factor-scores snapshot and shows this ticker's quant percentile, the
  * qualitative judgment overlay, the blend candidates, and the four factor
  * group z-scores. Changes no existing number; the 41-pt score is unaffected.
+ *
+ * Renders as a flush row-set inside the stock page's "Risk & factors" panel:
+ * the condensed label/value rows are always visible; the full lens (z bars,
+ * blend candidates, divergence read) sits one persisted click away.
  */
 
 type FactorEntry = {
@@ -36,20 +41,34 @@ function pctTone(p: number | null): string {
   return "text-ink";
 }
 
-/** ±3 z bar, green-right/red-left. */
+function fmtZ(z: number | undefined): string {
+  if (z == null) return "—";
+  return `${z > 0 ? "+" : z < 0 ? "−" : ""}${Math.abs(z).toFixed(1)}`;
+}
+
+/** ±3 z bar, pos-right / neg-left. */
 function ZBar({ z }: { z: number | undefined }) {
-  if (z == null) return <span className="inline-block h-[10px] w-full rounded-sm bg-surface-2" />;
+  if (z == null) return <span className="inline-block h-1 w-full rounded-sm bg-line-soft" />;
   const clamped = Math.max(-3, Math.min(3, z));
   const pct = (Math.abs(clamped) / 3) * 50;
   const pos = clamped >= 0;
   return (
-    <span className="relative inline-block h-[10px] w-full rounded-sm bg-surface-2 align-middle" title={`z ${z.toFixed(2)}`}>
+    <span className="relative inline-block h-1 w-full rounded-sm bg-line-soft align-middle" title={`z ${z.toFixed(2)}`}>
       <span className="absolute left-1/2 top-0 h-full w-px bg-line" />
       <span
-        className={`absolute top-0 h-full rounded-sm ${pos ? "bg-pos/70" : "bg-neg/70"}`}
+        className={`absolute top-0 h-full rounded-sm ${pos ? "bg-pos" : "bg-neg"}`}
         style={pos ? { left: "50%", width: `${pct}%` } : { right: "50%", width: `${pct}%` }}
       />
     </span>
+  );
+}
+
+function Kv({ label, value, tone }: { label: string; value: React.ReactNode; tone?: string }) {
+  return (
+    <div className="flex items-baseline justify-between gap-3 text-[12px]">
+      <span className="text-ink-2">{label}</span>
+      <span className={`font-mono font-medium ${tone ?? "text-ink"}`}>{value}</span>
+    </div>
   );
 }
 
@@ -65,7 +84,7 @@ export default function FactorLensTile({
   const [entry, setEntry] = useState<FactorEntry | null>(null);
   const [builtAt, setBuiltAt] = useState<string | null>(null);
   const [loaded, setLoaded] = useState(false);
-  const [open, toggleOpen] = usePersistedOpen("stock.factorLens.open", true);
+  const [open, toggleOpen] = usePersistedOpen("stock.factorLens.open", false);
 
   useEffect(() => {
     let alive = true;
@@ -95,78 +114,93 @@ export default function FactorLensTile({
   })();
 
   const built = builtAt ? new Date(builtAt).toLocaleDateString() : null;
+  const scored = loaded && entry && entry.quant != null;
 
   return (
-    <div className={`rounded-card border border-line bg-white p-4 sm:p-5 shadow-sm ${className}`}>
-      <button onClick={toggleOpen} className="flex w-full items-center justify-between text-left">
-        <span className="flex items-center gap-2">
-          <span className="text-sm font-semibold text-ink">Factor Lens</span>
-          <span className="rounded bg-surface-2 px-1.5 py-0.5 text-[10px] font-medium text-ink-3">shadow · read-only</span>
-        </span>
-        <span className="text-ink-3">{open ? "▾" : "▸"}</span>
-      </button>
+    <div className={className}>
+      <div className="flex items-center gap-2">
+        <span className="text-[12.5px] font-medium text-ink">Factor lens</span>
+        <span className="text-[11.5px] text-ink-3">shadow model · read-only</span>
+        <button
+          onClick={toggleOpen}
+          className="ml-auto grid h-7 w-7 place-items-center rounded-control text-ink-3 hover:bg-surface-hover hover:text-ink"
+          aria-expanded={open}
+          aria-label={open ? "Hide full factor lens" : "Show full factor lens"}
+          title={open ? "Hide full factor lens" : "Show full factor lens"}
+        >
+          <AppIcon name={open ? "chevU" : "chevD"} size={14} />
+        </button>
+      </div>
 
-      {open && (
-        <div className="mt-3">
-          {!loaded ? (
-            <div className="py-4 text-xs text-ink-3">Loading…</div>
-          ) : !entry || entry.quant == null ? (
-            <div className="py-2 text-xs text-ink-2">
-              Not yet factor-scored. Quant read-outs are computed nightly for Portfolio + Watchlist names against the
-              sector universe. <Link href="/factor-lab" className="text-accent hover:underline">Open Factor Lab</Link>.
-            </div>
-          ) : (
-            <>
+      {!loaded ? (
+        <div className="py-1 text-[11.5px] text-ink-3">Loading…</div>
+      ) : !scored ? (
+        <div className="py-1 text-[12px] text-ink-2">
+          Not yet factor-scored. Quant read-outs are computed nightly for Portfolio + Watchlist names against the
+          sector universe. <Link href="/factor-lab" className="text-accent hover:underline">Open Factor Lab</Link>.
+        </div>
+      ) : (
+        <>
+          <div className="mt-1.5 grid grid-cols-2 gap-x-4 gap-y-1.5">
+            <Kv label="Quant pctile" value={entry!.quant} tone={pctTone(entry!.quant)} />
+            <Kv label="Overlay" value={entry!.overlay ?? "—"} />
+            {GROUP_ORDER.map((g) => (
+              <Kv key={g} label={`${GROUP_LABEL[g]} z`} value={fmtZ(entry!.groups?.[g])} />
+            ))}
+          </div>
+
+          {open && (
+            <div className="mt-3 border-t border-line-soft pt-3">
               <div className="flex flex-wrap items-end gap-x-6 gap-y-3">
                 <div>
-                  <div className="text-[11px] uppercase tracking-wide text-ink-3">Quant %ile</div>
-                  <div className={`text-2xl font-semibold tabular-nums ${pctTone(entry.quant)}`}>{entry.quant}</div>
-                  <div className="text-[10px] text-ink-3">{entry.sector || "—"}{entry.confidence != null ? ` · conf ${entry.confidence}` : ""}</div>
+                  <div className="text-[11px] text-ink-3">Quant pctile</div>
+                  <div className={`font-mono text-[22px] font-semibold ${pctTone(entry!.quant)}`}>{entry!.quant}</div>
+                  <div className="text-[11px] text-ink-3">{entry!.sector || "—"}{entry!.confidence != null ? ` · conf ${entry!.confidence}` : ""}</div>
                 </div>
                 <div>
-                  <div className="text-[11px] uppercase tracking-wide text-ink-3">41-pt</div>
-                  <div className="text-2xl font-semibold tabular-nums text-ink-2">{Number(adjusted.toFixed(1))}<span className="text-sm text-ink-3">/{MAX_SCORE}</span></div>
-                  <div className="text-[10px] text-ink-3">committee score</div>
+                  <div className="text-[11px] text-ink-3">41-pt</div>
+                  <div className="font-mono text-[22px] font-semibold text-ink-2">{Number(adjusted.toFixed(1))}<span className="text-[13px] text-ink-faint">/{MAX_SCORE}</span></div>
+                  <div className="text-[11px] text-ink-3">committee score</div>
                 </div>
                 <div className="flex gap-4">
                   <div>
-                    <div className="text-[11px] uppercase tracking-wide text-ink-3">Overlay</div>
-                    <div className="text-lg font-semibold tabular-nums text-ink">{entry.overlay ?? "—"}</div>
+                    <div className="text-[11px] text-ink-3">Overlay</div>
+                    <div className="font-mono text-[16px] font-semibold text-ink">{entry!.overlay ?? "—"}</div>
                   </div>
                   <div>
-                    <div className="text-[11px] uppercase tracking-wide text-ink-3">70/30</div>
-                    <div className="text-lg font-semibold tabular-nums text-ink">{entry.blend70 ?? "—"}</div>
+                    <div className="text-[11px] text-ink-3">70/30</div>
+                    <div className="font-mono text-[16px] font-semibold text-ink">{entry!.blend70 ?? "—"}</div>
                   </div>
                   <div>
-                    <div className="text-[11px] uppercase tracking-wide text-ink-3">Mod</div>
-                    <div className="text-lg font-semibold tabular-nums text-ink">{entry.blendMod ?? "—"}</div>
+                    <div className="text-[11px] text-ink-3">Mod</div>
+                    <div className="font-mono text-[16px] font-semibold text-ink">{entry!.blendMod ?? "—"}</div>
                   </div>
                 </div>
               </div>
 
-              <div className="mt-4 grid grid-cols-1 gap-x-6 gap-y-2 sm:grid-cols-2">
+              <div className="mt-3 grid grid-cols-1 gap-x-6 gap-y-2 sm:grid-cols-2">
                 {GROUP_ORDER.map((g) => (
                   <div key={g} className="flex items-center gap-2">
-                    <span className="w-20 shrink-0 text-[11px] text-ink-2">{GROUP_LABEL[g]}</span>
-                    <span className="flex-1"><ZBar z={entry.groups?.[g]} /></span>
-                    <span className="w-9 shrink-0 text-right text-[11px] tabular-nums text-ink-3">
-                      {entry.groups?.[g] != null ? entry.groups[g].toFixed(1) : "·"}
+                    <span className="w-20 shrink-0 text-[11.5px] text-ink-2">{GROUP_LABEL[g]}</span>
+                    <span className="flex-1"><ZBar z={entry!.groups?.[g]} /></span>
+                    <span className="w-9 shrink-0 text-right font-mono text-[11.5px] text-ink-3">
+                      {entry!.groups?.[g] != null ? entry!.groups[g].toFixed(1) : "·"}
                     </span>
                   </div>
                 ))}
               </div>
 
               {divergence && (
-                <div className={`mt-3 text-[11px] ${divergence.tone}`}>{divergence.text}</div>
+                <div className={`mt-3 text-[11.5px] ${divergence.tone}`}>{divergence.text}</div>
               )}
 
-              <div className="mt-3 flex items-center justify-between text-[10px] text-ink-3">
+              <div className="mt-3 flex items-center justify-between text-[11px] text-ink-3">
                 <span>Sector-neutral z-scores vs S&amp;P 500 + TSX 60 peers. Nothing here changes the 41-pt score.</span>
-                {built && <span>built {built}</span>}
+                {built && <span className="font-mono">built {built}</span>}
               </div>
-            </>
+            </div>
           )}
-        </div>
+        </>
       )}
     </div>
   );

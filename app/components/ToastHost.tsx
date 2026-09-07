@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useNotifications, type NotificationLevel } from "@/app/lib/NotificationsContext";
+import { AppIcon } from "./AppIcon";
 
 /**
  * Transient toasts. Rather than wire a new call site into every action, this
@@ -13,11 +14,12 @@ import { useNotifications, type NotificationLevel } from "@/app/lib/Notification
 
 type Toast = { id: string; level: NotificationLevel; title: string; message?: string; leaving?: boolean };
 
-const TONE: Record<NotificationLevel, { box: string; dot: string }> = {
-  success: { box: "border-pos-border bg-pos-soft text-ink", dot: "bg-pos" },
-  error: { box: "border-neg-border bg-neg-soft text-ink", dot: "bg-neg" },
-  warn: { box: "border-warn-border bg-warn-soft text-ink", dot: "bg-warn" },
-  info: { box: "border-accent-border bg-accent-soft text-ink", dot: "bg-accent" },
+/** Level → status dot colour + the word beside it. */
+const TONE: Record<NotificationLevel, { dot: string; word: string }> = {
+  success: { dot: "bg-pos", word: "Done" },
+  error: { dot: "bg-neg", word: "Error" },
+  warn: { dot: "bg-warn", word: "Warning" },
+  info: { dot: "bg-ink-faint", word: "Info" },
 };
 
 export function ToastHost() {
@@ -62,19 +64,22 @@ export function ToastHost() {
           <div
             key={t.id}
             role="status"
-            className={`${t.leaving ? "animate-toast-out" : "animate-toast-in"} flex max-w-[calc(100vw-2rem)] items-start gap-2.5 rounded-lg border px-3 py-2 shadow-md sm:max-w-xs ${tone.box}`}
+            className={`${t.leaving ? "animate-toast-out" : "animate-toast-in"} flex w-[320px] max-w-[calc(100vw-2rem)] items-start gap-2.5 rounded-card border border-line bg-surface px-3 py-2.5 text-[12.5px] text-ink shadow-[var(--shadow-pop)]`}
           >
-            <span className={`mt-1 h-2 w-2 shrink-0 rounded-full ${tone.dot}`} />
+            <span className={`dot mt-[6px] ${tone.dot}`} />
             <div className="min-w-0 flex-1">
-              <div className="text-[13px] font-semibold leading-snug">{t.title}</div>
-              {t.message && <div className="mt-0.5 text-[11px] text-ink-2 line-clamp-2">{t.message}</div>}
+              <div className="flex items-baseline gap-2">
+                <span className="truncate font-medium">{t.title}</span>
+                <span className="shrink-0 text-[11px] text-ink-3">{tone.word}</span>
+              </div>
+              {t.message && <div className="mt-0.5 line-clamp-2 text-[12px] leading-[1.45] text-ink-2">{t.message}</div>}
             </div>
             <button
               onClick={() => dismiss(t.id)}
-              className="shrink-0 text-ink-faint transition-colors hover:text-ink-2"
+              className="-mr-1 -mt-0.5 grid h-6 w-6 shrink-0 place-items-center rounded-control text-ink-3 transition-colors hover:bg-surface-hover hover:text-ink"
               aria-label="Dismiss"
             >
-              ×
+              <AppIcon name="x" size={13} />
             </button>
           </div>
         );

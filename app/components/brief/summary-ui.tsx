@@ -3,41 +3,29 @@
 import React from "react";
 import Link from "next/link";
 import { useStocks } from "@/app/lib/StockContext";
+import { AppIcon } from "../AppIcon";
 
 /**
- * Shared primitives for the Brief summary zones. Card language mirrors the
- * rest of the Precision Light UI (rounded-card / border-line / shadow-sm,
- * Plex Mono for numbers) so the summary reads as one system with the
- * narrative folds beneath it.
+ * Shared primitives for the Brief summary zones, in the workspace vocabulary:
+ * `.panel` / `.panel-h` cards, dot + word status, mono numerics.
  */
 
-export function Card({ className = "", children, tone }: { className?: string; children: React.ReactNode; tone?: "pos" | "neg" | "warn" | "accent" }) {
-  const edge =
-    tone === "pos" ? "border-l-[3px] border-l-pos" : tone === "neg" ? "border-l-[3px] border-l-neg" : tone === "warn" ? "border-l-[3px] border-l-warn" : tone === "accent" ? "border-l-[3px] border-l-accent" : "";
-  return <section className={`min-w-0 overflow-hidden rounded-card border border-line bg-white shadow-sm ${edge} ${className}`}>{children}</section>;
+export function Card({ className = "", children }: { className?: string; children: React.ReactNode }) {
+  return <section className={`panel min-w-0 ${className}`}>{children}</section>;
 }
 
 export function CardHeader({ title, sub, right, href }: { title: string; sub?: React.ReactNode; right?: React.ReactNode; href?: string }) {
   return (
-    <header className="flex items-baseline gap-2 border-b border-line-soft px-4 pt-3 pb-2">
+    <div className="panel-h">
       {href ? (
-        <Link href={href} className="text-sm font-bold tracking-tight text-ink hover:text-accent">
+        <Link href={href} className="t hover:text-accent">
           {title}
         </Link>
       ) : (
-        <h3 className="text-sm font-bold tracking-tight text-ink">{title}</h3>
+        <span className="t">{title}</span>
       )}
-      {sub && <span className="min-w-0 truncate text-xs text-ink-3">· {sub}</span>}
-      {right && <span className="ml-auto shrink-0">{right}</span>}
-    </header>
-  );
-}
-
-export function SectionHeading({ id, title, sub }: { id: string; title: string; sub: string }) {
-  return (
-    <div style={{ scrollMarginTop: "var(--brief-scroll-mt, 132px)" }} id={id} className="mb-2 mt-2 flex items-baseline gap-2.5">
-      <h2 className="text-xs font-bold uppercase tracking-[0.22em] text-ink-3">{title}</h2>
-      <span className="text-[11px] text-ink-faint">{sub}</span>
+      {sub && <span className="m min-w-0 truncate">{sub}</span>}
+      {right && <div className="ml-auto flex shrink-0 items-center gap-2">{right}</div>}
     </div>
   );
 }
@@ -65,22 +53,41 @@ export function Pct({ v, digits = 2, className = "", deadband = 0, pp = false }:
   return <span className={`font-mono tabular-nums ${toneFor(v, deadband)} ${className}`}>{pp ? fmtPp(v, digits) : fmtPct(v, digits)}</span>;
 }
 
+/** The one pill left in the vocabulary: 18px, 11px medium, tinted by job. */
 export function Pill({ children, tone = "neutral", className = "", title }: { children: React.ReactNode; tone?: "pos" | "neg" | "warn" | "accent" | "neutral" | "violet"; className?: string; title?: string }) {
   const map = {
-    pos: "border-pos-border bg-pos-soft text-pos",
-    neg: "border-neg-border bg-neg-soft text-neg",
-    warn: "border-warn-border bg-warn-soft text-warn",
-    accent: "border-accent-border bg-accent-soft text-accent-ink",
-    violet: "border-violet-border bg-violet-soft text-violet",
-    neutral: "border-line bg-surface-2 text-ink-2",
+    pos: "bg-pos-soft text-pos",
+    neg: "bg-neg-soft text-neg",
+    warn: "bg-warn-soft text-warn",
+    accent: "bg-accent-soft text-accent-ink",
+    violet: "bg-violet-soft text-violet",
+    neutral: "bg-surface-2 text-ink-2",
   } as const;
-  return <span title={title} className={`inline-flex items-center whitespace-nowrap rounded-pill border px-2 py-[2px] text-[10.5px] font-semibold uppercase tracking-[0.04em] ${map[tone]} ${className}`}>{children}</span>;
+  return <span title={title} className={`inline-flex h-[18px] items-center whitespace-nowrap rounded px-1.5 text-[11px] font-medium ${map[tone]} ${className}`}>{children}</span>;
 }
 
 export function regimeTone(label: string | null | undefined): "pos" | "neg" | "warn" {
   if (label === "Risk-On") return "pos";
   if (label === "Risk-Off") return "neg";
   return "warn";
+}
+
+export function toneText(tone: "pos" | "neg" | "warn" | "accent" | "neutral"): string {
+  return tone === "pos" ? "text-pos" : tone === "neg" ? "text-neg" : tone === "warn" ? "text-warn" : tone === "accent" ? "text-accent" : "text-ink-2";
+}
+
+export function toneDot(tone: "pos" | "neg" | "warn" | "accent" | "neutral"): string {
+  return tone === "pos" ? "bg-pos" : tone === "neg" ? "bg-neg" : tone === "warn" ? "bg-warn" : tone === "accent" ? "bg-accent" : "bg-ink-faint";
+}
+
+/** Status = dot + the word beside it, in one span. */
+export function Status({ tone, children, className = "" }: { tone: "pos" | "neg" | "warn" | "accent" | "neutral"; children: React.ReactNode; className?: string }) {
+  return (
+    <span className={`inline-flex items-center gap-1.5 whitespace-nowrap ${className}`}>
+      <span className={`dot ${toneDot(tone)}`} />
+      {children}
+    </span>
+  );
 }
 
 /** Tiny inline line chart. */
@@ -109,7 +116,7 @@ export function Spark({ points, width = 140, height = 36, baseline, className = 
 export function DivergingBar({ v, max = 1, className = "" }: { v: number | null; max?: number; className?: string }) {
   const pct = v == null ? 0 : Math.max(-1, Math.min(1, v / max)) * 50;
   return (
-    <div className={`relative h-1.5 w-full overflow-hidden rounded-full bg-line-soft ${className}`}>
+    <div className={`relative h-1 w-full overflow-hidden rounded-full bg-line-soft ${className}`}>
       <span className="absolute left-1/2 top-0 h-full w-px bg-line" />
       {v != null && (
         <span
@@ -122,41 +129,20 @@ export function DivergingBar({ v, max = 1, className = "" }: { v: number | null;
 }
 
 /**
- * Semicircle 0..100 gauge. The value is marked with a tick at the RIM rather
- * than a needle from the pivot — a needle crosses the number at these sizes
- * and makes it unreadable.
+ * The regime dial as the canvas draws it: a thin track that fades from the
+ * risk-off tint on the left to the risk-on tint on the right, with a 2px ink
+ * marker at the value.
  */
-export function Dial({ value, label, size = 148 }: { value: number | null; label: string | null; size?: number }) {
-  const r = size / 2 - 8;
-  const cx = size / 2;
-  const cy = size / 2;
-  const at = (f: number, radius: number) => {
-    const a = Math.PI - (Math.max(0, Math.min(100, f)) / 100) * Math.PI;
-    return { x: cx + radius * Math.cos(a), y: cy - radius * Math.sin(a) };
-  };
-  const arc = (from: number, to: number) => {
-    const a = at(from, r);
-    const b = at(to, r);
-    return `M${a.x.toFixed(2)},${a.y.toFixed(2)} A${r},${r} 0 0 1 ${b.x.toFixed(2)},${b.y.toFixed(2)}`;
-  };
+export function RegimeTrack({ value, className = "" }: { value: number | null; className?: string }) {
   const v = value == null ? null : Math.max(0, Math.min(100, value));
-  const tone = label === "Risk-On" ? "text-pos" : label === "Risk-Off" ? "text-neg" : "text-warn";
-  const inner = v == null ? null : at(v, r - 7);
-  const outer = v == null ? null : at(v, r + 6);
   return (
-    <svg width={size} height={size / 2 + 16} viewBox={`0 0 ${size} ${size / 2 + 16}`} aria-hidden>
-      <path d={arc(0, 33)} fill="none" strokeWidth="7" strokeLinecap="butt" className="stroke-neg-border" />
-      <path d={arc(33, 67)} fill="none" strokeWidth="7" className="stroke-warn-border" />
-      <path d={arc(67, 100)} fill="none" strokeWidth="7" className="stroke-pos-border" />
-      {inner && outer && (
-        <line x1={inner.x} y1={inner.y} x2={outer.x} y2={outer.y} strokeWidth="3" strokeLinecap="round" className={`stroke-current ${tone}`} />
-      )}
-      <text x={cx} y={cy - 4} textAnchor="middle" className={`fill-current font-mono ${tone}`} style={{ fontSize: Math.round(size * 0.2), fontWeight: 600 }}>
-        {v == null ? "—" : Math.round(v)}
-      </text>
-      <text x={2} y={cy + 13} className="fill-current text-ink-3" style={{ fontSize: 9 }}>OFF</text>
-      <text x={size - 2} y={cy + 13} textAnchor="end" className="fill-current text-ink-3" style={{ fontSize: 9 }}>ON</text>
-    </svg>
+    <div
+      className={`relative h-1.5 rounded-[3px] ${className}`}
+      style={{ background: "linear-gradient(90deg, var(--color-neg-soft), var(--color-line-soft) 50%, var(--color-pos-soft))" }}
+      aria-hidden
+    >
+      {v != null && <span className="absolute -top-[3px] h-3 w-[2px] -ml-px bg-ink" style={{ left: `${v}%` }} />}
+    </div>
   );
 }
 
@@ -175,20 +161,27 @@ export function ordinal(n: number): string {
 
 export function TickerLink({ ticker, className = "" }: { ticker: string; className?: string }) {
   return (
-    <Link href={`/stock/${encodeURIComponent(ticker)}`} className={`font-mono text-[12px] font-semibold text-ink hover:text-accent ${className}`}>
+    <Link href={`/stock/${encodeURIComponent(ticker)}`} className={`font-mono text-[12.5px] font-medium text-ink hover:text-accent ${className}`}>
       {ticker}
     </Link>
   );
 }
 
 export function Empty({ children }: { children: React.ReactNode }) {
-  return <p className="px-4 py-5 text-center text-[12px] text-ink-3">{children}</p>;
+  return <p className="px-3.5 py-5 text-center text-[12px] text-ink-3">{children}</p>;
 }
 
 export function weekday(dateStr: string): string {
   const ms = Date.parse(`${dateStr}T00:00:00Z`);
   if (isNaN(ms)) return dateStr;
   return new Intl.DateTimeFormat("en-US", { timeZone: "UTC", weekday: "short", month: "short", day: "numeric" }).format(ms);
+}
+
+/** "Wed" — the three-letter day for the calendar rows. */
+export function weekdayShort(dateStr: string): string {
+  const ms = Date.parse(`${dateStr}T00:00:00Z`);
+  if (isNaN(ms)) return dateStr.slice(5);
+  return new Intl.DateTimeFormat("en-US", { timeZone: "UTC", weekday: "short" }).format(ms);
 }
 
 export function relDays(n: number): string {
@@ -210,14 +203,44 @@ export function timeAgo(iso: string | null | undefined): string {
   return `${Math.round(h / 24)}d ago`;
 }
 
+/** 28×28 icon-only control (the chevron that opens a panel's full content). */
+export function IconButton({ onClick, title, icon, active, className = "", disabled, spin }: { onClick: () => void; title: string; icon: string; active?: boolean; className?: string; disabled?: boolean; spin?: boolean }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      title={title}
+      aria-label={title}
+      aria-expanded={active}
+      disabled={disabled}
+      className={`grid h-7 w-7 place-items-center rounded-control border border-line bg-surface text-ink-2 transition-colors hover:bg-surface-hover disabled:opacity-50 ${className}`}
+    >
+      <AppIcon name={icon} size={14} className={spin ? "animate-spin" : ""} />
+    </button>
+  );
+}
+
+/** 24px secondary button for row actions (Done / Snooze / Open). */
+export function RowButton({ onClick, href, disabled, title, children }: { onClick?: () => void; href?: string; disabled?: boolean; title?: string; children: React.ReactNode }) {
+  const cls = "inline-flex h-6 items-center rounded-control border border-line bg-surface px-2 text-[12px] text-ink-2 transition-colors hover:bg-surface-hover disabled:opacity-50";
+  if (href) {
+    return (
+      <Link href={href} className={cls} title={title}>
+        {children}
+      </Link>
+    );
+  }
+  return (
+    <button type="button" onClick={onClick} disabled={disabled} title={title} className={cls}>
+      {children}
+    </button>
+  );
+}
+
 /**
- * A collapsible rail. Open/closed persists per person in `pm:ui-prefs` (the
- * same store the brief's narrative folds use, "1" = collapsed), so the page
- * comes back the way it was left.
- *
- * `preview` is the point of the pattern: a CLOSED rail still carries a live
- * one-line read, so the PM can tell whether it is worth opening without
- * opening it. Keep it to one line of the most decision-relevant numbers.
+ * A collapsible panel. Open/closed persists per person in `pm:ui-prefs`
+ * ("1" = collapsed), so the page comes back the way it was left. `preview` is
+ * the one-line read a CLOSED panel still carries.
  */
 export function Fold({
   prefKey,
@@ -227,7 +250,6 @@ export function Fold({
   meta,
   right,
   defaultOpen = false,
-  tone,
   children,
 }: {
   prefKey: string;
@@ -237,78 +259,69 @@ export function Fold({
   meta?: React.ReactNode;
   right?: React.ReactNode;
   defaultOpen?: boolean;
-  tone?: "pos" | "neg" | "warn" | "accent";
   children: React.ReactNode;
 }) {
   const { uiPrefs, setUiPref } = useStocks();
   const open = (uiPrefs[prefKey] ?? (defaultOpen ? "0" : "1")) !== "1";
   return (
-    <Card tone={tone} className="min-w-0">
-      <button
-        type="button"
-        onClick={() => setUiPref(prefKey, open ? "1" : "0")}
-        aria-expanded={open}
-        id={id}
-        style={{ scrollMarginTop: "var(--brief-scroll-mt, 132px)" }}
-        className="flex w-full items-center gap-2 px-4 py-2.5 text-left transition-colors hover:bg-surface-hover"
-      >
-        <svg
-          className={`h-3 w-3 shrink-0 text-ink-3 transition-transform ${open ? "" : "-rotate-90"}`}
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="2.5"
-          viewBox="0 0 24 24"
-        >
-          <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
-        </svg>
-        <span className="shrink-0 text-[13px] font-bold tracking-tight text-ink">{title}</span>
-        {meta && <span className="shrink-0 text-[11px] text-ink-3">· {meta}</span>}
-        {preview && !open && <span className="min-w-0 flex-1 truncate text-[11.5px] text-ink-2">{preview}</span>}
-        <span className="ml-auto shrink-0 pl-2">{right}</span>
-      </button>
-      {open && <div className="border-t border-line-soft">{children}</div>}
+    <Card>
+      <div className="panel-h" id={id} style={{ scrollMarginTop: 64 }}>
+        <button type="button" onClick={() => setUiPref(prefKey, open ? "1" : "0")} aria-expanded={open} className="flex min-w-0 flex-1 items-center gap-2 text-left">
+          <AppIcon name={open ? "chevD" : "chevR"} size={14} className="text-ink-3" />
+          <span className="t shrink-0">{title}</span>
+          {meta && <span className="m shrink-0">{meta}</span>}
+          {preview && !open && <span className="m min-w-0 flex-1 truncate !text-ink-2">{preview}</span>}
+        </button>
+        {right && <div className="ml-auto flex shrink-0 items-center gap-2">{right}</div>}
+      </div>
+      {open && <div>{children}</div>}
     </Card>
   );
 }
 
-/** Compact label/value pair for the decision band. */
+/** Compact label/value pair. */
 export function Metric({ label, value, sub, tone }: { label: string; value: React.ReactNode; sub?: React.ReactNode; tone?: "pos" | "neg" | "warn" }) {
   const cls = tone === "pos" ? "text-pos" : tone === "neg" ? "text-neg" : tone === "warn" ? "text-warn" : "text-ink";
   return (
-    <div className="min-w-0 rounded-control border border-line-soft bg-surface-2 px-2 py-1.5">
-      <div className="truncate text-[10px] font-semibold uppercase tracking-wide text-ink-3">{label}</div>
-      <div className={`font-mono text-[13px] font-semibold tabular-nums ${cls}`}>{value}</div>
-      {sub && <div className="truncate text-[10px] text-ink-faint">{sub}</div>}
+    <div className="min-w-0">
+      <div className="truncate text-[11px] text-ink-3">{label}</div>
+      <div className={`font-mono text-[13px] font-medium tabular-nums ${cls}`}>{value}</div>
+      {sub && <div className="truncate text-[11px] text-ink-faint">{sub}</div>}
     </div>
   );
 }
 
+/** The bottom-panel tab that holds the narrative rows; `useRevealFold` switches to it. */
+export const BRIEF_TABS_PREF = "brief.tabs";
+
 /**
  * Open a narrative fold and scroll to it.
  *
- * The Brief's long-form rows are `CollapsibleSection`s keyed by prefKey, and
- * each renders `id={prefKey}` — so a decision tile can hand the PM straight to
- * the prose behind its call instead of leaving them to hunt for it. Setting the
- * pref to "0" expands it (pm:ui-prefs, "1" = collapsed), then we scroll once
- * React has painted the now-open row.
+ * The narrative rows are `CollapsibleSection`s keyed by prefKey (each renders
+ * `id={prefKey}`) inside the Narrative tab of the bottom panel — so revealing
+ * one also selects that tab, then expands the row ("0" = open) and scrolls
+ * once React has painted it.
  */
 export function useRevealFold(): (prefKey: string) => void {
   const { setUiPref } = useStocks();
   return React.useCallback(
     (prefKey: string) => {
+      if (prefKey.startsWith("briefNarrative")) setUiPref(BRIEF_TABS_PREF, "narrative");
       setUiPref(prefKey, "0");
       requestAnimationFrame(() => {
-        const el = document.getElementById(prefKey);
-        if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });
+        requestAnimationFrame(() => {
+          const el = document.getElementById(prefKey);
+          if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });
+        });
       });
     },
     [setUiPref]
   );
 }
 
-/** The consistent "go deeper" affordance at the foot of a decision tile. */
-export function TileLink({ onClick, href, children }: { onClick?: () => void; href?: string; children: React.ReactNode }) {
-  const cls = "mt-auto block w-full border-t border-line-soft px-4 py-1.5 text-left text-[11px] font-semibold text-accent transition-colors hover:bg-accent-soft";
+/** The consistent "go deeper" text link inside a cell. */
+export function TileLink({ onClick, href, children, className = "" }: { onClick?: () => void; href?: string; children: React.ReactNode; className?: string }) {
+  const cls = `text-[11.5px] text-accent transition-colors hover:text-accent-ink ${className}`;
   if (href) {
     return (
       <Link href={href} className={cls}>

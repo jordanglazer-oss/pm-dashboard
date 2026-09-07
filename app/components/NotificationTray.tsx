@@ -1,10 +1,10 @@
 "use client";
 
 /**
- * Bell-icon dropdown in the top nav that exposes the persistent
+ * Bell-icon dropdown in the top bar that exposes the persistent
  * notifications log managed by NotificationsContext. Renders the last
- * ~50 events newest-first, colour-coded by level (success / info /
- * warn / error), with the source tag and relative time per entry.
+ * ~50 events newest-first, each as a status dot + level word, with the
+ * source tag and relative time per entry.
  *
  * Pure display + a couple of buttons (mark all read / clear). No
  * fetches, no writes outside the context API.
@@ -12,12 +12,13 @@
 
 import React, { useEffect, useRef, useState } from "react";
 import { useNotifications, type NotificationLevel } from "@/app/lib/NotificationsContext";
+import { AppIcon } from "./AppIcon";
 
-const LEVEL_STYLES: Record<NotificationLevel, { dot: string; text: string }> = {
-  info:    { dot: "bg-ink-3",    text: "text-ink-2" },
-  success: { dot: "bg-pos",  text: "text-pos" },
-  warn:    { dot: "bg-warn",    text: "text-warn" },
-  error:   { dot: "bg-neg",      text: "text-neg" },
+const LEVEL: Record<NotificationLevel, { dot: string; word: string; text: string }> = {
+  info:    { dot: "bg-ink-faint", word: "Info",    text: "text-ink" },
+  success: { dot: "bg-pos",       word: "Done",    text: "text-ink" },
+  warn:    { dot: "bg-warn",      word: "Warning", text: "text-warn" },
+  error:   { dot: "bg-neg",       word: "Error",   text: "text-neg" },
 };
 
 function fmtRel(iso: string): string {
@@ -71,58 +72,56 @@ export function NotificationTray() {
       <button
         onClick={() => setOpen((v) => !v)}
         aria-label={`Notifications${unreadCount > 0 ? ` (${unreadCount} unread)` : ""}`}
-        title="Notifications"
-        className="relative flex items-center justify-center w-9 h-9 rounded-lg hover:bg-ink transition-colors text-ink-faint hover:text-white"
+        title={unreadCount > 0 ? `Notifications · ${unreadCount} unread` : "Notifications"}
+        className="relative grid h-7 w-7 place-items-center rounded-control text-ink-3 transition-colors hover:bg-surface-hover hover:text-ink"
       >
-        <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M14.857 17.082a23.848 23.848 0 0 0 5.454-1.31A8.967 8.967 0 0 1 18 9.75V9A6 6 0 0 0 6 9v.75a8.967 8.967 0 0 1-2.312 6.022c1.733.64 3.56 1.085 5.455 1.31m5.714 0a24.255 24.255 0 0 1-5.714 0m5.714 0a3 3 0 1 1-5.714 0" /></svg>
+        <AppIcon name="bell" size={15} />
         {unreadCount > 0 && (
-          <span className="absolute -top-0.5 -right-0.5 flex items-center justify-center min-w-[16px] h-4 px-1 rounded-full bg-neg text-white text-[10px] font-bold leading-none">
-            {unreadCount > 99 ? "99+" : unreadCount}
-          </span>
+          <span className="absolute right-1 top-1 h-1.5 w-1.5 rounded-full bg-neg" aria-hidden />
         )}
       </button>
 
       {open && (
-        <div className="absolute right-0 mt-2 w-[calc(100vw-1rem)] sm:w-96 max-w-md rounded-card bg-white shadow-2xl border border-line z-[120] overflow-hidden">
-          <div className="flex items-center justify-between px-4 py-2.5 border-b border-line-soft">
-            <h3 className="text-sm font-bold text-ink">Notifications</h3>
-            <div className="flex items-center gap-2 text-[11px]">
-              {events.length > 0 && (
-                <button
-                  onClick={() => { clear(); setOpen(false); }}
-                  className="text-ink-3 hover:text-neg transition-colors"
-                >
-                  Clear all
-                </button>
-              )}
-            </div>
+        <div className="absolute right-0 z-[120] mt-2 w-[calc(100vw-1rem)] overflow-hidden rounded-card border border-line bg-surface shadow-[var(--shadow-pop)] sm:w-[360px]">
+          <div className="panel-h">
+            <span className="t">Notifications</span>
+            {events.length > 0 && (
+              <span className="m">{events.length}</span>
+            )}
+            {events.length > 0 && (
+              <button
+                onClick={() => { clear(); setOpen(false); }}
+                className="ml-auto text-[11.5px] text-ink-3 transition-colors hover:text-neg"
+              >
+                Clear all
+              </button>
+            )}
           </div>
 
           <div className="max-h-96 overflow-y-auto">
             {events.length === 0 ? (
-              <div className="px-4 py-8 text-center text-sm text-ink-3">
+              <div className="px-4 py-8 text-center text-[12.5px] text-ink-3">
                 Nothing to report.
               </div>
             ) : (
               <ul className="divide-y divide-line-soft">
                 {events.map((e) => {
-                  const styles = LEVEL_STYLES[e.level];
+                  const lv = LEVEL[e.level];
                   return (
-                    <li key={e.id} className="flex items-start gap-3 px-4 py-2.5">
-                      <span className={`mt-1.5 w-2 h-2 rounded-full shrink-0 ${styles.dot}`} />
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-baseline gap-2 flex-wrap">
-                          <span className={`text-sm font-semibold ${styles.text}`}>{e.title}</span>
+                    <li key={e.id} className="flex items-start gap-2.5 px-3.5 py-2.5 text-[12.5px]">
+                      <span className={`dot mt-[6px] ${lv.dot}`} />
+                      <div className="min-w-0 flex-1">
+                        <div className="flex flex-wrap items-baseline gap-x-2">
+                          <span className={`font-medium ${lv.text}`}>{e.title}</span>
+                          <span className="text-[11px] text-ink-3">{lv.word}</span>
                           {e.source && (
-                            <span className="text-[10px] text-ink-3 uppercase tracking-wider">
-                              {e.source}
-                            </span>
+                            <span className="text-[11px] text-ink-3">· {e.source}</span>
                           )}
                         </div>
                         {e.message && (
-                          <p className="text-xs text-ink-2 mt-0.5 break-words">{e.message}</p>
+                          <p className="mt-0.5 break-words text-[12px] leading-[1.45] text-ink-2">{e.message}</p>
                         )}
-                        <p className="text-[10px] text-ink-3 mt-0.5" suppressHydrationWarning>
+                        <p className="mt-0.5 text-[11px] text-ink-3" suppressHydrationWarning>
                           {fmtRel(e.at)}
                         </p>
                       </div>

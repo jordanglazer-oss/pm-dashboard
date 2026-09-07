@@ -2,6 +2,7 @@
 
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import { AppIcon } from "./AppIcon";
 import type { ChangeEvent, ChangeType, Severity } from "@/app/lib/change-monitor";
 import { useCollapsed } from "@/app/lib/useCollapsed";
 
@@ -100,88 +101,73 @@ export function ChangeMonitor() {
   }, [scoped]);
 
   return (
-    <div className="rounded-lg border border-line bg-white overflow-hidden">
-      <button
-        onClick={toggleCollapsed}
-        className="w-full flex items-center justify-between px-4 py-3 hover:bg-surface-hover transition-colors"
-      >
-        <div className="flex items-center gap-2">
-          <span className="text-sm font-semibold text-ink">Change monitor</span>
-          {events && counts.all > 0 && (
-            <span className="text-[10px] font-bold rounded-full bg-ink text-white px-2 py-0.5">{counts.all}</span>
-          )}
-        </div>
-        <span className="text-[11px] text-ink-3">{collapsed ? "Show" : "Hide"}</span>
-      </button>
-
-      {!collapsed && (
-        <div className="px-4 pb-4">
-          {/* controls */}
-          <div className="flex flex-wrap items-center gap-2 mb-3">
-            <div className="flex flex-1 flex-wrap gap-1.5 min-w-0">
+    <div className="panel">
+      <div className={`panel-h ${collapsed ? "border-b-0" : ""}`}>
+        <button onClick={toggleCollapsed} className="flex items-center gap-2 text-left" aria-expanded={!collapsed}>
+          <span className={`text-ink-3 transition-transform ${collapsed ? "-rotate-90" : ""}`}><AppIcon name="chevD" size={14} strokeWidth={2} /></span>
+          <span className="t">Changes</span>
+        </button>
+        <span className="m">{windowDays === 1 ? "24h" : `${windowDays}d`}{events && counts.all > 0 ? ` · ${counts.all} events` : ""}</span>
+        {!collapsed && (
+          <div className="ml-auto flex flex-wrap items-center gap-2">
+            <div className="seg">
               {(["all", ...typesPresent] as (ChangeType | "all")[]).map((t) => (
-                <button
-                  key={t}
-                  onClick={() => setFilter(t)}
-                  className={`text-[11.5px] rounded-full px-2.5 py-0.5 border inline-flex items-center gap-1.5 transition-colors ${
-                    filter === t ? "bg-surface-2 border-line text-ink font-semibold" : "border-line text-ink-3 hover:bg-surface-2"
-                  }`}
-                >
+                <button key={t} onClick={() => setFilter(t)} className={filter === t ? "on" : ""} aria-pressed={filter === t}>
                   {t === "all" ? "All" : TYPE_LABELS[t]}
-                  <span className="font-mono text-[10px] text-ink-3">{counts[t] ?? 0}</span>
+                  <span className="c">{counts[t] ?? 0}</span>
                 </button>
               ))}
             </div>
-            <div className="ml-auto flex items-center gap-2">
-              <select value={scope} onChange={(e) => setScope(e.target.value as "all" | "Portfolio" | "Watchlist")} className="text-[11px] rounded border border-line bg-white px-1.5 py-1 text-ink-2">
-                <option value="all">All names</option>
-                <option value="Portfolio">Portfolio</option>
-                <option value="Watchlist">Watchlist</option>
-              </select>
-              <select value={windowDays} onChange={(e) => setWindowDays(Number(e.target.value))} className="text-[11px] rounded border border-line bg-white px-1.5 py-1 text-ink-2">
-                <option value={1}>24 hours</option>
-                <option value={7}>7 days</option>
-                <option value={30}>30 days</option>
-              </select>
-              <label className="flex items-center gap-1 text-[11px] text-ink-3">
-                <input type="checkbox" checked={showReviewed} onChange={(e) => setShowReviewed(e.target.checked)} />
-                reviewed
-              </label>
-            </div>
+            <select value={scope} onChange={(e) => setScope(e.target.value as "all" | "Portfolio" | "Watchlist")} className="h-7 rounded-control border border-line bg-surface px-1.5 text-[12px] text-ink-2">
+              <option value="all">All names</option>
+              <option value="Portfolio">Portfolio</option>
+              <option value="Watchlist">Watchlist</option>
+            </select>
+            <select value={windowDays} onChange={(e) => setWindowDays(Number(e.target.value))} className="h-7 rounded-control border border-line bg-surface px-1.5 text-[12px] text-ink-2">
+              <option value={1}>24 hours</option>
+              <option value={7}>7 days</option>
+              <option value={30}>30 days</option>
+            </select>
+            <label className="flex items-center gap-1 text-[11.5px] text-ink-3">
+              <input type="checkbox" checked={showReviewed} onChange={(e) => setShowReviewed(e.target.checked)} className="accent-accent" />
+              reviewed
+            </label>
           </div>
+        )}
+      </div>
 
+      {!collapsed && (
+        <div>
           {/* rows */}
           {events === null ? (
-            <p className="text-sm text-ink-3 italic py-3">Loading…</p>
+            <p className="px-3.5 py-3 text-[12.5px] text-ink-3">Loading…</p>
           ) : visible.length === 0 ? (
-            <p className="text-sm text-ink-3 italic py-3">Nothing material changed in this window. {!showReviewed && counts.all === 0 && scoped.some((e) => reviewed[e.id]) ? "(all reviewed)" : ""}</p>
+            <p className="px-3.5 py-3 text-[12.5px] text-ink-3">Nothing material changed in this window. {!showReviewed && counts.all === 0 && scoped.some((e) => reviewed[e.id]) ? "(all reviewed)" : ""}</p>
           ) : (
-            <div className="rounded-lg border border-line-soft divide-y divide-line-soft">
+            <div className="divide-y divide-line-soft">
               {visible.map((e) => {
                 const isReviewed = !!reviewed[e.id];
                 return (
-                  <div key={e.id} className={`flex items-center gap-3 px-3 py-2.5 ${isReviewed ? "opacity-45" : ""}`}>
-                    <span className={`w-2 h-2 rounded-full shrink-0 ${SEV_DOT[e.severity]}`} aria-hidden />
-                    <Link href={`/stock/${e.ticker.toLowerCase()}`} className="font-mono text-sm font-semibold text-ink hover:underline min-w-[52px]">
+                  <div key={e.id} className={`flex min-h-[34px] items-center gap-2.5 px-3.5 py-1 text-[12.5px] ${isReviewed ? "opacity-45" : ""}`}>
+                    <span className={`dot ${SEV_DOT[e.severity]}`} aria-hidden />
+                    <Link href={`/stock/${e.ticker.toLowerCase()}`} className="w-[60px] shrink-0 font-mono font-medium text-ink hover:underline">
                       {e.ticker}
                     </Link>
-                    <div className="flex-1 min-w-0">
-                      <div className="text-sm text-ink">
-                        <span className="text-[10px] text-ink-3 bg-surface-2 rounded px-1.5 py-0.5 mr-1.5">{TYPE_LABELS[e.type]}</span>
-                        <span className={SEV_TEXT[e.severity]}>{e.headline}</span>
-                      </div>
-                      <div className="text-[12px] text-ink-3 truncate" title={e.detail}>{e.detail}</div>
+                    <span className="w-[128px] shrink-0 truncate text-ink-2" title={TYPE_LABELS[e.type]}>{TYPE_LABELS[e.type]}</span>
+                    <div className="min-w-0 flex-1 truncate" title={`${e.headline} — ${e.detail}`}>
+                      <span className={SEV_TEXT[e.severity]}>{e.headline}</span>
+                      {e.detail && <span className="text-ink-3"> · {e.detail}</span>}
                     </div>
-                    {e.delta && <span className={`font-mono text-[12.5px] ${SEV_TEXT[e.severity]} shrink-0`}>{e.delta}</span>}
+                    {e.delta && <span className={`shrink-0 font-mono text-[12px] ${SEV_TEXT[e.severity]}`}>{e.delta}</span>}
                     <button
                       onClick={() => toggleReviewed(e.id)}
                       title={isReviewed ? "Mark unreviewed" : "Mark reviewed"}
                       aria-label={isReviewed ? "Mark unreviewed" : "Mark reviewed"}
-                      className={`shrink-0 w-6 h-6 rounded-full border flex items-center justify-center text-xs transition-colors ${
-                        isReviewed ? "bg-pos-soft border-pos-border text-pos" : "border-line text-ink-faint hover:text-ink-3 hover:border-line"
+                      className={`grid h-6 w-6 shrink-0 place-items-center rounded border transition-colors ${
+                        isReviewed ? "border-pos-border bg-pos-soft text-pos" : "border-line text-ink-faint hover:text-ink-3"
                       }`}
                     >
-                      ✓
+                      <AppIcon name="check" size={12} strokeWidth={2.25} />
                     </button>
                   </div>
                 );

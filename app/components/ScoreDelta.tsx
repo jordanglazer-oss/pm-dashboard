@@ -1,10 +1,9 @@
 "use client";
 
 /**
- * Compact "score change since last rescore" pill for the top of the
- * Stock page. Shown immediately under the score donut so the PM sees
- * the recent trend without scrolling down to the full ScoreHistory
- * table.
+ * Compact "score change since last rescore" read-out for the Score panel
+ * header on the Stock page. Shown beside the donut so the PM sees the
+ * recent trend without scrolling down to the full ScoreHistory table.
  *
  * Reads `pm:score-history` via the same `/api/kv/score-history` route
  * the full history table uses. Returns null when there's no prior
@@ -24,6 +23,7 @@ type Entry = {
   total: number;
   raw: number;
   adjusted: number;
+  rubricRev?: number;
 };
 
 type Props = {
@@ -62,7 +62,7 @@ export function ScoreDelta({ ticker, className = "" }: Props) {
 
   // Compute the delta between the two most recent entries. We deliberately
   // compare entry-to-entry (last rescore vs the one before) rather than
-  // current-stock-state vs latest history entry, so the pill always
+  // current-stock-state vs latest history entry, so the read always
   // reflects a discrete user-triggered rescore event and isn't muddied
   // by mid-day regime adjustments.
   const summary = useMemo(() => {
@@ -78,27 +78,23 @@ export function ScoreDelta({ ticker, className = "" }: Props) {
   const absDelta = Math.abs(delta);
   const positive = delta > 0;
   const neutral = absDelta < 0.05;
-
-  const palette = neutral
-    ? "bg-surface-2 border-line text-ink-2"
-    : positive
-    ? "bg-pos-soft border-pos-border text-pos"
-    : "bg-neg-soft border-neg-border text-neg";
-
+  const tone = neutral ? "text-ink-2" : positive ? "text-pos" : "text-neg";
   const sign = positive ? "+" : "";
 
   return (
-    <div
-      className={`mt-2 flex items-center gap-1.5 rounded-full border px-3 py-1 text-[11px] ${palette} ${className}`}
+    <span
+      className={`inline-flex items-center gap-1.5 whitespace-nowrap text-[11.5px] text-ink-3 ${className}`}
       title={`Last rescore on ${fmtDate(latest.timestamp)} changed the composite from ${prior.total.toFixed(1)} to ${latest.total.toFixed(1)} (prior rescore: ${fmtDate(prior.timestamp)}). Manual category edits within 72h of a rescore roll into the same entry, so the number reflects your final reviewed composite — not the AI-only value.`}
     >
-      <span className="font-semibold">
-        {neutral ? "Unchanged" : `${sign}${delta.toFixed(1)} pt${absDelta === 1 ? "" : "s"}`}
+      <span className={`font-mono font-medium ${tone}`}>
+        {neutral ? "Unchanged" : `${sign}${delta.toFixed(1)}`}
       </span>
-      <span className="opacity-60">•</span>
-      <span className="opacity-80">
-        {prior.total.toFixed(1)} → {latest.total.toFixed(1)} since {fmtDate(prior.timestamp)}
+      <span>
+        since {fmtDate(prior.timestamp)}
       </span>
-    </div>
+      {typeof latest.rubricRev === "number" && (
+        <span>· rubric rev <span className="font-mono">{latest.rubricRev}</span></span>
+      )}
+    </span>
   );
 }

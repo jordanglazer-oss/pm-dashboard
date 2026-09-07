@@ -2,6 +2,7 @@
 
 import React, { useEffect, useState } from "react";
 import Link from "next/link";
+import { AppIcon } from "./AppIcon";
 import type { Alert, Opportunity, RegimeTailwind } from "@/app/lib/alerts";
 
 /**
@@ -41,11 +42,12 @@ export function AttentionPanel() {
   const high = alerts.filter((a) => a.priority === "high").length;
   const medium = alerts.length - high;
   const lead = [...alerts.filter((a) => a.priority === "high"), ...alerts.filter((a) => a.priority !== "high")].slice(0, 3);
-  const tone = high > 0 ? "border-neg-border bg-neg-soft" : alerts.length > 0 ? "border-warn-border bg-warn-soft" : "border-pos-border bg-pos-soft";
+  const dot = high > 0 ? "bg-neg" : alerts.length > 0 ? "bg-warn" : "bg-pos";
 
   return (
-    <section className={`flex flex-wrap items-center gap-x-3 gap-y-1 rounded-card border px-4 py-2 text-[12px] ${tone}`}>
-      <span className="font-semibold">
+    <section className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-card border border-line bg-surface px-3.5 py-2 text-[12.5px]">
+      <span className={`dot ${dot}`} aria-hidden />
+      <span className="font-medium">
         {high > 0 && <span className="text-neg">{high} high</span>}
         {high > 0 && medium > 0 && <span className="text-ink-faint"> · </span>}
         {medium > 0 && <span className="text-warn">{medium} to watch</span>}
@@ -73,8 +75,8 @@ export function AttentionPanel() {
           {tailwind && opps.length === 0 ? "regime tailwind" : `${opps.length} improving`}
         </span>
       )}
-      <Link href="/brief#s-act" className="ml-auto shrink-0 text-[11px] font-semibold text-accent hover:text-accent-ink">
-        Open the queue → Brief
+      <Link href="/brief#s-act" className="ml-auto inline-flex shrink-0 items-center gap-1 text-[12px] !text-accent-ink hover:!text-accent">
+        Open the queue<AppIcon name="arrowR" size={12} strokeWidth={2} />
       </Link>
     </section>
   );

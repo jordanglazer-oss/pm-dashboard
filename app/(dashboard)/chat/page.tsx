@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ChatMessage, ChatThreadData } from "@/app/api/kv/chat-threads/[id]/route";
 import type { ChatThreadManifestEntry } from "@/app/api/kv/chat-threads/route";
+import { AppIcon } from "@/app/components/AppIcon";
 
 /**
  * /chat — dashboard chat with auto-injected portfolio context + web search.
@@ -83,12 +84,12 @@ function renderMarkdown(text: string): React.ReactNode {
           j++;
         }
         blocks.push(
-          <div key={key++} className="overflow-x-auto -mx-1 my-2">
-            <table className="text-xs border-collapse w-full">
+          <div key={key++} className="my-2 overflow-x-auto">
+            <table className="w-full border-collapse font-mono text-[12px] tabular-nums">
               <thead>
-                <tr className="border-b border-line">
+                <tr>
                   {headerCells.map((c, ci) => (
-                    <th key={ci} className="text-left font-semibold px-2 py-1.5 text-ink">
+                    <th key={ci} className="h-[30px] whitespace-nowrap border-b border-line px-2 text-left text-[11px] font-medium text-ink-3">
                       {renderInline(c)}
                     </th>
                   ))}
@@ -96,9 +97,9 @@ function renderMarkdown(text: string): React.ReactNode {
               </thead>
               <tbody>
                 {bodyRows.map((row, ri) => (
-                  <tr key={ri} className="border-b border-line-soft last:border-b-0">
+                  <tr key={ri}>
                     {row.map((c, ci) => (
-                      <td key={ci} className="px-2 py-1.5 align-top text-ink">
+                      <td key={ci} className="border-b border-line-soft px-2 py-1.5 align-top text-ink">
                         {renderInline(c)}
                       </td>
                     ))}
@@ -118,7 +119,7 @@ function renderMarkdown(text: string): React.ReactNode {
     if (hMatch) {
       const headingText = hMatch[2].replace(/[*_`]/g, "");
       blocks.push(
-        <p key={key++} className="font-bold text-ink mt-3 first:mt-0 mb-1.5">
+        <p key={key++} className="mb-1 mt-3 font-semibold text-ink first:mt-0">
           {renderInline(headingText)}
         </p>,
       );
@@ -134,9 +135,9 @@ function renderMarkdown(text: string): React.ReactNode {
         i++;
       }
       blocks.push(
-        <ul key={key++} className="list-disc pl-5 space-y-1 mb-3 last:mb-0">
+        <ul key={key++} className="mb-3 list-disc space-y-1 pl-5 last:mb-0">
           {items.map((it, idx) => (
-            <li key={idx} className="leading-relaxed">{renderInline(it)}</li>
+            <li key={idx}>{renderInline(it)}</li>
           ))}
         </ul>,
       );
@@ -151,9 +152,9 @@ function renderMarkdown(text: string): React.ReactNode {
         i++;
       }
       blocks.push(
-        <ol key={key++} className="list-decimal pl-5 space-y-1 mb-3 last:mb-0">
+        <ol key={key++} className="mb-3 list-decimal space-y-1 pl-5 last:mb-0">
           {items.map((it, idx) => (
-            <li key={idx} className="leading-relaxed">{renderInline(it)}</li>
+            <li key={idx}>{renderInline(it)}</li>
           ))}
         </ol>,
       );
@@ -167,7 +168,7 @@ function renderMarkdown(text: string): React.ReactNode {
       i++;
     }
     blocks.push(
-      <p key={key++} className="leading-relaxed mb-3 last:mb-0">
+      <p key={key++} className="mb-3 last:mb-0">
         {paraLines.map((l, idx) => (
           <span key={idx}>
             {renderInline(l)}
@@ -227,8 +228,8 @@ function renderInline(text: string): React.ReactNode {
   return tokens.map((t, idx) => {
     if (t.type === "bold") return <strong key={idx}>{t.content}</strong>;
     if (t.type === "italic") return <em key={idx}>{t.content}</em>;
-    if (t.type === "code") return <code key={idx} className="rounded bg-surface-2 px-1 py-0.5 text-[0.85em] font-mono">{t.content}</code>;
-    if (t.type === "link") return <a key={idx} href={t.url} target="_blank" rel="noopener noreferrer" className="text-accent underline hover:text-accent">{t.content}</a>;
+    if (t.type === "code") return <code key={idx} className="rounded-[4px] bg-surface-2 px-1 py-0.5 font-mono text-[0.9em]">{t.content}</code>;
+    if (t.type === "link") return <a key={idx} href={t.url} target="_blank" rel="noopener noreferrer" className="text-accent hover:underline">{t.content}</a>;
     return <span key={idx}>{t.content}</span>;
   });
 }
@@ -579,46 +580,46 @@ export default function ChatPage() {
   );
 
   return (
-    <div className="relative flex h-[calc(100vh-46px)] bg-surface-2 overflow-hidden">
+    <div className="relative flex h-[calc(100vh-48px)] gap-3.5 overflow-hidden p-4 md:p-5">
       {/* Mobile backdrop */}
       {sidebarOpen && (
         <div
-          className="md:hidden fixed inset-0 bg-black/30 z-30"
+          className="fixed inset-0 z-30 bg-ink/30 md:hidden"
           onClick={() => setSidebarOpen(false)}
         />
       )}
-      {/* Sidebar — drawer on mobile, static on md+ */}
+      {/* Thread sidebar — a 240px panel column; drawer on mobile, static on md+ */}
       <aside
-        className={`
-          fixed md:static inset-y-0 left-0 z-40 w-64 shrink-0 border-r border-line bg-white flex flex-col
-          transform transition-transform duration-200
-          ${sidebarOpen ? "translate-x-0" : "-translate-x-full"}
-          md:translate-x-0
-        `}
+        className={`panel fixed inset-y-0 left-0 z-40 flex w-[240px] shrink-0 flex-col rounded-none transition-transform duration-200 md:static md:translate-x-0 md:rounded-card ${
+          sidebarOpen ? "translate-x-0" : "-translate-x-full"
+        }`}
       >
-        <div className="p-3 border-b border-line flex items-center gap-2">
-          <button
-            onClick={() => {
-              newThread();
-              setSidebarOpen(false);
-            }}
-            className="flex-1 rounded-lg bg-accent px-3 py-2 text-sm font-semibold text-white hover:bg-accent transition-colors"
-          >
-            + New chat
-          </button>
-          <button
-            onClick={() => setSidebarOpen(false)}
-            className="md:hidden rounded-lg p-2 text-ink-3 hover:bg-surface-2"
-            aria-label="Close sidebar"
-          >
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-            </svg>
-          </button>
+        <div className="panel-h">
+          <span className="t">Threads</span>
+          {threads.length > 0 && <span className="m">{threads.length}</span>}
+          <div className="ml-auto flex items-center gap-1.5">
+            <button
+              onClick={() => {
+                newThread();
+                setSidebarOpen(false);
+              }}
+              className="flex h-7 items-center gap-1 rounded-control bg-ink pl-2 pr-2.5 text-[12.5px] font-medium text-white transition-colors hover:bg-ink-2"
+            >
+              <AppIcon name="plus" size={13} strokeWidth={2.25} />
+              New
+            </button>
+            <button
+              onClick={() => setSidebarOpen(false)}
+              className="grid h-7 w-7 place-items-center rounded-control text-ink-3 hover:bg-surface-hover hover:text-ink md:hidden"
+              aria-label="Close threads"
+            >
+              <AppIcon name="x" size={14} />
+            </button>
+          </div>
         </div>
-        <div className="flex-1 overflow-y-auto">
+        <div className="flex-1 overflow-y-auto py-1">
           {threads.length === 0 && (
-            <p className="px-4 py-6 text-xs text-ink-3 text-center">No conversations yet. Start a new one above.</p>
+            <p className="px-3.5 py-6 text-center text-[12px] text-ink-3">No conversations yet.</p>
           )}
           {threads.map((t) => {
             const isActive = t.id === activeThreadId;
@@ -626,70 +627,65 @@ export default function ChatPage() {
             return (
               <div
                 key={t.id}
-                className={`group flex items-start gap-1.5 px-3 py-2.5 border-b border-line-soft ${
+                title={`${t.messageCount} msg · ${formatTime(t.updatedAt)}`}
+                className={`group flex h-[34px] items-center gap-2 px-3 text-[12.5px] ${
                   isRenaming ? "" : "cursor-pointer"
-                } ${isActive ? "bg-accent-soft" : "hover:bg-surface-2"}`}
+                } ${isActive ? "bg-accent-soft text-accent-ink" : "text-ink hover:bg-surface-hover"}`}
                 onClick={() => {
                   if (isRenaming) return;
                   setActiveThreadId(t.id);
                   setSidebarOpen(false);
                 }}
               >
-                <div className="flex-1 min-w-0">
-                  {isRenaming ? (
-                    <input
-                      ref={renameInputRef}
-                      type="text"
-                      value={renameDraft}
-                      onChange={(e) => setRenameDraft(e.target.value)}
-                      onClick={(e) => e.stopPropagation()}
-                      onBlur={() => commitRename()}
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter") {
-                          e.preventDefault();
-                          commitRename();
-                        } else if (e.key === "Escape") {
-                          e.preventDefault();
-                          cancelRename();
-                        }
-                      }}
-                      className="w-full text-sm font-semibold text-ink bg-white border border-accent-border rounded px-1.5 py-0.5 outline-none focus:ring-2 focus:ring-accent-soft"
-                      maxLength={80}
-                    />
-                  ) : (
-                    <p className={`text-sm truncate ${isActive ? "font-semibold text-accent" : "text-ink"}`}>{t.title}</p>
-                  )}
-                  <p className="text-[10px] text-ink-3 mt-0.5">
-                    {t.messageCount} msg · {formatTime(t.updatedAt)}
-                  </p>
-                </div>
-                {!isRenaming && (
-                  <div className="flex items-center gap-1 md:opacity-0 md:group-hover:opacity-100 transition-opacity">
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        beginRename(t.id, t.title);
-                      }}
-                      className="text-ink-3 hover:text-accent p-0.5"
-                      title="Rename"
-                    >
-                      <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-                      </svg>
-                    </button>
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        deleteThread(t.id);
-                      }}
-                      className="text-ink-3 hover:text-neg p-0.5"
-                      title="Delete"
-                    >
-                      <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-                      </svg>
-                    </button>
-                  </div>
+                {isRenaming ? (
+                  <input
+                    ref={renameInputRef}
+                    type="text"
+                    value={renameDraft}
+                    onChange={(e) => setRenameDraft(e.target.value)}
+                    onClick={(e) => e.stopPropagation()}
+                    onBlur={() => commitRename()}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") {
+                        e.preventDefault();
+                        commitRename();
+                      } else if (e.key === "Escape") {
+                        e.preventDefault();
+                        cancelRename();
+                      }
+                    }}
+                    className="h-6 w-full rounded-control border border-accent-border bg-surface px-1.5 text-[12.5px] text-ink outline-none"
+                    maxLength={80}
+                  />
+                ) : (
+                  <>
+                    <span className={`min-w-0 flex-1 truncate ${isActive ? "font-medium" : ""}`}>{t.title}</span>
+                    <span className="shrink-0 font-mono text-[11px] text-ink-3 md:group-hover:hidden">{t.messageCount}</span>
+                    <span className="hidden shrink-0 items-center gap-0.5 md:group-hover:flex">
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          beginRename(t.id, t.title);
+                        }}
+                        className="grid h-6 w-6 place-items-center rounded-control text-ink-3 hover:bg-surface hover:text-ink"
+                        title="Rename"
+                        aria-label="Rename"
+                      >
+                        <AppIcon name="edit" size={13} />
+                      </button>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          deleteThread(t.id);
+                        }}
+                        className="grid h-6 w-6 place-items-center rounded-control text-ink-3 hover:bg-surface hover:text-neg"
+                        title="Delete"
+                        aria-label="Delete"
+                      >
+                        <AppIcon name="trash" size={13} />
+                      </button>
+                    </span>
+                  </>
                 )}
               </div>
             );
@@ -698,54 +694,36 @@ export default function ChatPage() {
       </aside>
 
       {/* Main */}
-      <main className="flex-1 flex flex-col min-w-0">
-        {/* Toolbar */}
-        <div className="px-4 md:px-6 py-3 border-b border-line bg-white flex items-center justify-between gap-3">
-          <div className="flex items-center gap-2 min-w-0">
-            <button
-              onClick={() => setSidebarOpen(true)}
-              className="md:hidden shrink-0 rounded-lg p-2 text-ink-2 hover:bg-surface-2"
-              aria-label="Open conversations"
-            >
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" d="M4 6h16M4 12h16M4 18h16" />
-              </svg>
-            </button>
-            <div className="min-w-0">
-              <h1 className="text-base font-semibold text-ink truncate">{activeThread?.title ?? "Chat"}</h1>
-              <p className="text-[11px] text-ink-3 truncate">
-                Sonnet 4.6 · web search · {contextEnabled ? "context on" : "context off"}
-              </p>
+      <section className="panel flex min-w-0 flex-1 flex-col">
+        {/* Header: thread title · model meta · Context seg */}
+        <div className="panel-h">
+          <button
+            onClick={() => setSidebarOpen(true)}
+            className="-ml-1.5 grid h-7 w-7 shrink-0 place-items-center rounded-control text-ink-3 hover:bg-surface-hover hover:text-ink md:hidden"
+            aria-label="Open threads"
+          >
+            <AppIcon name="menu" size={15} />
+          </button>
+          <span className="t truncate">{activeThread?.title ?? "Chat"}</span>
+          <span className="m hidden truncate sm:inline">Sonnet 4.6 · web search</span>
+          <div className="ml-auto flex shrink-0 items-center gap-2">
+            <span className="hidden text-[11px] text-ink-3 sm:inline">Context</span>
+            <div className="seg" role="group" aria-label="Portfolio context">
+              <button type="button" className={contextEnabled ? "on" : ""} onClick={() => setContextEnabled(true)}>On</button>
+              <button type="button" className={!contextEnabled ? "on" : ""} onClick={() => setContextEnabled(false)}>Off</button>
             </div>
           </div>
-          <label className="flex items-center gap-2 cursor-pointer shrink-0">
-            <span className="text-xs font-semibold text-ink-2 hidden sm:inline">Context</span>
-            <button
-              onClick={() => setContextEnabled((v) => !v)}
-              className={`relative w-10 h-5 rounded-full transition-colors ${
-                contextEnabled ? "bg-accent" : "bg-line"
-              }`}
-              type="button"
-            >
-              <span
-                className={`absolute top-0.5 ${
-                  contextEnabled ? "left-5" : "left-0.5"
-                } w-4 h-4 rounded-full bg-white transition-all`}
-              />
-            </button>
-          </label>
         </div>
 
         {/* Messages */}
-        <div ref={scrollRef} className="flex-1 overflow-y-auto px-3 sm:px-6 py-4 sm:py-6">
+        <div ref={scrollRef} className="flex-1 overflow-y-auto px-3.5 py-4 sm:px-5">
           {visibleMessages.length === 0 && !isStreaming && (
-            <div className="max-w-full sm:max-w-2xl mx-auto pt-12">
-              <h2 className="text-2xl font-bold text-ink mb-2">Ask anything about your dashboard or the market</h2>
-              <p className="text-sm text-ink-3 mb-6">
-                I have access to your latest brief, holdings, market regime, and PIM models. I can also pull fresh data
-                from the web when needed.
+            <div className="mx-auto max-w-2xl pt-8">
+              <div className="text-[13px] font-semibold text-ink">Ask anything about the book or the market</div>
+              <p className="mt-1 text-[12.5px] leading-[1.5] text-ink-2">
+                The latest brief, holdings, market regime and PIM models are in context. Fresh data is pulled from the web when needed.
               </p>
-              <div className="space-y-2">
+              <div className="mt-4 flex flex-col items-start gap-2">
                 {emptyStateSuggestions.map((s) => (
                   <button
                     key={s}
@@ -753,7 +731,7 @@ export default function ChatPage() {
                       setInput(s);
                       textareaRef.current?.focus();
                     }}
-                    className="block w-full text-left rounded-lg border border-line bg-white px-4 py-3 text-sm text-ink hover:border-accent-border hover:bg-accent-soft transition-colors"
+                    className="inline-flex min-h-7 items-center rounded-control border border-line bg-surface px-2.5 py-1 text-left text-[12.5px] text-ink-2 transition-colors hover:bg-surface-hover hover:text-ink"
                   >
                     {s}
                   </button>
@@ -762,7 +740,7 @@ export default function ChatPage() {
             </div>
           )}
 
-          <div className="max-w-3xl mx-auto space-y-4">
+          <div className="mx-auto flex max-w-3xl flex-col gap-3">
             {visibleMessages.map((m) => (
               <MessageBubble key={m.id} message={m} />
             ))}
@@ -770,20 +748,18 @@ export default function ChatPage() {
             {isStreaming && (
               <div className="flex flex-col items-start gap-2">
                 {streamingSearchEvents.length > 0 && (
-                  <div className="rounded-lg bg-warn-soft border border-warn-border px-3 py-2 text-xs text-warn space-y-1">
+                  <div className="flex flex-col gap-1 text-[12px] text-ink-2">
                     {streamingSearchEvents.map((e, idx) =>
                       e.type === "query" ? (
-                        <div key={idx} className="flex items-center gap-1.5">
-                          <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-                          </svg>
-                          <span className="font-semibold">Searching:</span>
-                          <span>{e.text}</span>
+                        <div key={idx} className="flex items-center gap-2">
+                          <span className="dot bg-warn" />
+                          <span>Searching</span>
+                          <span className="text-ink-3">{e.text}</span>
                         </div>
                       ) : (
-                        <div key={idx} className="flex items-center gap-1.5 pl-5">
-                          <span className="text-warn">·</span>
-                          <a href={e.url} target="_blank" rel="noopener noreferrer" className="underline hover:text-warn">
+                        <div key={idx} className="flex items-center gap-2 pl-4">
+                          <span className="dot bg-ink-faint" />
+                          <a href={e.url} target="_blank" rel="noopener noreferrer" className="truncate text-accent hover:underline">
                             {e.text}
                           </a>
                         </div>
@@ -792,56 +768,57 @@ export default function ChatPage() {
                   </div>
                 )}
                 {streamingText && (
-                  <div className="bg-white rounded-card border border-line px-4 py-3 max-w-full sm:max-w-2xl text-sm break-words text-ink">
+                  <div className="max-w-full break-words rounded-card border border-line bg-surface px-3.5 py-2.5 text-[13px] leading-[1.5] text-ink sm:max-w-2xl">
                     {renderMarkdown(streamingText)}
-                    <span className="inline-block w-2 h-4 bg-accent ml-1 animate-pulse" />
+                    <span className="ml-0.5 inline-block h-3.5 w-[6px] animate-pulse bg-ink-3 align-middle" />
                   </div>
                 )}
                 {!streamingText && streamingSearchEvents.length === 0 && (
-                  <div className="flex items-center gap-2 text-xs text-ink-3">
-                    <span className="w-2 h-2 rounded-full bg-accent animate-pulse" />
-                    Thinking…
+                  <div className="flex items-center gap-2 text-[12px] text-ink-3">
+                    <span className="dot animate-pulse bg-accent" />
+                    Thinking
                   </div>
                 )}
               </div>
             )}
 
             {error && (
-              <div className="rounded-lg bg-neg-soft border border-neg-border px-3 py-2 text-xs text-neg">
-                <span className="font-semibold">Error:</span> {error}
+              <div className="flex items-start gap-2 text-[12.5px] text-neg">
+                <span className="dot mt-[6px] bg-neg" />
+                <span><span className="font-medium">Error</span> · {error}</span>
               </div>
             )}
           </div>
         </div>
 
         {/* Composer */}
-        <div className="border-t border-line bg-white px-3 sm:px-6 py-3">
-          <div className="max-w-3xl mx-auto">
-            <div className="relative rounded-card border border-line bg-white focus-within:border-accent-border focus-within:ring-2 focus-within:ring-accent-border transition-all">
+        <div className="border-t border-line-soft px-3.5 py-3 sm:px-5">
+          <div className="mx-auto max-w-3xl">
+            <div className="flex items-end gap-2">
               <textarea
                 ref={textareaRef}
                 value={input}
                 onChange={(e) => onInputChange(e.target.value)}
                 onKeyDown={onKeyDown}
-                placeholder={isStreaming ? "Streaming response…" : "Ask anything (Shift+Enter for newline)…"}
+                placeholder={isStreaming ? "Streaming response" : "Ask anything"}
                 disabled={isStreaming}
                 rows={1}
-                className="w-full resize-none rounded-card bg-transparent px-4 py-3 pr-14 text-sm text-ink placeholder-ink-3 outline-none disabled:opacity-50"
+                className="min-h-7 flex-1 resize-none rounded-control border border-line bg-surface px-2.5 py-1 text-[12.5px] leading-[18px] text-ink outline-none placeholder:text-ink-3 focus:border-accent-border disabled:opacity-50"
               />
               <button
                 onClick={send}
                 disabled={isStreaming || !input.trim()}
-                className="absolute right-2 bottom-2 rounded-lg bg-accent px-3 py-1.5 text-xs font-semibold text-white hover:bg-accent disabled:bg-line disabled:cursor-not-allowed transition-colors"
+                className="h-7 shrink-0 rounded-control bg-ink px-3 text-[12.5px] font-medium text-white transition-colors hover:bg-ink-2 disabled:cursor-not-allowed disabled:opacity-50"
               >
                 Send
               </button>
             </div>
-            <p className="text-[10px] text-ink-3 mt-1.5 text-center">
-              Context: brief, holdings, market regime, PIM models. Web search on demand. ⌘+Enter / Enter to send.
+            <p className="mt-1.5 text-[11px] text-ink-3">
+              Context: brief, holdings, market regime, PIM models · web search on demand · Enter to send, Shift+Enter for a newline
             </p>
           </div>
         </div>
-      </main>
+      </section>
     </div>
   );
 }
@@ -850,7 +827,7 @@ function MessageBubble({ message }: { message: ChatMessage }) {
   if (message.role === "user") {
     return (
       <div className="flex justify-end">
-        <div className="bg-accent text-white rounded-card px-4 py-3 max-w-full sm:max-w-2xl text-sm break-words whitespace-pre-wrap">
+        <div className="max-w-full whitespace-pre-wrap break-words rounded-card border border-line bg-surface-2 px-3.5 py-2.5 text-[13px] leading-[1.5] text-ink sm:max-w-2xl">
           {message.content}
         </div>
       </div>
@@ -859,28 +836,30 @@ function MessageBubble({ message }: { message: ChatMessage }) {
   return (
     <div className="flex flex-col items-start gap-2">
       {message.searchQueries && message.searchQueries.length > 0 && (
-        <div className="rounded-lg bg-warn-soft border border-warn-border px-3 py-2 text-[11px] text-warn space-y-0.5 max-w-full sm:max-w-2xl">
-          <div className="font-semibold">Web searches:</div>
+        <div className="flex max-w-full flex-col gap-1 text-[12px] text-ink-2 sm:max-w-2xl">
           {message.searchQueries.map((q, i) => (
-            <div key={i} className="pl-2">· {q}</div>
+            <div key={i} className="flex items-center gap-2">
+              <span className="dot bg-warn" />
+              <span>Searched</span>
+              <span className="truncate text-ink-3">{q}</span>
+            </div>
           ))}
         </div>
       )}
-      <div className="bg-white rounded-card border border-line px-4 py-3 max-w-full sm:max-w-2xl text-sm break-words text-ink">
+      <div className="max-w-full break-words rounded-card border border-line bg-surface px-3.5 py-2.5 text-[13px] leading-[1.5] text-ink sm:max-w-2xl">
         {renderMarkdown(message.content)}
       </div>
       {message.citations && message.citations.length > 0 && (
-        <div className="rounded-lg bg-surface-2 border border-line px-3 py-2 text-[11px] text-ink-2 max-w-full sm:max-w-2xl">
-          <div className="font-semibold mb-1">Sources:</div>
-          <ul className="space-y-0.5">
-            {message.citations.map((c, i) => (
-              <li key={i} className="truncate">
-                <a href={c.url} target="_blank" rel="noopener noreferrer" className="text-accent underline hover:text-accent">
-                  {c.title ?? c.url}
-                </a>
-              </li>
-            ))}
-          </ul>
+        <div className="flex max-w-full flex-col gap-1 text-[12px] sm:max-w-2xl">
+          <div className="text-[11px] text-ink-3">Sources</div>
+          {message.citations.map((c, i) => (
+            <div key={i} className="flex min-w-0 items-center gap-2">
+              <span className="dot bg-ink-faint" />
+              <a href={c.url} target="_blank" rel="noopener noreferrer" className="truncate text-accent hover:underline">
+                {c.title ?? c.url}
+              </a>
+            </div>
+          ))}
         </div>
       )}
     </div>
