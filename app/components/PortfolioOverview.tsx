@@ -1188,9 +1188,6 @@ export function PortfolioOverview({
 
   const refreshButton = (
     <>
-      {refreshAllAt && !refreshingAll && !refreshProgress && (
-        <span className="hidden text-[11.5px] text-ink-3 xl:inline">Refreshed {formatRelTimestamp(refreshAllAt)}</span>
-      )}
           <button
             onClick={handleRefreshAll}
             disabled={refreshingAll || scoringAny}
@@ -1470,16 +1467,16 @@ export function PortfolioOverview({
                                     ? "Auto-fetch returned 0% — almost certainly wrong for a fund/ETF. Click to enter the real MER as a manual override."
                                     : "No MER on file — click to add a manual override. Missing MERs show as 0% in the Client Report blended-fee calc."
                                 }
-                                className="rounded-md bg-warn-soft px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider text-warn hover:bg-warn-soft transition-colors"
+                                className="inline-flex items-center gap-1 text-[11px] !text-warn hover:underline"
                               >
-                                ⚠ No MER
+                                <span className="dot bg-warn" />No MER
                               </Link>
                             )}
                           </div>
                         </td>
                         <td className="max-w-[180px] truncate text-ink-2">{s.name}</td>
                         <td>
-                          <span className={`rounded-md px-2 py-0.5 text-[10px] font-bold ${s.instrumentType === "etf" ? "bg-accent-soft text-accent" : "bg-violet-soft text-violet"}`}>
+                          <span className="text-[12px] text-ink-2">
                             {INSTRUMENT_LABELS[s.instrumentType || "stock"]}
                           </span>
                         </td>
@@ -1785,11 +1782,11 @@ function RankingTable({
     const usCollapsed = subCollapsed("us");
     displayRows = [
       ...(cad.length ? [
-        { kind: "header", key: "hdr-cad", currencyKey: "cad", label: "🇨🇦 Canadian (CAD)", count: cad.length, collapsed: cadCollapsed } as DisplayRow,
+        { kind: "header", key: "hdr-cad", currencyKey: "cad", label: "Canadian · CAD", count: cad.length, collapsed: cadCollapsed } as DisplayRow,
         ...(cadCollapsed ? [] : buildGroup(cad).map((r) => ({ kind: "stock", ...r } as DisplayRow))),
       ] : []),
       ...(us.length ? [
-        { kind: "header", key: "hdr-us", currencyKey: "us", label: "🇺🇸 US (USD)", count: us.length, collapsed: usCollapsed } as DisplayRow,
+        { kind: "header", key: "hdr-us", currencyKey: "us", label: "US · USD", count: us.length, collapsed: usCollapsed } as DisplayRow,
         ...(usCollapsed ? [] : buildGroup(us).map((r) => ({ kind: "stock", ...r } as DisplayRow))),
       ] : []),
     ];
@@ -2252,6 +2249,7 @@ function RankingTable({
                         title={row.collapsed ? "Expand" : "Collapse"}
                       >
                         <span className={`text-ink-3 transition-transform ${row.collapsed ? "-rotate-90" : ""}`}><AppIcon name="chevD" size={12} strokeWidth={2} /></span>
+                        <AppIcon name={row.currencyKey === "cad" ? "flagCA" : "flagUS"} size={12} strokeWidth={1.5} />
                         {row.label} <span className="font-mono">· {row.count}</span>
                       </button>
                     </td>
@@ -2293,7 +2291,7 @@ function RankingTable({
                         className="h-3.5 w-3.5 shrink-0 cursor-pointer accent-accent"
                         title={`Include ${displayTicker(s.ticker)} in a targeted rescore (scopes the Score all / Rescore fundamentals buttons)`}
                       />
-                      <Link href={`/stock/${s.ticker.toLowerCase()}`} className="block hover:underline" onClick={(e) => { if (onSelectTicker) { e.preventDefault(); onSelectTicker(s.ticker); } }}>
+                      <Link href={`/stock/${s.ticker.toLowerCase()}`} className="block hover:underline" title="Open the stock page">
                         <div className="flex items-center gap-1.5 font-mono font-medium text-ink">
                           {displayTicker(s.ticker)}
                           {(() => {
