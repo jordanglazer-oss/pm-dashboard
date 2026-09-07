@@ -6,6 +6,21 @@ import type { DailySummary } from "@/app/lib/daily-summary";
 import type { ActionItem } from "@/app/lib/daily-summary/actions";
 import { Card, CardHeader, Empty, Pct, Pill, TickerLink, timeAgo } from "./summary-ui";
 
+/**
+ * The queue is rendered in GROUPS, not one priority-sorted list. Interleaved,
+ * the brief's own recommendations got scattered among kill trips and change
+ * events and were easy to miss — they lead now, in their own tinted block,
+ * and every other source follows under its own header.
+ */
+const GROUPS: { key: string; title: string; sources: ActionItem["source"][]; lead?: boolean }[] = [
+  { key: "brief", title: "The brief recommends", sources: ["ai"], lead: true },
+  { key: "thesis", title: "Thesis", sources: ["kill", "coverage"] },
+  { key: "prints", title: "Prints", sources: ["earnings"] },
+  { key: "entry", title: "Entry", sources: ["entry"] },
+  { key: "alerts", title: "Alerts", sources: ["alert"] },
+  { key: "changes", title: "Changes", sources: ["change"] },
+];
+
 const SOURCE_LABEL: Record<ActionItem["source"], { label: string; tone: "pos" | "neg" | "warn" | "accent" | "neutral" | "violet" }> = {
   kill: { label: "Kill", tone: "neg" },
   alert: { label: "Alert", tone: "warn" },
@@ -56,48 +71,62 @@ export function ActionQueue({
       ) : a.items.length === 0 && !showCleared ? (
         <Empty>Nothing needs a decision right now.</Empty>
       ) : (
-        <ul className={`divide-y divide-line-soft ${scrollable ? "min-h-0 flex-1 basis-0 overflow-y-auto" : ""}`}>
-          {shown.map((it) => (
-            <li key={it.id} className={`flex items-start gap-3 px-4 py-2.5 ${it.state ? "opacity-55" : ""}`}>
-              <span className={`mt-[7px] h-2 w-2 shrink-0 rounded-full ${it.priority === "high" ? "bg-neg" : it.priority === "medium" ? "bg-warn" : "bg-ink-faint"}`} />
-              <div className="min-w-0 flex-1">
-                <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
-                  <Pill tone={SOURCE_LABEL[it.source].tone}>{SOURCE_LABEL[it.source].label}</Pill>
-                  {it.ticker && <TickerLink ticker={it.ticker} />}
-                  <span className={`text-[12.5px] text-ink ${it.state?.status === "done" ? "line-through" : ""}`}>{it.title}</span>
-                  {it.at && <span className="text-[10.5px] text-ink-faint">{timeAgo(it.at)}</span>}
+        <div className={scrollable ? "min-h-0 flex-1 basis-0 overflow-y-auto" : ""}>
+          {GROUPS.map((g) => {
+            const items = shown.filter((it) => g.sources.includes(it.source));
+            if (items.length === 0) return null;
+            return (
+              <div key={g.key} className={g.lead ? "border-b border-accent-border bg-accent-soft/40" : "border-b border-line-soft last:border-b-0"}>
+                <div className={`flex items-baseline gap-2 px-4 pt-2 pb-1 text-[10.5px] font-semibold uppercase tracking-wide ${g.lead ? "text-accent-ink" : "text-ink-3"}`}>
+                  {g.title}
+                  <span className="font-mono normal-case tracking-normal text-ink-faint">{items.length}</span>
                 </div>
-                {it.detail && <div className="mt-0.5 text-[11.5px] leading-snug text-ink-2">{it.detail}</div>}
-                {it.tags && it.tags.length > 0 && (
-                  <div className="mt-1 flex flex-wrap gap-1">
-                    {it.tags.filter(Boolean).slice(0, 3).map((t, i) => (
-                      <span key={i} className="rounded-[4px] bg-surface-2 px-1.5 py-[1px] font-mono text-[10px] text-ink-3">{t}</span>
-                    ))}
-                  </div>
-                )}
+                <ul className="divide-y divide-line-soft">
+                  {items.map((it) => (
+                    <li key={it.id} className={`flex items-start gap-3 px-4 py-2.5 ${it.state ? "opacity-55" : ""}`}>
+                      <span className={`mt-[7px] h-2 w-2 shrink-0 rounded-full ${it.priority === "high" ? "bg-neg" : it.priority === "medium" ? "bg-warn" : "bg-ink-faint"}`} />
+                      <div className="min-w-0 flex-1">
+                        <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
+                          <Pill tone={SOURCE_LABEL[it.source].tone}>{SOURCE_LABEL[it.source].label}</Pill>
+                          {it.ticker && <TickerLink ticker={it.ticker} />}
+                          <span className={`text-[12.5px] text-ink ${it.state?.status === "done" ? "line-through" : ""}`}>{it.title}</span>
+                          {it.at && <span className="text-[10.5px] text-ink-faint">{timeAgo(it.at)}</span>}
+                        </div>
+                        {it.detail && <div className="mt-0.5 text-[11.5px] leading-snug text-ink-2">{it.detail}</div>}
+                        {it.tags && it.tags.length > 0 && (
+                          <div className="mt-1 flex flex-wrap gap-1">
+                            {it.tags.filter(Boolean).slice(0, 3).map((t, i) => (
+                              <span key={i} className="rounded-[4px] bg-surface-2 px-1.5 py-[1px] font-mono text-[10px] text-ink-3">{t}</span>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                      <div className="flex shrink-0 items-center gap-1">
+                        {it.href && !it.state && (
+                          <Link href={it.href} className="rounded-[6px] px-2 py-1 text-[11px] text-accent hover:bg-accent-soft">open</Link>
+                        )}
+                        {it.state ? (
+                          <button disabled={busy === it.id} onClick={() => mark(it.id, "clear")} className="rounded-[6px] px-2 py-1 text-[11px] text-ink-3 hover:bg-surface-hover hover:text-ink disabled:opacity-50">
+                            restore
+                          </button>
+                        ) : (
+                          <>
+                            <button disabled={busy === it.id} onClick={() => mark(it.id, "snoozed")} title="Snooze until tomorrow" className="rounded-[6px] px-2 py-1 text-[11px] text-ink-3 hover:bg-surface-hover hover:text-ink disabled:opacity-50">
+                              later
+                            </button>
+                            <button disabled={busy === it.id} onClick={() => mark(it.id, "done")} className="rounded-[6px] border border-line px-2 py-1 text-[11px] font-semibold text-ink-2 hover:border-ink hover:text-ink disabled:opacity-50">
+                              done
+                            </button>
+                          </>
+                        )}
+                      </div>
+                    </li>
+                  ))}
+                </ul>
               </div>
-              <div className="flex shrink-0 items-center gap-1">
-                {it.href && !it.state && (
-                  <Link href={it.href} className="rounded-[6px] px-2 py-1 text-[11px] text-accent hover:bg-accent-soft">open</Link>
-                )}
-                {it.state ? (
-                  <button disabled={busy === it.id} onClick={() => mark(it.id, "clear")} className="rounded-[6px] px-2 py-1 text-[11px] text-ink-3 hover:bg-surface-hover hover:text-ink disabled:opacity-50">
-                    restore
-                  </button>
-                ) : (
-                  <>
-                    <button disabled={busy === it.id} onClick={() => mark(it.id, "snoozed")} title="Snooze until tomorrow" className="rounded-[6px] px-2 py-1 text-[11px] text-ink-3 hover:bg-surface-hover hover:text-ink disabled:opacity-50">
-                      later
-                    </button>
-                    <button disabled={busy === it.id} onClick={() => mark(it.id, "done")} className="rounded-[6px] border border-line px-2 py-1 text-[11px] font-semibold text-ink-2 hover:border-ink hover:text-ink disabled:opacity-50">
-                      done
-                    </button>
-                  </>
-                )}
-              </div>
-            </li>
-          ))}
-        </ul>
+            );
+          })}
+        </div>
       )}
       {a && scrollable && shown.length > 3 && (
         <div className="border-t border-line-soft px-4 py-1 text-[10.5px] text-ink-3">
