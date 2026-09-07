@@ -223,8 +223,8 @@ export default function DashboardPage() {
                               {displayTicker(s.ticker)}
                               {thesisVerdicts[s.ticker.toUpperCase()] && (
                                 <span
-                                  className={`rounded px-1 py-0.5 text-[9px] font-bold uppercase tracking-wide ${
-                                    thesisVerdicts[s.ticker.toUpperCase()] === "broken" ? "bg-neg-soft text-neg" : "bg-warn-soft text-warn"
+                                  className={`inline-flex items-center gap-1 text-[11px] font-medium ${
+                                    thesisVerdicts[s.ticker.toUpperCase()] === "broken" ? "text-neg" : "text-warn"
                                   }`}
                                   title={`Thesis ${thesisVerdicts[s.ticker.toUpperCase()]} — see Thesis Watch`}
                                 >

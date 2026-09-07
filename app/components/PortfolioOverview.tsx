@@ -1450,10 +1450,10 @@ export function PortfolioOverview({
                                     : "bg-warn-soft text-warn border-warn-border";
                               return (
                                 <span
-                                  className={`rounded-md border px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider ${tone}`}
+                                  className={`inline-flex h-4 items-center gap-1 rounded border px-1 text-[10px] font-medium ${tone}`}
                                   title={`Today's brief — ${risk.priority} risk. ${risk.summary} Action: ${risk.action}`}
                                 >
-                                  ⚠ {risk.priority === "Medium-High" ? "Med-Hi" : risk.priority}
+                                  {risk.priority === "Medium-High" ? "Med-Hi" : risk.priority}
                                 </span>
                               );
                             })()}
@@ -1586,7 +1586,7 @@ function RankingTable({
   synthesisByTicker?: Map<string, { verdict: SynthesisVerdict; stale: boolean }>;
   /** ticker (upper) → thesis-health verdict, for the Status column. */
   thesisByTicker?: Map<string, "eroding" | "broken">;
-  /** When true, split the rows into 🇨🇦 Canadian and 🇺🇸 US sub-sections,
+  /** When true, split the rows into Canadian (CAD) and US (USD) sub-sections,
    *  each independently ranked + flagged, so CAD and USD names are compared
    *  within their own currency rather than against each other. */
   splitByCurrency?: boolean;
@@ -1998,7 +1998,7 @@ function RankingTable({
             {onClearCharting && chartingNonZeroCount > 0 && (
               <button
                 onClick={onClearCharting}
-                className="flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-xs font-semibold text-ink-2 bg-surface-2 hover:bg-line border border-line transition-colors"
+                className="flex h-7 items-center gap-1.5 rounded-control border border-line bg-surface px-2.5 text-[12.5px] text-ink-2 transition-colors hover:bg-surface-hover hover:text-ink"
                 title={`Reset charting score to 0 for ${chartingNonZeroCount} stock${chartingNonZeroCount > 1 ? "s" : ""}`}
               >
                 <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0 3.181 3.183a8.25 8.25 0 0 0 13.803-3.7M4.031 9.865a8.25 8.25 0 0 1 13.803-3.7l3.181 3.182" /></svg>
@@ -2009,7 +2009,7 @@ function RankingTable({
               <>
                 <button
                   onClick={handleExportBoostedXlsx}
-                  className="flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-xs font-semibold text-ink-2 bg-surface-2 hover:bg-line border border-line transition-colors"
+                  className="flex h-7 items-center gap-1.5 rounded-control border border-line bg-surface px-2.5 text-[12.5px] text-ink-2 transition-colors hover:bg-surface-hover hover:text-ink"
                   title="Download a BoostedAI-ready Excel file (SYMBOL,COUNTRY,CURRENCY) for the watchlist"
                 >
                   <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75V16.5M16.5 12 12 16.5m0 0L7.5 12m4.5 4.5V3" /></svg>
@@ -2017,7 +2017,7 @@ function RankingTable({
                 </button>
                 <button
                   onClick={handleCopySia}
-                  className="flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-xs font-semibold text-ink-2 bg-surface-2 hover:bg-line border border-line transition-colors"
+                  className="flex h-7 items-center gap-1.5 rounded-control border border-line bg-surface px-2.5 text-[12.5px] text-ink-2 transition-colors hover:bg-surface-hover hover:text-ink"
                   title="Copy the watchlist symbols (SIA / SIACharts format) to paste into a matrix"
                 >
                   <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M15.666 3.888A2.25 2.25 0 0 0 13.5 2.25h-3c-1.03 0-1.9.693-2.166 1.638m7.332 0c.055.194.084.4.084.612v0a.75.75 0 0 1-.75.75H9a.75.75 0 0 1-.75-.75v0c0-.212.03-.418.084-.612m7.332 0c.646.049 1.288.11 1.927.184 1.1.128 1.907 1.077 1.907 2.185V19.5a2.25 2.25 0 0 1-2.25 2.25H6.75A2.25 2.25 0 0 1 4.5 19.5V6.257c0-1.108.806-2.057 1.907-2.185a48.208 48.208 0 0 1 1.927-.184" /></svg>
@@ -2026,7 +2026,7 @@ function RankingTable({
                 <button
                   onClick={handleCopyMarketEdge}
                   disabled={marketEdgeState === "loading"}
-                  className="flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-xs font-semibold text-ink-2 bg-surface-2 hover:bg-line border border-line transition-colors disabled:opacity-60"
+                  className="flex h-7 items-center gap-1.5 rounded-control border border-line bg-surface px-2.5 text-[12.5px] text-ink-2 transition-colors hover:bg-surface-hover hover:text-ink disabled:opacity-60"
                   title="Copy US watchlist symbols for MarketEdge — one per line. US names + Canadian names FactSet confirms are interlisted (dual-listed in the US); Canadian-only names excluded."
                 >
                   {marketEdgeState === "loading" ? (
@@ -2049,7 +2049,7 @@ function RankingTable({
               <button
                 onClick={() => onScoreFundamentals?.(selectedInView.length > 0 ? selectedInView : undefined)}
                 disabled={scoreAllDisabled || scoreableCount === 0}
-                className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold text-ink-2 bg-surface-2 hover:bg-line border border-line transition-colors disabled:opacity-50"
+                className="flex h-7 items-center gap-1.5 rounded-control border border-line bg-surface px-2.5 text-[12.5px] text-ink-2 transition-colors hover:bg-surface-hover hover:text-ink disabled:opacity-50"
                 title={`Re-score ONLY growth + relative/historical valuation${selectedInView.length > 0 ? ` for the ${selectedInView.length} checked name${selectedInView.length === 1 ? "" : "s"}` : ""}. Every other category, the thesis, and summaries carry forward unchanged — a fraction of the credits of a full Score All.`}
               >
                 <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M3 13.125C3 12.504 3.504 12 4.125 12h2.25c.621 0 1.125.504 1.125 1.125v6.75C7.5 20.496 6.996 21 6.375 21h-2.25A1.125 1.125 0 0 1 3 19.875v-6.75ZM9.75 8.625c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125v11.25c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 0 1-1.125-1.125V8.625ZM16.5 4.125c0-.621.504-1.125 1.125-1.125h2.25C20.496 3 21 3.504 21 4.125v15.75c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 0 1-1.125-1.125V4.125Z" /></svg>
@@ -2165,7 +2165,7 @@ function RankingTable({
               ? "Add a stock to start building your portfolio. Click + Add in the top nav or press Shift + A."
               : "Add candidates here when you're researching but not yet ready to own. Click + Add or press Shift + A."}
           </p>
-          <kbd className="rounded border border-line bg-white px-2 py-1 text-[11px] font-mono text-ink-3">
+          <kbd className="rounded border border-line bg-surface px-2 py-1 font-mono text-[11px] text-ink-3">
             Shift + A
           </kbd>
         </div>
@@ -2206,7 +2206,7 @@ function RankingTable({
                   {chg == null ? "—" : `${chg >= 0 ? "+" : ""}${chg.toFixed(1)}%`}
                 </span>
               </span>
-              <span className="w-11 shrink-0 text-right font-mono text-[15px] font-bold text-ink tabular-nums">{Number(s.adjusted.toFixed(1))}</span>
+              <span className="w-11 shrink-0 text-right font-mono text-[15px] font-medium text-ink tabular-nums">{Number(s.adjusted.toFixed(1))}</span>
             </Link>
           );
         })}

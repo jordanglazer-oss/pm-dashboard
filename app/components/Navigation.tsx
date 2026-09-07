@@ -129,7 +129,7 @@ function SystemHealthDot() {
         <span className={`ml-auto inline-block h-[7px] w-[7px] rounded-full ${dotCls}`} />
       </button>
       {open && (
-        <div className="absolute bottom-9 left-0 z-50 w-64 rounded-card border border-line bg-surface p-3 shadow-card">
+        <div className="absolute bottom-9 left-0 z-50 w-64 rounded-card border border-line bg-surface p-3 shadow-[var(--shadow-pop)]">
           <div className="mb-1 text-[12px] font-semibold text-ink">System health</div>
           {rows.map((r) => {
             const bad = r.status === "critical" || r.status === "credit-bad";
@@ -167,7 +167,7 @@ function ShortcutsOverlay({ open, onClose, onStockPage }: { open: boolean; onClo
   if (onStockPage) rows.push(["⌥/Alt + ← →", "Previous / next stock"]);
   return (
     <div className="fixed inset-0 z-50 grid place-items-center bg-ink/30 p-4" onClick={onClose}>
-      <div className="w-full max-w-sm rounded-card border border-line bg-surface p-5 shadow-card" onClick={(e) => e.stopPropagation()}>
+      <div className="w-full max-w-sm rounded-card border border-line bg-surface p-5 shadow-[var(--shadow-pop)]" onClick={(e) => e.stopPropagation()}>
         <div className="mb-3 flex items-center justify-between">
           <h2 className="text-sm font-bold text-ink">Keyboard shortcuts</h2>
           <button onClick={onClose} aria-label="Close" className="text-ink-3 hover:text-ink">✕</button>
@@ -416,7 +416,7 @@ export function Navigation() {
     {/* Mobile drawer copy of the rail */}
     {drawerOpen && (
       <div className="md:hidden fixed inset-0 z-50 bg-ink/30 print:hidden" onClick={() => setDrawerOpen(false)}>
-        <aside className="absolute inset-y-0 left-0 flex w-[240px] flex-col bg-surface shadow-card" onClick={(e) => e.stopPropagation()}>
+        <aside className="absolute inset-y-0 left-0 flex w-[240px] flex-col bg-surface shadow-[var(--shadow-pop)]" onClick={(e) => e.stopPropagation()}>
           {rail(() => setDrawerOpen(false))}
         </aside>
       </div>

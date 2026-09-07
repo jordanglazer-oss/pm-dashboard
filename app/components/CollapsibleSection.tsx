@@ -30,7 +30,7 @@ export function CollapsibleSection({
   className?: string;
   title: React.ReactNode;
   subtitle?: React.ReactNode;
-  /** Classes for the <h3> (e.g. "text-[15px] font-bold text-warn"). */
+  /** Classes for the title (e.g. "text-[13px] font-semibold text-warn"). */
   titleClass?: string;
   /** Right-aligned header content (counts, refresh buttons, etc.). */
   right?: React.ReactNode;
