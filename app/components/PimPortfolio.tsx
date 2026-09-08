@@ -374,16 +374,30 @@ function DriftBar({ drift, scalePp, warn }: { drift: number | null; scalePp: num
 
 type ClassWeights = { equity: number; fixedIncome: number; alternatives: number; cash: number };
 
-/** Allocation panel — target vs live per sleeve (bars + figures). Replaces the
- *  donut: same data, read as a table. Class weights carry the same 2dp contract
- *  as the tables (apportioned to 100.00%) so the figures agree with the
- *  per-holding columns instead of being rounded apart from them. */
+/** Categorical palette for the asset-class donut. Deliberately NOT the
+ *  semantic pos/neg/warn tokens (those mean sign and tolerance elsewhere on
+ *  this page) — these are muted hues drawn from the same family as
+ *  `sectorColors.ts`, which covers GICS sectors and so has no asset-class
+ *  entries to reuse. Applied inline as hex so the SVG stays independent of
+ *  the Tailwind token layer, exactly as the sector palette does. */
+const CLASS_HEX: Record<"equity" | "fixedIncome" | "alternatives" | "cash", string> = {
+  equity: "#5a8fd0",       // muted blue
+  fixedIncome: "#55aaaa",  // muted teal
+  alternatives: "#a578c4", // muted purple
+  cash: "#9aa3b0",         // neutral slate
+};
+
+/** Allocation panel — a live asset-class donut beside the target-vs-live rows.
+ *  Both halves read the SAME apportioned figures (2dp contract shared with the
+ *  holdings tables), so the slice labels, the Live column and the per-holding
+ *  columns can never disagree by a rounding step. Pure render: the weights are
+ *  handed in, nothing here computes or persists allocation. */
 function AllocationPanel({ live, target }: { live: ClassWeights; target: ClassWeights }) {
   const rows = ([
-    { key: "equity", label: "Equity", bar: "bg-ink-2" },
-    { key: "fixedIncome", label: "Fixed income", bar: "bg-ink-3" },
-    { key: "alternatives", label: "Alternatives", bar: "bg-warn" },
-    { key: "cash", label: "Cash", bar: "bg-ink-faint" },
+    { key: "equity", label: "Equity" },
+    { key: "fixedIncome", label: "Fixed income" },
+    { key: "alternatives", label: "Alternatives" },
+    { key: "cash", label: "Cash" },
   ] as const)
     .map((c) => ({ ...c, liveW: live[c.key] ?? 0, targetW: target[c.key] ?? 0 }))
     .filter((s) => s.liveW > 0.0001 || s.targetW > 0.0001);
@@ -406,40 +420,141 @@ function AllocationPanel({ live, target }: { live: ClassWeights; target: ClassWe
 
   const dLive = apportionColumn(rows.map((r) => r.liveW), 1);
   const dTgt = apportionColumn(rows.map((r) => r.targetW), 1);
+  // The donut shows what is actually held once prices are in; before that it
+  // shows the target, and the caption says which.
+  const slices = rows
+    .map((s, i) => ({
+      key: s.key,
+      label: s.label,
+      hex: CLASS_HEX[s.key],
+      value: (usingLive ? dLive.values[i] : dTgt.values[i]) ?? 0,
+    }))
+    .filter((s) => s.value > 0.00005);
+  const sliceTotal = slices.reduce((acc, s) => acc + s.value, 0);
+  // Largest slice, for the donut's centre label. `slices` is non-empty whenever
+  // `rows` is (apportionColumn sums to 1), but stay defensive rather than
+  // indexing blind.
+  const dominant = slices.length > 0
+    ? slices.reduce((best, s) => (s.value > best.value ? s : best), slices[0])
+    : null;
+
+  // Donut geometry. Stroke-dasharray on concentric circles rather than path
+  // arcs: no trigonometry, no seams, and a single slice at 100% draws as a
+  // clean ring instead of a degenerate arc.
+  const R = 54;
+  const CIRC = 2 * Math.PI * R;
+  const GAP = slices.length > 1 ? 2 : 0; // user units of hairline between slices
+  let offset = 0;
+  const arcs = slices.map((s) => {
+    const frac = sliceTotal > 0 ? s.value / sliceTotal : 0;
+    const full = frac * CIRC;
+    // Only trim for the separator when the slice is comfortably longer than it,
+    // so a 0.4% sleeve still draws instead of vanishing into the gap.
+    const len = full > GAP * 2 ? full - GAP : full;
+    const arc = { ...s, len, dashOffset: -offset };
+    offset += full;
+    return arc;
+  });
 
   return (
     <section className="panel animate-panel-in">
       <div className="panel-h flex-wrap gap-y-1.5 py-1.5">
         <span className="t-mark bg-hub-portfolio" aria-hidden />
         <span className="t">Allocation</span>
-        <span className="m min-w-0 break-words">{usingLive ? "target vs live" : "target · awaiting prices"}</span>
+        <span className="m min-w-0 break-words">{usingLive ? "live mix · target vs live" : "target · awaiting prices"}</span>
       </div>
-      <div className="stagger grid grid-cols-[minmax(0,92px)_minmax(24px,1fr)_minmax(0,52px)_minmax(0,52px)_minmax(0,56px)] items-center gap-x-2.5 gap-y-2 px-3.5 pb-3 pt-2 text-[12px]">
-        <span /><span />
-        <span className="text-right text-[11px] text-ink-3">Target</span>
-        <span className="text-right text-[11px] text-ink-3">Live</span>
-        <span className="text-right text-[11px] text-ink-3">Drift</span>
-        {rows.map((s, i) => {
-          const liveV = dLive.values[i] ?? 0;
-          const tgtV = dTgt.values[i] ?? 0;
-          const drift = liveV - tgtV;
-          const flat = sameAtDisplay(liveV, tgtV);
-          const barW = (usingLive ? liveV : tgtV) * 100;
-          const st = { "--i": Math.min(i + 1, 8) } as React.CSSProperties;
-          return (
-            <React.Fragment key={s.key}>
-              <span style={st} className="min-w-0 break-words text-ink-2">{s.label}</span>
-              <div style={st} className="h-1 min-w-0 overflow-hidden rounded-[2px] bg-surface-2">
-                <i className={`block h-full ${s.bar}`} style={{ width: `${Math.max(0, Math.min(100, barW))}%` }} />
-              </div>
-              <span style={st} className="text-right font-mono text-ink-3">{fmtPct2(tgtV)}</span>
-              <span style={st} className="text-right font-mono text-ink">{usingLive ? fmtPct2(liveV) : "—"}</span>
-              <span style={st} className={`text-right font-mono ${!usingLive || flat ? "text-ink-3" : drift > 0 ? "text-pos" : "text-neg"}`}>
-                {!usingLive || flat ? "—" : `${drift > 0 ? "+" : ""}${fmtPct2(drift)}`}
-              </span>
-            </React.Fragment>
-          );
-        })}
+      {/* Chart + legend on the left, the target/live/drift rows on the right.
+          Both columns are min-w-0 so a long class name wraps rather than
+          pushing its neighbour; nothing here can scroll sideways. */}
+      <div className="grid grid-cols-1 items-start gap-x-6 gap-y-4 px-3.5 pb-3.5 pt-3 lg:grid-cols-[minmax(0,auto)_minmax(0,1fr)]">
+        <div className="flex min-w-0 flex-wrap items-center gap-x-5 gap-y-3">
+          <svg
+            viewBox="0 0 140 140"
+            className="h-[140px] w-[140px] shrink-0"
+            role="img"
+            aria-label={`Asset allocation: ${slices.map((s) => `${s.label} ${fmtPct2(s.value)}`).join(", ")}`}
+          >
+            <circle cx="70" cy="70" r={R} fill="none" stroke="var(--color-surface-2)" strokeWidth="20" />
+            <g transform="rotate(-90 70 70)">
+              {arcs.map((a) => (
+                <circle
+                  key={a.key}
+                  cx="70"
+                  cy="70"
+                  r={R}
+                  fill="none"
+                  stroke={a.hex}
+                  strokeWidth="20"
+                  strokeDasharray={`${a.len} ${Math.max(0, CIRC - a.len)}`}
+                  strokeDashoffset={a.dashOffset}
+                />
+              ))}
+            </g>
+            {/* Centre = the class the book is actually in, so the headline
+                answer is readable without tracing a slice to the legend. */}
+            {dominant && (
+              <>
+                <text x="70" y="66" textAnchor="middle" className="fill-[var(--color-ink-3)] text-[10px]">
+                  {dominant.label}
+                </text>
+                <text x="70" y="82" textAnchor="middle" className="fill-[var(--color-ink)] font-mono text-[13px] font-medium">
+                  {fmtPct2(dominant.value)}
+                </text>
+              </>
+            )}
+          </svg>
+          {/* Legend = the slice labels. Every slice carries its class name and
+              percentage with the matching swatch. */}
+          <ul className="stagger flex min-w-0 flex-col gap-1.5">
+            {slices.map((s, i) => (
+              <li
+                key={s.key}
+                style={{ "--i": Math.min(i + 1, 8) } as React.CSSProperties}
+                className="flex min-w-0 items-baseline gap-2 text-[12.5px]"
+              >
+                <span
+                  aria-hidden
+                  className="mt-[3px] h-2.5 w-2.5 shrink-0 self-start rounded-[2px]"
+                  style={{ background: s.hex }}
+                />
+                <span className="min-w-0 break-words text-ink-2">{s.label}</span>
+                <span className="ml-auto shrink-0 pl-2 font-mono font-medium text-ink">{fmtPct2(s.value)}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+        <div className="stagger grid min-w-0 grid-cols-[minmax(0,1fr)_minmax(0,64px)_minmax(0,64px)_minmax(0,68px)] items-center gap-x-3 gap-y-2 text-[12.5px]">
+          <span className="text-[11px] text-ink-3">Asset class</span>
+          <span className="text-right text-[11px] text-ink-3">Target</span>
+          <span className="text-right text-[11px] text-ink-3">Live</span>
+          <span className="text-right text-[11px] text-ink-3">Drift</span>
+          {rows.map((s, i) => {
+            const liveV = dLive.values[i] ?? 0;
+            const tgtV = dTgt.values[i] ?? 0;
+            const drift = liveV - tgtV;
+            const flat = sameAtDisplay(liveV, tgtV);
+            const barW = (usingLive ? liveV : tgtV) * 100;
+            const st = { "--i": Math.min(i + 1, 8) } as React.CSSProperties;
+            return (
+              <React.Fragment key={s.key}>
+                <span style={st} className="flex min-w-0 flex-col gap-1">
+                  <span className="flex min-w-0 items-baseline gap-2">
+                    <span aria-hidden className="mt-[3px] h-2.5 w-2.5 shrink-0 self-start rounded-[2px]" style={{ background: CLASS_HEX[s.key] }} />
+                    <span className="min-w-0 break-words text-ink-2">{s.label}</span>
+                  </span>
+                  <span className="h-1 min-w-0 overflow-hidden rounded-[2px] bg-surface-2">
+                    <i className="block h-full" style={{ width: `${Math.max(0, Math.min(100, barW))}%`, background: CLASS_HEX[s.key] }} />
+                  </span>
+                </span>
+                <span style={st} className="text-right font-mono text-ink-3">{fmtPct2(tgtV)}</span>
+                <span style={st} className="text-right font-mono text-ink">{usingLive ? fmtPct2(liveV) : "—"}</span>
+                <span style={st} className={`text-right font-mono ${!usingLive || flat ? "text-ink-3" : drift > 0 ? "text-pos" : "text-neg"}`}>
+                  {!usingLive || flat ? "—" : `${drift > 0 ? "+" : ""}${fmtPct2(drift)}`}
+                </span>
+              </React.Fragment>
+            );
+          })}
+        </div>
       </div>
     </section>
   );
@@ -3007,6 +3122,10 @@ export function PimPortfolio({ groups }: Props) {
   }, [sortedRows, prevCloses, prevCloseUsdCad, prevCloseTotalCad, rebalancePrices, usdCadRate]);
   const rebalanceTrades = rebalanceRows.filter((r) => r.action !== "HOLD");
   const rebalanceGross = rebalanceTrades.reduce((s, r) => s + Math.abs(r.deltaValueCad), 0);
+  // Display-only counts for the slimmed rebalance summary (the per-trade list
+  // it replaces lived only in the render).
+  const rebalanceBuyCount = rebalanceTrades.filter((r) => r.action === "BUY").length;
+  const rebalanceSellCount = rebalanceTrades.filter((r) => r.action === "SELL").length;
   const rebalanceVisible = rebalanceDetail ? rebalanceRows : rebalanceTrades;
   const rebalanceHasMF = rebalanceRows.some((r) => r.isMF);
 
@@ -3015,9 +3134,9 @@ export function PimPortfolio({ groups }: Props) {
   const showGain = hasPositions && (editMode || posView !== "drift");
   const showGainCad = hasPositions && posView === "gain";
   const showBar = hasPositions && posView === "drift";
-  /** The table is wide (extra money columns / edit inputs) — it needs the full
-   *  content width rather than the 1.6fr half of the two-up band. */
-  const positionsWide = editMode || posView !== "drift";
+  // The positions table now owns the FULL content width in every view, so there
+  // is no narrow/wide variant to switch on — Drift is reachable without any
+  // sideways scrolling regardless of which money columns are showing.
   const posColCount = 4 + (showAcb ? 1 : 0) + (showGain ? 1 : 0) + (showGainCad ? 1 : 0) + 1 + (hasPositions ? (showBar ? 3 : 2) : 0);
   // Drift bar scale: the largest live drift fills half the bar, floor 1pp so a
   // tidy book reads as tidy rather than every 0.05pp filling the track.
@@ -3032,6 +3151,9 @@ export function PimPortfolio({ groups }: Props) {
   const lastRebalancedLabel = groupState.lastRebalance
     ? new Date(groupState.lastRebalance.date).toLocaleDateString(undefined, { month: "short", day: "numeric" })
     : "never";
+  // Settled (non-pending) log entries — drives both the Recent trades panel and
+  // whether the band under the positions table is one column or two.
+  const settledTransactions = groupState.transactions.filter((t) => t.status !== "pending");
   // "Equity 66% · Fixed income 30% · Cash 4%" — live when priced, else target.
   const allocMeta = (() => {
     if (!allocationBreakdown) return "";
@@ -3182,13 +3304,17 @@ export function PimPortfolio({ groups }: Props) {
         ]}
       />
 
-      {/* ── Row 3 · Positions (left) + Rebalance / Allocation / Recent trades (right) ── */}
-      {/* Two-up only while the positions table is in its narrow default (Drift
-          view, not editing). The Value / Gain views and edit mode add three or
-          four more columns, which cannot fit a 1.6fr column at 1280px — so the
-          table takes the full width there and the right stack drops below it,
-          rather than scrolling sideways. */}
-      <div className={`grid grid-cols-1 items-start gap-3.5 ${positionsWide ? "" : "lg:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)]"}`}>
+      {/* ── Row 3 · Allocation — donut + target/live/drift, full width, top of
+          the page so the current asset-class mix is the first thing read. ── */}
+      {allocationBreakdown && (
+        <AllocationPanel live={allocationBreakdown.live} target={allocationBreakdown.target} />
+      )}
+
+      {/* ── Row 4 · Positions — the FULL content width in every view. It used
+          to share a two-up band with the rebalance/allocation stack, which cut
+          the Drift column off inside `.panel { overflow: hidden }` with no way
+          to reach it. Everything that shared the band now sits below. ── */}
+      <div className="flex flex-col gap-3.5">
         {/* Positions panel */}
         <section className="panel animate-panel-in flex min-w-0 flex-col">
           <div className="panel-h flex-wrap gap-y-1.5 py-1.5">
@@ -3213,7 +3339,7 @@ export function PimPortfolio({ groups }: Props) {
           {loading && holdingRows.length === 0 ? (
             <div className="p-3.5"><SkeletonTable rows={8} cols={6} /></div>
           ) : (
-            <div className="min-w-0">
+            <div className="tbl-wrap min-w-0">
               <table className="data-table">
                 <thead>
                   <tr>
@@ -3228,8 +3354,16 @@ export function PimPortfolio({ groups }: Props) {
                     {hasPositions && (
                       <>
                         {sortTh("currentPct", "Current")}
-                        {showBar && <th style={{ width: 120 }}>Drift</th>}
-                        {sortTh("drift", showBar ? "" : "Drift")}
+                        {/* Drift reads as figure-then-bar: the labelled,
+                            sortable number comes first so the column header
+                            sits over the value it names, and the bar is the
+                            unlabelled graphic beside it. */}
+                        {sortTh("drift", "Drift")}
+                        {showBar && (
+                          <th style={{ width: 128 }}>
+                            <span className="sr-only">Drift bar</span>
+                          </th>
+                        )}
                       </>
                     )}
                   </tr>
@@ -3346,14 +3480,14 @@ export function PimPortfolio({ groups }: Props) {
                               {hasPositions && (
                                 <>
                                   <td className="n">{row.units > 0 ? fmtPct2(dCurrentV) : <span className="text-ink-faint">—</span>}</td>
+                                  <td className={`n ${flat ? "text-ink-3" : overTolerance ? "text-warn" : "text-ink-2"}`}>
+                                    {dDriftV == null ? <span className="text-ink-faint">—</span> : `${dDriftV > 0 ? "+" : ""}${fmtPct2(dDriftV)}`}
+                                  </td>
                                   {showBar && (
                                     <td>
                                       <DriftBar drift={dDriftV} scalePp={driftScalePp} warn={overTolerance} />
                                     </td>
                                   )}
-                                  <td className={`n ${flat ? "text-ink-3" : overTolerance ? "text-warn" : "text-ink-2"}`}>
-                                    {dDriftV == null ? <span className="text-ink-faint">—</span> : `${dDriftV > 0 ? "+" : ""}${fmtPct2(dDriftV)}`}
-                                  </td>
                                 </>
                               )}
                             </tr>
@@ -3380,14 +3514,14 @@ export function PimPortfolio({ groups }: Props) {
                       {showGain && <td className="n" />}
                       <td className="n text-ink-3">{fmtPct2(cashTargetPct)}</td>
                       <td className="n">{fmtPct2(cashPct)}</td>
+                      <td className={`n ${cashDriftPct != null && Math.abs(cashDriftPct) >= DRIFT_TOLERANCE ? "text-warn" : "text-ink-3"}`}>
+                        {cashDriftPct == null ? "—" : `${cashDriftPct > 0 ? "+" : ""}${fmtPct2(cashDriftPct)}`}
+                      </td>
                       {showBar && (
                         <td>
                           <DriftBar drift={cashDriftPct == null ? null : cashDriftPct * 100} scalePp={driftScalePp} warn={cashDriftPct != null && Math.abs(cashDriftPct) >= DRIFT_TOLERANCE} />
                         </td>
                       )}
-                      <td className={`n ${cashDriftPct != null && Math.abs(cashDriftPct) >= DRIFT_TOLERANCE ? "text-warn" : "text-ink-3"}`}>
-                        {cashDriftPct == null ? "—" : `${cashDriftPct > 0 ? "+" : ""}${fmtPct2(cashDriftPct)}`}
-                      </td>
                     </tr>
                   )}
                 </tbody>
@@ -3405,21 +3539,33 @@ export function PimPortfolio({ groups }: Props) {
           </div>
         </section>
 
-        {/* Right stack */}
-        <div className="flex min-w-0 flex-col gap-3.5">
-          {/* Rebalance preview / execution */}
-          <section className="panel animate-panel-in">
+        {/* ── Band under the positions table: the rebalance action (left) and
+            the recent-trade log (right). Collapses to one column below lg, and
+            the rebalance panel takes the whole band when there is no trade
+            history to sit beside it. ── */}
+        <div className={`grid grid-cols-1 items-start gap-3.5 ${settledTransactions.length > 0 ? "lg:grid-cols-[minmax(0,1.5fr)_minmax(0,1fr)]" : ""}`}>
+          {/* Rebalance — the ACTION and its summary. The per-trade PREVIEW
+              table is deliberately gone: per-name drift is read off the
+              Positions table above, and listing the same names again here only
+              stole width from it. The trade rows still appear once "Queue
+              trades" opens the execution form, because that is where the
+              execution price per name is entered for ACB tracking — every
+              confirmation step, both Execute paths and all of the underlying
+              math are untouched. */}
+          <section className="panel animate-panel-in min-w-0">
             <div className="panel-h flex-wrap gap-y-1.5 py-1.5">
               <span className="t-mark bg-hub-portfolio" aria-hidden />
               <span className="t">Rebalance to {PROFILE_LABELS[activeProfile]}</span>
               <span className="m min-w-0 break-words">
-                {showRebalance ? "execute" : "preview"} · {rebalanceTrades.length} trade{rebalanceTrades.length === 1 ? "" : "s"} · {fmtCad0(rebalanceGross)} gross
+                {showRebalance ? "execute" : "summary"} · {rebalanceTrades.length} trade{rebalanceTrades.length === 1 ? "" : "s"} · {fmtCad0(rebalanceGross)} gross
               </span>
-              <div className="ml-auto flex items-center gap-2">
-                <div className="seg">
-                  <button onClick={() => { if (rebalanceDetail) toggleRebalanceDetail(); }} className={rebalanceDetail ? "" : "on"}>Trades</button>
-                  <button onClick={() => { if (!rebalanceDetail) toggleRebalanceDetail(); }} className={rebalanceDetail ? "on" : ""}>Detail</button>
-                </div>
+              <div className="ml-auto flex flex-wrap items-center gap-2">
+                {showRebalance && (
+                  <div className="seg">
+                    <button onClick={() => { if (rebalanceDetail) toggleRebalanceDetail(); }} className={rebalanceDetail ? "" : "on"}>Trades</button>
+                    <button onClick={() => { if (!rebalanceDetail) toggleRebalanceDetail(); }} className={rebalanceDetail ? "on" : ""}>Detail</button>
+                  </div>
+                )}
                 {showRebalance ? (
                   <button onClick={() => { setShowRebalance(false); setRebalancePrices({}); }} className={BTN_SECONDARY}>Cancel</button>
                 ) : (
@@ -3427,6 +3573,32 @@ export function PimPortfolio({ groups }: Props) {
                 )}
               </div>
             </div>
+            {/* Resting state: the size of the job, not the list of names. */}
+            {!showRebalance && (
+              rebalanceRows.length === 0 ? (
+                <div className="px-3.5 py-3 text-[12px] text-ink-3">No model targets to rebalance against.</div>
+              ) : rebalanceTrades.length === 0 ? (
+                <div className="px-3.5 py-3 text-[12px] text-ink-3">Every position is on target at previous close.</div>
+              ) : (
+                <div className="grid grid-cols-2 gap-x-5 gap-y-2.5 px-3.5 pb-3.5 pt-3 sm:grid-cols-4">
+                  {[
+                    { label: "Buys", value: `${rebalanceBuyCount}`, cls: "text-pos" },
+                    { label: "Sells", value: `${rebalanceSellCount}`, cls: "text-neg" },
+                    { label: "Gross value", value: fmtCad0(rebalanceGross), cls: "text-ink" },
+                    { label: "On target", value: `${rebalanceRows.length - rebalanceTrades.length} of ${rebalanceRows.length}`, cls: "text-ink-2" },
+                  ].map((d) => (
+                    <span key={d.label} className="flex min-w-0 flex-col gap-0.5">
+                      <span className="text-[11px] text-ink-3">{d.label}</span>
+                      <span className={`break-words font-mono text-[13px] font-medium ${d.cls}`}>{d.value}</span>
+                    </span>
+                  ))}
+                  <p className="col-span-full text-[11.5px] leading-[1.5] text-ink-3">
+                    Sized from <span className="text-ink-2">previous close</span> to match the trading desk. Queue the
+                    trades to review each name and enter execution prices. Per-name drift is in the Positions table above.
+                  </p>
+                </div>
+              )
+            )}
             {showRebalance && (
               <p className="border-b border-line-soft px-3.5 py-2 text-[11.5px] leading-[1.5] text-ink-3">
                 Target units are calculated from <span className="text-ink-2">previous close</span> prices to match the trading desk.
@@ -3434,12 +3606,12 @@ export function PimPortfolio({ groups }: Props) {
                 Prices are shared across profiles.
               </p>
             )}
-            {rebalanceVisible.length === 0 ? (
+            {showRebalance && (rebalanceVisible.length === 0 ? (
               <div className="px-3.5 py-3 text-[12px] text-ink-3">
                 {rebalanceRows.length === 0 ? "No model targets to rebalance against." : "Every position is on target at previous close."}
               </div>
             ) : (
-              <div className="min-w-0">
+              <div className="tbl-wrap min-w-0">
                 <table className="data-table">
                   <thead>
                     <tr>
@@ -3528,41 +3700,30 @@ export function PimPortfolio({ groups }: Props) {
                   </tbody>
                 </table>
               </div>
-            )}
-            {(showRebalance || (!rebalanceDetail && rebalanceRows.length > rebalanceTrades.length)) && (
+            ))}
+            {showRebalance && (
               <div className="flex min-h-[32px] flex-wrap items-center gap-2 border-t border-line-soft px-3.5 py-1.5 text-[11.5px] text-ink-3">
-                {showRebalance && (
-                  <>
-                    <button onClick={handleExecuteRebalance} className={BTN_PRIMARY}>
-                      Execute ({PROFILE_LABELS[activeProfile]})
-                    </button>
-                    {availableProfiles.length > 1 && (
-                      <button onClick={handleExecuteAllProfiles} className={BTN_SECONDARY}>Execute all profiles</button>
-                    )}
-                    {rebalanceHasMF && (
-                      <span>Mutual fund trades are recorded as pending — settle tomorrow when NAV is available.</span>
-                    )}
-                  </>
+                <button onClick={handleExecuteRebalance} className={BTN_PRIMARY}>
+                  Execute ({PROFILE_LABELS[activeProfile]})
+                </button>
+                {availableProfiles.length > 1 && (
+                  <button onClick={handleExecuteAllProfiles} className={BTN_SECONDARY}>Execute all profiles</button>
+                )}
+                {rebalanceHasMF && (
+                  <span className="min-w-0 break-words">Mutual fund trades are recorded as pending — settle tomorrow when NAV is available.</span>
                 )}
                 {!rebalanceDetail && rebalanceRows.length > rebalanceTrades.length && (
-                  <span className="ml-auto">{rebalanceRows.length - rebalanceTrades.length} on target hidden</span>
+                  <span className="ml-auto shrink-0">{rebalanceRows.length - rebalanceTrades.length} on target hidden</span>
                 )}
               </div>
             )}
           </section>
 
-          {/* Allocation — target vs live per sleeve. Re-renders whenever prices
-              refresh or the profile tab changes. */}
-          {allocationBreakdown && (
-            <AllocationPanel live={allocationBreakdown.live} target={allocationBreakdown.target} />
-          )}
-
           {/* Recent trades: last settled transactions from the group's
               persisted log. Read-only — we don't store per-trade share counts,
               so execution price is shown instead of "+N sh". */}
-          {groupState.transactions.filter((t) => t.status !== "pending").length > 0 && (() => {
-            const recent = [...groupState.transactions]
-              .filter((t) => t.status !== "pending")
+          {settledTransactions.length > 0 && (() => {
+            const recent = [...settledTransactions]
               .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
               .slice(0, 6);
             const lastRebDate = groupState.lastRebalance?.date;
@@ -3629,7 +3790,7 @@ export function PimPortfolio({ groups }: Props) {
             </div>
           </div>
           {settleOpen && (
-            <div className="min-w-0">
+            <div className="tbl-wrap min-w-0">
               <table className="data-table">
                 <thead>
                   <tr>
@@ -3951,7 +4112,7 @@ export function PimPortfolio({ groups }: Props) {
                             would not.
                           </p>
                         ) : (
-                          <div className="min-w-0">
+                          <div className="tbl-wrap min-w-0">
                             <table className="data-table">
                               <thead>
                                 <tr>
@@ -4092,7 +4253,7 @@ export function PimPortfolio({ groups }: Props) {
                 </button>
               </div>
 
-              <div className="min-w-0">
+              <div className="tbl-wrap min-w-0">
                 <table className="data-table">
                   <thead>
                     <tr>
