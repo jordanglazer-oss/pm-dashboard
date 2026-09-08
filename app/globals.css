@@ -45,6 +45,20 @@
   --color-warn-soft: #fbf5e8;
   --color-warn-border: #f2e2bf;
 
+  /* Hub accents — one hue per section of the rail (Today / Portfolio / Ideas /
+     Research). Same chroma and lightness as the brand accent, hue varied, so
+     the four read as a family rather than a rainbow. Used ONLY for wayfinding
+     (rail active state, group labels, the crumb, a panel's title mark) — never
+     for data, which stays on the semantic pos/neg/warn set. */
+  --color-hub-today: #b3701f;
+  --color-hub-today-soft: #fdf4e7;
+  --color-hub-portfolio: #2d5bd0;
+  --color-hub-portfolio-soft: #eef3ff;
+  --color-hub-ideas: #6f55c4;
+  --color-hub-ideas-soft: #f2effb;
+  --color-hub-research: #0f7d84;
+  --color-hub-research-soft: #e9f6f6;
+
   /* Structural / alt accent */
   --color-violet: #6f55c4;
   --color-violet-soft: #f2effb;
@@ -181,8 +195,18 @@ body {
     padding: 0 14px;
     border-bottom: 1px solid var(--color-line-soft);
   }
-  .panel-h .t { font-size: 13px; font-weight: 600; color: var(--color-ink); }
+  .panel-h {
+    background: var(--color-surface-2);
+  }
+  .panel-h .t { font-size: 13px; font-weight: 600; color: var(--color-ink); letter-spacing: -0.005em; }
   .panel-h .m { font-size: 11.5px; color: var(--color-ink-3); }
+  /* A 3px coloured mark before a panel title — the cheapest way to make a
+     section header findable without shouting. Colour it with a hub or
+     semantic token: <span class="t-mark bg-hub-ideas" />. */
+  .t-mark {
+    display: inline-block; width: 3px; height: 13px; border-radius: 2px;
+    background: var(--color-ink-faint); flex-shrink: 0;
+  }
 
   /* Status dot — 6px, colour carries the meaning, the word beside it names it. */
   .dot { display: inline-block; width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
@@ -410,4 +434,39 @@ button:not(:disabled):active,
   body {
     padding-bottom: calc(60px + env(safe-area-inset-bottom));
   }
+}
+
+/* ── Motion: entrances and hovers ───────────────────────────────────────────
+   Every keyframe here is gated on prefers-reduced-motion at the bottom of the
+   file. Durations stay short (0.18–0.4s) so the app feels quick, not animated. */
+
+/* Panels rise in on mount; stagger with --i on a container's children. */
+@keyframes panel-in { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+.animate-panel-in { animation: panel-in 0.32s cubic-bezier(0.22, 1, 0.36, 1) both; }
+
+/* Stagger helper: set --i on each child (0,1,2…) inside a .stagger parent. */
+.stagger > * { animation: panel-in 0.32s cubic-bezier(0.22, 1, 0.36, 1) both; animation-delay: calc(var(--i, 0) * 45ms); }
+
+/* Interactive table rows: a hairline accent rail slides in on hover, so the
+   row you are pointing at is unmistakable without repainting it. */
+.data-table tbody tr.row-link { cursor: pointer; }
+.data-table tbody tr.row-link > td:first-child { position: relative; }
+.data-table tbody tr.row-link > td:first-child::before {
+  content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 2px;
+  background: var(--color-accent); transform: scaleY(0); transform-origin: center;
+  transition: transform 0.16s ease;
+}
+.data-table tbody tr.row-link:hover > td:first-child::before,
+.data-table tbody tr.row-link.sel > td:first-child::before { transform: scaleY(1); }
+
+/* Segmented control: the active chip settles rather than snapping. */
+.seg > * { transition: color 0.14s ease, background-color 0.14s ease, box-shadow 0.14s ease; }
+
+/* Rail items glide their tint in. */
+.rail-item { transition: background-color 0.14s ease, color 0.14s ease; }
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-panel-in, .stagger > * { animation: none; }
+  .data-table tbody tr.row-link > td:first-child::before { transition: none; }
+  .seg > *, .rail-item { transition: none; }
 }

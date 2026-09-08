@@ -16,11 +16,18 @@ export type NavItem = {
   match?: (path: string) => boolean;
 };
 
-export type NavGroup = { label: string; items: NavItem[] };
+export type NavGroup = {
+  label: string;
+  items: NavItem[];
+  /** Hub accent, one hue per group — see the --color-hub-* tokens. Used for
+   *  wayfinding only (rail active state, group label mark, the crumb). */
+  hue: "today" | "portfolio" | "ideas" | "research";
+};
 
 export const NAV_GROUPS: NavGroup[] = [
   {
     label: "Today",
+    hue: "today",
     items: [
       { key: "brief", label: "Brief", href: "/brief", icon: "sun" },
       { key: "hedging", label: "Hedging", href: "/hedging", icon: "umbrella" },
@@ -28,6 +35,7 @@ export const NAV_GROUPS: NavGroup[] = [
   },
   {
     label: "Portfolio",
+    hue: "portfolio",
     items: [
       { key: "holdings", label: "Holdings", href: "/", icon: "table", match: (p) => p === "/scoring" || p.startsWith("/stock/") },
       { key: "positioning", label: "Positioning", href: "/portfolio", icon: "pie", match: (p) => p.startsWith("/portfolio") },
@@ -40,6 +48,7 @@ export const NAV_GROUPS: NavGroup[] = [
   },
   {
     label: "Ideas",
+    hue: "ideas",
     items: [
       { key: "synthesis", label: "Synthesis", href: "/synthesis", icon: "spark" },
       { key: "pipeline", label: "Pipeline", href: "/funnel", icon: "branch", match: (p) => p === "/conviction" },
@@ -48,6 +57,7 @@ export const NAV_GROUPS: NavGroup[] = [
   },
   {
     label: "Research",
+    hue: "research",
     items: [
       { key: "ranked", label: "Ranked", href: "/research", icon: "list" },
       { key: "sources", label: "Sources", href: "/research/sources", icon: "inbox" },
@@ -80,6 +90,12 @@ export function activeNavKey(path: string): string | null {
     if (it.match && it.match(base)) return it.key;
   }
   return null;
+}
+
+/** The hub hue for a route, for the crumb and any page-level accent. */
+export function navHue(path: string): NavGroup["hue"] | null {
+  const key = activeNavKey(path.split("?")[0]);
+  return NAV_GROUPS.find((g) => g.items.some((i) => i.key === key))?.hue ?? null;
 }
 
 /** "Portfolio" / "Holdings" for the top bar crumb + title. */

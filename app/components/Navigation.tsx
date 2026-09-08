@@ -8,7 +8,15 @@ import { QuickAddStock } from "./QuickAddStock";
 import { CommandPalette } from "./CommandPalette";
 import { NotificationTray } from "./NotificationTray";
 import { AppIcon } from "./AppIcon";
-import { NAV_GROUPS, NAV_UTILITIES, SYSTEM_LINKS, activeNavKey, navCrumb } from "@/app/lib/nav-model";
+import { NAV_GROUPS, NAV_UTILITIES, SYSTEM_LINKS, activeNavKey, navCrumb, navHue } from "@/app/lib/nav-model";
+
+/** Hub hue → the Tailwind classes generated from the --color-hub-* tokens. */
+const HUE: Record<string, { text: string; bg: string; mark: string }> = {
+  today: { text: "!text-hub-today", bg: "bg-hub-today-soft", mark: "bg-hub-today" },
+  portfolio: { text: "!text-hub-portfolio", bg: "bg-hub-portfolio-soft", mark: "bg-hub-portfolio" },
+  ideas: { text: "!text-hub-ideas", bg: "bg-hub-ideas-soft", mark: "bg-hub-ideas" },
+  research: { text: "!text-hub-research", bg: "bg-hub-research-soft", mark: "bg-hub-research" },
+};
 import { useStocks } from "@/app/lib/StockContext";
 import { useNotifications } from "@/app/lib/NotificationsContext";
 
@@ -357,6 +365,7 @@ export function Navigation() {
 
   const crumb = navCrumb(pathname);
   const activeKey = activeNavKey(pathname);
+  const crumbHue = HUE[navHue(pathname) ?? ""];
 
   const rail = (onNavigate?: () => void) => (
     <>
@@ -365,9 +374,14 @@ export function Navigation() {
         <span className="text-[13px] font-semibold tracking-tight text-ink">PIM Workspace</span>
       </div>
       <div className="flex grow flex-col gap-0.5 overflow-y-auto px-1.5 pb-2 pt-0.5">
-        {NAV_GROUPS.map((g) => (
+        {NAV_GROUPS.map((g) => {
+          const hue = HUE[g.hue];
+          return (
           <div key={g.label} className="flex flex-col gap-px">
-            <div className="px-2.5 pb-1 pt-3.5 text-[10.5px] font-semibold tracking-[0.04em] text-ink-3">{g.label}</div>
+            <div className="flex items-center gap-1.5 px-2.5 pb-1 pt-3.5 text-[10.5px] font-semibold tracking-[0.04em] text-ink-3">
+              <span className={`h-[3px] w-[3px] rounded-full ${hue.mark}`} aria-hidden />
+              {g.label}
+            </div>
             {g.items.map((it) => {
               const on = it.key === activeKey;
               return (
@@ -376,7 +390,7 @@ export function Navigation() {
                   href={it.href}
                   onClick={onNavigate}
                   aria-current={on ? "page" : undefined}
-                  className={`flex h-7 items-center gap-2.5 rounded-[5px] px-2.5 text-[13px] transition-colors ${on ? "bg-accent-soft font-medium !text-accent-ink" : "!text-ink-2 hover:bg-surface-hover hover:!text-ink"}`}
+                  className={`rail-item flex h-7 items-center gap-2.5 rounded-[5px] px-2.5 text-[13px] ${on ? `${hue.bg} font-medium ${hue.text}` : "!text-ink-2 hover:bg-surface-hover hover:!text-ink"}`}
                 >
                   <AppIcon name={it.icon} size={15} className={on ? "" : "text-ink-3"} />
                   <span>{it.label}</span>
@@ -384,7 +398,8 @@ export function Navigation() {
               );
             })}
           </div>
-        ))}
+          );
+        })}
       </div>
       <div className="flex flex-col gap-px border-t border-line-soft px-1.5 pb-2.5 pt-2">
         {NAV_UTILITIES.map((it) => {
@@ -394,7 +409,7 @@ export function Navigation() {
               key={it.key}
               href={it.href}
               onClick={onNavigate}
-              className={`flex h-7 items-center gap-2.5 rounded-[5px] px-2.5 text-[13px] transition-colors ${on ? "bg-accent-soft font-medium !text-accent-ink" : "!text-ink-2 hover:bg-surface-hover hover:!text-ink"}`}
+              className={`rail-item flex h-7 items-center gap-2.5 rounded-[5px] px-2.5 text-[13px] ${on ? "bg-accent-soft font-medium !text-accent-ink" : "!text-ink-2 hover:bg-surface-hover hover:!text-ink"}`}
             >
               <AppIcon name={it.icon} size={15} className={on ? "" : "text-ink-3"} />
               <span>{it.label}</span>
@@ -434,7 +449,7 @@ export function Navigation() {
         </button>
 
         <div className="flex shrink-0 items-baseline gap-2 md:min-w-[220px] md:shrink">
-          <span className="hidden text-[12px] text-ink-3 md:inline">{crumb.group}</span>
+          <span className={`hidden text-[12px] font-medium md:inline ${crumbHue ? crumbHue.text : "text-ink-3"}`}>{crumb.group}</span>
           <span className="hidden text-[12px] text-ink-faint md:inline">/</span>
           <span className="truncate text-[14px] font-semibold tracking-tight text-ink">{crumb.title}</span>
         </div>
