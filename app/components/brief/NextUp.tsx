@@ -49,8 +49,9 @@ export function CalendarPanel({ s, limit = 7 }: { s: DailySummary; limit?: numbe
   const print = c?.postPrints[0];
 
   return (
-    <Card>
+    <Card className="animate-panel-in">
       <div className="panel-h" id="s-calendar" style={{ scrollMarginTop: 64 }}>
+        <span className="t-mark bg-hub-today" />
         <span className="t">Calendar</span>
         <span className="m">{c ? `next ${c.windowDays} days` : "loading"}</span>
         {c && c.earnings.length > 0 && <span className="m hidden sm:inline">{held} held · {watch} watch</span>}
@@ -109,7 +110,7 @@ export function CalendarPanel({ s, limit = 7 }: { s: DailySummary; limit?: numbe
         </div>
       )}
       {open && (
-        <div className="grid grid-cols-1 gap-3 border-t border-line-soft bg-ground p-3 xl:grid-cols-2">
+        <div className="animate-panel-in flex flex-col gap-3 border-t border-line-soft bg-ground p-3">
           <EarningsCard s={s} />
           <EconCard s={s} />
         </div>

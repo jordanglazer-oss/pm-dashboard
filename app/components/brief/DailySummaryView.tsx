@@ -153,8 +153,9 @@ export function DailySummaryView({ onLoaded }: { onLoaded?: (s: DailySummary) =>
       <DecisionPanel s={s} regimeDetailOpen={regimeOpen} onToggleRegimeDetail={toggleRegime} />
 
       {regimeOpen && (
-        <section className="panel">
+        <section className="panel animate-panel-in">
           <div className="panel-h">
+            <span className="t-mark bg-hub-research" />
             <span className="t">Regime dial</span>
             <span className="m">every signal, and what it is worth</span>
             <button type="button" onClick={toggleRegime} className="ml-auto grid h-7 w-7 place-items-center rounded-control border border-line bg-surface text-ink-2 hover:bg-surface-hover" title="Hide the regime detail" aria-label="Hide the regime detail">

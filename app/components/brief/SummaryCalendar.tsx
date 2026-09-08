@@ -20,6 +20,7 @@ export function EarningsCard({ s }: { s: DailySummary }) {
   return (
     <Card>
       <CardHeader
+        mark="bg-hub-today"
         title="Earnings"
         sub={c ? `next ${c.windowDays} days` : "loading"}
         right={<span className="text-[11.5px] text-ink-3">{counts.Portfolio} held · {counts.Watchlist} watch · {counts.Suggested} suggested</span>}
@@ -40,7 +41,7 @@ export function EarningsCard({ s }: { s: DailySummary }) {
                   <li key={`${r.bucket}-${r.ticker}`} className="flex items-center gap-2 px-3.5 py-1.5 text-[12.5px]">
                     <span className={`dot ${BUCKET_DOT[r.bucket]}`} />
                     <TickerLink ticker={r.ticker} />
-                    <span className="min-w-0 truncate text-ink-2">{r.name ?? ""}</span>
+                    <span className="min-w-0 truncate text-ink-2" title={r.name ?? ""}>{r.name ?? ""}</span>
                     <span className="ml-auto flex shrink-0 items-center gap-2 font-mono text-[11.5px] text-ink-3">
                       {r.weightPct != null && <span title="Portfolio weight">{r.weightPct.toFixed(1)}%</span>}
                       {r.impliedMovePct != null && <span title="Implied move (FactSet)">±{r.impliedMovePct.toFixed(1)}%</span>}
@@ -90,6 +91,7 @@ export function EconCard({ s }: { s: DailySummary }) {
   return (
     <Card>
       <CardHeader
+        mark="bg-hub-today"
         title="Economic data"
         sub={c?.econStatus === "live" ? "FRED release calendar" : c?.econStatus === "not-configured" ? "FRED key not configured" : "calendar unavailable"}
       />
@@ -122,7 +124,7 @@ export function EconCard({ s }: { s: DailySummary }) {
               <tbody>
                 {recent.map((r) => (
                   <tr key={r.series}>
-                    <td className="pl-3.5">{r.title}<span className="ml-1 text-[11px] text-ink-faint">{r.asOf.slice(0, 7)}</span></td>
+                    <td className="pl-3.5"><span className="break-words">{r.title}</span><span className="ml-1 text-[11px] text-ink-faint">{r.asOf.slice(0, 7)}</span></td>
                     <td className="n">{fmtEcon(r.actual, r.unit)}</td>
                     <td className="n text-ink-3">{fmtEcon(r.prior, r.unit)}</td>
                   </tr>

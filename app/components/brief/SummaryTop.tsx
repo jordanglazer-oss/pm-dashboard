@@ -4,7 +4,7 @@ import React, { useContext } from "react";
 import Link from "next/link";
 import type { DailySummary } from "@/app/lib/daily-summary";
 import { useStocks } from "@/app/lib/StockContext";
-import { Pct, RegimeTrack, Spark, Status, TileLink, fmtPct, ordinal, regimeTone, timeAgo, toneText, useRevealFold } from "./summary-ui";
+import { LabelRows, Pct, RegimeTrack, Spark, Status, TileLink, fmtPct, ordinal, regimeTone, timeAgo, toneText, useRevealFold } from "./summary-ui";
 import { HedgeLedgerContext, type HedgePos } from "./hedge-ledger";
 
 /**
@@ -288,17 +288,22 @@ const DAY_MODELS: [string, string][] = [
   ["allEquity", "All-Eq"],
 ];
 
+/**
+ * The spread is the hero figure; everything supporting it reads as labelled
+ * rows — per-model day returns on the left, the spread by period on the right
+ * — so nothing is a run of text and a long value wraps rather than truncates.
+ */
 function AlphaCell({ s }: { s: DailySummary }) {
   const p = s.performance?.alphaCore;
   const rows = s.performance?.models ?? [];
   const group = rows.some((r) => r.groupId === "pim") ? "pim" : rows[0]?.groupId;
   const dayReturns = DAY_MODELS.map(([profile, label]) => ({ label, v: rows.find((r) => r.groupId === group && r.profile === profile)?.returns["1d"] ?? null }));
-  const hasModels = dayReturns.some((d) => d.v != null);
+  const modelRows = dayReturns.filter((d) => d.v != null).map((d) => ({ label: d.label, value: <Pct v={d.v} /> }));
   if (!p || !p.available) {
     return (
       <Cell label="Alpha vs core" href="/aa-performance" last>
-        <div className="mt-1 text-[12px] text-ink-3">No alpha / core series yet.</div>
-        {hasModels && <ModelsLine rows={dayReturns} />}
+        <div className="mb-2 mt-1 text-[12px] text-ink-3">No alpha / core series yet.</div>
+        <LabelRows title="Model · today" rows={modelRows} />
       </Cell>
     );
   }
@@ -306,34 +311,26 @@ function AlphaCell({ s }: { s: DailySummary }) {
   const mom = p.momentum.direction;
   return (
     <Cell label="Alpha vs core" href="/aa-performance" last>
-      <div className="mb-1 mt-1 flex items-baseline gap-2">
-        <span className={`font-mono text-[20px] font-semibold leading-none ${d1 == null ? "text-ink-3" : d1 > 0 ? "text-pos" : d1 < 0 ? "text-neg" : "text-ink"}`}>{fmtPct(d1)}</span>
-        <span className="text-[11px] text-ink-3">today{mom ? ` · ${mom}` : ""}</span>
-        {p.spark.length > 2 && <Spark points={p.spark.map((x) => x.value)} baseline={100} width={72} height={22} className="ml-auto shrink-0" />}
+      <div className="mb-2.5 mt-1 flex items-start gap-2">
+        <div className="min-w-0">
+          <div className={`font-mono text-[22px] font-semibold leading-none ${d1 == null ? "text-ink-3" : d1 > 0 ? "text-pos" : d1 < 0 ? "text-neg" : "text-ink"}`}>{fmtPct(d1)}</div>
+          <div className="mt-1.5 break-words text-[11px] text-ink-3">spread today{mom ? ` · ${mom}` : ""}</div>
+        </div>
+        {p.spark.length > 2 && <Spark points={p.spark.map((x) => x.value)} baseline={100} width={72} height={26} className="ml-auto shrink-0" />}
       </div>
-      {hasModels && <ModelsLine rows={dayReturns} />}
-      <div className="mt-1 flex flex-wrap gap-x-3 text-[11px] text-ink-3">
-        {PERIODS.map(([k, label]) => (
-          <span key={k}>
-            {label} <Pct v={p.spread[k]} pp deadband={0.05} />
-          </span>
-        ))}
-        {p.momentum.prior != null && <span title="1-month spread five sessions ago">was {fmtPct(p.momentum.prior).replace("%", "pp")} a week ago</span>}
+      {/* Two columns only where the cell is genuinely wide: at xl the decision
+          panel is four cells across, so the rows go back to full width there
+          rather than breaking a label mid-word. */}
+      <div className="grid grid-cols-1 gap-x-5 gap-y-2.5 lg:grid-cols-2 xl:grid-cols-1 2xl:grid-cols-2">
+        <LabelRows title="Model · today" rows={modelRows} />
+        <LabelRows title="Spread" rows={PERIODS.map(([k, label]) => ({ label, value: <Pct v={p.spread[k]} pp deadband={0.05} /> }))} />
       </div>
+      {p.momentum.prior != null && (
+        <div className="mt-2 break-words text-[11px] text-ink-3" title="1-month spread five sessions ago">
+          1M spread was <span className="font-mono">{fmtPct(p.momentum.prior).replace("%", "pp")}</span> a week ago
+        </div>
+      )}
     </Cell>
-  );
-}
-
-function ModelsLine({ rows }: { rows: { label: string; v: number | null }[] }) {
-  return (
-    <div className="text-[12px] text-ink-2">
-      {rows.map((r, i) => (
-        <span key={r.label}>
-          {i > 0 && " · "}
-          {r.label} <Pct v={r.v} />
-        </span>
-      ))}
-    </div>
   );
 }
 
@@ -387,7 +384,7 @@ function BottomLine({ s }: { s: DailySummary }) {
 
 export function DecisionPanel({ s, regimeDetailOpen, onToggleRegimeDetail }: { s: DailySummary; regimeDetailOpen: boolean; onToggleRegimeDetail: () => void }) {
   return (
-    <section id="s-today" className="panel" style={{ scrollMarginTop: 64 }}>
+    <section id="s-today" className="panel animate-panel-in" style={{ scrollMarginTop: 64 }}>
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4">
         <RegimeCell s={s} detailOpen={regimeDetailOpen} onToggleDetail={onToggleRegimeDetail} />
         <CashCell s={s} />

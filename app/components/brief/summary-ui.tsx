@@ -14,9 +14,10 @@ export function Card({ className = "", children }: { className?: string; childre
   return <section className={`panel min-w-0 ${className}`}>{children}</section>;
 }
 
-export function CardHeader({ title, sub, right, href }: { title: string; sub?: React.ReactNode; right?: React.ReactNode; href?: string }) {
+export function CardHeader({ title, sub, right, href, mark }: { title: string; sub?: React.ReactNode; right?: React.ReactNode; href?: string; mark?: string }) {
   return (
     <div className="panel-h">
+      {mark && <span className={`t-mark ${mark}`} />}
       {href ? (
         <Link href={href} className="t hover:text-accent">
           {title}
@@ -276,6 +277,29 @@ export function Fold({
       </div>
       {open && <div>{children}</div>}
     </Card>
+  );
+}
+
+/**
+ * A stack of label → value rows: label 11px ink-3 on the left, mono value
+ * right-aligned. The answer to "this block is bunched up" — a real grid
+ * instead of an inline run, and a long value wraps to a second line rather
+ * than truncating.
+ */
+export function LabelRows({ title, rows, className = "" }: { title?: string; rows: { label: string; value: React.ReactNode; title?: string }[]; className?: string }) {
+  if (rows.length === 0) return null;
+  return (
+    <div className={`min-w-0 ${className}`}>
+      {title && <div className="mb-0.5 text-[11px] text-ink-3">{title}</div>}
+      <dl className="min-w-0">
+        {rows.map((r) => (
+          <div key={r.label} className="flex min-w-0 items-baseline justify-between gap-2 border-b border-line-soft py-[3px] last:border-b-0" title={r.title}>
+            <dt className="min-w-0 break-words text-[11px] text-ink-3">{r.label}</dt>
+            <dd className="shrink-0 text-right font-mono text-[12px] tabular-nums">{r.value}</dd>
+          </div>
+        ))}
+      </dl>
+    </div>
   );
 }
 

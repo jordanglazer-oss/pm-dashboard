@@ -1205,20 +1205,20 @@ export default function InboxPage() {
             body={coverageFilter === "missing" ? "Every scoreable stock has at least one source." : undefined}
           />
         ) : (
-          <div className="overflow-x-auto">
-          <table className="data-table min-w-[1560px]">
+          <div>
+          <table className="data-table table-fixed">
             <thead>
               <tr>
-                <th className="cursor-pointer select-none hover:text-ink" onClick={() => toggleCovSort("ticker")}>Ticker{covArrow("ticker")}</th>
+                <th className="w-[86px] cursor-pointer select-none hover:text-ink" onClick={() => toggleCovSort("ticker")}>Ticker{covArrow("ticker")}</th>
                 <th className="cursor-pointer select-none hover:text-ink" onClick={() => toggleCovSort("name")}>Name{covArrow("name")}</th>
-                <th className="cursor-pointer select-none hover:text-ink" onClick={() => toggleCovSort("bucket")}>Bucket{covArrow("bucket")}</th>
-                <th className="text-center w-20 cursor-pointer select-none hover:text-ink" onClick={() => toggleCovSort("rbc")} title="Date the RBC PDF was last uploaded. Amber &gt;90d, red &gt;180d — a cue to fetch a newer report. Click to sort by recency (oldest first).">RBC{covArrow("rbc")}</th>
-                <th className="text-center w-20 cursor-pointer select-none hover:text-ink" onClick={() => toggleCovSort("jpm")} title="Date the JPM PDF was last uploaded. Amber &gt;90d, red &gt;180d — a cue to fetch a newer report. Click to sort by recency (oldest first).">JPM{covArrow("jpm")}</th>
-                <th className="text-center w-20 cursor-pointer select-none hover:text-ink" onClick={() => toggleCovSort("morn")} title="Date the Morningstar PDF was last uploaded. Amber &gt;90d, red &gt;180d. Morningstar is optional — a blank is not counted as a coverage gap in Status. Click to sort by recency (oldest first).">Morningstar{covArrow("morn")}</th>
+                <th className="w-[76px] cursor-pointer select-none hover:text-ink" onClick={() => toggleCovSort("bucket")}>Bucket{covArrow("bucket")}</th>
+                <th className="w-[66px] text-center cursor-pointer select-none hover:text-ink" onClick={() => toggleCovSort("rbc")} title="Date the RBC PDF was last uploaded. Amber &gt;90d, red &gt;180d — a cue to fetch a newer report. Click to sort by recency (oldest first).">RBC{covArrow("rbc")}</th>
+                <th className="w-[66px] text-center cursor-pointer select-none hover:text-ink" onClick={() => toggleCovSort("jpm")} title="Date the JPM PDF was last uploaded. Amber &gt;90d, red &gt;180d — a cue to fetch a newer report. Click to sort by recency (oldest first).">JPM{covArrow("jpm")}</th>
+                <th className="w-[66px] text-center cursor-pointer select-none hover:text-ink" onClick={() => toggleCovSort("morn")} title="Date the Morningstar PDF was last uploaded. Amber &gt;90d, red &gt;180d. Morningstar is optional — a blank is not counted as a coverage gap in Status. Click to sort by recency (oldest first).">Morningstar{covArrow("morn")}</th>
                 {FACTSET_COLS.map((c, i) => (
                   <th
                     key={c.kind}
-                    className="text-center w-20 cursor-pointer select-none hover:text-ink"
+                    className="w-[66px] text-center cursor-pointer select-none hover:text-ink"
                     onClick={() => toggleCovSort("factset")}
                     title={c.title}
                   >
@@ -1226,10 +1226,10 @@ export default function InboxPage() {
                     {i === 0 ? covArrow("factset") : null}
                   </th>
                 ))}
-                <th className="n w-20 cursor-pointer select-none hover:text-ink" onClick={() => toggleCovSort("boostedAi")} title="Raw BoostedAI rating (0-5, decimals OK). Combined with Consensus to auto-derive the dashboard's aiRating (0-2).">Boosted.ai{covArrow("boostedAi")}</th>
-                <th className="w-28 cursor-pointer select-none hover:text-ink" onClick={() => toggleCovSort("consensus")} title="BoostedAI consensus recommendation. Combined with the numeric rating to auto-derive aiRating (Strong Buy / Buy → 2, Hold → 1, Sell / Strong Sell → 0).">Consensus{covArrow("consensus")}</th>
-                <th className="n w-20 cursor-pointer select-none hover:text-ink" onClick={() => toggleCovSort("sia")} title="SIA SMAX score (0-10 integer). Maps to relativeStrength: 8-10 → 2, 6-7 → 1, 0-5 → 0.">SIA SMAX{covArrow("sia")}</th>
-                <th className="n w-28 cursor-pointer select-none hover:text-ink" onClick={() => toggleCovSort("marketEdge")} title="MarketEdge Power Rating (−60…+100) and Opinion. Power Rating drives the marketEdge score: ≥ +60 → 2 (Long), −27…+59 → 1 (Neutral), < −27 → 0 (Avoid). Click the rating to edit; click the opinion chip to cycle. N/A for pure-Canadian names (MarketEdge covers US listings only).">MarketEdge{covArrow("marketEdge")}</th>
+                <th className="n w-[68px] cursor-pointer select-none hover:text-ink" onClick={() => toggleCovSort("boostedAi")} title="Raw BoostedAI rating (0-5, decimals OK). Combined with Consensus to auto-derive the dashboard's aiRating (0-2).">Boosted.ai{covArrow("boostedAi")}</th>
+                <th className="w-[84px] cursor-pointer select-none hover:text-ink" onClick={() => toggleCovSort("consensus")} title="BoostedAI consensus recommendation. Combined with the numeric rating to auto-derive aiRating (Strong Buy / Buy → 2, Hold → 1, Sell / Strong Sell → 0).">Consensus{covArrow("consensus")}</th>
+                <th className="n w-[58px] cursor-pointer select-none hover:text-ink" onClick={() => toggleCovSort("sia")} title="SIA SMAX score (0-10 integer). Maps to relativeStrength: 8-10 → 2, 6-7 → 1, 0-5 → 0.">SIA SMAX{covArrow("sia")}</th>
+                <th className="n w-[88px] cursor-pointer select-none hover:text-ink" onClick={() => toggleCovSort("marketEdge")} title="MarketEdge Power Rating (−60…+100) and Opinion. Power Rating drives the marketEdge score: ≥ +60 → 2 (Long), −27…+59 → 1 (Neutral), < −27 → 0 (Avoid). Click the rating to edit; click the opinion chip to cycle. N/A for pure-Canadian names (MarketEdge covers US listings only).">MarketEdge{covArrow("marketEdge")}</th>
                 <th className="w-32 cursor-pointer select-none hover:text-ink" onClick={() => toggleCovSort("status")} title="Sort by overall coverage status (No reports / Partial / Both). Ascending shows gaps first.">Status{covArrow("status")}</th>
               </tr>
             </thead>
@@ -1248,7 +1248,7 @@ export default function InboxPage() {
                         {r.displayTicker}
                       </Link>
                     </td>
-                    <td className="text-ink-2 truncate max-w-[260px]" title={r.name}>{r.name}</td>
+                    <td className="break-words leading-[1.35] text-ink-2" title={r.name}>{r.name}</td>
                     <td>
                       <span className={r.bucket === "Portfolio" ? "text-ink-2" : "text-ink-3"}>{r.bucket}</span>
                     </td>

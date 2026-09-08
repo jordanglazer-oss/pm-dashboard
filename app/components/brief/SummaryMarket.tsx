@@ -62,6 +62,7 @@ export function MarketPanel({ s, onRefresh, refreshing }: { s: DailySummary; onR
   return (
     <Card>
       <div className="panel-h" id="s-market" style={{ scrollMarginTop: 64 }}>
+        <span className="t-mark bg-hub-research" />
         <span className="t">Market</span>
         <span className="m">{win === "1d" ? "today" : "this week"}</span>
         <div className="ml-auto flex items-center gap-2">
@@ -95,12 +96,13 @@ export function MarketPanel({ s, onRefresh, refreshing }: { s: DailySummary; onR
         <span className="text-ink-3">Drivers</span> {driversSentence(s, win)}
       </div>
       {open && (
-        <div className="flex flex-col gap-3 border-t border-line-soft bg-ground p-3">
+        // The full tables stack one per row. Side by side inside this rail they
+        // were the thing the PM could not read; a table that owns the whole
+        // width wraps its text cells instead of scrolling sideways.
+        <div className="animate-panel-in flex flex-col gap-3 border-t border-line-soft bg-ground p-3">
           <BenchmarkStrip s={s} />
-          <div className="grid grid-cols-1 gap-3 xl:grid-cols-[minmax(0,1.5fr)_minmax(0,1fr)]">
-            <DriversCard s={s} onRefresh={onRefresh} refreshing={refreshing} />
-            <SectorMapCard s={s} />
-          </div>
+          <DriversCard s={s} onRefresh={onRefresh} refreshing={refreshing} />
+          <SectorMapCard s={s} />
           <ModelsCard s={s} />
         </div>
       )}
@@ -121,13 +123,14 @@ export function DriversCard({ s, onRefresh, refreshing }: { s: DailySummary; onR
   const ret = (r: DriverRow) => (win === "1d" ? r.ret1d : r.ret1w);
   const maxAbs = Math.max(0.01, ...[...top, ...bottom].map((r) => Math.abs(contrib(r) ?? 0)));
   return (
-    <Card>
+    <Card className="animate-panel-in">
       <CardHeader
+        mark="bg-hub-research"
         title="Market drivers"
         sub={d ? `cap-weighted contribution · ${timeAgo(d.builtAt)}${d.error ? " · stale" : ""}` : "loading"}
         right={
           <>
-            <Toggle value={idx} options={[["spx", "S&P 500"], ["tsx", "TSX 60"]]} onChange={setIdx} />
+            <Toggle value={idx} options={[["spx", "S&P"], ["tsx", "TSX"]]} onChange={setIdx} />
             <Toggle value={win} options={[["1d", "1d"], ["1w", "1w"]]} onChange={setWin} />
             <IconButton onClick={onRefresh} disabled={refreshing} spin={refreshing} title="Rebuild from FactSet" icon="refresh" />
           </>
@@ -137,75 +140,122 @@ export function DriversCard({ s, onRefresh, refreshing }: { s: DailySummary; onR
         <Empty>{d?.error ?? "No driver data yet — the nightly job builds it, or use the refresh control."}</Empty>
       ) : (
         <>
-          <div className="flex flex-wrap items-baseline gap-x-4 gap-y-1 px-3.5 pb-1 pt-2.5 text-[11.5px] text-ink-3">
+          <div className="flex flex-wrap items-baseline gap-x-4 gap-y-1 px-3.5 pb-1.5 pt-2.5 text-[11.5px] text-ink-3">
             <span>
               {index.label} <Pct v={win === "1d" ? index.ret1d : index.ret1w} className="text-[13px] font-medium" />
             </span>
             <span>{index.namesPriced}/{index.namesTotal} names priced</span>
-            <span className="ml-auto inline-flex items-center gap-3">
+            <span className="inline-flex items-center gap-3">
               <span className="inline-flex items-center gap-1.5"><span className="dot bg-accent" /> held</span>
               <span className="inline-flex items-center gap-1.5"><span className="dot bg-violet" /> watch</span>
             </span>
           </div>
-          <div className="grid grid-cols-1 gap-0 md:grid-cols-2 md:divide-x md:divide-line-soft">
-            <DriverList title="Contributors" rows={top} contrib={contrib} ret={ret} maxAbs={maxAbs} />
-            <DriverList title="Detractors" rows={bottom} contrib={contrib} ret={ret} maxAbs={maxAbs} />
-          </div>
-          <div className="border-t border-line-soft px-3.5 py-2.5">
-            <div className="mb-1.5 text-[11px] text-ink-3">Sectors · {win === "1d" ? "today" : "week"}</div>
-            <div className="grid grid-cols-1 gap-x-6 gap-y-1 sm:grid-cols-2">
+          {/* Contributors and detractors as one table so the columns line up and
+              a long company name wraps in its cell instead of pushing the panel
+              sideways. Numerics keep their own fixed columns. */}
+          <table className="data-table">
+            <thead>
+              <tr>
+                <th className="pl-3.5">Name</th>
+                <th className="w-[40px] px-1.5" />
+                <th className="n w-[72px]" title="Percentage points of the index return">Contrib pp</th>
+                <th className="n w-[58px]">Return</th>
+                <th className="n w-[58px] pr-3.5" title="Share of the priced universe">Weight</th>
+              </tr>
+            </thead>
+            <tbody>
+              <BandRow>Contributors</BandRow>
+              <DriverRows rows={top} contrib={contrib} ret={ret} maxAbs={maxAbs} />
+              <BandRow>Detractors</BandRow>
+              <DriverRows rows={bottom} contrib={contrib} ret={ret} maxAbs={maxAbs} />
+            </tbody>
+          </table>
+          <table className="data-table border-t border-line">
+            <thead>
+              <tr>
+                <th className="pl-3.5">Sector · {win === "1d" ? "today" : "week"}</th>
+                <th className="w-[40px] px-1.5" />
+                <th className="n w-[72px]">Contrib pp</th>
+                <th className="n w-[58px]">Return</th>
+                <th className="n w-[58px] pr-3.5">Weight</th>
+              </tr>
+            </thead>
+            <tbody>
               {index.sectors.map((sec) => {
                 const v = win === "1d" ? sec.ret1d : sec.ret1w;
-                const leaders = sec.leaders;
+                const c = win === "1d" ? sec.contrib1d : sec.contrib1w;
                 return (
-                  <div key={sec.sector} className="flex items-center gap-2 text-[11.5px]">
-                    <span className="w-[128px] shrink-0 truncate text-ink-2" title={sec.sector}>{sec.sector}</span>
-                    <SectorBar v={v} />
-                    <Pct v={v} className="w-[52px] shrink-0 text-right text-[11px]" />
-                    <span className="hidden min-w-0 truncate font-mono text-[10.5px] text-ink-faint lg:inline" title={leaders.map((l) => l.ticker).join(", ")}>
-                      {leaders.slice(0, 2).map((l) => l.ticker).join(" ")}
-                    </span>
-                  </div>
+                  <tr key={sec.sector}>
+                    <td className="pl-3.5">
+                      <span className="break-words text-ink">{sec.sector}</span>
+                      {sec.leaders.length > 0 && (
+                        <span className="ml-1.5 break-all font-mono text-[10.5px] text-ink-faint">{sec.leaders.slice(0, 3).map((l) => l.ticker).join(" ")}</span>
+                      )}
+                    </td>
+                    <td className="px-1.5"><SectorBar v={v} /></td>
+                    <td className="n text-ink-2">{c == null ? "—" : `${c > 0 ? "+" : ""}${c.toFixed(2)}`}</td>
+                    <td className="n"><Pct v={v} digits={1} /></td>
+                    <td className="n pr-3.5 text-ink-2">{(sec.weight * 100).toFixed(1)}%</td>
+                  </tr>
                 );
               })}
-            </div>
-          </div>
+            </tbody>
+          </table>
         </>
       )}
     </Card>
   );
 }
 
-function DriverList({ title, rows, contrib, ret, maxAbs }: { title: string; rows: DriverRow[]; contrib: (r: DriverRow) => number | null; ret: (r: DriverRow) => number | null; maxAbs: number }) {
+function BandRow({ children }: { children: React.ReactNode }) {
   return (
-    <div>
-      <div className="bg-surface-2 px-3.5 py-1 text-[11px] text-ink-3">{title}</div>
-      <ul>
-        {rows.slice(0, 8).map((r) => {
-          const c = contrib(r);
-          const w = c == null ? 0 : (Math.abs(c) / maxAbs) * 100;
-          return (
-            <li key={r.ticker} className="flex items-center gap-2 px-3.5 py-[5px] text-[12.5px]">
-              <span className={`dot ${r.held === "Portfolio" ? "bg-accent" : r.held === "Watchlist" ? "bg-violet" : "bg-transparent"}`} />
-              <TickerLink ticker={r.ticker} className="w-[52px] shrink-0" />
-              <span className="min-w-0 flex-1 truncate text-[11px] text-ink-3">{r.name ?? r.sector ?? ""}</span>
-              <span className="relative h-1 w-[54px] shrink-0 overflow-hidden rounded-full bg-line-soft">
+    <tr>
+      <td colSpan={5} className="!h-7 bg-surface-2 pl-3.5 text-[11px] text-ink-3">{children}</td>
+    </tr>
+  );
+}
+
+function DriverRows({ rows, contrib, ret, maxAbs }: { rows: DriverRow[]; contrib: (r: DriverRow) => number | null; ret: (r: DriverRow) => number | null; maxAbs: number }) {
+  if (rows.length === 0) {
+    return (
+      <tr>
+        <td colSpan={5} className="pl-3.5 text-[12px] text-ink-3">No names priced.</td>
+      </tr>
+    );
+  }
+  return (
+    <>
+      {rows.slice(0, 8).map((r) => {
+        const c = contrib(r);
+        const w = c == null ? 0 : (Math.abs(c) / maxAbs) * 100;
+        return (
+          <tr key={r.ticker}>
+            <td className="pl-3.5">
+              <span className="flex min-w-0 flex-wrap items-baseline gap-x-1.5 gap-y-0">
+                <span className={`dot ${r.held === "Portfolio" ? "bg-accent" : r.held === "Watchlist" ? "bg-violet" : "bg-transparent"}`} />
+                <TickerLink ticker={r.ticker} />
+                <span className="min-w-0 break-words text-[11px] text-ink-3">{r.name ?? r.sector ?? ""}</span>
+              </span>
+            </td>
+            <td className="px-1.5">
+              <span className="relative block h-1 w-full overflow-hidden rounded-full bg-line-soft">
                 <span className={`absolute left-0 top-0 h-full rounded-full ${(c ?? 0) >= 0 ? "bg-pos" : "bg-neg"}`} style={{ width: `${w}%` }} />
               </span>
-              <span className="w-[56px] shrink-0 text-right font-mono text-[11px] text-ink-2">{c == null ? "—" : `${c > 0 ? "+" : ""}${c.toFixed(2)}`}</span>
-              <Pct v={ret(r)} digits={1} className="w-[48px] shrink-0 text-right text-[11px]" />
-            </li>
-          );
-        })}
-      </ul>
-    </div>
+            </td>
+            <td className="n text-ink-2">{c == null ? "—" : `${c > 0 ? "+" : ""}${c.toFixed(2)}`}</td>
+            <td className="n"><Pct v={ret(r)} digits={1} /></td>
+            <td className="n pr-3.5 text-ink-2">{r.weight == null ? "—" : `${(r.weight * 100).toFixed(1)}%`}</td>
+          </tr>
+        );
+      })}
+    </>
   );
 }
 
 function SectorBar({ v }: { v: number | null }) {
   const pct = v == null ? 0 : Math.max(-1, Math.min(1, v / 3)) * 50;
   return (
-    <span className="relative h-1 min-w-0 flex-1 overflow-hidden rounded-full bg-line-soft">
+    <span className="relative block h-1 w-full overflow-hidden rounded-full bg-line-soft">
       <span className="absolute left-1/2 top-0 h-full w-px bg-line" />
       {v != null && <span className={`absolute top-0 h-full ${v >= 0 ? "bg-pos" : "bg-neg"}`} style={pct >= 0 ? { left: "50%", width: `${pct}%` } : { right: "50%", width: `${-pct}%` }} />}
     </span>
@@ -232,51 +282,61 @@ export function SectorMapCard({ s }: { s: DailySummary }) {
   const industries = rows.filter((r) => r.kind === "industry").sort((a, b) => (b.ret1m ?? -99) - (a.ret1m ?? -99));
   const label = s.regime?.composite?.label;
   return (
-    <Card>
-      <CardHeader title="Sector map" sub={label ? `leadership under ${label} · book vs S&P weight` : "leadership"} />
+    <Card className="animate-panel-in">
+      <CardHeader mark="bg-hub-research" title="Sector map" sub={label ? `leadership under ${label} · book vs S&P weight` : "leadership"} />
       {rows.length === 0 ? (
         <Empty>Needs the market-drivers build.</Empty>
       ) : (
-        <div className="overflow-x-auto">
-          <table className="data-table">
-            <thead>
-              <tr>
-                <th className="pl-3.5">Sector</th>
-                <th className="n">1d</th>
-                <th className="n">1w</th>
-                <th className="n">1m</th>
-                <th className="n">3m</th>
-                <th className="n pr-3.5">Book · active</th>
+        // No horizontal scroller: the four return columns are fixed-width
+        // numerics and the sector name is the only cell that wraps.
+        <table className="data-table">
+          <thead>
+            <tr>
+              <th className="pl-3.5">Sector</th>
+              <th className="n w-[48px]">1d</th>
+              <th className="n w-[48px]">1w</th>
+              <th className="n w-[48px]">1m</th>
+              <th className="n w-[48px]">3m</th>
+              <th className="n w-[56px] pr-3.5" title="Book weight, and active vs the S&P weight beneath it">Book</th>
+            </tr>
+          </thead>
+          <tbody>
+            {sectors.map((r) => (
+              <tr key={r.symbol}>
+                <td className="pl-3.5">
+                  <span className="font-mono text-[11px] text-ink-faint">{r.symbol}</span>{" "}
+                  <span className="break-words">{r.label}</span>
+                </td>
+                <Cell v={r.ret1d} /><Cell v={r.ret1w} /><Cell v={r.ret1m} /><Cell v={r.ret3m} />
+                <td className="n pr-3.5">
+                  {r.bookWeightPct != null ? (
+                    <>
+                      <span className="block text-ink">{r.bookWeightPct.toFixed(1)}%</span>
+                      {r.activePct != null && (
+                        <span className={`block text-[11px] ${r.activePct > 0.5 ? "text-pos" : r.activePct < -0.5 ? "text-neg" : "text-ink-3"}`} title="Active vs the S&P weight">
+                          {r.activePct > 0 ? "+" : ""}{r.activePct.toFixed(1)}
+                        </span>
+                      )}
+                    </>
+                  ) : (
+                    <span className="text-ink-faint">—</span>
+                  )}
+                </td>
               </tr>
-            </thead>
-            <tbody>
-              {sectors.map((r) => (
-                <tr key={r.symbol}>
-                  <td className="pl-3.5"><span className="font-mono text-[11px] text-ink-faint">{r.symbol}</span> {r.label}</td>
-                  <Cell v={r.ret1d} /><Cell v={r.ret1w} /><Cell v={r.ret1m} /><Cell v={r.ret3m} />
-                  <td className="n pr-3.5">
-                    {r.bookWeightPct != null ? (
-                      <>
-                        <span className="text-ink">{r.bookWeightPct.toFixed(1)}%</span>
-                        {r.activePct != null && <span className={`ml-1 ${r.activePct > 0.5 ? "text-pos" : r.activePct < -0.5 ? "text-neg" : "text-ink-3"}`}>{r.activePct > 0 ? "+" : ""}{r.activePct.toFixed(1)}</span>}
-                      </>
-                    ) : (
-                      <span className="text-ink-faint">—</span>
-                    )}
-                  </td>
-                </tr>
-              ))}
-              <tr><td colSpan={6} className="bg-surface-2 pl-3.5 !h-7 text-[11px] text-ink-3">Industries</td></tr>
-              {industries.map((r) => (
-                <tr key={r.symbol}>
-                  <td className="pl-3.5"><span className="font-mono text-[11px] text-ink-faint">{r.symbol}</span> {r.label}</td>
-                  <Cell v={r.ret1d} /><Cell v={r.ret1w} /><Cell v={r.ret1m} /><Cell v={r.ret3m} />
-                  <td />
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+            ))}
+            <tr><td colSpan={6} className="!h-7 bg-surface-2 pl-3.5 text-[11px] text-ink-3">Industries</td></tr>
+            {industries.map((r) => (
+              <tr key={r.symbol}>
+                <td className="pl-3.5">
+                  <span className="font-mono text-[11px] text-ink-faint">{r.symbol}</span>{" "}
+                  <span className="break-words">{r.label}</span>
+                </td>
+                <Cell v={r.ret1d} /><Cell v={r.ret1w} /><Cell v={r.ret1m} /><Cell v={r.ret3m} />
+                <td />
+              </tr>
+            ))}
+          </tbody>
+        </table>
       )}
     </Card>
   );
@@ -301,8 +361,9 @@ export function ModelsCard({ s }: { s: DailySummary }) {
   const groups = [...new Set(rows.map((r) => r.groupId))];
   const shown = all ? groups : groups.slice(0, 1);
   return (
-    <Card>
+    <Card className="animate-panel-in">
       <CardHeader
+        mark="bg-hub-portfolio"
         title="Model returns"
         sub={rows[0]?.asOf ? `as of ${rows[0].asOf}` : "pm:pim-performance"}
         href="/aa-performance"
@@ -313,40 +374,38 @@ export function ModelsCard({ s }: { s: DailySummary }) {
       {rows.length === 0 ? (
         <Empty>No model series yet.</Empty>
       ) : (
-        <div className="overflow-x-auto">
-          <table className="data-table">
-            <thead>
-              <tr>
-                <th className="pl-3.5">Model</th>
-                {["1d", "1w", "1m", "3m", "YTD"].map((h) => <th key={h} className="n">{h}</th>)}
-              </tr>
-            </thead>
-            <tbody>
-              {shown.map((g) => {
-                const grp = rows.filter((r) => r.groupId === g);
-                return grp.map((r, i) => (
-                  <tr key={`${g}-${r.profile}`}>
-                    <td className="pl-3.5">
-                      {i === 0 ? <span className="font-medium text-ink">{r.groupName}</span> : <span className="text-ink-faint">{r.groupName}</span>}
-                      <span className="ml-1.5 text-ink-2">{PROFILE_LABEL[r.profile] ?? r.profile}</span>
-                    </td>
-                    {(["1d", "1w", "1m", "3m", "ytd"] as const).map((k) => (
-                      <td key={k} className="n"><Pct v={r.returns[k]} /></td>
-                    ))}
-                  </tr>
-                ));
-              })}
-              {(s.performance?.benchmarks ?? []).map((b) => (
-                <tr key={b.key} className="bg-surface-2">
-                  <td className="pl-3.5 text-ink-2">{b.label}</td>
+        <table className="data-table">
+          <thead>
+            <tr>
+              <th className="pl-3.5">Model</th>
+              {["1d", "1w", "1m", "3m", "YTD"].map((h) => <th key={h} className="n w-[52px] last:pr-3.5">{h}</th>)}
+            </tr>
+          </thead>
+          <tbody>
+            {shown.map((g) => {
+              const grp = rows.filter((r) => r.groupId === g);
+              return grp.map((r, i) => (
+                <tr key={`${g}-${r.profile}`}>
+                  <td className="pl-3.5">
+                    {i === 0 ? <span className="break-words font-medium text-ink">{r.groupName}</span> : <span className="break-words text-ink-faint">{r.groupName}</span>}
+                    <span className="ml-1.5 text-ink-2">{PROFILE_LABEL[r.profile] ?? r.profile}</span>
+                  </td>
                   {(["1d", "1w", "1m", "3m", "ytd"] as const).map((k) => (
-                    <td key={k} className="n"><Pct v={b.returns[k]} /></td>
+                    <td key={k} className="n last:pr-3.5"><Pct v={r.returns[k]} /></td>
                   ))}
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+              ));
+            })}
+            {(s.performance?.benchmarks ?? []).map((b) => (
+              <tr key={b.key} className="bg-surface-2">
+                <td className="pl-3.5 break-words text-ink-2">{b.label}</td>
+                {(["1d", "1w", "1m", "3m", "ytd"] as const).map((k) => (
+                  <td key={k} className="n last:pr-3.5"><Pct v={b.returns[k]} /></td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
       )}
       <Link href="/aa-performance" className="flex h-8 items-center border-t border-line-soft px-3.5 text-[11.5px] text-accent hover:text-accent-ink">
         Full performance, every model

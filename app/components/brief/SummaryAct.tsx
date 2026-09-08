@@ -23,6 +23,16 @@ const GROUPS: { key: string; title: string; sources: ActionItem["source"][] }[] 
   { key: "changes", title: "Changes", sources: ["change"] },
 ];
 
+/** Every source a GROUPS entry claims — anything else falls into "Other" so a
+ *  new source can never make items disappear from the queue. */
+const CLAIMED = new Set<ActionItem["source"]>(GROUPS.flatMap((g) => g.sources));
+
+const PRIORITY_RANK: Record<ActionItem["priority"], number> = { high: 0, medium: 1, low: 2 };
+
+function priorityDot(p: ActionItem["priority"]): string {
+  return p === "high" ? "bg-neg" : p === "medium" ? "bg-warn" : "bg-ink-faint";
+}
+
 const SOURCE_LABEL: Record<ActionItem["source"], string> = {
   kill: "Kill",
   alert: "Alerts",
@@ -43,6 +53,7 @@ export function ActionQueue({
   /** Cap the list and scroll INSIDE it, so a long queue never grows the page. */
   scrollable?: boolean;
 }) {
+  const { uiPrefs, setUiPref } = useStocks();
   const a = s.actions;
   const [showCleared, setShowCleared] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
@@ -55,9 +66,17 @@ export function ActionQueue({
     }
   };
   const shown = showCleared ? [...(a?.items ?? []), ...(a?.dismissed ?? [])] : a?.items ?? [];
+  // Groups in a fixed reading order; the global priority sort is preserved
+  // WITHIN each group (the incoming list is already priority-sorted, and the
+  // dismissed tail keeps its own order behind the open items).
+  const grouped = [
+    ...GROUPS.map((g) => ({ key: g.key, title: g.title, items: shown.filter((it) => g.sources.includes(it.source)) })),
+    { key: "other", title: "Other", items: shown.filter((it) => !CLAIMED.has(it.source)) },
+  ].filter((g) => g.items.length > 0);
   return (
-    <Card className={scrollable ? "flex min-h-[260px] flex-col" : ""}>
+    <Card className={`animate-panel-in ${scrollable ? "flex min-h-[260px] flex-col" : ""}`}>
       <div className="panel-h">
+        <span className="t-mark bg-hub-today" />
         <span className="t">Action queue</span>
         <span className="m">{a ? `${a.counts.high} high · ${a.counts.medium} medium · ${a.counts.low} low` : "loading"}</span>
         {a && a.counts.cleared > 0 && (
@@ -72,45 +91,58 @@ export function ActionQueue({
         <Empty>Nothing needs a decision right now.</Empty>
       ) : (
         <div className={scrollable ? "min-h-0 flex-1 basis-0 overflow-y-auto" : ""}>
-          {GROUPS.map((g) => {
-            const items = shown.filter((it) => g.sources.includes(it.source));
-            if (items.length === 0) return null;
+          {grouped.map((g) => {
+            const items = g.items;
+            const prefKey = `brief.actions.grp.${g.key}`;
+            const open = (uiPrefs[prefKey] ?? "0") !== "1";
+            const top = items.reduce<ActionItem["priority"]>((best, it) => (PRIORITY_RANK[it.priority] < PRIORITY_RANK[best] ? it.priority : best), "low");
             return (
               <div key={g.key}>
-                <div className="flex items-baseline gap-2 border-b border-line-soft bg-surface-2 px-3.5 py-1 text-[11px] text-ink-3">
-                  {g.title}
-                  <span className="font-mono text-ink-faint">{items.length}</span>
-                </div>
-                <ul>
-                  {items.map((it) => (
-                    <li key={it.id} className={`flex items-start gap-3 border-b border-line-soft px-3.5 py-2.5 ${it.state ? "opacity-55" : ""}`}>
-                      <span className={`dot mt-[7px] ${it.priority === "high" ? "bg-neg" : it.priority === "medium" ? "bg-warn" : "bg-ink-faint"}`} />
-                      <div className="min-w-0 flex-1">
-                        <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
-                          {it.ticker && <TickerLink ticker={it.ticker} />}
-                          <span className={`text-[13px] font-medium text-ink ${it.state?.status === "done" ? "line-through" : ""}`}>{it.title}</span>
-                          {it.at && <span className="text-[11px] text-ink-faint">{timeAgo(it.at)}</span>}
-                          <span className="ml-auto text-[11px] text-ink-3">{SOURCE_LABEL[it.source]}</span>
+                <button
+                  type="button"
+                  onClick={() => setUiPref(prefKey, open ? "1" : "0")}
+                  aria-expanded={open}
+                  title={open ? `Collapse ${g.title}` : `Expand ${g.title}`}
+                  className="flex w-full items-center gap-2 border-b border-line-soft bg-surface-2 px-3.5 py-1.5 text-left text-[11.5px] text-ink-2 transition-colors hover:bg-surface-hover"
+                >
+                  <AppIcon name={open ? "chevD" : "chevR"} size={12} className="shrink-0 text-ink-3" />
+                  <span className="min-w-0 break-words">{g.title}</span>
+                  <span className="shrink-0 font-mono text-ink-faint">{items.length}</span>
+                  <span className={`dot ml-auto shrink-0 ${priorityDot(top)}`} />
+                  <span className="shrink-0 text-[11px] text-ink-3">{top}</span>
+                </button>
+                {open && (
+                  <ul className="stagger">
+                    {items.map((it, i) => (
+                      <li key={it.id} style={{ "--i": Math.min(i, 8) } as React.CSSProperties} className={`flex items-start gap-3 border-b border-line-soft px-3.5 py-2.5 ${it.state ? "opacity-55" : ""}`}>
+                        <span className={`dot mt-[7px] ${priorityDot(it.priority)}`} />
+                        <div className="min-w-0 flex-1">
+                          <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
+                            {it.ticker && <TickerLink ticker={it.ticker} />}
+                            <span className={`min-w-0 break-words text-[13px] font-medium text-ink ${it.state?.status === "done" ? "line-through" : ""}`}>{it.title}</span>
+                            {it.at && <span className="text-[11px] text-ink-faint">{timeAgo(it.at)}</span>}
+                            <span className="ml-auto text-[11px] text-ink-3">{SOURCE_LABEL[it.source]}</span>
+                          </div>
+                          {it.detail && <div className="mt-0.5 break-words text-[12.5px] leading-[1.45] text-ink-2">{it.detail}</div>}
+                          {it.tags && it.tags.length > 0 && (
+                            <div className="mt-0.5 break-words font-mono text-[10.5px] text-ink-3">{it.tags.filter(Boolean).slice(0, 3).join(" · ")}</div>
+                          )}
                         </div>
-                        {it.detail && <div className="mt-0.5 text-[12.5px] leading-[1.45] text-ink-2">{it.detail}</div>}
-                        {it.tags && it.tags.length > 0 && (
-                          <div className="mt-0.5 truncate font-mono text-[10.5px] text-ink-3">{it.tags.filter(Boolean).slice(0, 3).join(" · ")}</div>
-                        )}
-                      </div>
-                      <div className="mt-0.5 flex shrink-0 items-center gap-1.5">
-                        {it.href && !it.state && <RowButton href={it.href}>Open</RowButton>}
-                        {it.state ? (
-                          <RowButton disabled={busy === it.id} onClick={() => mark(it.id, "clear")}>Restore</RowButton>
-                        ) : (
-                          <>
-                            <RowButton disabled={busy === it.id} onClick={() => mark(it.id, "done")}>Done</RowButton>
-                            <RowButton disabled={busy === it.id} onClick={() => mark(it.id, "snoozed")} title="Snooze until tomorrow">Snooze</RowButton>
-                          </>
-                        )}
-                      </div>
-                    </li>
-                  ))}
-                </ul>
+                        <div className="mt-0.5 flex shrink-0 items-center gap-1.5">
+                          {it.href && !it.state && <RowButton href={it.href}>Open</RowButton>}
+                          {it.state ? (
+                            <RowButton disabled={busy === it.id} onClick={() => mark(it.id, "clear")}>Restore</RowButton>
+                          ) : (
+                            <>
+                              <RowButton disabled={busy === it.id} onClick={() => mark(it.id, "done")}>Done</RowButton>
+                              <RowButton disabled={busy === it.id} onClick={() => mark(it.id, "snoozed")} title="Snooze until tomorrow">Snooze</RowButton>
+                            </>
+                          )}
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                )}
               </div>
             );
           })}
@@ -136,8 +168,9 @@ export function ThesisBookPanel({ s }: { s: DailySummary }) {
   const trips = t?.tripped.length ?? 0;
   const notUnderwritten = t ? Math.max(0, t.portfolioCount - t.underwritten) : null;
   return (
-    <Card>
+    <Card className="animate-panel-in">
       <div className="panel-h">
+        <span className="t-mark bg-hub-portfolio" />
         <Link href="/thesis" className="t hover:text-accent">Thesis &amp; book</Link>
         <span className="m">monitoring</span>
         <div className="ml-auto flex items-center gap-2">
@@ -189,6 +222,7 @@ export function ThesisBookCard({ s, bare = false }: { s: DailySummary; bare?: bo
     <Wrap>
       {!bare && (
         <div className="panel-h">
+          <span className="t-mark bg-hub-portfolio" />
           <Link href="/thesis" className="t hover:text-accent">Thesis &amp; book</Link>
           <span className="m">monitoring</span>
         </div>
