@@ -1272,6 +1272,7 @@ export function PortfolioOverview({
           {sidebar}
           <section className="panel">
             <div className="panel-h">
+              <span className="t-mark bg-hub-portfolio" aria-hidden />
               <span className="t">Sector vs S&amp;P 500</span>
               <span className="m">active tilt</span>
               {portfolioBeta != null && (
@@ -1360,6 +1361,7 @@ export function PortfolioOverview({
                 aria-label={fundCollapsed ? "Expand Fund & ETF Holdings" : "Collapse Fund & ETF Holdings"}
               >
                 <span className={`text-ink-3 transition-transform ${fundCollapsed ? "-rotate-90" : ""}`}><AppIcon name="chevD" size={14} strokeWidth={2} /></span>
+                <span className="t-mark bg-hub-portfolio" aria-hidden />
                 <span className="t">Funds &amp; ETFs</span>
               </button>
               <span className="m">{fundPortfolio.length} holdings</span>
@@ -2269,7 +2271,7 @@ function RankingTable({
                     Score column already convey best/worst). */}
                 <tr
                   ref={(el) => { const m = rowElRefs.current; if (el) m.set(s.ticker, el); else m.delete(s.ticker); }}
-                  className={`animate-row-in group cursor-pointer transition-colors ${selectedTicker && canonicalTicker(selectedTicker) === canonicalTicker(s.ticker) ? "sel" : ""}`}
+                  className={`animate-row-in row-link group transition-colors ${selectedTicker && canonicalTicker(selectedTicker) === canonicalTicker(s.ticker) ? "sel" : ""}`}
                   style={{ animationDelay: `${Math.min(rowIdx, 12) * 28}ms` }}
                   aria-selected={selectedTicker != null && canonicalTicker(selectedTicker) === canonicalTicker(s.ticker)}
                   onClick={(e) => {
@@ -2293,7 +2295,7 @@ function RankingTable({
                         title={`Include ${displayTicker(s.ticker)} in a targeted rescore (scopes the Score all / Rescore fundamentals buttons)`}
                       />
                       <Link href={`/stock/${s.ticker.toLowerCase()}`} className="block hover:underline" title="Open the stock page">
-                        <div className="flex items-center gap-1.5 font-mono font-medium text-ink">
+                        <div className="flex items-center gap-1.5 whitespace-nowrap font-mono font-medium text-ink">
                           {displayTicker(s.ticker)}
                           {(() => {
                             const risk = riskScanByTicker?.get(normalizeRiskTicker(s.ticker));
@@ -2325,7 +2327,7 @@ function RankingTable({
                             </span>
                           )}
                         </div>
-                        <div className="max-w-[160px] truncate text-[12px] text-ink-3" title={s.name}>{s.name}</div>
+                        <div className="max-w-[200px] text-[12px] leading-[1.35] text-ink-3" title={s.name}>{s.name}</div>
                       </Link>
                     </div>
                   </td>
@@ -2411,14 +2413,14 @@ function RankingTable({
                 {expanded && (
                   <tr className="bg-surface-2">
                     <td colSpan={9} className="!h-auto whitespace-normal !px-3.5 !py-3 align-top">
-                      <div className="grid gap-4 md:grid-cols-2">
-                        <div>
+                      <div className="grid gap-x-6 gap-y-3 md:grid-cols-2">
+                        <div className="min-w-0">
                           <div className="mb-1 text-[11px] text-ink-3">What they do</div>
-                          <p className="text-[12.5px] leading-[1.5] text-ink-2">{s.companySummary || <span className="text-ink-faint">—</span>}</p>
+                          <p className="text-[12.5px] leading-[1.5] break-words text-ink-2">{s.companySummary || <span className="text-ink-faint">—</span>}</p>
                         </div>
-                        <div>
+                        <div className="min-w-0">
                           <div className="mb-1 text-[11px] text-ink-3">Why own it</div>
-                          <p className="text-[12.5px] leading-[1.5] text-ink-2">{s.investmentThesis || <span className="text-ink-faint">—</span>}</p>
+                          <p className="text-[12.5px] leading-[1.5] break-words text-ink-2">{s.investmentThesis || <span className="text-ink-faint">—</span>}</p>
                         </div>
                       </div>
                       <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px]">

@@ -61,6 +61,10 @@ export function ChangeMonitor() {
     }
   }, []);
 
+  // Fetch on mount and whenever the window changes. `load` only setStates after
+  // its awaits resolve, so this is a subscription to an external system rather
+  // than a synchronous cascade — same convention as PimPortfolio / QuickAddStock.
+  // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => { void load(windowDays); }, [load, windowDays]);
 
   const toggleReviewed = useCallback((id: string) => {
@@ -105,6 +109,7 @@ export function ChangeMonitor() {
       <div className={`panel-h ${collapsed ? "border-b-0" : ""}`}>
         <button onClick={toggleCollapsed} className="flex items-center gap-2 text-left" aria-expanded={!collapsed}>
           <span className={`text-ink-3 transition-transform ${collapsed ? "-rotate-90" : ""}`}><AppIcon name="chevD" size={14} strokeWidth={2} /></span>
+          <span className="t-mark bg-warn" aria-hidden />
           <span className="t">Changes</span>
         </button>
         <span className="m">{windowDays === 1 ? "24h" : `${windowDays}d`}{events && counts.all > 0 ? ` · ${counts.all} events` : ""}</span>
