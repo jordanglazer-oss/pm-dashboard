@@ -2,11 +2,11 @@
 
 import React, { useState, useMemo, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
-import type { ScoredStock, ScoreKey } from "@/app/lib/types";
+import type { ScoredStock } from "@/app/lib/types";
 import { MAX_SCORE, INSTRUMENT_LABELS } from "@/app/lib/types";
 import { isScoreable, normalizeSector } from "@/app/lib/scoring";
 import { displayTicker } from "@/app/lib/ticker";
-import { SignalPill, ratingTone, riskTone } from "./SignalPill";
+import { AppIcon } from "./AppIcon";
 import { useStocks } from "@/app/lib/StockContext";
 
 type SortKey = "ticker" | "bucket" | "sector" | "raw" | "adjusted" | "rating" | "risk" | "effect" | "price" | "pnl";
@@ -23,6 +23,21 @@ type Props = {
   onUpdateFundData?: (ticker: string, fundData: import("@/app/lib/types").FundData) => void;
   onUpdateMarketData?: (data: Partial<import("@/app/lib/types").MarketData>) => void;
 };
+
+// Shared control classes (28px, 6px radius — the workspace control ladder).
+const BTN = "inline-flex h-7 items-center gap-1.5 rounded-control border border-line bg-surface px-2.5 text-[12.5px] text-ink-2 hover:bg-surface-hover transition-colors disabled:opacity-50";
+const BTN_PRIMARY = "inline-flex h-7 items-center gap-1.5 rounded-control bg-ink px-2.5 text-[12.5px] font-medium text-white hover:bg-ink-2 transition-colors disabled:opacity-50";
+const BTN_DANGER = "inline-flex h-7 items-center gap-1.5 rounded-control border border-neg-border bg-surface px-2.5 text-[12.5px] text-neg hover:bg-neg-soft transition-colors";
+
+/** Rating reads as coloured TEXT, not a pill (numbers and verdict words in
+ *  tables are text in this design vocabulary). */
+function ratingCls(rating: string): string {
+  return rating === "Buy" ? "text-pos" : rating === "Sell" ? "text-neg" : "text-ink-2";
+}
+/** Risk reads as a status dot + the word, in one column. */
+function riskDot(risk: string): string {
+  return risk === "High" ? "bg-neg" : risk === "Medium" ? "bg-warn" : "bg-pos";
+}
 
 const RATING_ORDER: Record<string, number> = { Buy: 3, Hold: 2, Sell: 1 };
 const RISK_ORDER: Record<string, number> = { High: 3, Medium: 2, Low: 1 };
@@ -321,94 +336,91 @@ export function StockScoring({ stocks, onScoreStock, onUpdateCostBasis, onRefres
     });
   }, [stocks, query, sortKey, sortDir, livePrices, instrumentFilter]);
 
-  const arrow = (key: SortKey) =>
-    sortKey === key ? (sortDir === "asc" ? " \u25B2" : " \u25BC") : "";
+  // Sort affordance: the active column carries a direction glyph (AppIcon,
+  // never a text arrow).
+  const SortHead = ({ k, label, right }: { k: SortKey; label: string; right?: boolean }) => (
+    <th className={`cursor-pointer select-none hover:text-ink ${right ? "n" : ""}`} onClick={() => toggleSort(k)}>
+      <span className={`inline-flex items-center gap-1 ${right ? "flex-row-reverse" : ""}`}>
+        {label}
+        {sortKey === k && <AppIcon name={sortDir === "asc" ? "sortAsc" : "sortDesc"} size={12} />}
+      </span>
+    </th>
+  );
+
+  const SORT_LABELS: Record<SortKey, string> = {
+    ticker: "ticker", bucket: "bucket", sector: "sector", raw: "raw score",
+    adjusted: "adjusted score", rating: "rating", risk: "risk",
+    effect: "regime effect", price: "price", pnl: "P&L",
+  };
 
   return (
-    <section className="rounded-card border border-line bg-white p-6 shadow-sm">
-      {/* Header */}
-      <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
-        <div className="flex items-center gap-4">
-          <h3 className="text-2xl font-semibold">Stock Scoring</h3>
-          {portfolioBeta != null && (
-            <span className="rounded-full bg-surface-2 px-3 py-1 text-xs font-semibold text-ink-2">
-              Portfolio &beta; {portfolioBeta.toFixed(2)}
-            </span>
-          )}
+    <div className="flex flex-col gap-3.5">
+      {/* ── Toolbar: instrument filter · search · refresh actions ── */}
+      <div className="flex flex-wrap items-center gap-2">
+        <div className="seg">
+          {(Object.keys(FILTER_LABELS) as InstrumentFilter[]).map((key) => {
+            const count = filterCounts[key];
+            if (key !== "all" && count === 0) return null;
+            return (
+              <button
+                key={key}
+                type="button"
+                onClick={() => setInstrumentFilter(key)}
+                className={instrumentFilter === key ? "on" : ""}
+              >
+                {FILTER_LABELS[key]} <span className="c">{count}</span>
+              </button>
+            );
+          })}
         </div>
-        <div className="flex items-center gap-3 flex-wrap">
-          {/* Refresh Prices */}
+
+        <input
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder="Search ticker, name, sector…"
+          aria-label="Search holdings"
+          className="h-7 w-full min-w-[200px] rounded-control border border-line bg-surface px-2.5 text-[12.5px] text-ink outline-none placeholder:text-ink-3 focus:border-accent-border focus:ring-1 focus:ring-accent-border md:w-56"
+        />
+
+        {portfolioBeta != null && (
+          <span className="text-[11.5px] text-ink-3">
+            Portfolio &beta; <span className="font-mono text-ink-2">{portfolioBeta.toFixed(2)}</span>
+          </span>
+        )}
+        {pricesFetchedAt && (
+          <span className="text-[11.5px] text-ink-3">
+            Prices {new Date(pricesFetchedAt).toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit", hour12: true })}
+          </span>
+        )}
+
+        <div className="ml-auto flex items-center gap-2">
           <button
             onClick={fetchPrices}
             disabled={pricesLoading}
-            className="flex items-center gap-1.5 rounded-card bg-surface-2 px-3 py-2 text-xs font-semibold text-ink-2 hover:bg-line disabled:opacity-50 transition-colors"
+            className={BTN}
             title="Refresh prices from Yahoo Finance"
           >
-            <svg className={`w-3.5 h-3.5 ${pricesLoading ? "animate-spin" : ""}`} fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0 3.181 3.183a8.25 8.25 0 0 0 13.803-3.7M4.031 9.865a8.25 8.25 0 0 1 13.803-3.7l3.181 3.182" /></svg>
-            {pricesLoading ? "Updating..." : "Refresh Prices"}
+            <AppIcon name="refresh" size={13} className={pricesLoading ? "animate-spin" : ""} />
+            {pricesLoading ? "Updating…" : "Refresh prices"}
           </button>
-          {/* Refresh All Data (no Claude) */}
           {onRefreshData && (
             <button
               onClick={handleRefreshAll}
               disabled={refreshingAll || scoringAll}
-              className="flex items-center gap-1.5 rounded-card bg-pos px-4 py-2 text-xs font-semibold text-white hover:bg-pos disabled:opacity-50 transition-colors"
+              className={BTN_PRIMARY}
               title="Refresh technicals, health data & risk alerts for all stocks (no AI scoring — zero token usage)"
             >
               {refreshingAll ? (
-                <>
-                  <svg className="w-3.5 h-3.5 animate-spin" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0 3.181 3.183a8.25 8.25 0 0 0 13.803-3.7M4.031 9.865a8.25 8.25 0 0 1 13.803-3.7l3.181 3.182" /></svg>
-                  {refreshProgress || "Refreshing..."}
-                </>
+                <><AppIcon name="refresh" size={13} className="animate-spin" />{refreshProgress || "Refreshing…"}</>
               ) : refreshProgress ? (
                 <>{refreshProgress}</>
               ) : (
-                <>
-                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 0 0-3.375-3.375h-1.5A1.125 1.125 0 0 1 13.5 7.125v-1.5a3.375 3.375 0 0 0-3.375-3.375H8.25m5.231 13.481L15 17.25m-4.5-15H5.625c-.621 0-1.125.504-1.125 1.125v16.5c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 0 0-9-9Zm3.75 11.625a2.625 2.625 0 1 1-5.25 0 2.625 2.625 0 0 1 5.25 0Z" /></svg>
-                  Refresh All Data
-                </>
+                <><AppIcon name="download" size={13} />Refresh all data</>
               )}
             </button>
           )}
-          <input
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder="Search ticker, name, sector..."
-            className="w-full min-w-[220px] rounded-card border border-line bg-surface-2 px-4 py-2 text-sm outline-none placeholder:text-ink-3 focus:bg-white focus:border-accent-border focus:ring-1 focus:ring-accent-border transition-all md:w-auto"
-          />
         </div>
       </div>
-
-      {/* Instrument type filter */}
-      <div className="mt-4 flex items-center gap-1 flex-wrap">
-        {(Object.keys(FILTER_LABELS) as InstrumentFilter[]).map((key) => {
-          const count = filterCounts[key];
-          if (key !== "all" && count === 0) return null;
-          const active = instrumentFilter === key;
-          return (
-            <button
-              key={key}
-              onClick={() => setInstrumentFilter(key)}
-              className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors ${
-                active
-                  ? "bg-ink text-white shadow-sm"
-                  : "bg-surface-2 text-ink-3 hover:bg-line hover:text-ink-2"
-              }`}
-            >
-              {FILTER_LABELS[key]}
-              <span className={`rounded-full px-1.5 py-0.5 text-[10px] font-bold ${active ? "bg-white/20 text-white" : "bg-line text-ink-3"}`}>
-                {count}
-              </span>
-            </button>
-          );
-        })}
-      </div>
-
-      {pricesFetchedAt && (
-        <p className="text-[10px] text-ink-3 mt-2">
-          Prices updated {new Date(pricesFetchedAt).toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit", hour12: true })}
-        </p>
-      )}
 
       {/* Split into Portfolio (stocks), Watchlist (stocks), and Funds & ETFs */}
       {(["Portfolio", "Watchlist", "Funds & ETFs"] as const).map((section) => {
@@ -421,86 +433,75 @@ export function StockScoring({ stocks, onScoreStock, onUpdateCostBasis, onRefres
 
         // For the Funds & ETFs section, show cost basis & P&L for portfolio holdings
         const showCostBasis = isPortfolio || isFundsSection;
+        const totalInSection = isFundsSection
+          ? stocks.filter((s) => !isScoreable(s)).length
+          : stocks.filter((s) => s.bucket === section && isScoreable(s)).length;
 
         return (
-          <div key={section} className="mt-6">
-            {/* Section header */}
-            <div className="flex items-center gap-3 mb-3">
-              <h4 className={`text-sm font-bold uppercase tracking-wider ${isPortfolio ? "text-accent" : isFundsSection ? "text-accent" : "text-ink-3"}`}>
-                {section}
-              </h4>
-              <span className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ${isPortfolio ? "bg-accent-soft text-accent" : isFundsSection ? "bg-accent-soft text-accent" : "bg-surface-2 text-ink-3"}`}>
-                {sectionStocks.length}
-              </span>
-              {onScoreStock && !isFundsSection && (
-                <button
-                  onClick={() => handleScoreBucket(section as "Portfolio" | "Watchlist")}
-                  disabled={scoringAll}
-                  className={`flex items-center gap-1.5 rounded-lg px-3 py-1 text-xs font-semibold text-white transition-colors disabled:opacity-50 ${isPortfolio ? "bg-accent hover:bg-accent" : "bg-ink-2 hover:bg-ink-2"}`}
-                  title={`Score all ${section.toLowerCase()} stocks with Claude`}
-                >
-                  {scoringAll && scoringBucket === section ? (
-                    <>
-                      <svg className="w-3 h-3 animate-spin" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0 3.181 3.183a8.25 8.25 0 0 0 13.803-3.7M4.031 9.865a8.25 8.25 0 0 1 13.803-3.7l3.181 3.182" /></svg>
-                      {scoreProgress}
-                    </>
-                  ) : (
-                    <>Score All ({sectionStocks.filter((s) => isScoreable(s)).length})</>
-                  )}
-                </button>
-              )}
-              {!isFundsSection && (() => {
-                const prefKey = `chartingCleared_${section}`;
-                const lastCleared = uiPrefs[prefKey];
-                const confirmKey = `chartingConfirm_${section}`;
-                const isConfirming = uiPrefs[confirmKey] === "1";
-                const charted = sectionStocks.filter((s) => (s.scores?.charting ?? 0) > 0).length;
-                return (
-                  <span className="inline-flex items-center gap-1.5">
-                    <button
-                      onClick={() => {
-                        if (!isConfirming) {
-                          setUiPref(confirmKey, "1");
-                          setTimeout(() => setUiPref(confirmKey, ""), 4000);
-                          return;
-                        }
-                        setUiPref(confirmKey, "");
-                        if (charted === 0) return;
-                        for (const s of sectionStocks) {
-                          if ((s.scores?.charting ?? 0) > 0) updateScore(s.ticker, "charting", 0);
-                        }
-                        setUiPref(prefKey, new Date().toISOString());
-                      }}
-                      className={`rounded-lg px-2.5 py-1 text-[10px] font-medium transition-colors ${
-                        isConfirming
-                          ? "text-neg border border-neg-border bg-neg-soft hover:bg-neg-soft"
-                          : "text-ink-3 border border-line hover:bg-surface-2 hover:text-ink-2"
-                      }`}
-                      title={`Reset charting score to 0 for all ${section.toLowerCase()} stocks`}
-                    >
-                      {isConfirming ? `Confirm clear ${charted} stocks?` : "Clear Charting"}
-                    </button>
-                    {isConfirming && (
+          <section key={section} className="panel">
+            <div className="panel-h flex-wrap gap-y-1.5 py-1.5">
+              <span className="t">{section}</span>
+              <span className="m font-mono">{sectionStocks.length}</span>
+              <div className="ml-auto flex flex-wrap items-center gap-2">
+                {!isFundsSection && (() => {
+                  const prefKey = `chartingCleared_${section}`;
+                  const lastCleared = uiPrefs[prefKey];
+                  const confirmKey = `chartingConfirm_${section}`;
+                  const isConfirming = uiPrefs[confirmKey] === "1";
+                  const charted = sectionStocks.filter((s) => (s.scores?.charting ?? 0) > 0).length;
+                  return (
+                    <span className="inline-flex items-center gap-2">
+                      {!isConfirming && lastCleared && (
+                        <span className="m" title={lastCleared}>
+                          Charting cleared {new Date(lastCleared).toLocaleDateString("en-US", { month: "short", day: "numeric" })}
+                        </span>
+                      )}
                       <button
-                        onClick={() => setUiPref(confirmKey, "")}
-                        className="text-[10px] text-ink-3 hover:text-ink-2"
+                        onClick={() => {
+                          if (!isConfirming) {
+                            setUiPref(confirmKey, "1");
+                            setTimeout(() => setUiPref(confirmKey, ""), 4000);
+                            return;
+                          }
+                          setUiPref(confirmKey, "");
+                          if (charted === 0) return;
+                          for (const s of sectionStocks) {
+                            if ((s.scores?.charting ?? 0) > 0) updateScore(s.ticker, "charting", 0);
+                          }
+                          setUiPref(prefKey, new Date().toISOString());
+                        }}
+                        className={isConfirming ? BTN_DANGER : BTN}
+                        title={`Reset charting score to 0 for all ${section.toLowerCase()} stocks`}
                       >
-                        Cancel
+                        {isConfirming ? `Confirm clear ${charted} stocks?` : "Clear charting"}
                       </button>
+                      {isConfirming && (
+                        <button onClick={() => setUiPref(confirmKey, "")} className="text-[11.5px] text-ink-3 hover:text-ink">
+                          Cancel
+                        </button>
+                      )}
+                    </span>
+                  );
+                })()}
+                {onScoreStock && !isFundsSection && (
+                  <button
+                    onClick={() => handleScoreBucket(section as "Portfolio" | "Watchlist")}
+                    disabled={scoringAll}
+                    className={BTN_PRIMARY}
+                    title={`Score all ${section.toLowerCase()} stocks with Claude`}
+                  >
+                    {scoringAll && scoringBucket === section ? (
+                      <><AppIcon name="refresh" size={13} className="animate-spin" />{scoreProgress}</>
+                    ) : (
+                      <>Score all <span className="font-mono opacity-70">{sectionStocks.filter((s) => isScoreable(s)).length}</span></>
                     )}
-                    {!isConfirming && lastCleared && (
-                      <span className="text-[9px] text-ink-3" title={lastCleared}>
-                        Last cleared {new Date(lastCleared).toLocaleDateString("en-US", { month: "short", day: "numeric" })}
-                      </span>
-                    )}
-                  </span>
-                );
-              })()}
-              <div className={`flex-1 border-t ${isPortfolio ? "border-accent-border" : isFundsSection ? "border-accent-border" : "border-line"}`} />
+                  </button>
+                )}
+              </div>
             </div>
 
             {/* Mobile card view */}
-            <div className="space-y-3 md:hidden">
+            <div className="flex flex-col divide-y divide-line-soft md:hidden">
               {sectionStocks.map((s) => {
                 const livePrice = livePrices[s.ticker];
                 const costBasis = s.costBasis;
@@ -509,59 +510,55 @@ export function StockScoring({ stocks, onScoreStock, onUpdateCostBasis, onRefres
                 return (
                   <div
                     key={`mobile-${s.ticker}-${s.bucket}`}
-                    className={`rounded-card border bg-white p-4 shadow-sm cursor-pointer hover:shadow-md transition-shadow ${isPortfolio ? "border-accent-border" : isFundsSection ? "border-accent-border" : "border-line"}`}
+                    className="cursor-pointer px-3.5 py-3 hover:bg-surface-hover transition-colors"
                     onClick={() => router.push(`/stock/${s.ticker.toLowerCase()}`)}
                   >
-                    <div className="flex items-center justify-between mb-2">
-                      <div className="flex items-center gap-2">
-                        <span className="text-lg font-bold text-ink">{displayTicker(s.ticker)}</span>
-                        {s.instrumentType && s.instrumentType !== "stock" && (
-                          <span className={`rounded px-1.5 py-0.5 text-[9px] font-bold ${s.instrumentType === "etf" ? "bg-accent-soft text-accent" : "bg-violet-soft text-violet"}`}>
-                            {INSTRUMENT_LABELS[s.instrumentType]}
-                          </span>
-                        )}
-                        {isFundsSection && (
-                          <span className={`rounded px-1.5 py-0.5 text-[9px] font-bold ${isPortfolioHolding ? "bg-accent-soft text-accent" : "bg-surface-2 text-ink-3"}`}>
-                            {s.bucket}
-                          </span>
-                        )}
-                      </div>
-                      <div className="flex items-center gap-1.5">
+                    <div className="mb-1.5 flex items-center gap-2">
+                      <span className="font-mono text-[13px] font-medium text-ink">{displayTicker(s.ticker)}</span>
+                      {s.instrumentType && s.instrumentType !== "stock" && (
+                        <span className="text-[11px] text-ink-3">{INSTRUMENT_LABELS[s.instrumentType]}</span>
+                      )}
+                      {isFundsSection && <span className="text-[11px] text-ink-3">{s.bucket}</span>}
+                      <span className="ml-auto flex items-center gap-2.5 text-[11.5px]">
                         {isScoreable(s) ? (
                           <>
-                            <SignalPill tone={ratingTone(s.rating)}>{s.rating}</SignalPill>
-                            <SignalPill tone={riskTone(s.risk)}>{s.risk}</SignalPill>
+                            <span className={ratingCls(s.rating)}>{s.rating}</span>
+                            <span className="inline-flex items-center gap-1.5 text-ink-2">
+                              <span className={`dot ${riskDot(s.risk)}`} />{s.risk}
+                            </span>
                           </>
                         ) : (
-                          <span className="text-xs text-ink-3">Wt: {s.weights.portfolio}%</span>
+                          <span className="text-ink-3">Wt <span className="font-mono text-ink-2">{s.weights.portfolio}%</span></span>
                         )}
-                      </div>
+                      </span>
                     </div>
-                    <div className="text-xs text-ink-3 mb-3">{s.name}{isScoreable(s) && s.sector ? ` \u00b7 ${s.sector}` : ""}</div>
-                    <div className={`grid gap-3 text-center ${isPortfolioHolding ? "grid-cols-3" : "grid-cols-2"}`}>
+                    <div className="mb-2 text-[11.5px] text-ink-3">{s.name}{isScoreable(s) && s.sector ? ` · ${s.sector}` : ""}</div>
+                    <div className={`grid gap-3 ${isPortfolioHolding ? "grid-cols-3" : "grid-cols-2"}`}>
                       <div>
-                        <div className="text-[10px] text-ink-3 uppercase tracking-wider">Price</div>
-                        <div className="text-sm font-semibold text-ink">
-                          {pricesLoading ? "..." : livePrice != null ? `$${livePrice.toFixed(2)}` : "\u2014"}
+                        <div className="text-[11px] text-ink-3">Price</div>
+                        <div className="font-mono text-[12.5px] text-ink">
+                          {pricesLoading ? "…" : livePrice != null ? `$${livePrice.toFixed(2)}` : "—"}
                         </div>
                       </div>
                       <div>
-                        <div className="text-[10px] text-ink-3 uppercase tracking-wider">{isFundsSection ? "Weight" : "Score"}</div>
-                        <div className="text-sm font-semibold text-ink">{isFundsSection ? `${s.weights.portfolio}%` : `${Number(s.adjusted.toFixed(1))}/${MAX_SCORE}`}</div>
+                        <div className="text-[11px] text-ink-3">{isFundsSection ? "Weight" : "Score"}</div>
+                        <div className="font-mono text-[12.5px] text-ink">
+                          {isFundsSection ? `${s.weights.portfolio}%` : <>{Number(s.adjusted.toFixed(1))}<span className="text-ink-faint">/{MAX_SCORE}</span></>}
+                        </div>
                       </div>
                       {isPortfolioHolding && (
                         <div>
-                          <div className="text-[10px] text-ink-3 uppercase tracking-wider">P&L</div>
-                          <div className={`text-sm font-semibold ${pnlPct != null ? (pnlPct >= 0 ? "text-pos" : "text-neg") : "text-ink-faint"}`}>
-                            {pnlPct != null ? `${pnlPct >= 0 ? "+" : ""}${pnlPct.toFixed(1)}%` : "\u2014"}
+                          <div className="text-[11px] text-ink-3">P&amp;L</div>
+                          <div className={`font-mono text-[12.5px] ${pnlPct != null ? (pnlPct >= 0 ? "text-pos" : "text-neg") : "text-ink-faint"}`}>
+                            {pnlPct != null ? `${pnlPct >= 0 ? "+" : ""}${pnlPct.toFixed(1)}%` : "—"}
                           </div>
                         </div>
                       )}
                     </div>
                     {(s.companySummary || s.investmentThesis) && (
-                      <div className="mt-3 pt-3 border-t border-line-soft space-y-1">
-                        {s.companySummary && <p className="text-[11px] text-ink-3 leading-relaxed">{s.companySummary}</p>}
-                        {s.investmentThesis && <p className="text-[11px] text-accent italic leading-relaxed">{s.investmentThesis}</p>}
+                      <div className="mt-2.5 flex flex-col gap-1 border-t border-line-soft pt-2.5">
+                        {s.companySummary && <p className="text-[11.5px] leading-[1.5] text-ink-2">{s.companySummary}</p>}
+                        {s.investmentThesis && <p className="text-[11.5px] leading-[1.5] text-ink-2">{s.investmentThesis}</p>}
                       </div>
                     )}
                   </div>
@@ -570,30 +567,33 @@ export function StockScoring({ stocks, onScoreStock, onUpdateCostBasis, onRefres
             </div>
 
             {/* Desktop table */}
-            <div className="overflow-x-auto hidden md:block">
-              <table className={`w-full ${isFundsSection ? "min-w-[900px]" : "min-w-[1400px]"} text-left`}>
+            <div className="hidden overflow-x-auto md:block">
+              <table className={`data-table ${isFundsSection ? "min-w-[900px]" : "min-w-[1400px]"}`}>
                 <thead>
-                  <tr className={`border-b text-xs text-ink-3 uppercase tracking-wider ${isPortfolio ? "border-accent-border" : isFundsSection ? "border-accent-border" : "border-line"}`}>
-                    <th className="pb-3 pr-2 cursor-pointer hover:text-ink select-none" onClick={() => toggleSort("ticker")}>Ticker{arrow("ticker")}</th>
-                    {isFundsSection && <th className="pb-3 pr-2 cursor-pointer hover:text-ink select-none" onClick={() => toggleSort("bucket")}>Bucket{arrow("bucket")}</th>}
-                    {!isFundsSection && <th className="pb-3 pr-2 cursor-pointer hover:text-ink select-none" onClick={() => toggleSort("sector")}>Sector{arrow("sector")}</th>}
-                    <th className="pb-3 pr-2 cursor-pointer hover:text-ink select-none text-right" onClick={() => toggleSort("price")}>Price{arrow("price")}</th>
-                    {showCostBasis && <th className="pb-3 pr-2 text-right">Cost Basis</th>}
-                    {showCostBasis && <th className="pb-3 pr-2 cursor-pointer hover:text-ink select-none text-right" onClick={() => toggleSort("pnl")}>P&L{arrow("pnl")}</th>}
+                  <tr>
+                    <th className="cursor-pointer select-none pl-3.5 hover:text-ink" onClick={() => toggleSort("ticker")}>
+                      <span className="inline-flex items-center gap-1">
+                        Ticker
+                        {sortKey === "ticker" && <AppIcon name={sortDir === "asc" ? "sortAsc" : "sortDesc"} size={12} />}
+                      </span>
+                    </th>
+                    {isFundsSection && <SortHead k="bucket" label="Bucket" />}
+                    {!isFundsSection && <SortHead k="sector" label="Sector" />}
+                    <SortHead k="price" label="Price" right />
+                    {showCostBasis && <th className="n">Cost basis</th>}
+                    {showCostBasis && <SortHead k="pnl" label="P&L" right />}
                     {!isFundsSection && (
                       <>
-                        <th className="pb-3 pr-2 cursor-pointer hover:text-ink select-none text-right" onClick={() => toggleSort("raw")}>Raw{arrow("raw")}</th>
-                        <th className="pb-3 pr-2 cursor-pointer hover:text-ink select-none text-right" onClick={() => toggleSort("adjusted")}>Adj.{arrow("adjusted")}</th>
-                        <th className="pb-3 pr-2 cursor-pointer hover:text-ink select-none" onClick={() => toggleSort("rating")}>Rating{arrow("rating")}</th>
-                        <th className="pb-3 pr-2 cursor-pointer hover:text-ink select-none" onClick={() => toggleSort("risk")}>Risk{arrow("risk")}</th>
-                        <th className="pb-3 pr-2 cursor-pointer hover:text-ink select-none text-right" onClick={() => toggleSort("effect")}>Regime{arrow("effect")}</th>
-                        <th className="pb-3 pr-2">What They Do</th>
-                        <th className="pb-3">Why Own It</th>
+                        <SortHead k="raw" label="Raw" right />
+                        <SortHead k="adjusted" label="Adj." right />
+                        <SortHead k="rating" label="Rating" />
+                        <SortHead k="risk" label="Risk" />
+                        <SortHead k="effect" label="Regime" right />
+                        <th>What they do</th>
+                        <th>Why own it</th>
                       </>
                     )}
-                    {isFundsSection && (
-                      <th className="pb-3 pr-2 text-right">Weight</th>
-                    )}
+                    {isFundsSection && <th className="n">Weight</th>}
                   </tr>
                 </thead>
                 <tbody>
@@ -606,51 +606,44 @@ export function StockScoring({ stocks, onScoreStock, onUpdateCostBasis, onRefres
                     return (
                       <tr
                         key={`${s.ticker}-${s.bucket}`}
-                        className="border-b border-line-soft align-top cursor-pointer hover:bg-surface-2/50 transition-colors"
+                        className="cursor-pointer"
                         onClick={() => router.push(`/stock/${s.ticker.toLowerCase()}`)}
                       >
-                        <td className="py-3 pr-2">
-                          <div className="flex items-center gap-1.5">
-                            <span className="font-semibold text-ink">{displayTicker(s.ticker)}</span>
+                        <td className="pl-3.5">
+                          <span className="flex items-center gap-2">
+                            <span className="font-mono font-medium text-ink">{displayTicker(s.ticker)}</span>
                             {s.instrumentType && s.instrumentType !== "stock" && (
-                              <span className={`rounded px-1.5 py-0.5 text-[9px] font-bold ${s.instrumentType === "etf" ? "bg-accent-soft text-accent" : "bg-violet-soft text-violet"}`}>
-                                {INSTRUMENT_LABELS[s.instrumentType]}
-                              </span>
+                              <span className="text-[11px] text-ink-3">{INSTRUMENT_LABELS[s.instrumentType]}</span>
                             )}
-                          </div>
-                          <div className="text-[11px] text-ink-3 truncate max-w-[120px]">{s.name}</div>
+                            <span className="max-w-[160px] truncate text-[11.5px] text-ink-3">{s.name}</span>
+                          </span>
                         </td>
-                        {isFundsSection && (
-                          <td className="py-3 pr-2">
-                            <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${isPortfolioHolding ? "bg-accent-soft text-accent" : "bg-surface-2 text-ink-3"}`}>
-                              {s.bucket}
-                            </span>
-                          </td>
-                        )}
-                        {!isFundsSection && <td className="py-3 pr-2 text-xs text-ink-2">{s.sector}</td>}
-                        <td className="py-3 pr-2 text-right font-mono text-sm">
+                        {isFundsSection && <td className="text-ink-2">{s.bucket}</td>}
+                        {!isFundsSection && <td className="text-ink-2">{s.sector}</td>}
+                        <td className="n">
                           {pricesLoading ? (
-                            <span className="text-ink-faint animate-pulse">...</span>
+                            <span className="animate-pulse text-ink-faint">…</span>
                           ) : livePrice != null ? (
-                            <span className="font-semibold text-ink">${livePrice.toFixed(2)}</span>
+                            <span className="text-ink">${livePrice.toFixed(2)}</span>
                           ) : (
                             <span className="text-ink-faint">&mdash;</span>
                           )}
                         </td>
                         {showCostBasis && (
-                          <td className="py-3 pr-2 text-right" onClick={(e) => e.stopPropagation()}>
+                          <td className="n" onClick={(e) => e.stopPropagation()}>
                             {isPortfolioHolding ? (
                               <input
                                 type="number"
                                 step="0.01"
                                 placeholder="—"
+                                aria-label={`Cost basis for ${s.ticker}`}
                                 value={cb ?? ""}
                                 onChange={(e) => {
                                   const val = parseFloat(e.target.value);
                                   if (onUpdateCostBasis && !isNaN(val)) onUpdateCostBasis(s.ticker, val);
                                   else if (onUpdateCostBasis && e.target.value === "") onUpdateCostBasis(s.ticker, 0);
                                 }}
-                                className="w-20 rounded-lg border border-transparent bg-transparent px-1 py-0.5 text-right text-sm font-mono text-ink-2 hover:border-line focus:border-accent-border focus:bg-white focus:outline-none focus:ring-1 focus:ring-accent-border transition-all"
+                                className="h-7 w-20 rounded-control border border-transparent bg-transparent px-1.5 text-right font-mono text-[12.5px] text-ink-2 outline-none transition-colors hover:border-line focus:border-accent-border focus:bg-surface focus:ring-1 focus:ring-accent-border"
                               />
                             ) : (
                               <span className="text-ink-faint">&mdash;</span>
@@ -658,9 +651,9 @@ export function StockScoring({ stocks, onScoreStock, onUpdateCostBasis, onRefres
                           </td>
                         )}
                         {showCostBasis && (
-                          <td className="py-3 pr-2 text-right font-mono text-xs">
+                          <td className="n">
                             {isPortfolioHolding && pnlPct != null ? (
-                              <span className={pnlPct >= 0 ? "text-pos font-semibold" : "text-neg font-semibold"}>
+                              <span className={pnlPct >= 0 ? "text-pos" : "text-neg"}>
                                 {pnlPct >= 0 ? "+" : ""}{pnlPct.toFixed(1)}%
                               </span>
                             ) : (
@@ -670,43 +663,48 @@ export function StockScoring({ stocks, onScoreStock, onUpdateCostBasis, onRefres
                         )}
                         {!isFundsSection && (
                           <>
-                            <td className="py-3 pr-2 text-right text-sm text-ink-2">
-                              {`${Number(s.raw.toFixed(1))}/${MAX_SCORE}`}
+                            <td className="n text-ink-2">
+                              {Number(s.raw.toFixed(1))}<span className="text-ink-faint">/{MAX_SCORE}</span>
                             </td>
-                            <td className="py-3 pr-2 text-right text-sm font-semibold text-ink">
-                              {`${Number(s.adjusted.toFixed(1))}/${MAX_SCORE}`}
+                            <td className="n">
+                              {Number(s.adjusted.toFixed(1))}<span className="text-ink-faint">/{MAX_SCORE}</span>
                             </td>
-                            <td className="py-3 pr-2">
-                              <SignalPill tone={ratingTone(s.rating)}>{s.rating}</SignalPill>
+                            <td className={ratingCls(s.rating)}>{s.rating}</td>
+                            <td>
+                              <span className="inline-flex items-center gap-1.5 text-ink-2">
+                                <span className={`dot ${riskDot(s.risk)}`} />{s.risk}
+                              </span>
                             </td>
-                            <td className="py-3 pr-2">
-                              <SignalPill tone={riskTone(s.risk)}>{s.risk}</SignalPill>
-                            </td>
-                            <td className={`py-3 pr-2 text-right text-xs font-semibold ${Number(effect) >= 0 ? "text-pos" : "text-neg"}`}>
+                            <td className={`n ${Number(effect) >= 0 ? "text-pos" : "text-neg"}`}>
                               {Number(effect) >= 0 ? "+" : ""}{effect}
                             </td>
-                            <td className="max-w-[220px] py-3 pr-2 text-[11px] leading-relaxed text-ink-3">
-                              {s.companySummary || <span className="text-ink-faint italic">Score to generate</span>}
+                            <td className="max-w-[240px]">
+                              <span className="block truncate text-[12px] text-ink-2" title={s.companySummary || undefined}>
+                                {s.companySummary || <span className="text-ink-faint">Score to generate</span>}
+                              </span>
                             </td>
-                            <td className="max-w-[220px] py-3 text-[11px] leading-relaxed text-ink-3">
-                              {s.investmentThesis || <span className="text-ink-faint italic">Score to generate</span>}
+                            <td className="max-w-[240px]">
+                              <span className="block truncate text-[12px] text-ink-2" title={s.investmentThesis || undefined}>
+                                {s.investmentThesis || <span className="text-ink-faint">Score to generate</span>}
+                              </span>
                             </td>
                           </>
                         )}
-                        {isFundsSection && (
-                          <td className="py-3 pr-2 text-right text-sm font-mono text-ink-2">
-                            {s.weights.portfolio}%
-                          </td>
-                        )}
+                        {isFundsSection && <td className="n text-ink-2">{s.weights.portfolio}%</td>}
                       </tr>
                     );
                   })}
                 </tbody>
               </table>
             </div>
-          </div>
+
+            {/* Footer strip */}
+            <div className="flex h-8 items-center border-t border-line-soft px-3.5 text-[11.5px] text-ink-3">
+              {sectionStocks.length} of {totalInSection} · sorted by {SORT_LABELS[sortKey]} {sortDir === "asc" ? "ascending" : "descending"}
+            </div>
+          </section>
         );
       })}
-    </section>
+    </div>
   );
 }
