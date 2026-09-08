@@ -51,13 +51,13 @@
      (rail active state, group labels, the crumb, a panel's title mark) — never
      for data, which stays on the semantic pos/neg/warn set. */
   --color-hub-today: #b3701f;
-  --color-hub-today-soft: #fdf4e7;
+  --color-hub-today-soft: #fbeed4;
   --color-hub-portfolio: #2d5bd0;
-  --color-hub-portfolio-soft: #eef3ff;
+  --color-hub-portfolio-soft: #e6edfd;
   --color-hub-ideas: #6f55c4;
-  --color-hub-ideas-soft: #f2effb;
+  --color-hub-ideas-soft: #ece6f9;
   --color-hub-research: #0f7d84;
-  --color-hub-research-soft: #e9f6f6;
+  --color-hub-research-soft: #dcefef;
 
   /* Structural / alt accent */
   --color-violet: #6f55c4;
@@ -180,13 +180,23 @@ body {
   }
   .seg .c { font-family: var(--font-mono); font-size: 11px; color: var(--color-ink-3); }
 
-  /* Panel — a hairline card with a 38px header. */
+  /* Panel — a hairline card with a 38px header. `overflow: hidden` keeps the
+     rounded corners, which means a table wider than the panel gets CLIPPED
+     with no way to reach the rest. `.tbl-wrap` is the escape hatch: put it on
+     the div around a wide table so the TABLE scrolls inside its tile while the
+     page itself never scrolls sideways. */
   .panel {
     background: var(--color-surface);
     border: 1px solid var(--color-line);
     border-radius: var(--radius-card);
     overflow: hidden;
   }
+  .tbl-wrap { overflow-x: auto; overscroll-behavior-x: contain; }
+  /* Any table sitting directly in a panel gets the same protection without a
+     wrapper, so a clipped column can never hide data outright. */
+  .panel > .data-table { display: block; overflow-x: auto; }
+  .panel > .data-table > thead,
+  .panel > .data-table > tbody { display: table; width: 100%; }
   .panel-h {
     display: flex;
     align-items: center;
@@ -195,11 +205,30 @@ body {
     padding: 0 14px;
     border-bottom: 1px solid var(--color-line-soft);
   }
+  /* A panel header takes its colour from a hue class on the header itself:
+     <div className="panel-h hue-ideas">. The hue sets three variables, so the
+     header tint, the title colour, the divider and the title mark all move
+     together. No hue class = the neutral grey header. */
+  .hue-today,     .panel:has(.t-mark.bg-hub-today),     .hue-today .panel:has(.t-mark.bg-hub-today)     { --h: var(--color-hub-today);     --h-soft: var(--color-hub-today-soft);     --h-line: #f0dfc4; }
+  .hue-portfolio, .panel:has(.t-mark.bg-hub-portfolio), .hue-today .panel:has(.t-mark.bg-hub-portfolio), .hue-portfolio .panel:has(.t-mark.bg-hub-portfolio), .hue-ideas .panel:has(.t-mark.bg-hub-portfolio), .hue-research .panel:has(.t-mark.bg-hub-portfolio) { --h: var(--color-hub-portfolio); --h-soft: var(--color-hub-portfolio-soft); --h-line: #d5e2fb; }
+  .hue-ideas,     .panel:has(.t-mark.bg-hub-ideas)     { --h: var(--color-hub-ideas);     --h-soft: var(--color-hub-ideas-soft);     --h-line: #ded6f5; }
+  .hue-research,  .panel:has(.t-mark.bg-hub-research)  { --h: var(--color-hub-research);  --h-soft: var(--color-hub-research-soft);  --h-line: #c9e6e7; }
+  .hue-pos, .panel:has(.t-mark.bg-pos), .hue-today .panel:has(.t-mark.bg-pos), .hue-portfolio .panel:has(.t-mark.bg-pos), .hue-ideas .panel:has(.t-mark.bg-pos), .hue-research .panel:has(.t-mark.bg-pos)           { --h: var(--color-pos);           --h-soft: var(--color-pos-soft);           --h-line: var(--color-pos-border); }
+  .hue-neg, .panel:has(.t-mark.bg-neg), .hue-today .panel:has(.t-mark.bg-neg), .hue-portfolio .panel:has(.t-mark.bg-neg), .hue-ideas .panel:has(.t-mark.bg-neg), .hue-research .panel:has(.t-mark.bg-neg)           { --h: var(--color-neg);           --h-soft: var(--color-neg-soft);           --h-line: var(--color-neg-border); }
+  .hue-warn,      .panel:has(.t-mark.bg-warn)          { --h: var(--color-warn);          --h-soft: var(--color-warn-soft);          --h-line: var(--color-warn-border); }
+  /* The mark itself takes the hue, so `.t-mark` alone is enough on new panels. */
+  .t-mark { background: var(--h, var(--color-ink-faint)); }
+
   .panel-h {
-    background: var(--color-surface-2);
+    background: var(--h-soft, var(--color-surface-2));
+    /* fallthrough so a hue class on the header still tints it */
+    border-bottom-color: var(--h-line, var(--color-line-soft));
   }
-  .panel-h .t { font-size: 13px; font-weight: 600; color: var(--color-ink); letter-spacing: -0.005em; }
+  .panel-h .t { font-size: 13px; font-weight: 600; color: var(--h, var(--color-ink)); letter-spacing: -0.005em; }
   .panel-h .m { font-size: 11.5px; color: var(--color-ink-3); }
+  /* Inside a hued panel the table header picks the same tint up, so a table
+     reads as part of its section rather than as a grey slab. */
+
   /* A 3px coloured mark before a panel title — the cheapest way to make a
      section header findable without shouting. Colour it with a hub or
      semantic token: <span class="t-mark bg-hub-ideas" />. */
@@ -214,10 +243,15 @@ body {
   /* Data tables: 30px header / 34px rows, hairline dividers, right-aligned mono
      numerics via .n. Opt-in with .data-table so legacy tables are untouched. */
   .data-table { border-collapse: collapse; width: 100%; }
+  /* Table headers carry their section's colour as TEXT and a 2px rule rather
+     than a second tinted slab — the panel header above is already tinted, and
+     stacking two fills reads muddy. Column names are legible colour, not grey. */
   .data-table th {
     height: 30px; padding: 0 10px; text-align: left; white-space: nowrap;
-    font-size: 11px; font-weight: 500; color: var(--color-ink-3);
-    border-bottom: 1px solid var(--color-line);
+    font-size: 11px; font-weight: 600; letter-spacing: 0.01em;
+    color: var(--h, var(--color-ink-2));
+    background: color-mix(in srgb, var(--h-soft, var(--color-surface-2)) 55%, #fff);
+    border-bottom: 2px solid var(--h-line, var(--color-line));
   }
   .data-table td {
     height: 34px; padding: 0 10px;
