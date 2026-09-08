@@ -103,7 +103,7 @@ export function RegimeDetail({ s }: { s: DailySummary }) {
   return (
     <div>
       {/* ── dial · how it is built · horizon weights ── */}
-      <div className="grid grid-cols-1 gap-6 px-5 pt-4 pb-4 xl:grid-cols-[290px_minmax(0,1fr)_minmax(0,420px)]">
+      <div className="grid grid-cols-1 gap-6 px-3.5 pb-4 pt-3.5 xl:grid-cols-[290px_minmax(0,1fr)_minmax(0,420px)]">
         <div>
           <BigDial value={c.score100 ?? null} label={c.label} />
           <div className="mt-1 flex flex-wrap items-center gap-2">
@@ -120,7 +120,7 @@ export function RegimeDetail({ s }: { s: DailySummary }) {
         </div>
 
         <div>
-          <div className="mb-2 text-[10px] font-semibold uppercase tracking-wide text-ink-3">How the dial is built</div>
+          <div className="mb-2 text-[11px] text-ink-3">How the dial is built</div>
           <p className="text-[12.5px] leading-relaxed text-ink-2">
             Every signal always votes, neutral included, so a quiet day cannot shrink the denominator and move the
             label on its own. Each vote is then scaled by its horizon&apos;s weight, so a volatility print no longer
@@ -158,7 +158,7 @@ export function RegimeDetail({ s }: { s: DailySummary }) {
         </div>
 
         <div>
-          <div className="mb-2 text-[10px] font-semibold uppercase tracking-wide text-ink-3">Horizon weights · where the vote comes from</div>
+          <div className="mb-2 text-[11px] text-ink-3">Horizon weights · where the vote comes from</div>
           {r.horizons.map((h) => {
             const net = netFor(h.id);
             return (
@@ -202,15 +202,15 @@ export function RegimeDetail({ s }: { s: DailySummary }) {
       </div>
 
       {/* ── the signal table ── */}
-      <div className="overflow-x-auto border-t border-line">
-        <table className="w-full min-w-[900px] text-left">
+      <div className="overflow-x-auto border-t border-line-soft">
+        <table className="data-table min-w-[900px]">
           <thead>
-            <tr className="bg-surface-2 text-[10px] uppercase tracking-wide text-ink-3">
-              <th className="px-5 py-1.5 font-semibold">Signal</th>
-              <th className="py-1.5 font-semibold">Vote</th>
-              <th className="py-1.5 font-semibold">Reading</th>
-              <th className="py-1.5 text-center font-semibold">Contribution to the dial</th>
-              <th className="px-5 py-1.5 text-right font-semibold">Points</th>
+            <tr>
+              <th className="pl-3.5">Signal</th>
+              <th>Vote</th>
+              <th>Reading</th>
+              <th>Contribution to the dial</th>
+              <th className="n pr-3.5">Points</th>
             </tr>
           </thead>
           <tbody>
@@ -221,9 +221,9 @@ export function RegimeDetail({ s }: { s: DailySummary }) {
               const meta = r.horizons.find((x) => x.id === h);
               return (
                 <React.Fragment key={h}>
-                  <tr className="bg-ground">
-                    <td colSpan={5} className="border-t border-line-soft px-5 py-1">
-                      <span className="text-[11px] font-semibold capitalize text-ink-2">
+                  <tr className="bg-surface-2">
+                    <td colSpan={5} className="pl-3.5">
+                      <span className="text-[11px] capitalize text-ink-2">
                         {h} {meta?.shortLabel}
                       </span>
                       <span className="ml-2 font-mono text-[10.5px] text-ink-3">
@@ -235,34 +235,42 @@ export function RegimeDetail({ s }: { s: DailySummary }) {
                     </td>
                   </tr>
                   {rows.map((row) => (
-                    <tr key={row.name} className={`border-t border-line-soft ${row.direction === "risk-off" ? "bg-neg-soft/60" : ""}`}>
-                      <td className="w-[220px] px-5 py-1.5 text-[12.5px] text-ink">{row.name}</td>
-                      <td className="w-[80px] py-1.5">
+                    <tr key={row.name} className={row.direction === "risk-off" ? "bg-neg-soft/60" : ""}>
+                      <td className="w-[220px] pl-3.5">{row.name}</td>
+                      <td className="w-[80px]">
                         <Pill tone={row.direction === "risk-on" ? "pos" : row.direction === "risk-off" ? "neg" : "neutral"}>
                           {row.direction === "neutral" ? "flat" : row.direction}
                         </Pill>
                       </td>
-                      <td className="py-1.5 pr-4 font-mono text-[11.5px] text-ink-2">{row.detail || "—"}</td>
-                      <td className="w-[230px] py-1.5">
+                      <td className="pr-4">
+                        <span className="font-mono text-[11.5px] text-ink-2">{row.detail || "—"}</span>
+                      </td>
+                      <td className="w-[230px]">
                         <Bar points={row.dialPoints} maxAbs={maxAbs} />
                       </td>
-                      <td className={`w-[70px] px-5 py-1.5 text-right font-mono text-[12px] ${row.dialPoints > 0 ? "font-semibold text-pos" : row.dialPoints < 0 ? "font-semibold text-neg" : "text-ink-3"}`}>
-                        {pts(row.dialPoints)}
+                      <td className="n w-[70px] pr-3.5">
+                        <span className={row.dialPoints > 0 ? "text-pos" : row.dialPoints < 0 ? "text-neg" : "text-ink-3"}>
+                          {pts(row.dialPoints)}
+                        </span>
                       </td>
                     </tr>
                   ))}
                 </React.Fragment>
               );
             })}
-            <tr className="border-t border-line bg-surface-2">
-              <td className="px-5 py-2 text-[12.5px] font-bold">Dial</td>
+            <tr className="bg-surface-2">
+              <td className="pl-3.5 font-medium">Dial</td>
               <td />
-              <td className="py-2 font-mono text-[11.5px] text-ink-3">50 neutral, plus the net of every vote above</td>
-              <td className="py-2">
+              <td>
+                <span className="font-mono text-[11.5px] text-ink-3">50 neutral, plus the net of every vote above</span>
+              </td>
+              <td>
                 <Bar points={total} maxAbs={50} />
               </td>
-              <td className={`px-5 py-2 text-right font-mono text-[13px] font-semibold ${tone === "pos" ? "text-pos" : tone === "neg" ? "text-neg" : "text-warn"}`}>
-                {dial.toFixed(1)}
+              <td className="n pr-3.5">
+                <span className={`font-medium ${tone === "pos" ? "text-pos" : tone === "neg" ? "text-neg" : "text-warn"}`}>
+                  {dial.toFixed(1)}
+                </span>
               </td>
             </tr>
           </tbody>
@@ -270,9 +278,9 @@ export function RegimeDetail({ s }: { s: DailySummary }) {
       </div>
 
       {/* ── history + hysteresis ── */}
-      <div className="flex flex-wrap items-center gap-4 border-t border-line px-5 py-3">
+      <div className="flex flex-wrap items-center gap-4 border-t border-line-soft px-3.5 py-3">
         <div>
-          <div className="text-[10px] font-semibold uppercase tracking-wide text-ink-3">
+          <div className="text-[11px] text-ink-3">
             Dial, last {r.history.length} session{r.history.length === 1 ? "" : "s"}
           </div>
           <div className="font-mono text-[11px] text-ink-2">
