@@ -1413,7 +1413,7 @@ export function PimModel({ groups, onOpenScenarios }: Props) {
             {/* min-w so the eight weight columns scroll sideways on a phone
                 instead of compressing into unreadable slivers; the container
                 owns the overflow so the page never scrolls horizontally. */}
-            <div className="max-w-full overflow-x-auto">
+            <div className="max-w-full tbl-wrap">
               <table className="data-table min-w-[760px]">
                 <thead>
                   <tr>
@@ -1576,7 +1576,7 @@ export function PimModel({ groups, onOpenScenarios }: Props) {
             <span className="m">{groupState.transactions.length} entries · latest 50 shown</span>
           </div>
           {changesOpen && (
-            <div className="max-w-full overflow-x-auto">
+            <div className="max-w-full tbl-wrap">
               <table className="data-table">
                 <thead>
                   <tr>

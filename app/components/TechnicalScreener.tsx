@@ -596,7 +596,7 @@ export function TechnicalScreener({ stocks, onAddToWatchlist }: Props) {
             body={stocksWithTechnicals.length === 0 ? "Score stocks to generate technicals, then they'll show up here." : "No stocks match the current filters — try loosening them."}
           />
         ) : (
-          <div className="overflow-x-auto">
+          <div className="tbl-wrap">
             <table className="data-table min-w-[1000px]">
               <thead>
                 <tr>
@@ -715,7 +715,7 @@ export function TechnicalScreener({ stocks, onAddToWatchlist }: Props) {
         )}
 
         {scanResults.length > 0 && (
-          <div className="overflow-x-auto">
+          <div className="tbl-wrap">
             <table className="data-table min-w-[1100px]">
               <thead>
                 <tr>

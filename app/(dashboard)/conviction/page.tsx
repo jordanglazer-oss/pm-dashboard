@@ -435,7 +435,7 @@ export default function ConvictionPage() {
         {loaded && filtered.length === 0 ? (
           <EmptyState className="!py-8" glyph={<AppIcon name="branch" size={18} />} title="No names match" body="Try another bucket, clear the search, or turn off Improving only." />
         ) : (
-          <div className="overflow-x-auto">
+          <div className="tbl-wrap">
             <table className="data-table min-w-[1000px]">
               <thead>
                 <tr>

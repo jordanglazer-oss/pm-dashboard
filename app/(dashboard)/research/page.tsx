@@ -82,7 +82,7 @@ function RankedTable({
       {rows.length === 0 ? (
         <EmptyState className="!py-8" glyph={<AppIcon name="list" size={18} />} title="No names match" body="Nothing on these lists passes the current filters." />
       ) : (
-        <div className="overflow-x-auto">
+        <div className="tbl-wrap">
           <table className="data-table min-w-[760px]">
             <thead>
               <tr>
@@ -338,7 +338,7 @@ export default function RankedResearchPage() {
             fellOff.length === 0 ? (
               <EmptyState className="!py-6" glyph={<AppIcon name="check" size={18} />} title="Nothing has fallen off" body="No name dropped off every list in the last 45 days." />
             ) : (
-              <div className="overflow-x-auto">
+              <div className="tbl-wrap">
                 <table className="data-table min-w-[520px]">
                   <thead>
                     <tr>

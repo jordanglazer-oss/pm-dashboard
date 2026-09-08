@@ -82,8 +82,11 @@ export function AttentionPanel() {
           {tailwind && opps.length === 0 ? "regime tailwind" : `${opps.length} improving`}
         </span>
       )}
-      <Link href="/brief#s-act" className="ml-auto inline-flex shrink-0 items-center gap-1 text-[12px] !text-accent-ink hover:!text-accent">
-        Open the queue<AppIcon name="arrowR" size={12} strokeWidth={2} />
+      {/* The Brief's queue now lists only the brief's own recommendations, with
+          alerts one toggle away under "Elsewhere" — so this reads as what it is
+          rather than promising the full list inline. */}
+      <Link href="/brief#s-act" className="ml-auto inline-flex shrink-0 items-center gap-1 text-[12px] font-medium !text-accent-ink hover:!text-accent">
+        Action queue<AppIcon name="arrowR" size={12} strokeWidth={2} />
       </Link>
     </section>
   );

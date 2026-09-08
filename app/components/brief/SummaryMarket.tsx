@@ -71,13 +71,15 @@ export function MarketPanel({ s, onRefresh, refreshing }: { s: DailySummary; onR
             <button type="button" className={win === "1w" ? "on" : ""} onClick={() => setWin("1w")}>1w</button>
           </div>
           <IconButton onClick={onRefresh} disabled={refreshing} spin={refreshing} title="Rebuild the market drivers from FactSet" icon="refresh" />
-          <IconButton onClick={() => setUiPref(PREF, open ? "1" : "0")} title={open ? "Hide drivers, sector map and model returns" : "Show drivers, sector map and model returns"} icon={open ? "chevU" : "chevD"} active={open} />
+          <IconButton onClick={() => setUiPref(PREF, open ? "1" : "0")} title={open ? "Hide the full driver table and sector map" : "Show the full driver table and sector map"} icon={open ? "chevU" : "chevD"} active={open} />
         </div>
       </div>
       {bench.length === 0 && levels.length === 0 ? (
         <Empty>Market data unavailable.</Empty>
       ) : (
-        <div className="grid grid-cols-2 gap-x-3 gap-y-1.5 px-3.5 pb-2.5 pt-2 text-[12px] sm:grid-cols-4">
+        // The band owns the full page width now, so every benchmark and level
+        // gets its own column instead of wrapping into a 4-wide block.
+        <div className="grid grid-cols-2 gap-x-4 gap-y-2 px-3.5 pb-2.5 pt-2 text-[12px] sm:grid-cols-3 md:grid-cols-5 xl:grid-cols-9">
           {bench.map((b) => (
             <div key={b.key} className="min-w-0">
               <div className="truncate text-[11px] text-ink-3">{b.label}</div>
@@ -95,6 +97,13 @@ export function MarketPanel({ s, onRefresh, refreshing }: { s: DailySummary; onR
       <div className="border-t border-line-soft px-3.5 py-2 text-[12px] leading-[1.5] text-ink-2">
         <span className="text-ink-3">Drivers</span> {driversSentence(s, win)}
       </div>
+      {/* Model returns and the main contributors/detractors are what the PM
+          reads every morning — they are NOT behind the expander any more. Two
+          up across the full width, each table with room to wrap. */}
+      <div className="grid grid-cols-1 gap-3 border-t border-line-soft bg-ground p-3 xl:grid-cols-2">
+        <ModelsCard s={s} />
+        <MoversCard s={s} win={win} />
+      </div>
       {open && (
         // The full tables stack one per row. Side by side inside this rail they
         // were the thing the PM could not read; a table that owns the whole
@@ -103,8 +112,54 @@ export function MarketPanel({ s, onRefresh, refreshing }: { s: DailySummary; onR
           <BenchmarkStrip s={s} />
           <DriversCard s={s} onRefresh={onRefresh} refreshing={refreshing} />
           <SectorMapCard s={s} />
-          <ModelsCard s={s} />
         </div>
+      )}
+    </Card>
+  );
+}
+
+/* ── Main contributors / detractors (always visible) ─────────────────── */
+
+/** The top five up and down names by cap-weighted contribution, in the same
+ *  columns the full Market drivers table uses. Window follows the Market
+ *  panel's own 1d/1w switch; the index is picked here. */
+export function MoversCard({ s, win }: { s: DailySummary; win: "1d" | "1w" }) {
+  const d = s.drivers;
+  const [idx, setIdx] = useState<"spx" | "tsx">("spx");
+  const index = d?.indexes.find((i) => i.key === idx) ?? null;
+  const top = index ? (win === "1d" ? index.top1d : index.top1w) : [];
+  const bottom = index ? (win === "1d" ? index.bottom1d : index.bottom1w) : [];
+  const contrib = (r: DriverRow) => (win === "1d" ? r.contrib1d : r.contrib1w);
+  const ret = (r: DriverRow) => (win === "1d" ? r.ret1d : r.ret1w);
+  const maxAbs = Math.max(0.01, ...[...top.slice(0, 5), ...bottom.slice(0, 5)].map((r) => Math.abs(contrib(r) ?? 0)));
+  return (
+    <Card className="animate-panel-in">
+      <CardHeader
+        mark="bg-hub-research"
+        title="Main contributors"
+        sub={index ? `${index.label} ${win === "1d" ? "today" : "this week"} · cap-weighted` : "loading"}
+        right={<Toggle value={idx} options={[["spx", "S&P"], ["tsx", "TSX"]]} onChange={setIdx} />}
+      />
+      {!index || index.namesPriced === 0 ? (
+        <Empty>{d?.error ?? "No driver data yet — the nightly job builds it, or use the refresh control."}</Empty>
+      ) : (
+        <table className="data-table">
+          <thead>
+            <tr>
+              <th className="pl-3.5">Name</th>
+              <th className="w-[36px] px-1.5" />
+              <th className="n w-[72px]" title="Percentage points of the index return">Contrib pp</th>
+              <th className="n w-[58px]">Return</th>
+              <th className="n w-[58px] pr-3.5" title="Share of the priced universe">Weight</th>
+            </tr>
+          </thead>
+          <tbody>
+            <BandRow>Contributors</BandRow>
+            <DriverRows rows={top} contrib={contrib} ret={ret} maxAbs={maxAbs} limit={5} />
+            <BandRow>Detractors</BandRow>
+            <DriverRows rows={bottom} contrib={contrib} ret={ret} maxAbs={maxAbs} limit={5} />
+          </tbody>
+        </table>
       )}
     </Card>
   );
@@ -215,7 +270,7 @@ function BandRow({ children }: { children: React.ReactNode }) {
   );
 }
 
-function DriverRows({ rows, contrib, ret, maxAbs }: { rows: DriverRow[]; contrib: (r: DriverRow) => number | null; ret: (r: DriverRow) => number | null; maxAbs: number }) {
+function DriverRows({ rows, contrib, ret, maxAbs, limit = 8 }: { rows: DriverRow[]; contrib: (r: DriverRow) => number | null; ret: (r: DriverRow) => number | null; maxAbs: number; limit?: number }) {
   if (rows.length === 0) {
     return (
       <tr>
@@ -225,7 +280,7 @@ function DriverRows({ rows, contrib, ret, maxAbs }: { rows: DriverRow[]; contrib
   }
   return (
     <>
-      {rows.slice(0, 8).map((r) => {
+      {rows.slice(0, limit).map((r) => {
         const c = contrib(r);
         const w = c == null ? 0 : (Math.abs(c) / maxAbs) * 100;
         return (

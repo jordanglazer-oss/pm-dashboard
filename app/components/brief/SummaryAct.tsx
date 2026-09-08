@@ -9,28 +9,57 @@ import { AppIcon } from "../AppIcon";
 import { Card, Empty, IconButton, Pct, RowButton, Status, TickerLink, timeAgo } from "./summary-ui";
 
 /**
- * The queue is rendered in GROUPS, not one priority-sorted list. Interleaved,
- * the brief's own recommendations got scattered among kill trips and change
- * events and were easy to miss — they lead now, under their own header, and
- * every other source follows under its own.
+ * The Brief's queue lists ONLY the brief's own recommendations.
+ *
+ * Everything else the queue used to interleave — kill trips, coverage gaps,
+ * alerts, entry-ready setups, change events, prints — belongs to a page that
+ * already owns it. Listing them here made the brief's own calls hard to find
+ * and pushed the genuinely useful panels (model returns, market returns, main
+ * contributors) into a narrow rail. They are not lost: the "Elsewhere" strip
+ * under the queue carries one entry per remaining source with its count and
+ * highest priority, links to the page that owns it, and can be opened in
+ * place (persisted) so Done / Snooze still reach every item.
  */
-const GROUPS: { key: string; title: string; sources: ActionItem["source"][] }[] = [
-  { key: "brief", title: "The brief recommends", sources: ["ai"] },
-  { key: "thesis", title: "Thesis", sources: ["kill", "coverage"] },
-  { key: "prints", title: "Prints", sources: ["earnings"] },
-  { key: "entry", title: "Entry", sources: ["entry"] },
-  { key: "alerts", title: "Alerts", sources: ["alert"] },
-  { key: "changes", title: "Changes", sources: ["change"] },
+
+/** Sources the brief itself writes — the only ones listed in the queue. */
+const BRIEF_SOURCE: ActionItem["source"] = "ai";
+
+type Elsewhere = {
+  key: string;
+  title: string;
+  sources: ActionItem["source"][];
+  /** The page that owns these items today. */
+  href?: string;
+  where?: string;
+};
+
+const ELSEWHERE: Elsewhere[] = [
+  // Kill trips and coverage gaps are the Thesis desk's job.
+  { key: "thesis", title: "Thesis", sources: ["kill", "coverage"], href: "/thesis", where: "Thesis desk" },
+  // Alerts and change events are per-holding; Holdings carries the attention
+  // row and the Changes panel.
+  { key: "alerts", title: "Alerts", sources: ["alert"], href: "/", where: "Holdings" },
+  { key: "changes", title: "Changes", sources: ["change"], href: "/", where: "Holdings" },
+  // Prints are read off the Calendar on this page, then actioned on the name.
+  { key: "prints", title: "Prints", sources: ["earnings"], href: "#s-calendar", where: "Calendar" },
+  // Entry-ready names are worked in the Pipeline.
+  { key: "entry", title: "Entry", sources: ["entry"], href: "/funnel", where: "Pipeline" },
 ];
 
-/** Every source a GROUPS entry claims — anything else falls into "Other" so a
- *  new source can never make items disappear from the queue. */
-const CLAIMED = new Set<ActionItem["source"]>(GROUPS.flatMap((g) => g.sources));
+/** Every source claimed above (plus the brief's own) — anything else falls
+ *  into "Other" so a new source can never make items disappear. */
+const CLAIMED = new Set<ActionItem["source"]>([BRIEF_SOURCE, ...ELSEWHERE.flatMap((g) => g.sources)]);
+
+const ELSEWHERE_PREF = "brief.actions.elsewhere";
 
 const PRIORITY_RANK: Record<ActionItem["priority"], number> = { high: 0, medium: 1, low: 2 };
 
 function priorityDot(p: ActionItem["priority"]): string {
   return p === "high" ? "bg-neg" : p === "medium" ? "bg-warn" : "bg-ink-faint";
+}
+
+function topPriority(items: ActionItem[]): ActionItem["priority"] {
+  return items.reduce<ActionItem["priority"]>((best, it) => (PRIORITY_RANK[it.priority] < PRIORITY_RANK[best] ? it.priority : best), "low");
 }
 
 const SOURCE_LABEL: Record<ActionItem["source"], string> = {
@@ -42,6 +71,51 @@ const SOURCE_LABEL: Record<ActionItem["source"], string> = {
   earnings: "Print",
   ai: "Brief",
 };
+
+/** One queue row — used by the brief list and by the opened Elsewhere groups,
+ *  so Done / Snooze / Restore behave identically wherever an item appears. */
+function QueueRow({
+  it,
+  i,
+  busy,
+  mark,
+  showSource,
+}: {
+  it: ActionItem;
+  i: number;
+  busy: string | null;
+  mark: (id: string, status: "done" | "snoozed" | "clear") => void;
+  showSource: boolean;
+}) {
+  return (
+    <li style={{ "--i": Math.min(i, 8) } as React.CSSProperties} className={`flex items-start gap-3 border-b border-line-soft px-3.5 py-2.5 last:border-b-0 ${it.state ? "opacity-55" : ""}`}>
+      <span className={`dot mt-[7px] ${priorityDot(it.priority)}`} />
+      <div className="min-w-0 flex-1">
+        <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
+          {it.ticker && <TickerLink ticker={it.ticker} />}
+          <span className={`min-w-0 break-words text-[13px] font-medium text-ink ${it.state?.status === "done" ? "line-through" : ""}`}>{it.title}</span>
+          {it.at && <span className="text-[11px] text-ink-faint">{timeAgo(it.at)}</span>}
+          {showSource && <span className="ml-auto text-[11px] text-ink-3">{SOURCE_LABEL[it.source]}</span>}
+        </div>
+        {it.detail && <div className="mt-0.5 break-words text-[12.5px] leading-[1.45] text-ink-2">{it.detail}</div>}
+        {it.tags && it.tags.length > 0 && (
+          <div className="mt-0.5 break-words font-mono text-[10.5px] text-ink-3">{it.tags.filter(Boolean).slice(0, 3).join(" · ")}</div>
+        )}
+      </div>
+      <div className="mt-0.5 flex shrink-0 items-center gap-1.5">
+        {it.href && !it.state && <RowButton href={it.href}>Open</RowButton>}
+        {it.state ? (
+          <RowButton disabled={busy === it.id} onClick={() => mark(it.id, "clear")}>Restore</RowButton>
+        ) : (
+          <>
+            <RowButton disabled={busy === it.id} onClick={() => mark(it.id, "done")}>Done</RowButton>
+            <RowButton disabled={busy === it.id} onClick={() => mark(it.id, "snoozed")} title="Snooze until tomorrow">Snooze</RowButton>
+          </>
+        )}
+      </div>
+    </li>
+  );
+}
 
 export function ActionQueue({
   s,
@@ -65,37 +139,93 @@ export function ActionQueue({
       setBusy(null);
     }
   };
+
   const shown = showCleared ? [...(a?.items ?? []), ...(a?.dismissed ?? [])] : a?.items ?? [];
-  // Groups in a fixed reading order; the global priority sort is preserved
-  // WITHIN each group (the incoming list is already priority-sorted, and the
-  // dismissed tail keeps its own order behind the open items).
-  const grouped = [
-    ...GROUPS.map((g) => ({ key: g.key, title: g.title, items: shown.filter((it) => g.sources.includes(it.source)) })),
-    { key: "other", title: "Other", items: shown.filter((it) => !CLAIMED.has(it.source)) },
+  const briefItems = shown.filter((it) => it.source === BRIEF_SOURCE);
+  const rest = shown.filter((it) => it.source !== BRIEF_SOURCE);
+  // Groups in a fixed reading order; the incoming list is already
+  // priority-sorted, so each group keeps the global order within it.
+  const groups = [
+    ...ELSEWHERE.map((g) => ({ ...g, items: rest.filter((it) => g.sources.includes(it.source)) })),
+    { key: "other", title: "Other", sources: [] as ActionItem["source"][], href: undefined, where: undefined, items: rest.filter((it) => !CLAIMED.has(it.source)) },
   ].filter((g) => g.items.length > 0);
+
+  const openBrief = (a?.items ?? []).filter((it) => it.source === BRIEF_SOURCE);
+  const cleared = a?.counts.cleared ?? 0;
+  const meta = !a
+    ? "loading"
+    : openBrief.length === 0
+      ? "today's brief"
+      : `${openBrief.filter((i) => i.priority === "high").length} high · ${openBrief.filter((i) => i.priority === "medium").length} medium · ${openBrief.filter((i) => i.priority === "low").length} low`;
+  const elsewhereOpen = (uiPrefs[ELSEWHERE_PREF] ?? "1") !== "1";
+
   return (
-    <Card className={`animate-panel-in ${scrollable ? "flex min-h-[260px] flex-col" : ""}`}>
+    <Card className={`animate-panel-in ${scrollable ? "flex flex-col self-start" : ""}`}>
       <div className="panel-h">
         <span className="t-mark bg-hub-today" />
         <span className="t">Action queue</span>
-        <span className="m">{a ? `${a.counts.high} high · ${a.counts.medium} medium · ${a.counts.low} low` : "loading"}</span>
-        {a && a.counts.cleared > 0 && (
+        <span className="m">{meta}</span>
+        {cleared > 0 && (
           <button type="button" onClick={() => setShowCleared((v) => !v)} className="m ml-auto hover:text-ink" title={showCleared ? "Hide the cleared items" : "Show the cleared items"}>
-            {a.counts.cleared} cleared today{showCleared ? " · hide" : ""}
+            {cleared} cleared today{showCleared ? " · hide" : ""}
           </button>
         )}
       </div>
       {!a ? (
         <Empty>Action sources unavailable.</Empty>
-      ) : a.items.length === 0 && !showCleared ? (
-        <Empty>Nothing needs a decision right now.</Empty>
+      ) : briefItems.length === 0 ? (
+        <Empty>The brief has no open recommendations{rest.length > 0 ? " — everything below is owned elsewhere." : " right now."}</Empty>
       ) : (
-        <div className={scrollable ? "min-h-0 flex-1 basis-0 overflow-y-auto" : ""}>
-          {grouped.map((g) => {
-            const items = g.items;
+        <ul className={`stagger ${scrollable ? "max-h-[520px] min-h-0 overflow-y-auto" : ""}`}>
+          {briefItems.map((it, i) => (
+            <QueueRow key={it.id} it={it} i={i} busy={busy} mark={mark} showSource={false} />
+          ))}
+        </ul>
+      )}
+
+      {groups.length > 0 && (
+        <div className="border-t border-line-soft bg-[var(--h-soft,var(--color-surface-2))] px-3.5 py-2.5">
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+            <span className="text-[12px] font-semibold text-[var(--h,var(--color-ink))]">Elsewhere</span>
+            {groups.map((g) =>
+              g.href ? (
+                <Link key={g.key} href={g.href} className="group inline-flex items-center gap-1.5 text-[12px] text-ink-2 transition-colors hover:text-accent" title={`${g.items.length} ${g.title.toLowerCase()} item${g.items.length === 1 ? "" : "s"} — open ${g.where}`}>
+                  <span className={`dot ${priorityDot(topPriority(g.items))}`} />
+                  <span className="min-w-0 break-words">{g.title}</span>
+                  <span className="font-mono text-ink">{g.items.length}</span>
+                  <span className="text-[11px] text-ink-3 transition-colors group-hover:text-accent">{g.where}</span>
+                  <AppIcon name="arrowR" size={11} />
+                </Link>
+              ) : (
+                <span key={g.key} className="inline-flex items-center gap-1.5 text-[12px] text-ink-2">
+                  <span className={`dot ${priorityDot(topPriority(g.items))}`} />
+                  <span className="min-w-0 break-words">{g.title}</span>
+                  <span className="font-mono text-ink">{g.items.length}</span>
+                </span>
+              )
+            )}
+            <button
+              type="button"
+              onClick={() => setUiPref(ELSEWHERE_PREF, elsewhereOpen ? "1" : "0")}
+              aria-expanded={elsewhereOpen}
+              className="ml-auto inline-flex items-center gap-1 text-[11.5px] text-accent transition-colors hover:text-accent-ink"
+              title={elsewhereOpen ? "Hide these items" : "Read and clear these items without leaving the brief"}
+            >
+              <AppIcon name={elsewhereOpen ? "chevU" : "chevD"} size={12} />
+              {elsewhereOpen ? "Hide" : `Show ${rest.length} here`}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {groups.length > 0 && elsewhereOpen && (
+        <div className="animate-panel-in border-t border-line-soft">
+          {groups.map((g) => {
+            // The per-group collapse pref survives — each Elsewhere group is
+            // still individually collapsible, persisted in pm:ui-prefs.
             const prefKey = `brief.actions.grp.${g.key}`;
             const open = (uiPrefs[prefKey] ?? "0") !== "1";
-            const top = items.reduce<ActionItem["priority"]>((best, it) => (PRIORITY_RANK[it.priority] < PRIORITY_RANK[best] ? it.priority : best), "low");
+            const top = topPriority(g.items);
             return (
               <div key={g.key}>
                 <button
@@ -107,50 +237,21 @@ export function ActionQueue({
                 >
                   <AppIcon name={open ? "chevD" : "chevR"} size={12} className="shrink-0 text-ink-3" />
                   <span className="min-w-0 break-words">{g.title}</span>
-                  <span className="shrink-0 font-mono text-ink-faint">{items.length}</span>
+                  <span className="shrink-0 font-mono text-ink-faint">{g.items.length}</span>
+                  {g.where && <span className="shrink-0 text-[11px] text-ink-3">{g.where}</span>}
                   <span className={`dot ml-auto shrink-0 ${priorityDot(top)}`} />
                   <span className="shrink-0 text-[11px] text-ink-3">{top}</span>
                 </button>
                 {open && (
                   <ul className="stagger">
-                    {items.map((it, i) => (
-                      <li key={it.id} style={{ "--i": Math.min(i, 8) } as React.CSSProperties} className={`flex items-start gap-3 border-b border-line-soft px-3.5 py-2.5 ${it.state ? "opacity-55" : ""}`}>
-                        <span className={`dot mt-[7px] ${priorityDot(it.priority)}`} />
-                        <div className="min-w-0 flex-1">
-                          <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
-                            {it.ticker && <TickerLink ticker={it.ticker} />}
-                            <span className={`min-w-0 break-words text-[13px] font-medium text-ink ${it.state?.status === "done" ? "line-through" : ""}`}>{it.title}</span>
-                            {it.at && <span className="text-[11px] text-ink-faint">{timeAgo(it.at)}</span>}
-                            <span className="ml-auto text-[11px] text-ink-3">{SOURCE_LABEL[it.source]}</span>
-                          </div>
-                          {it.detail && <div className="mt-0.5 break-words text-[12.5px] leading-[1.45] text-ink-2">{it.detail}</div>}
-                          {it.tags && it.tags.length > 0 && (
-                            <div className="mt-0.5 break-words font-mono text-[10.5px] text-ink-3">{it.tags.filter(Boolean).slice(0, 3).join(" · ")}</div>
-                          )}
-                        </div>
-                        <div className="mt-0.5 flex shrink-0 items-center gap-1.5">
-                          {it.href && !it.state && <RowButton href={it.href}>Open</RowButton>}
-                          {it.state ? (
-                            <RowButton disabled={busy === it.id} onClick={() => mark(it.id, "clear")}>Restore</RowButton>
-                          ) : (
-                            <>
-                              <RowButton disabled={busy === it.id} onClick={() => mark(it.id, "done")}>Done</RowButton>
-                              <RowButton disabled={busy === it.id} onClick={() => mark(it.id, "snoozed")} title="Snooze until tomorrow">Snooze</RowButton>
-                            </>
-                          )}
-                        </div>
-                      </li>
+                    {g.items.map((it, i) => (
+                      <QueueRow key={it.id} it={it} i={i} busy={busy} mark={mark} showSource />
                     ))}
                   </ul>
                 )}
               </div>
             );
           })}
-        </div>
-      )}
-      {a && scrollable && shown.length > 3 && (
-        <div className="flex h-8 items-center border-t border-line-soft px-3.5 text-[11.5px] text-ink-3">
-          {shown.length} item{shown.length === 1 ? "" : "s"} · scroll the list, the page stays put
         </div>
       )}
     </Card>

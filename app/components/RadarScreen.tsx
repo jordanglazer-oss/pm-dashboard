@@ -186,7 +186,7 @@ export function RadarScreen({ onCountChange }: { onCountChange?: (n: number) => 
             body={data?.hint ?? "No names to show — every screened name is already tracked."}
           />
         ) : (
-          <div className="overflow-x-auto">
+          <div className="tbl-wrap">
             <table className="data-table min-w-[760px]">
               <thead>
                 <tr>

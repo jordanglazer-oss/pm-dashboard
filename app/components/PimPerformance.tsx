@@ -830,7 +830,7 @@ export function PimPerformance({ groupId, groupName, selectedProfile, onPerfData
             Daily returns (last 10 trading days)
           </button>
           {dailyOpen && (
-            <div className="mt-1.5 max-w-full overflow-x-auto">
+            <div className="mt-1.5 max-w-full tbl-wrap">
               <table className="data-table">
                 <thead>
                   <tr>
@@ -862,7 +862,7 @@ export function PimPerformance({ groupId, groupName, selectedProfile, onPerfData
             Portfolio value history (last 20 trading days)
           </button>
           {valueOpen && (
-            <div className="mt-1.5 max-w-full overflow-x-auto">
+            <div className="mt-1.5 max-w-full tbl-wrap">
               <table className="data-table">
                 <thead>
                   <tr>

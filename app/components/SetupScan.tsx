@@ -256,7 +256,7 @@ export function SetupScan({ onCountChange }: { onCountChange?: (n: number) => vo
             body="Pick a universe and hit Run scan."
           />
         ) : (
-          <div className="overflow-x-auto">
+          <div className="tbl-wrap">
             <table className="data-table min-w-[820px]">
               <thead>
                 <tr>

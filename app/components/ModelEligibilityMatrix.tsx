@@ -37,7 +37,10 @@ export function ModelEligibilityMatrix() {
         </span>
       </div>
       {!collapsed && (<>
-      <div className="max-h-[70vh] max-w-full overflow-auto">
+      {/* Wide by construction (one column per model), so the TABLE scrolls
+          inside its tile — `.panel` clips, and a clipped column would hide a
+          checkbox outright. Vertical scroll keeps the sticky header useful. */}
+      <div className="tbl-wrap max-h-[70vh] max-w-full overflow-y-auto">
         <table className="data-table">
           <thead className="sticky top-0 z-10 bg-surface">
             <tr>

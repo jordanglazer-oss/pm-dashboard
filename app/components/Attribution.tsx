@@ -228,9 +228,10 @@ export function Attribution() {
       </div>
 
       {error && !loading && (
-        <p className="px-3.5 py-3 text-[12.5px] text-ink-3">
-          Attribution needs daily portfolio values and price data — nothing to decompose yet.
-        </p>
+        <div className="m-3.5 rounded-card border border-warn-border bg-warn-soft px-3 py-2.5 text-[12.5px] text-ink-2">
+          <span className="font-medium text-warn">Nothing to decompose yet</span> — attribution needs daily portfolio
+          values and price data.
+        </div>
       )}
 
       {data && decomp && (

@@ -140,8 +140,11 @@ export default function RiskPage() {
       ) : data ? (
         <>
           {staleNote && (
-            <div className="flex items-center gap-2 text-[12px] text-warn">
-              <span className="dot bg-warn" /> Live recompute failed — showing the last good snapshot.
+            <div className="flex items-start gap-2 rounded-card border border-warn-border bg-warn-soft px-3.5 py-2.5">
+              <AppIcon name="warn" size={14} className="mt-px shrink-0 text-warn" />
+              <span className="min-w-0 text-[12.5px] text-ink-2">
+                <span className="font-medium text-warn">Live recompute failed</span> — showing the last good snapshot.
+              </span>
             </div>
           )}
 
@@ -180,10 +183,13 @@ export default function RiskPage() {
             {/* ── Risk contribution ── */}
             <section className="panel">
               <div className="panel-h">
+                {/* A name carrying more risk than capital is the finding this
+                    panel exists for — when one shows up the panel goes warn. */}
+                {riskHogs.size > 0 && <span className="t-mark bg-warn" />}
                 <span className="t">Risk contribution</span>
                 <span className="m">covariance share of portfolio variance · <span className="text-warn">warn</span> = risk share ≥ 1.5× capital share</span>
               </div>
-              <div className="overflow-x-auto">
+              <div className="tbl-wrap">
                 <table className="data-table">
                   <thead>
                     <tr>
@@ -228,6 +234,9 @@ export default function RiskPage() {
               {/* ── Correlation clusters ── */}
               <section className="panel">
                 <div className="panel-h">
+                  {/* Same warn threshold the rows use: a single-name cluster
+                      carrying ≥20% of the book is the concentration signal. */}
+                  {data.clusters.some((c) => c.kind !== "fund" && c.totalWeight >= 0.2) && <span className="t-mark bg-warn" />}
                   <span className="t">Correlation clusters</span>
                   <span className="m">pairwise ≥ 0.70 over 1y · a cluster&rsquo;s weight is the true position</span>
                 </div>
@@ -305,7 +314,7 @@ export default function RiskPage() {
               <span className="t">Sector exposure</span>
               <span className="m">look-through · beta-wtd = Σ weight × beta within the sector · vs the S&amp;P</span>
             </div>
-            <div className="overflow-x-auto">
+            <div className="tbl-wrap">
               <table className="data-table max-w-2xl">
                 <thead>
                   <tr>

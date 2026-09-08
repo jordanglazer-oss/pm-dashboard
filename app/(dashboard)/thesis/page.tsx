@@ -596,6 +596,10 @@ export default function ThesisDeskPage() {
                   >
                     <AppIcon name={open ? "chevD" : "chevR"} size={14} strokeWidth={2} />
                   </button>
+                  {/* A tripped card takes the neg hue for the whole panel (the
+                      `.panel:has(.t-mark.bg-neg)` rule), so a broken thesis is
+                      findable in a grid of a dozen intact ones. */}
+                  {r.tripped > 0 && <span className="t-mark bg-neg" />}
                   <Link href={`/stock/${encodeURIComponent(r.ticker)}`} className="font-mono text-[13px] font-semibold text-ink hover:text-accent">
                     {displayTicker(r.ticker)}
                   </Link>
@@ -646,8 +650,12 @@ export default function ThesisDeskPage() {
                             {k.condition.theme && (
                               <div className="text-[11px] text-ink-3">{k.condition.theme}</div>
                             )}
-                            <div className="text-[12.5px] font-medium text-ink">{describeCondition(k.condition)}</div>
-                            <div className="text-[11.5px] text-ink-3">{k.reading}</div>
+                            {/* Conditions and readings carry tickers, ratios and
+                                dates with no break opportunities — without
+                                break-words a long one pushes the status word out
+                                of the card, which `.panel` then clips. */}
+                            <div className="break-words text-[12.5px] font-medium text-ink">{describeCondition(k.condition)}</div>
+                            <div className="break-words text-[11.5px] text-ink-3">{k.reading}</div>
                             {k.condition.aiCheck?.undisclosed && k.condition.aiCheck.suggestedNote && (
                               <div className="mt-1.5 rounded-control border border-line bg-surface-2 px-2.5 py-1.5">
                                 <div className="text-[11px] text-warn">Not disclosed — can never verify</div>
@@ -683,9 +691,9 @@ export default function ThesisDeskPage() {
                 )}
 
                 {open && r.tripped > 0 && (
-                  <div className="flex items-center gap-2 border-t border-line-soft px-3.5 py-2">
-                    <span className="dot bg-neg" />
-                    <span className="text-[12px] text-neg">A pre-registered exit condition is tripped.</span>
+                  <div className="flex flex-wrap items-center gap-2 border-t border-neg-border bg-neg-soft px-3.5 py-2">
+                    <span className="text-[12.5px] font-medium text-neg">Exit condition tripped</span>
+                    <span className="min-w-0 text-[12px] text-ink-2">a rule you pre-registered has fired.</span>
                     <Link
                       href={`/stock/${encodeURIComponent(r.ticker)}`}
                       className="ml-auto inline-flex h-7 items-center gap-1 rounded-control border border-line bg-surface px-2.5 text-[12.5px] text-ink-2 hover:bg-surface-hover"
@@ -705,6 +713,9 @@ export default function ThesisDeskPage() {
       {!loading && cov && cov.missing.length > 0 && (
         <section className="panel">
           <div className="panel-h">
+            {/* This panel only renders when something is unwatched, so it owns
+                the warn hue outright — the mark carries it to the whole panel. */}
+            <span className="t-mark bg-warn" />
             <span className="t">Not underwritten</span>
             <span className="m">
               <span className="font-mono">{cov.missing.length}</span> · stocks with no pre-registered exit conditions — nothing is watching these

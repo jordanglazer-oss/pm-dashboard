@@ -19,9 +19,12 @@ import { HedgeLedgerContext } from "./hedge-ledger";
  *      Bottom line and the "since last brief" digest beneath (#s-today).
  *   2. The regime detail (every signal) directly under it, when opened from
  *      the Regime cell — persisted.
- *   3. A two-column band (#s-act): the Action queue beside Calendar · Market ·
- *      Thesis & book. Each right-hand panel shows the summary; its chevron
- *      opens the full existing content in place (persisted).
+ *   3. A two-column band (#s-act): the Action queue — the BRIEF'S OWN
+ *      recommendations only, everything else linked out through the
+ *      "Elsewhere" strip — beside Calendar and Thesis & book.
+ *   4. Market as a full-width band under it (#s-market): benchmarks, model
+ *      returns and the main contributors/detractors all visible with nothing
+ *      opened; the chevron adds the full driver table and sector map.
  *
  * The Board / Horizons / Narrative content lives in MorningBrief's tabbed
  * panel below this view.
@@ -123,14 +126,14 @@ export function DailySummaryView({ onLoaded }: { onLoaded?: (s: DailySummary) =>
     return (
       <div className="flex flex-col gap-3.5">
         <Skeleton className="h-[220px]" />
-        <div className="grid grid-cols-1 gap-3.5 lg:grid-cols-[minmax(0,1.55fr)_minmax(0,1fr)]">
-          <Skeleton className="h-[320px]" />
+        <div className="grid grid-cols-1 gap-3.5 lg:grid-cols-2">
+          <Skeleton className="h-[260px]" />
           <div className="flex flex-col gap-3.5">
             <Skeleton className="h-[140px]" />
             <Skeleton className="h-[110px]" />
-            <Skeleton className="h-[54px]" />
           </div>
         </div>
+        <Skeleton className="h-[360px]" />
       </div>
     );
   }
@@ -166,14 +169,21 @@ export function DailySummaryView({ onLoaded }: { onLoaded?: (s: DailySummary) =>
         </section>
       )}
 
-      <div id="s-act" style={{ scrollMarginTop: 64 }} className="grid grid-cols-1 gap-3.5 lg:grid-cols-[minmax(0,1.55fr)_minmax(0,1fr)]">
+      {/* Two-up: the brief's own recommendations beside what is scheduled and
+          what the book is doing. Even shares now — the queue only carries the
+          brief's calls, so it no longer needs 1.55fr, and nothing stretches to
+          fill a short queue (the card sizes to its content). */}
+      <div id="s-act" style={{ scrollMarginTop: 64 }} className="grid grid-cols-1 gap-3.5 lg:grid-cols-2">
         <ActionQueue s={s} onMark={onMark} scrollable />
         <div className="flex min-w-0 flex-col gap-3.5">
           <CalendarPanel s={s} />
-          <MarketPanel s={s} onRefresh={refreshDrivers} refreshing={refreshingDrivers} />
           <ThesisBookPanel s={s} />
         </div>
       </div>
+
+      {/* Market gets the full width: benchmarks, model returns and the main
+          contributors/detractors all readable without opening anything. */}
+      <MarketPanel s={s} onRefresh={refreshDrivers} refreshing={refreshingDrivers} />
 
       {s.errors.length > 0 && (
         <div className="flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-ink-3">

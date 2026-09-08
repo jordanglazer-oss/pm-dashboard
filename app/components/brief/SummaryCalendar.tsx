@@ -120,17 +120,22 @@ export function EconCard({ s }: { s: DailySummary }) {
           {recent.length === 0 ? (
             <Empty>No actuals available.</Empty>
           ) : (
-            <table className="data-table">
-              <tbody>
-                {recent.map((r) => (
-                  <tr key={r.series}>
-                    <td className="pl-3.5"><span className="break-words">{r.title}</span><span className="ml-1 text-[11px] text-ink-faint">{r.asOf.slice(0, 7)}</span></td>
-                    <td className="n">{fmtEcon(r.actual, r.unit)}</td>
-                    <td className="n text-ink-3">{fmtEcon(r.prior, r.unit)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+            // Not a direct child of the panel, so it needs the wrapper: the
+            // panel clips overflow and a long series title would hide the
+            // prior column outright.
+            <div className="tbl-wrap">
+              <table className="data-table">
+                <tbody>
+                  {recent.map((r) => (
+                    <tr key={r.series}>
+                      <td className="pl-3.5"><span className="break-words">{r.title}</span><span className="ml-1 text-[11px] text-ink-faint">{r.asOf.slice(0, 7)}</span></td>
+                      <td className="n">{fmtEcon(r.actual, r.unit)}</td>
+                      <td className="n text-ink-3">{fmtEcon(r.prior, r.unit)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           )}
           <div className="px-3.5 py-1.5 text-[11px] text-ink-faint">Consensus not wired yet — actuals from FRED.</div>
         </div>

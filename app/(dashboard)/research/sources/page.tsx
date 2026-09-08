@@ -2908,8 +2908,8 @@ export default function ResearchPage() {
               {state.newtonUpticks.length === 0 && <EmptyState className="!py-8" glyph={<AppIcon name="list" size={18} />} title="No upticks yet" />}
             </div>
           ) : (
-          <div className="overflow-x-auto">
-            <div className="overflow-x-auto"><table className="data-table min-w-[620px]">
+          <div className="tbl-wrap">
+            <div className="tbl-wrap"><table className="data-table min-w-[620px]">
               <thead>
                 <tr>
                   <th className="w-8">#</th>
@@ -3050,8 +3050,8 @@ export default function ResearchPage() {
                 <summary className="cursor-pointer hover:text-ink-2">
                   View parsed rows from screenshot ({lastScrape.length})
                 </summary>
-                <div className="mt-1 overflow-x-auto">
-                  <div className="overflow-x-auto"><table className="data-table">
+                <div className="mt-1 tbl-wrap">
+                  <div className="tbl-wrap"><table className="data-table">
                     <thead>
                       <tr>
                         <th>Ticker</th>
@@ -3193,7 +3193,7 @@ export default function ResearchPage() {
                 emptyLabel="No names added yet"
               />
             ) : (
-            <div className="overflow-x-auto"><table className="data-table min-w-[620px]">
+            <div className="tbl-wrap"><table className="data-table min-w-[620px]">
               <thead>
                 <tr>
                   <th className="w-8">#</th>
@@ -3299,7 +3299,7 @@ export default function ResearchPage() {
                 emptyLabel="No names added yet"
               />
             ) : (
-            <div className="overflow-x-auto"><table className="data-table min-w-[620px]">
+            <div className="tbl-wrap"><table className="data-table min-w-[620px]">
               <thead>
                 <tr>
                   <th className="w-8">#</th>
@@ -3411,7 +3411,7 @@ export default function ResearchPage() {
                 emptyLabel="No names added yet"
               />
             ) : (
-            <div className="overflow-x-auto"><table className="data-table min-w-[620px]">
+            <div className="tbl-wrap"><table className="data-table min-w-[620px]">
               <thead>
                 <tr>
                   <th className="w-8">#</th>
@@ -3511,7 +3511,7 @@ export default function ResearchPage() {
                 emptyLabel="No names added yet"
               />
             ) : (
-            <div className="overflow-x-auto"><table className="data-table min-w-[620px]">
+            <div className="tbl-wrap"><table className="data-table min-w-[620px]">
               <thead>
                 <tr>
                   <th className="w-8">#</th>
@@ -3647,7 +3647,7 @@ export default function ResearchPage() {
                   emptyLabel="No names added yet"
                 />
               ) : (
-                <div className="overflow-x-auto"><table className="data-table min-w-[620px]">
+                <div className="tbl-wrap"><table className="data-table min-w-[620px]">
                   <thead>
                     <tr>
                       <th className="cursor-pointer select-none hover:text-ink" onClick={() => cfg.toggle("dqmRank")}>DQM{cfg.arrow("dqmRank")}</th>
@@ -3798,7 +3798,7 @@ export default function ResearchPage() {
               emptyLabel="No names added yet"
             />
           ) : (
-          <div className="overflow-x-auto"><table className="data-table min-w-[620px]">
+          <div className="tbl-wrap"><table className="data-table min-w-[620px]">
             <thead>
               <tr>
                 <th className="w-8">#</th>
@@ -3897,7 +3897,7 @@ export default function ResearchPage() {
               emptyLabel="No names added yet"
             />
           ) : (
-          <div className="overflow-x-auto"><table className="data-table min-w-[620px]">
+          <div className="tbl-wrap"><table className="data-table min-w-[620px]">
             <thead>
               <tr>
                 <th className="w-8">#</th>
@@ -3999,7 +3999,7 @@ export default function ResearchPage() {
               emptyLabel="No names added yet"
             />
           ) : (
-          <div className="overflow-x-auto"><table className="data-table min-w-[620px]">
+          <div className="tbl-wrap"><table className="data-table min-w-[620px]">
             <thead>
               <tr>
                 <th className="n cursor-pointer select-none hover:text-ink" onClick={() => toggleEquateCadSort("rank")} title="RBC EQUATE composite rank — 1 is the best name in that region's universe">Rank{ecArrow("rank")}</th>
@@ -4077,7 +4077,7 @@ export default function ResearchPage() {
               emptyLabel="No names added yet"
             />
           ) : (
-          <div className="overflow-x-auto"><table className="data-table min-w-[620px]">
+          <div className="tbl-wrap"><table className="data-table min-w-[620px]">
             <thead>
               <tr>
                 <th className="n cursor-pointer select-none hover:text-ink" onClick={() => toggleEquateUsdSort("rank")} title="RBC EQUATE composite rank — 1 is the best name in that region's universe">Rank{euArrow("rank")}</th>
@@ -4171,7 +4171,7 @@ export default function ResearchPage() {
               emptyLabel="No names added yet"
             />
           ) : (
-          <div className="overflow-x-auto"><table className="data-table min-w-[620px]">
+          <div className="tbl-wrap"><table className="data-table min-w-[620px]">
             <thead>
               <tr>
                 <th className="cursor-pointer select-none hover:text-ink" onClick={() => toggleJpmFocusSort("name")}>Company name{jArrow("name")}</th>
@@ -4263,7 +4263,7 @@ export default function ResearchPage() {
               emptyLabel="No names added yet"
             />
           ) : (
-          <div className="overflow-x-auto"><table className="data-table min-w-[620px]">
+          <div className="tbl-wrap"><table className="data-table min-w-[620px]">
             <thead>
               <tr>
                 <th className="w-8">#</th>
@@ -4566,8 +4566,8 @@ export default function ResearchPage() {
                     emptyLabel="No picks added yet"
                   />
                 ) : (
-                <div className="overflow-x-auto">
-                  <div className="overflow-x-auto"><table className="data-table min-w-[620px]">
+                <div className="tbl-wrap">
+                  <div className="tbl-wrap"><table className="data-table min-w-[620px]">
                     <thead>
                       <tr>
                         <th className="w-8">#</th>

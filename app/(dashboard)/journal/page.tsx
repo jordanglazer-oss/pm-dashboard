@@ -177,7 +177,7 @@ export default function JournalPage() {
               <span className="t">Decision log</span>
               <span className="m">{data.rows.length} measured</span>
             </div>
-            <div className="overflow-x-auto">
+            <div className="tbl-wrap">
               <table className="data-table">
                 <thead>
                   <tr>

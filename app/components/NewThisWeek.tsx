@@ -90,7 +90,7 @@ export function NewThisWeek({ portfolioTickers, watchlistTickers, listTickers }:
         those are the ones this lane exists to surface. Holdings are excluded.
       </p>
 
-      <div className="overflow-x-auto">
+      <div className="tbl-wrap">
         <table className="data-table">
           <thead>
             <tr>

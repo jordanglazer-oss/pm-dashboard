@@ -220,7 +220,7 @@ function AllocationEditor({
   return (
     <div className="min-w-0 px-3.5 py-3">
       <div className="text-[13px] font-semibold text-ink">{title}</div>
-      <div className="mt-2 max-w-full overflow-x-auto">
+      <div className="mt-2 max-w-full tbl-wrap">
         <table className="w-full">
           <thead>
             <tr>
@@ -317,7 +317,7 @@ function FundsTable({
           <AppIcon name="plus" size={13} /> Add row
         </button>
       </div>
-      <div className="max-w-full overflow-x-auto">
+      <div className="max-w-full tbl-wrap">
         <table className="data-table">
           <thead>
             <tr>
@@ -418,7 +418,7 @@ function AutoFundsTable({
         <span className="t">{title}</span>
         {dateLabel && <span className="m">as of {dateLabel}</span>}
       </div>
-      <div className="max-w-full overflow-x-auto">
+      <div className="max-w-full tbl-wrap">
         <table className="data-table">
           <thead>
             <tr>
@@ -972,7 +972,7 @@ export default function AAPerformancePage() {
           <span className="m">Models, profiles and reference indices · 1Y and longer are annualized</span>
           {(pimLoading || indexLoading) && <span className="m ml-auto animate-pulse">refreshing…</span>}
         </div>
-        <div className="max-w-full overflow-x-auto">
+        <div className="max-w-full tbl-wrap">
           <table className="data-table">
             <thead>
               <tr>

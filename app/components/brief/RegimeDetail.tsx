@@ -202,7 +202,7 @@ export function RegimeDetail({ s }: { s: DailySummary }) {
       </div>
 
       {/* ── the signal table ── */}
-      <div className="overflow-x-auto border-t border-line-soft">
+      <div className="tbl-wrap border-t border-line-soft">
         <table className="data-table min-w-[900px]">
           <thead>
             <tr>

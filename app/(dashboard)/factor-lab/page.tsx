@@ -460,7 +460,7 @@ export default function FactorLabPage() {
             }
           />
         ) : (
-          <div className="overflow-x-auto">
+          <div className="tbl-wrap">
             <table className="data-table">
               <thead>
                 <tr>
@@ -614,7 +614,7 @@ export default function FactorLabPage() {
           />
         ) : (
           <>
-            <div className="overflow-x-auto">
+            <div className="tbl-wrap">
               <table className="data-table">
                 <thead>
                   <tr>
@@ -689,7 +689,7 @@ export default function FactorLabPage() {
               <div className="px-4 py-2.5"><div className="text-[11px] text-ink-3">Downgrades</div><div className="mt-0.5 font-mono text-[13px] font-medium text-neg">{consolidation.down70}</div></div>
               <div className="px-4 py-2.5"><div className="text-[11px] text-ink-3">±15-mod variant</div><div className="mt-0.5 font-mono text-[13px] font-medium text-ink-2">{consolidation.changesMod} <span className="text-[11px] font-normal text-ink-3">changes</span></div></div>
             </div>
-            <div className="overflow-x-auto">
+            <div className="tbl-wrap">
               <table className="data-table">
                 <thead>
                   <tr>
@@ -771,7 +771,7 @@ export default function FactorLabPage() {
           <>
             <div className="px-3.5 py-2 text-[12.5px] leading-[1.5] text-ink-2">{validation.note}</div>
             {validation.horizons.some((h) => Object.keys(h.lenses).length > 0) && (
-              <div className="overflow-x-auto border-t border-line-soft">
+              <div className="tbl-wrap border-t border-line-soft">
                 <table className="data-table max-w-2xl">
                   <thead>
                     <tr>
