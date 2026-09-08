@@ -37,6 +37,16 @@ import StockChart from "@/app/components/StockChart";
 import QuickStockView from "@/app/components/QuickStockView";
 
 // ── Helpers ──
+/** Stat-strip date: "Sep 3" this year, "Sep 3, 2025" otherwise, "never" when
+ *  a name has not been scored. The full ISO stamp stays in the cell tooltip. */
+function fmtScoredAt(iso?: string): string {
+  if (!iso) return "never";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "never";
+  const sameYear = d.getFullYear() === new Date().getFullYear();
+  return d.toLocaleDateString("en-US", sameYear ? { month: "short", day: "numeric" } : { month: "short", day: "numeric", year: "numeric" });
+}
+
 function formatAUM(value: number): string {
   if (value >= 1e12) return `$${(value / 1e12).toFixed(1)}T`;
   if (value >= 1e9) return `$${(value / 1e9).toFixed(1)}B`;
@@ -1687,7 +1697,7 @@ export default function StockDetailPage() {
                 ? `FactSet${factsetSnap.analystCount != null ? ` · ${factsetSnap.analystCount} analysts` : ""}${factsetSnap.averageTarget != null ? ` · avg target ${factsetSnap.averageTarget}` : ""}`
                 : "Analyst-consensus category score (RBC / JPM ratings, FactSet target upside, estimate revisions, Morningstar stars).",
             },
-            { label: "Last scored", value: stock.lastScored || "never", title: stock.lastScored || undefined },
+            { label: "Last scored", value: fmtScoredAt(stock.lastScored), title: stock.lastScored || undefined },
           ]}
         />
       ) : (
