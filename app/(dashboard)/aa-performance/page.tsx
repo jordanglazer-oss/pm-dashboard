@@ -4,6 +4,8 @@ import React, { useState, useEffect, useCallback, useRef, useMemo } from "react"
 import { Attribution } from "@/app/components/Attribution";
 import Link from "next/link";
 import { ImageUpload, type BriefAttachment } from "@/app/components/ImageUpload";
+import { SkeletonTable } from "@/app/components/Skeleton";
+import { AppIcon } from "@/app/components/AppIcon";
 import { useStocks } from "@/app/lib/StockContext";
 import { isScoreable } from "@/app/lib/scoring";
 import type { AppendixData, PimPerformanceData, PimProfileWeights } from "@/app/lib/pim-types";
@@ -205,8 +207,8 @@ function useDebouncedPersist(delay = 500) {
   );
 }
 
-/* ─── Asset Allocation Table Component ─── */
-function AllocationTableCard({
+/* ─── Asset Allocation profile editor (one cell of the allocation panel) ─── */
+function AllocationEditor({
   title,
   table,
   onUpdate,
@@ -216,17 +218,15 @@ function AllocationTableCard({
   onUpdate: (rowKey: keyof AllocationTable, colKey: keyof AllocationRow, value: number) => void;
 }) {
   return (
-    <div className="rounded-card border border-line bg-white shadow-sm overflow-hidden min-w-0">
-      <div className="px-3 py-2.5 border-b border-line-soft">
-        <h3 className="text-sm font-bold text-ink">{title}</h3>
-      </div>
-      <div className="overflow-x-auto">
-        <table className="w-full text-sm">
+    <div className="min-w-0 px-3.5 py-3">
+      <div className="text-[13px] font-semibold text-ink">{title}</div>
+      <div className="mt-2 max-w-full overflow-x-auto">
+        <table className="w-full">
           <thead>
-            <tr className="border-b border-line-soft">
-              <th className="px-1.5 py-2 text-left text-[10px] font-semibold text-ink-3 uppercase tracking-wide w-12"></th>
+            <tr>
+              <th className="w-12 pb-1 text-left text-[11px] font-normal text-ink-3"></th>
               {AA_COLS.map((col) => (
-                <th key={col.key} className="px-1 py-2 text-center text-[10px] font-semibold text-ink-3 uppercase tracking-wide">
+                <th key={col.key} className="pb-1 text-center text-[11px] font-normal text-ink-3">
                   {col.label}
                 </th>
               ))}
@@ -236,26 +236,21 @@ function AllocationTableCard({
             {AA_ROWS.map((row) => {
               const isCurrent = row.key === "current";
               return (
-                <tr
-                  key={row.key}
-                  className={`border-b border-line-soft ${isCurrent ? "bg-pos-soft" : "hover:bg-surface-2"}`}
-                >
-                  <td className={`px-1.5 py-1 text-[11px] font-semibold ${isCurrent ? "text-pos" : "text-ink-2"}`}>
+                <tr key={row.key}>
+                  <td className={`py-0.5 pr-1 text-[11px] ${isCurrent ? "text-pos" : "text-ink-3"}`}>
                     {row.label}
                   </td>
                   {AA_COLS.map((col) => (
-                    <td key={col.key} className="px-1 py-1 text-center">
-                      <div className="flex items-center justify-center gap-px">
+                    <td key={col.key} className="px-0.5 py-0.5 text-center">
+                      <div className="flex items-center justify-center gap-0.5">
                         <NumericInput
                           value={table[row.key][col.key]}
                           onChange={(n) => onUpdate(row.key, col.key, n ?? 0)}
-                          className={`w-11 rounded-md border px-1 py-0.5 text-[13px] text-center font-medium tabular-nums ${
-                            isCurrent
-                              ? "border-pos-border bg-pos-soft text-pos"
-                              : "border-line bg-white text-ink"
-                          } focus:outline-none focus:ring-1 focus:ring-accent-soft`}
+                          className={`h-7 w-12 rounded-control border bg-surface px-1 text-center font-mono text-[12.5px] tabular-nums outline-none focus:border-accent-border ${
+                            isCurrent ? "border-pos-border text-pos" : "border-line text-ink"
+                          }`}
                         />
-                        <span className="text-[10px] text-ink-3">%</span>
+                        <span className="text-[11px] text-ink-3">%</span>
                       </div>
                     </td>
                   ))}
@@ -269,7 +264,7 @@ function AllocationTableCard({
   );
 }
 
-/* ─── Active Funds / ETFs Table ─── */
+/* ─── Active Funds / ETFs Table (manual entry; kept for the editable path) ─── */
 function FundsTable({
   title,
   dateValue,
@@ -291,99 +286,99 @@ function FundsTable({
   const [tempDate, setTempDate] = useState(dateValue);
 
   return (
-    <div className="mb-6">
-      <div className="flex items-center gap-2 mb-2">
-        <span className="text-sm font-bold text-ink">{title} (as of </span>
-        {editingDate ? (
-          <input
-            autoFocus
-            value={tempDate}
-            onChange={(e) => setTempDate(e.target.value)}
-            onBlur={() => { onDateChange(tempDate); setEditingDate(false); }}
-            onKeyDown={(e) => { if (e.key === "Enter") { onDateChange(tempDate); setEditingDate(false); } if (e.key === "Escape") setEditingDate(false); }}
-            className="w-28 bg-white border border-accent-border focus:ring-1 focus:ring-accent-soft rounded-lg outline-none transition-all px-1 py-0.5 text-sm"
-          />
-        ) : (
-          <span
-            onClick={() => { setTempDate(dateValue); setEditingDate(true); }}
-            className="text-sm font-bold text-ink cursor-pointer hover:bg-accent-soft rounded px-1 py-0.5"
-            title="Click to edit date"
-          >
-            {dateValue}
-          </span>
-        )}
-        <span className="text-sm font-bold text-ink">)</span>
+    <section className="panel">
+      <div className="panel-h flex-wrap py-1.5">
+        <span className="t">{title}</span>
+        <span className="m flex items-center gap-1">
+          as of
+          {editingDate ? (
+            <input
+              autoFocus
+              value={tempDate}
+              onChange={(e) => setTempDate(e.target.value)}
+              onBlur={() => { onDateChange(tempDate); setEditingDate(false); }}
+              onKeyDown={(e) => { if (e.key === "Enter") { onDateChange(tempDate); setEditingDate(false); } if (e.key === "Escape") setEditingDate(false); }}
+              className="h-7 w-28 rounded-control border border-line bg-surface px-2 text-[12.5px] outline-none focus:border-accent-border"
+            />
+          ) : (
+            <button
+              onClick={() => { setTempDate(dateValue); setEditingDate(true); }}
+              className="font-mono text-ink-2 hover:text-ink"
+              title="Click to edit date"
+            >
+              {dateValue}
+            </button>
+          )}
+        </span>
+        <button
+          onClick={onAddRow}
+          className="ml-auto inline-flex h-7 items-center gap-1.5 rounded-control bg-ink px-2.5 text-[12.5px] font-medium !text-white hover:bg-ink-2"
+        >
+          <AppIcon name="plus" size={13} /> Add row
+        </button>
       </div>
-      <div className="overflow-x-auto">
-        <table className="w-full text-sm">
+      <div className="max-w-full overflow-x-auto">
+        <table className="data-table">
           <thead>
-            <tr className="border-b border-line-soft bg-surface-hover">
+            <tr>
               {FUND_COLS.map((col) => (
                 <th
                   key={col.key}
-                  className={`px-3 py-2.5 text-xs font-semibold text-ink-3 uppercase tracking-wider ${
-                    col.key === "name" ? "text-left min-w-[220px]" : col.key === "ticker" ? "text-left min-w-[100px]" : "text-center"
-                  }`}
+                  className={col.key === "name" ? "min-w-[220px] pl-3.5" : col.key === "ticker" ? "min-w-[100px]" : "n"}
                 >
                   {col.label}
                 </th>
               ))}
-              <th className="px-2 py-2.5 w-8"></th>
+              <th className="w-8"></th>
             </tr>
           </thead>
           <tbody>
             {rows.map((row, rowIdx) => (
-              <tr key={rowIdx} className="border-b border-line-soft hover:bg-surface-hover">
-                <td className="px-3 py-1.5">
+              <tr key={rowIdx}>
+                <td className="pl-3.5">
                   <input
                     type="text"
                     value={row.name}
                     onChange={(e) => onUpdateRow(rowIdx, "name", e.target.value)}
-                    className="w-full rounded-lg border border-transparent px-2 py-1 text-sm font-medium text-ink hover:border-line hover:bg-surface-2 focus:border-accent-border focus:outline-none focus:ring-2 focus:ring-accent-soft bg-transparent"
+                    className="h-7 w-full rounded-control border border-transparent bg-transparent px-2 text-[12.5px] text-ink outline-none hover:border-line focus:border-accent-border"
                   />
                 </td>
-                <td className="px-3 py-1.5">
+                <td>
                   <input
                     type="text"
                     value={row.ticker}
                     onChange={(e) => onUpdateRow(rowIdx, "ticker", e.target.value)}
-                    className="w-full rounded-lg border border-transparent px-2 py-1 text-sm font-mono text-ink hover:border-line hover:bg-surface-2 focus:border-accent-border focus:outline-none focus:ring-2 focus:ring-accent-soft bg-transparent"
+                    className="h-7 w-full rounded-control border border-transparent bg-transparent px-2 font-mono text-[12.5px] text-ink outline-none hover:border-line focus:border-accent-border"
                     placeholder="—"
                   />
                 </td>
                 {FUND_COLS.filter((c) => c.key !== "name" && c.key !== "ticker").map((col) => {
                   const val = row[col.key] as number | null;
                   return (
-                    <td key={col.key} className="px-1 py-1.5 text-center">
-                      <div className="flex items-center justify-center gap-0.5">
+                    <td key={col.key} className="n">
+                      <div className="flex items-center justify-end gap-0.5">
                         <NumericInput
                           value={val}
                           onChange={(n) => onUpdateRow(rowIdx, col.key, n)}
                           placeholder="—"
-                          className={`w-16 rounded-lg border border-transparent px-1 py-1 text-sm text-center font-medium ${
-                            val === null ? "text-ink-3" : val < 0 ? "text-neg" : val > 0 ? "text-pos" : "text-ink-2"
-                          } hover:border-line focus:border-accent-border focus:outline-none focus:ring-2 focus:ring-accent-soft bg-surface-hover hover:bg-white`}
+                          className={`h-7 w-16 rounded-control border border-transparent bg-transparent px-1 text-right font-mono text-[12.5px] outline-none hover:border-line focus:border-accent-border ${perfColor(val)}`}
                         />
-                        {val !== null && <span className="text-[10px] text-ink-3">%</span>}
+                        {val !== null && <span className="text-[11px] text-ink-3">%</span>}
                       </div>
                     </td>
                   );
                 })}
-                <td className="px-2 py-1.5 text-center">
-                  <button onClick={() => onRemoveRow(rowIdx)} className="text-ink-faint hover:text-neg font-bold transition-colors" title="Remove">&times;</button>
+                <td className="text-center">
+                  <button onClick={() => onRemoveRow(rowIdx)} className="text-ink-faint hover:text-neg" title="Remove" aria-label="Remove">
+                    <AppIcon name="x" size={13} />
+                  </button>
                 </td>
               </tr>
             ))}
           </tbody>
         </table>
       </div>
-      <button
-        onClick={onAddRow}
-        className="mt-2 rounded-control bg-accent px-5 py-2 text-sm font-semibold text-white hover:bg-accent transition-colors"
-      >
-        Add
-      </button>
-    </div>
+    </section>
   );
 }
 
@@ -418,57 +413,47 @@ function AutoFundsTable({
     : "";
 
   return (
-    <div className="mb-6">
-      <div className="flex items-center gap-2 mb-2">
-        <span className="text-sm font-bold text-ink">{title}</span>
-        {dateLabel && <span className="text-xs text-ink-3">(as of {dateLabel})</span>}
+    <section className="panel">
+      <div className="panel-h flex-wrap py-1.5">
+        <span className="t">{title}</span>
+        {dateLabel && <span className="m">as of {dateLabel}</span>}
       </div>
-      <div className="overflow-x-auto">
-        <table className="w-full text-sm">
+      <div className="max-w-full overflow-x-auto">
+        <table className="data-table">
           <thead>
-            <tr className="border-b border-line-soft bg-surface-hover">
-              <th className="px-3 py-2.5 text-left text-xs font-semibold text-ink-3 uppercase tracking-wider min-w-[220px]">Name</th>
-              <th className="px-3 py-2.5 text-left text-xs font-semibold text-ink-3 uppercase tracking-wider min-w-[100px]">Code/Ticker</th>
-              <th className="px-3 py-2.5 text-center text-xs font-semibold text-ink-3 uppercase tracking-wider">YTD</th>
-              <th className="px-3 py-2.5 text-center text-xs font-semibold text-ink-3 uppercase tracking-wider">1Y</th>
-              <th className="px-3 py-2.5 text-center text-xs font-semibold text-ink-3 uppercase tracking-wider">3Y</th>
-              <th className="px-3 py-2.5 text-center text-xs font-semibold text-ink-3 uppercase tracking-wider">5Y</th>
-              <th className="px-3 py-2.5 text-center text-xs font-semibold text-ink-3 uppercase tracking-wider">10Y</th>
+            <tr>
+              <th className="min-w-[220px] pl-3.5">Name</th>
+              <th className="min-w-[100px]">Code/Ticker</th>
+              <th className="n">YTD</th>
+              <th className="n">1Y</th>
+              <th className="n">3Y</th>
+              <th className="n">5Y</th>
+              <th className="n">10Y</th>
             </tr>
           </thead>
           <tbody>
             {holdings.map((h) => {
               const perf = h.fundData?.performance;
               return (
-                <tr key={h.ticker} className="border-b border-line-soft hover:bg-surface-hover">
-                  <td className="px-3 py-2.5">
-                    <Link href={`/stock/${h.ticker.toLowerCase()}`} className="text-sm font-medium text-ink hover:underline">
+                <tr key={h.ticker}>
+                  <td className="pl-3.5">
+                    <Link href={`/stock/${h.ticker.toLowerCase()}`} className="text-ink hover:text-accent">
                       {h.name || h.ticker}
                     </Link>
                   </td>
-                  <td className="px-3 py-2.5 text-sm font-mono text-ink-2">{h.ticker}</td>
-                  <td className={`px-3 py-2.5 text-center text-sm font-medium ${perfColor(perf?.ytd ?? null)}`}>
-                    {formatPerf(perf?.ytd ?? null)}{perf?.ytd != null && <span className="text-[10px] text-ink-3 ml-0.5">%</span>}
-                  </td>
-                  <td className={`px-3 py-2.5 text-center text-sm font-medium ${perfColor(perf?.oneYear ?? null)}`}>
-                    {formatPerf(perf?.oneYear ?? null)}{perf?.oneYear != null && <span className="text-[10px] text-ink-3 ml-0.5">%</span>}
-                  </td>
-                  <td className={`px-3 py-2.5 text-center text-sm font-medium ${perfColor(perf?.threeYear ?? null)}`}>
-                    {formatPerf(perf?.threeYear ?? null)}{perf?.threeYear != null && <span className="text-[10px] text-ink-3 ml-0.5">%</span>}
-                  </td>
-                  <td className={`px-3 py-2.5 text-center text-sm font-medium ${perfColor(perf?.fiveYear ?? null)}`}>
-                    {formatPerf(perf?.fiveYear ?? null)}{perf?.fiveYear != null && <span className="text-[10px] text-ink-3 ml-0.5">%</span>}
-                  </td>
-                  <td className={`px-3 py-2.5 text-center text-sm font-medium ${perfColor(perf?.tenYear ?? null)}`}>
-                    {formatPerf(perf?.tenYear ?? null)}{perf?.tenYear != null && <span className="text-[10px] text-ink-3 ml-0.5">%</span>}
-                  </td>
+                  <td className="font-mono text-ink-2">{h.ticker}</td>
+                  {([perf?.ytd, perf?.oneYear, perf?.threeYear, perf?.fiveYear, perf?.tenYear] as (number | undefined)[]).map((v, i) => (
+                    <td key={i} className={`n ${perfColor(v ?? null)}`}>
+                      {formatPerf(v ?? null)}{v != null && <span className="ml-0.5 text-ink-3">%</span>}
+                    </td>
+                  ))}
                 </tr>
               );
             })}
           </tbody>
         </table>
       </div>
-    </div>
+    </section>
   );
 }
 
@@ -969,103 +954,87 @@ export default function AAPerformancePage() {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center min-h-[60vh]">
-        <div className="animate-pulse text-ink-3 text-lg">Loading AA & Performance...</div>
-      </div>
+      <main className="flex flex-col gap-3.5 text-ink">
+        <section className="panel">
+          <div className="panel-h"><span className="t">Performance</span></div>
+          <div className="p-3.5"><SkeletonTable rows={8} cols={11} /></div>
+        </section>
+      </main>
     );
   }
 
   return (
-    <main className="min-h-screen bg-ground px-4 py-6 text-ink md:px-8 md:py-8 overflow-x-hidden">
-    <div className="mx-auto max-w-7xl space-y-8 pb-12">
-      {/* ── Performance Section ── */}
-      <section>
-        <div className="flex items-center gap-2 mb-4">
-          <h2 className="text-[15px] font-bold text-ink">Performance</h2>
-          {(pimLoading || indexLoading) && (
-            <span className="text-xs text-ink-3 animate-pulse">refreshing…</span>
-          )}
+    <main className="flex flex-col gap-3.5 text-ink">
+      {/* ── Performance — the table comes first: it is what the page is for ── */}
+      <section className="panel">
+        <div className="panel-h flex-wrap py-1.5">
+          <span className="t">Performance</span>
+          <span className="m">Models, profiles and reference indices · 1Y and longer are annualized</span>
+          {(pimLoading || indexLoading) && <span className="m ml-auto animate-pulse">refreshing…</span>}
         </div>
-        <div className="rounded-card border border-line bg-white shadow-sm overflow-hidden">
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-line-soft bg-surface-hover">
-                  <th className="sticky left-0 z-10 border-r border-line-soft bg-surface-hover px-3 py-2.5 text-left text-xs font-semibold text-ink-3 uppercase tracking-wider min-w-[220px]">
-                    Name
+        <div className="max-w-full overflow-x-auto">
+          <table className="data-table">
+            <thead>
+              <tr>
+                <th className="sticky left-0 z-10 min-w-[220px] bg-surface pl-3.5">Name</th>
+                {PERIOD_COLS.map((col) => (
+                  <th key={col.key} className="n">
+                    {col.label}
+                    {col.annualized && <span className="ml-1 text-ink-faint">ann.</span>}
                   </th>
-                  {PERIOD_COLS.map((col) => (
-                    <th
-                      key={col.key}
-                      className="px-3 py-2.5 text-center text-xs font-semibold text-ink-3 uppercase tracking-wider"
-                    >
-                      {col.label}
-                      {col.annualized && (
-                        <div className="text-[9px] font-normal normal-case text-ink-3 mt-0.5">
-                          ann.
-                        </div>
-                      )}
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {autoPerformanceRows.map((row) => (
-                  <tr key={row.name} className="group border-b border-line-soft hover:bg-surface-hover">
-                    <td className="sticky left-0 z-10 border-r border-line-soft bg-white px-3 py-2.5 text-sm font-medium text-ink group-hover:bg-surface-hover">{row.name}</td>
-                    {PERIOD_COLS.map((col) => {
-                      const val = row[col.key];
-                      return (
-                        <td
-                          key={col.key}
-                          className={`px-3 py-2.5 text-center text-sm font-medium ${perfColor(val)}`}
-                        >
-                          {formatPerf(val)}
-                          {val !== null && <span className="text-[10px] text-ink-3 ml-0.5">%</span>}
-                        </td>
-                      );
-                    })}
-                  </tr>
                 ))}
-              </tbody>
-            </table>
-          </div>
+              </tr>
+            </thead>
+            <tbody>
+              {autoPerformanceRows.map((row) => (
+                <tr key={row.name} className="group">
+                  <td className="sticky left-0 z-10 bg-surface pl-3.5 font-medium text-ink group-hover:bg-surface-hover">{row.name}</td>
+                  {PERIOD_COLS.map((col) => {
+                    const val = row[col.key];
+                    return (
+                      <td key={col.key} className={`n ${perfColor(val)}`}>
+                        {formatPerf(val)}
+                        {val !== null && <span className="ml-0.5 text-ink-3">%</span>}
+                      </td>
+                    );
+                  })}
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
       </section>
 
-      {/* ── Asset Allocation Section ── */}
-      <section>
-        <div className="flex items-baseline justify-between mb-4">
-          <h2 className="text-[15px] font-bold text-ink">Asset Allocation</h2>
-          <p className="text-xs text-ink-3">
-            <span className="text-pos font-semibold">Current</span> row edits the PIM Model profile weights.
+      {/* ── Asset allocation — ONE panel, the four profile editors side by side ── */}
+      <section className="panel">
+        <div className="panel-h flex-wrap py-1.5">
+          <span className="t">Asset allocation</span>
+          <span className="m">
+            The <span className="text-pos">Current</span> row edits the PIM Model profile weights.
             {pimModels.lastUpdated && (
               <>
-                {" "}Last saved{" "}
-                <span className="font-mono">
-                  {new Date(pimModels.lastUpdated).toLocaleTimeString()}
-                </span>
+                {" "}Last saved <span className="font-mono">{new Date(pimModels.lastUpdated).toLocaleTimeString()}</span>
               </>
             )}
-          </p>
+          </span>
         </div>
-        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
-          <AllocationTableCard
+        <div className="grid grid-cols-1 divide-y divide-line-soft sm:grid-cols-2 sm:divide-x xl:grid-cols-4 xl:divide-y-0">
+          <AllocationEditor
             title="Conservative"
             table={displayedAllocations.conservative}
             onUpdate={(rowKey, colKey, value) => updateAllocation("conservative", rowKey, colKey, value)}
           />
-          <AllocationTableCard
+          <AllocationEditor
             title="Balanced"
             table={displayedAllocations.balanced}
             onUpdate={(rowKey, colKey, value) => updateAllocation("balanced", rowKey, colKey, value)}
           />
-          <AllocationTableCard
+          <AllocationEditor
             title="Growth"
             table={displayedAllocations.growth}
             onUpdate={(rowKey, colKey, value) => updateAllocation("growth", rowKey, colKey, value)}
           />
-          <AllocationTableCard
+          <AllocationEditor
             title="All-Equity"
             table={displayedAllocations.allEquity}
             onUpdate={(rowKey, colKey, value) => updateAllocation("allEquity", rowKey, colKey, value)}
@@ -1076,17 +1045,9 @@ export default function AAPerformancePage() {
       {/* ── Attribution — merged in from the old /attribution segment.
           The route still exists; this page is now the single Performance
           surface (allocation + performance + attribution). ── */}
-      <section id="attribution" className="scroll-mt-6">
-        <div className="mb-4">
-          <h2 className="text-[15px] font-bold text-ink">Attribution</h2>
-          <p className="mt-1 text-sm text-ink-3">
-            Where your return came from — market, currency, and selection. Use ← / → to switch models.
-          </p>
-        </div>
+      <div id="attribution" className="scroll-mt-24">
         <Attribution />
-      </section>
-
-    </div>
+      </div>
     </main>
   );
 }

@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useStocks } from "@/app/lib/StockContext";
 import { displayTicker } from "@/app/lib/ticker";
+import { AppIcon } from "@/app/components/AppIcon";
 import { apportionColumn, fmtPct2, sameAtDisplay } from "@/app/lib/display-weights";
 import {
   applyScenario,
@@ -889,7 +890,7 @@ export function ModelScenarios({ groups, alwaysOpen = false }: Props) {
   if (!group) return null;
 
   return (
-    <div className={alwaysOpen ? "" : "mt-6 rounded-lg border border-line bg-white"}>
+    <div className={alwaysOpen ? "" : "mt-6 rounded-card border border-line bg-surface"}>
       {!alwaysOpen && (
       <button
         onClick={() => setOpen((v) => !v)}
@@ -1630,7 +1631,7 @@ export function ModelScenarios({ groups, alwaysOpen = false }: Props) {
                               className="py-2.5 pl-4 pr-1 text-center font-semibold"
                               title="Pin a weight so the residual cannot move it"
                             >
-                              📌
+                              <AppIcon name="pin" size={12} className="mx-auto text-ink-3" />
                             </th>
                             <th className="py-2.5 pr-2 text-left font-semibold">Name</th>
                             <th className="py-2.5 px-2 text-left font-semibold">Symbol</th>
