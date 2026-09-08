@@ -33,7 +33,10 @@ export function StatStrip({
       {items.map((it, i) => (
         <div key={i} className="-ml-px -mt-px min-w-0 border-l border-t border-line-soft px-3.5 py-2" title={it.title}>
           <div className="truncate text-[11px] text-ink-3">{it.label}</div>
-          <div className="mt-0.5 truncate font-mono text-[13px] font-medium text-ink tabular-nums">{it.value}</div>
+          {/* Values WRAP rather than truncate: a clipped figure ("+$803,220.98 ·
+              +42…") is worse than a second line. Labels still truncate — they
+              are known strings and a wrapped label costs a row of height. */}
+          <div className="mt-0.5 break-words font-mono text-[13px] font-medium leading-[1.35] text-ink tabular-nums">{it.value}</div>
         </div>
       ))}
     </div>

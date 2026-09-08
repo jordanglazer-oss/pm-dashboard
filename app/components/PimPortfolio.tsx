@@ -358,7 +358,9 @@ function fmtN0(v: number): string {
 function DriftBar({ drift, scalePp, warn }: { drift: number | null; scalePp: number; warn: boolean }) {
   const w = drift == null ? 0 : Math.min(50, (Math.abs(drift) / scalePp) * 50);
   return (
-    <div className="relative h-1.5 w-[120px] rounded-[3px] bg-surface-2">
+    // Fluid rather than a hard 120px: a fixed width set the column's minimum
+    // and pushed the whole table sideways in the narrow two-up column.
+    <div className="relative h-1.5 w-full min-w-[64px] max-w-[120px] rounded-[3px] bg-surface-2">
       <span className="absolute -top-0.5 left-1/2 h-2.5 w-px bg-ink-faint" aria-hidden />
       {drift != null && w > 0 && (
         <i
@@ -392,8 +394,11 @@ function AllocationPanel({ live, target }: { live: ClassWeights; target: ClassWe
 
   if (rows.length === 0) {
     return (
-      <section className="panel">
-        <div className="panel-h"><span className="t">Allocation</span></div>
+      <section className="panel animate-panel-in">
+        <div className="panel-h">
+          <span className="t-mark bg-hub-portfolio" aria-hidden />
+          <span className="t">Allocation</span>
+        </div>
         <div className="px-3.5 py-3 text-[12px] text-ink-3">No allocation data for this model.</div>
       </section>
     );
@@ -403,12 +408,13 @@ function AllocationPanel({ live, target }: { live: ClassWeights; target: ClassWe
   const dTgt = apportionColumn(rows.map((r) => r.targetW), 1);
 
   return (
-    <section className="panel">
-      <div className="panel-h">
+    <section className="panel animate-panel-in">
+      <div className="panel-h flex-wrap gap-y-1.5 py-1.5">
+        <span className="t-mark bg-hub-portfolio" aria-hidden />
         <span className="t">Allocation</span>
-        <span className="m">{usingLive ? "target vs live" : "target · awaiting prices"}</span>
+        <span className="m min-w-0 break-words">{usingLive ? "target vs live" : "target · awaiting prices"}</span>
       </div>
-      <div className="grid grid-cols-[96px_minmax(0,1fr)_52px_52px_56px] items-center gap-x-2.5 gap-y-2 px-3.5 pb-3 pt-2 text-[12px]">
+      <div className="stagger grid grid-cols-[minmax(0,92px)_minmax(24px,1fr)_minmax(0,52px)_minmax(0,52px)_minmax(0,56px)] items-center gap-x-2.5 gap-y-2 px-3.5 pb-3 pt-2 text-[12px]">
         <span /><span />
         <span className="text-right text-[11px] text-ink-3">Target</span>
         <span className="text-right text-[11px] text-ink-3">Live</span>
@@ -419,15 +425,16 @@ function AllocationPanel({ live, target }: { live: ClassWeights; target: ClassWe
           const drift = liveV - tgtV;
           const flat = sameAtDisplay(liveV, tgtV);
           const barW = (usingLive ? liveV : tgtV) * 100;
+          const st = { "--i": Math.min(i + 1, 8) } as React.CSSProperties;
           return (
             <React.Fragment key={s.key}>
-              <span className="text-ink-2">{s.label}</span>
-              <div className="h-1 overflow-hidden rounded-[2px] bg-surface-2">
+              <span style={st} className="min-w-0 break-words text-ink-2">{s.label}</span>
+              <div style={st} className="h-1 min-w-0 overflow-hidden rounded-[2px] bg-surface-2">
                 <i className={`block h-full ${s.bar}`} style={{ width: `${Math.max(0, Math.min(100, barW))}%` }} />
               </div>
-              <span className="text-right font-mono text-ink-3">{fmtPct2(tgtV)}</span>
-              <span className="text-right font-mono text-ink">{usingLive ? fmtPct2(liveV) : "—"}</span>
-              <span className={`text-right font-mono ${!usingLive || flat ? "text-ink-3" : drift > 0 ? "text-pos" : "text-neg"}`}>
+              <span style={st} className="text-right font-mono text-ink-3">{fmtPct2(tgtV)}</span>
+              <span style={st} className="text-right font-mono text-ink">{usingLive ? fmtPct2(liveV) : "—"}</span>
+              <span style={st} className={`text-right font-mono ${!usingLive || flat ? "text-ink-3" : drift > 0 ? "text-pos" : "text-neg"}`}>
                 {!usingLive || flat ? "—" : `${drift > 0 ? "+" : ""}${fmtPct2(drift)}`}
               </span>
             </React.Fragment>
@@ -3008,6 +3015,9 @@ export function PimPortfolio({ groups }: Props) {
   const showGain = hasPositions && (editMode || posView !== "drift");
   const showGainCad = hasPositions && posView === "gain";
   const showBar = hasPositions && posView === "drift";
+  /** The table is wide (extra money columns / edit inputs) — it needs the full
+   *  content width rather than the 1.6fr half of the two-up band. */
+  const positionsWide = editMode || posView !== "drift";
   const posColCount = 4 + (showAcb ? 1 : 0) + (showGain ? 1 : 0) + (showGainCad ? 1 : 0) + 1 + (hasPositions ? (showBar ? 3 : 2) : 0);
   // Drift bar scale: the largest live drift fills half the bar, floor 1pp so a
   // tidy book reads as tidy rather than every 0.05pp filling the track.
@@ -3048,19 +3058,27 @@ export function PimPortfolio({ groups }: Props) {
   return (
     <div className="flex flex-col gap-3.5">
       {/* ── Row 1 · toolbar: profile seg · meta · actions ── */}
-      <div className="flex flex-wrap items-center gap-2.5">
-        <div className="seg max-w-full overflow-x-auto">
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-2.5">
+        <div className="seg max-w-full">
           {availableProfiles.map((p) => (
             <button key={p} onClick={() => setSelectedProfile(p)} className={activeProfile === p ? "on" : ""}>
               {PROFILE_LABELS[p]}
             </button>
           ))}
         </div>
-        <span className="text-[12px] text-ink-3">
-          Last rebalanced {lastRebalancedLabel} · sleeve drift{" "}
-          <span className={`font-mono ${sleeveDrift >= 2 ? "text-warn" : "text-ink-2"}`}>{sleeveDrift.toFixed(2)}%</span>
-          <span className="hidden sm:inline" title="Positioning tracks the PIM model only — other groups aren't position-tracked."> · PIM model only</span>
-        </span>
+        {/* Labelled values rather than one inline run — the sentence used to
+            bunch up against the profile picker and the action buttons. */}
+        <div className="flex min-w-0 flex-wrap items-baseline gap-x-4 gap-y-1 text-[12px]">
+          <span className="inline-flex items-baseline gap-1.5">
+            <span className="text-ink-3">Last rebalanced</span>
+            <span className="font-mono text-ink-2">{lastRebalancedLabel}</span>
+          </span>
+          <span className="inline-flex items-baseline gap-1.5">
+            <span className="text-ink-3">Sleeve drift</span>
+            <span className={`font-mono ${sleeveDrift >= 2 ? "text-warn" : "text-ink-2"}`}>{sleeveDrift.toFixed(2)}%</span>
+          </span>
+          <span className="hidden text-ink-faint sm:inline" title="Positioning tracks the PIM model only — other groups aren't position-tracked.">PIM model only</span>
+        </div>
         <div className="ml-auto flex flex-wrap items-center gap-2">
           {editMode ? (
             <>
@@ -3123,15 +3141,21 @@ export function PimPortfolio({ groups }: Props) {
       </div>
 
       {/* ── Row 2 · one hairline strip (all CAD) ── */}
+      {/* Cash is deliberately NOT a cell here — the book never holds a
+          meaningful cash weight, and the sixth cell squeezed the others hard
+          enough to truncate the Gain figure mid-number. The cash balance is
+          still shown in full on its own row in the Positions table below. */}
       <StatStrip
-        cols={6}
+        cols={5}
         items={[
           { label: "Total value", value: fmtCurrency(totalValueCadSummary) },
           { label: "ACB", value: fmtCurrency(totalCostCad) },
           {
             label: "Gain",
             value: (
-              <span className={totalGainCad >= 0 ? "text-pos" : "text-neg"}>
+              // block + whitespace-normal defeats StatStrip's `truncate`, so a
+              // long gain wraps onto a second line instead of ellipsing.
+              <span className={`block whitespace-normal break-words ${totalGainCad >= 0 ? "text-pos" : "text-neg"}`}>
                 {totalGainCad >= 0 ? "+" : ""}{fmtCurrency(totalGainCad)}
                 {totalGainPct != null && <> · {fmtGainLoss(totalGainPct)}</>}
               </span>
@@ -3147,34 +3171,31 @@ export function PimPortfolio({ groups }: Props) {
             label: "Blended MER",
             title: "Weighted-average management expense ratio across the current positions. Updates live as weights drift. Cash and direct equities contribute 0%. Funds without an MER on the Dashboard are excluded from the denominator — check the coverage % if the number looks low.",
             value: (
-              <>
+              <span className="block whitespace-normal break-words">
                 {blendedMerTile.blended != null ? `${blendedMerTile.blended.toFixed(2)}%` : <span className="text-ink-faint">—</span>}
                 {blendedMerTile.coveragePct < 99.5 && (
                   <span className="ml-1.5 font-sans text-[11px] font-normal text-ink-3">{blendedMerTile.coveragePct.toFixed(0)}% covered</span>
                 )}
-              </>
-            ),
-          },
-          {
-            label: "Cash",
-            value: (
-              <>
-                {pct(cashPct)}
-                <span className="ml-1.5 font-sans text-[11px] font-normal text-ink-3">{fmtCad0(cashBalanceCad)}</span>
-              </>
+              </span>
             ),
           },
         ]}
       />
 
       {/* ── Row 3 · Positions (left) + Rebalance / Allocation / Recent trades (right) ── */}
-      <div className="grid grid-cols-1 gap-3.5 lg:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)] items-start">
+      {/* Two-up only while the positions table is in its narrow default (Drift
+          view, not editing). The Value / Gain views and edit mode add three or
+          four more columns, which cannot fit a 1.6fr column at 1280px — so the
+          table takes the full width there and the right stack drops below it,
+          rather than scrolling sideways. */}
+      <div className={`grid grid-cols-1 items-start gap-3.5 ${positionsWide ? "" : "lg:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)]"}`}>
         {/* Positions panel */}
-        <section className="panel flex min-w-0 flex-col">
-          <div className="panel-h flex-wrap py-1.5">
+        <section className="panel animate-panel-in flex min-w-0 flex-col">
+          <div className="panel-h flex-wrap gap-y-1.5 py-1.5">
+            <span className="t-mark bg-hub-portfolio" aria-hidden />
             <span className="t">Positions</span>
-            {allocMeta && <span className="m">{allocMeta}</span>}
-            <div className="ml-auto flex items-center gap-2.5">
+            {allocMeta && <span className="m min-w-0 break-words">{allocMeta}</span>}
+            <div className="ml-auto flex flex-wrap items-center gap-2.5">
               {pricesFetchedAt && (
                 <span className="m" title="When live prices and FX were last fetched from Yahoo. Refreshes when the page mounts or the group changes.">
                   prices {formatRelTimeShort(pricesFetchedAt)}
@@ -3192,7 +3213,7 @@ export function PimPortfolio({ groups }: Props) {
           {loading && holdingRows.length === 0 ? (
             <div className="p-3.5"><SkeletonTable rows={8} cols={6} /></div>
           ) : (
-            <div className="max-w-full overflow-x-auto">
+            <div className="min-w-0">
               <table className="data-table">
                 <thead>
                   <tr>
@@ -3224,11 +3245,15 @@ export function PimPortfolio({ groups }: Props) {
                       <React.Fragment key={ac}>
                         {/* Sleeve divider row: name · count · value · live vs target */}
                         <tr className="bg-surface-2">
-                          <td colSpan={posColCount} className="!h-7 pl-3.5 text-[11px] text-ink-3">
-                            <span className="font-medium text-ink-2">{POS_CLASS_LABELS[ac]}</span>
-                            {" · "}{classRows.length} holding{classRows.length === 1 ? "" : "s"}
-                            {" · "}<span className="font-mono">{fmtCad0(classValue)}</span>
-                            {hasPositions && <>{" · "}<span className="font-mono">{fmtPct2(classPct)}</span> vs <span className="font-mono">{fmtPct2(classTarget)}</span> target</>}
+                          <td colSpan={posColCount} className="!h-auto py-1 pl-3.5 text-[11px] text-ink-3">
+                            <span className="flex flex-wrap items-baseline gap-x-3 gap-y-0.5">
+                              <span className="font-medium text-ink-2">{POS_CLASS_LABELS[ac]}</span>
+                              <span>{classRows.length} holding{classRows.length === 1 ? "" : "s"}</span>
+                              <span className="font-mono">{fmtCad0(classValue)}</span>
+                              {hasPositions && (
+                                <span><span className="font-mono">{fmtPct2(classPct)}</span> vs <span className="font-mono">{fmtPct2(classTarget)}</span> target</span>
+                              )}
+                            </span>
                           </td>
                         </tr>
                         {classRows.map((row) => {
@@ -3249,7 +3274,10 @@ export function PimPortfolio({ groups }: Props) {
                                 <span className="font-mono font-medium text-ink">{displayTicker(row.symbol)}</span>
                                 {row.currency === "USD" && <span className="ml-1.5 text-[11px] text-ink-3">USD</span>}
                                 {row.name && (
-                                  <span className="ml-2 inline-block max-w-[220px] truncate align-bottom text-[12px] text-ink-3" title={row.name}>{row.name}</span>
+                                  // Wraps rather than truncates: a 220px
+                                  // no-break name set the column's minimum
+                                  // width and pushed the table sideways.
+                                  <span className="ml-2 break-words text-[12px] text-ink-3" title={row.name}>{row.name}</span>
                                 )}
                                 {row.isOrphan && (
                                   <span
@@ -3380,10 +3408,11 @@ export function PimPortfolio({ groups }: Props) {
         {/* Right stack */}
         <div className="flex min-w-0 flex-col gap-3.5">
           {/* Rebalance preview / execution */}
-          <section className="panel">
-            <div className="panel-h flex-wrap py-1.5">
+          <section className="panel animate-panel-in">
+            <div className="panel-h flex-wrap gap-y-1.5 py-1.5">
+              <span className="t-mark bg-hub-portfolio" aria-hidden />
               <span className="t">Rebalance to {PROFILE_LABELS[activeProfile]}</span>
-              <span className="m">
+              <span className="m min-w-0 break-words">
                 {showRebalance ? "execute" : "preview"} · {rebalanceTrades.length} trade{rebalanceTrades.length === 1 ? "" : "s"} · {fmtCad0(rebalanceGross)} gross
               </span>
               <div className="ml-auto flex items-center gap-2">
@@ -3410,30 +3439,21 @@ export function PimPortfolio({ groups }: Props) {
                 {rebalanceRows.length === 0 ? "No model targets to rebalance against." : "Every position is on target at previous close."}
               </div>
             ) : (
-              <div className="max-w-full overflow-x-auto">
+              <div className="min-w-0">
                 <table className="data-table">
                   <thead>
                     <tr>
                       <th className="pl-3.5">Symbol</th>
                       <th>Action</th>
-                      {rebalanceDetail && (
-                        <>
-                          <th className="n">Target %</th>
-                          <th className="n">Current %</th>
-                          <th className="n">Drift</th>
-                          <th className="n">Units</th>
-                          <th className="n">Target units</th>
-                        </>
-                      )}
                       <th className="n">Δ Units</th>
-                      {rebalanceDetail && <th className="n">Prev close</th>}
                       <th className="n">Exec</th>
                       <th className="n">Cost</th>
                     </tr>
                   </thead>
                   <tbody>
                     {rebalanceVisible.map((r) => (
-                      <tr key={r.symbol}>
+                      <React.Fragment key={r.symbol}>
+                      <tr className="row-link">
                         <td className="pl-3.5">
                           <Link href={`/stock/${symbolToTicker(r.symbol).toLowerCase()}?from=positioning`} className="font-mono font-medium text-ink hover:text-accent">
                             {displayTicker(r.symbol)}
@@ -3452,25 +3472,11 @@ export function PimPortfolio({ groups }: Props) {
                         <td className={`text-[12px] font-medium ${r.action === "SELL" ? "text-neg" : r.action === "BUY" ? "text-pos" : "text-ink-3"}`}>
                           {r.action === "SELL" ? "Sell" : r.action === "BUY" ? "Buy" : "—"}
                         </td>
-                        {rebalanceDetail && (
-                          <>
-                            <td className="n text-ink-3">{pct(r.modelPct)}</td>
-                            <td className="n" title="Based on previous close">{pct(r.pcCurrentPct)}</td>
-                            <td className={`n ${r.pcDrift > 0 ? "text-pos" : r.pcDrift < 0 ? "text-neg" : "text-ink-3"}`}>
-                              {r.pcDrift > 0 ? "+" : ""}{(r.pcDrift * 10000).toFixed(0)}bp
-                            </td>
-                            <td className="n">{r.units > 0 ? r.units.toFixed(2) : "—"}</td>
-                            <td className="n">
-                              {r.isMF ? <span className="text-ink-faint" title="Units calculated at settlement">—</span> : r.targetUnits.toFixed(2)}
-                            </td>
-                          </>
-                        )}
                         <td className={`n ${r.action === "BUY" ? "text-pos" : r.action === "SELL" ? "text-neg" : "text-ink-3"}`}>
                           {r.action === "HOLD" ? "—" : r.isMF ? (
                             <span title="Dollar amount — units determined at settlement">${Math.abs(r.deltaValueCad).toFixed(0)}</span>
                           ) : `${r.deltaUnits > 0 ? "+" : ""}${r.deltaUnits.toFixed(2)}`}
                         </td>
-                        {rebalanceDetail && <td className="n text-ink-3">{r.pcPrice > 0 ? r.pcPrice.toFixed(2) : "—"}</td>}
                         <td className="n text-ink-3">
                           {r.isMF ? (
                             <span className="text-[11px]">pending</span>
@@ -3478,11 +3484,46 @@ export function PimPortfolio({ groups }: Props) {
                             <input type="number" step="0.01" placeholder={r.pcPrice > 0 ? r.pcPrice.toFixed(2) : "Price"}
                               value={rebalancePrices[r.symbol] || ""}
                               onChange={(e) => setRebalancePrices((p) => ({ ...p, [r.symbol]: e.target.value }))}
-                              className={`${INPUT} w-20 text-right font-mono`} />
+                              className={`${INPUT} w-[72px] text-right font-mono`} />
                           ) : r.pcPrice > 0 ? r.pcPrice.toFixed(2) : "—"}
                         </td>
                         <td className="n text-ink-2">{r.costCad > 0 ? fmtN0(r.costCad) : "—"}</td>
                       </tr>
+                      {/* Detail view keeps every figure it always showed, but
+                          as a labelled grid under the row instead of five more
+                          columns — the panel sits in a ~390px column, where
+                          ten columns could only scroll sideways. */}
+                      {rebalanceDetail && (
+                        <tr className="bg-surface-2">
+                          <td colSpan={5} className="!h-auto py-1.5 pl-3.5 pr-2.5">
+                            <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-[11.5px] sm:grid-cols-3">
+                              {[
+                                { label: "Target", value: pct(r.modelPct), cls: "text-ink-2" },
+                                { label: "Current", value: pct(r.pcCurrentPct), cls: "text-ink-2", title: "Based on previous close" },
+                                {
+                                  label: "Drift",
+                                  value: `${r.pcDrift > 0 ? "+" : ""}${(r.pcDrift * 10000).toFixed(0)}bp`,
+                                  cls: r.pcDrift > 0 ? "text-pos" : r.pcDrift < 0 ? "text-neg" : "text-ink-3",
+                                },
+                                { label: "Units", value: r.units > 0 ? r.units.toFixed(2) : "—", cls: "text-ink-2" },
+                                {
+                                  label: "Target units",
+                                  value: r.isMF ? "—" : r.targetUnits.toFixed(2),
+                                  cls: "text-ink-2",
+                                  title: r.isMF ? "Units calculated at settlement" : undefined,
+                                },
+                                { label: "Prev close", value: r.pcPrice > 0 ? r.pcPrice.toFixed(2) : "—", cls: "text-ink-2" },
+                              ].map((d) => (
+                                <span key={d.label} className="min-w-0" title={d.title}>
+                                  <span className="block text-[11px] text-ink-3">{d.label}</span>
+                                  <span className={`block break-words font-mono ${d.cls}`}>{d.value}</span>
+                                </span>
+                              ))}
+                            </div>
+                          </td>
+                        </tr>
+                      )}
+                      </React.Fragment>
                     ))}
                   </tbody>
                 </table>
@@ -3510,72 +3551,6 @@ export function PimPortfolio({ groups }: Props) {
             )}
           </section>
 
-          {/* Settle pending mutual-fund trades */}
-          {showSettlement && pendingTrades.length > 0 && (
-            <section className="panel">
-              <div className="panel-h flex-wrap py-1.5">
-                <button onClick={toggleSettleOpen} aria-expanded={settleOpen} className="inline-flex items-center gap-1.5 text-ink hover:text-ink-2">
-                  <AppIcon name={settleOpen ? "chevD" : "chevR"} size={13} className="text-ink-3" />
-                  <span className="t">Settle pending MF trades</span>
-                </button>
-                <span className="m">{pendingTrades.length} pending · NAV auto-fetched from Barchart — verify and adjust</span>
-                <div className="ml-auto flex items-center gap-2">
-                  <button onClick={handleFetchSettlementPrices} disabled={settlementLoading} className={BTN_SECONDARY}>
-                    <AppIcon name="refresh" size={13} className={settlementLoading ? "animate-spin" : ""} />
-                    {settlementLoading ? "Fetching…" : "Refresh NAV"}
-                  </button>
-                  <button
-                    onClick={handleSettlePending}
-                    disabled={settling || !pendingTrades.some((t) => parseFloat(settlementPrices[t.symbol] || "0") > 0)}
-                    className={BTN_PRIMARY}
-                  >
-                    {settling ? "Settling…" : "Settle all"}
-                  </button>
-                  <button onClick={() => { setShowSettlement(false); setSettlementPrices({}); }} className={BTN_SECONDARY}>Cancel</button>
-                </div>
-              </div>
-              {settleOpen && (
-                <div className="max-w-full overflow-x-auto">
-                  <table className="data-table">
-                    <thead>
-                      <tr>
-                        <th className="pl-3.5">Symbol</th>
-                        <th>Profile</th>
-                        <th>Direction</th>
-                        <th className="n">Amount C$</th>
-                        <th className="n">NAV</th>
-                        <th className="n">Units</th>
-                        <th>Trade date</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {pendingTrades.map((t) => {
-                        const nav = parseFloat(settlementPrices[t.symbol] || "0");
-                        const units = nav > 0 && t.targetAmount ? t.targetAmount / nav : 0;
-                        return (
-                          <tr key={t.id}>
-                            <td className="pl-3.5 font-mono font-medium">{displayTicker(t.symbol)}</td>
-                            <td className="text-ink-2">{PROFILE_LABELS[(t.profile || activeProfile) as PimProfileType]}</td>
-                            <td className={`text-[12px] font-medium ${t.direction === "sell" ? "text-neg" : "text-pos"}`}>{t.direction === "sell" ? "Sell" : "Buy"}</td>
-                            <td className="n">{(t.targetAmount || 0).toFixed(2)}</td>
-                            <td className="n">
-                              <input type="number" step="0.0001" placeholder="NAV"
-                                value={settlementPrices[t.symbol] || ""}
-                                onChange={(e) => setSettlementPrices((p) => ({ ...p, [t.symbol]: e.target.value }))}
-                                className={`${INPUT} w-24 text-right font-mono`} />
-                            </td>
-                            <td className="n font-medium">{units > 0 ? units.toFixed(4) : "—"}</td>
-                            <td className="font-mono text-ink-3">{new Date(t.date).toLocaleDateString()}</td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-            </section>
-          )}
-
           {/* Allocation — target vs live per sleeve. Re-renders whenever prices
               refresh or the profile tab changes. */}
           {allocationBreakdown && (
@@ -3599,20 +3574,24 @@ export function PimPortfolio({ groups }: Props) {
                   ? `since last rebalance · ${new Date(lastRebDate).toLocaleDateString(undefined, { month: "short", day: "numeric" })}`
                   : undefined}
               >
-                <div className="-mx-3.5 -my-2">
-                  {recent.map((t) => (
-                    <div key={t.id} className="flex items-center gap-2.5 border-b border-line-soft px-3.5 py-2 text-[12.5px] last:border-b-0">
+                <div className="stagger -mx-3.5 -my-2">
+                  {recent.map((t, i) => (
+                    <div
+                      key={t.id}
+                      style={{ "--i": Math.min(i, 8) } as React.CSSProperties}
+                      className="flex flex-wrap items-baseline gap-x-2.5 gap-y-0.5 border-b border-line-soft px-3.5 py-2 text-[12.5px] last:border-b-0"
+                    >
                       <span className="w-12 shrink-0 font-mono text-[11.5px] text-ink-3">
                         {new Date(t.date).toLocaleDateString(undefined, { month: "short", day: "numeric" })}
                       </span>
                       <span className={`w-9 shrink-0 font-medium ${t.direction === "sell" ? "text-neg" : "text-pos"}`}>
                         {t.direction === "sell" ? "Sell" : "Buy"}
                       </span>
-                      <span className="font-mono font-medium text-ink">{displayTicker(t.symbol)}</span>
+                      <span className="min-w-0 break-words font-mono font-medium text-ink">{displayTicker(t.symbol)}</span>
                       {(t.type === "switch" || t.type === "rebalance") && (
-                        <span className="text-[11.5px] text-ink-3">{t.type}{t.pairedWith ? ` · ${displayTicker(t.pairedWith)}` : ""}</span>
+                        <span className="min-w-0 break-words text-[11.5px] text-ink-3">{t.type}{t.pairedWith ? ` · ${displayTicker(t.pairedWith)}` : ""}</span>
                       )}
-                      <span className="ml-auto font-mono text-ink-2">{t.price > 0 ? `@ ${t.price.toFixed(2)}` : "—"}</span>
+                      <span className="ml-auto shrink-0 font-mono text-ink-2">{t.price > 0 ? `@ ${t.price.toFixed(2)}` : "—"}</span>
                     </div>
                   ))}
                 </div>
@@ -3622,12 +3601,81 @@ export function PimPortfolio({ groups }: Props) {
         </div>
       </div>
 
+      {/* Settle pending mutual-fund trades — a full-width task panel (it was
+          in the ~390px right stack, where seven columns could only scroll
+          sideways). Every column, control and the persisted fold are kept. */}
+      {showSettlement && pendingTrades.length > 0 && (
+        <section className="panel animate-panel-in">
+          <div className="panel-h flex-wrap gap-y-1.5 py-1.5">
+            <span className="t-mark bg-warn" aria-hidden />
+            <button onClick={toggleSettleOpen} aria-expanded={settleOpen} className="inline-flex items-center gap-1.5 text-ink hover:text-ink-2">
+              <AppIcon name={settleOpen ? "chevD" : "chevR"} size={13} className="text-ink-3" />
+              <span className="t">Settle pending MF trades</span>
+            </button>
+            <span className="m min-w-0 break-words">{pendingTrades.length} pending · NAV auto-fetched from Barchart — verify and adjust</span>
+            <div className="ml-auto flex flex-wrap items-center gap-2">
+              <button onClick={handleFetchSettlementPrices} disabled={settlementLoading} className={BTN_SECONDARY}>
+                <AppIcon name="refresh" size={13} className={settlementLoading ? "animate-spin" : ""} />
+                {settlementLoading ? "Fetching…" : "Refresh NAV"}
+              </button>
+              <button
+                onClick={handleSettlePending}
+                disabled={settling || !pendingTrades.some((t) => parseFloat(settlementPrices[t.symbol] || "0") > 0)}
+                className={BTN_PRIMARY}
+              >
+                {settling ? "Settling…" : "Settle all"}
+              </button>
+              <button onClick={() => { setShowSettlement(false); setSettlementPrices({}); }} className={BTN_SECONDARY}>Cancel</button>
+            </div>
+          </div>
+          {settleOpen && (
+            <div className="min-w-0">
+              <table className="data-table">
+                <thead>
+                  <tr>
+                    <th className="pl-3.5">Symbol</th>
+                    <th>Profile</th>
+                    <th>Direction</th>
+                    <th className="n">Amount C$</th>
+                    <th className="n">NAV</th>
+                    <th className="n">Units</th>
+                    <th>Trade date</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {pendingTrades.map((t) => {
+                    const nav = parseFloat(settlementPrices[t.symbol] || "0");
+                    const units = nav > 0 && t.targetAmount ? t.targetAmount / nav : 0;
+                    return (
+                      <tr key={t.id}>
+                        <td className="pl-3.5 font-mono font-medium">{displayTicker(t.symbol)}</td>
+                        <td className="text-ink-2">{PROFILE_LABELS[(t.profile || activeProfile) as PimProfileType]}</td>
+                        <td className={`text-[12px] font-medium ${t.direction === "sell" ? "text-neg" : "text-pos"}`}>{t.direction === "sell" ? "Sell" : "Buy"}</td>
+                        <td className="n">{(t.targetAmount || 0).toFixed(2)}</td>
+                        <td className="n">
+                          <input type="number" step="0.0001" placeholder="NAV"
+                            value={settlementPrices[t.symbol] || ""}
+                            onChange={(e) => setSettlementPrices((p) => ({ ...p, [t.symbol]: e.target.value }))}
+                            className={`${INPUT} w-24 text-right font-mono`} />
+                        </td>
+                        <td className="n font-medium">{units > 0 ? units.toFixed(4) : "—"}</td>
+                        <td className="nw font-mono text-ink-3">{new Date(t.date).toLocaleDateString()}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </section>
+      )}
+
       {/* Thesis owed — bought names still without a signed thesis. */}
       {thesisOwed.length > 0 && (
-        <div className="flex flex-wrap items-center gap-2 rounded-card border border-warn-border bg-warn-soft px-3.5 py-2 text-[12px]">
-          <AppIcon name="warn" size={14} className="text-warn" />
-          <span className="font-medium text-warn">Thesis required</span>
-          <span className="text-ink-2">Bought — write the thesis or draft it with AI, then sign, so monitoring starts:</span>
+        <div className="animate-panel-in flex flex-wrap items-center gap-x-2 gap-y-1 rounded-card border border-warn-border bg-warn-soft px-3.5 py-2 text-[12px]">
+          <AppIcon name="warn" size={14} className="shrink-0 text-warn" />
+          <span className="shrink-0 font-medium text-warn">Thesis required</span>
+          <span className="min-w-0 break-words text-ink-2">Bought — write the thesis or draft it with AI, then sign, so monitoring starts:</span>
           <span className="flex flex-wrap items-center gap-2">
             {thesisOwed.map((t) => (
               <Link key={t} href={`/stock/${encodeURIComponent(t)}#thesis-tile`} className="font-mono font-medium text-accent hover:underline">
@@ -3668,11 +3716,12 @@ export function PimPortfolio({ groups }: Props) {
           return true;
         });
         return (
-        <section className="panel">
-          <div className="panel-h flex-wrap py-1.5">
+        <section className="panel animate-panel-in">
+          <div className="panel-h flex-wrap gap-y-1.5 py-1.5">
+            <span className="t-mark bg-hub-portfolio" aria-hidden />
             <span className="t">Buy / Sell</span>
-            <span className="m">{trades.length} queued · sell % under 100 trims the model target by the same fraction</span>
-            <div className="ml-auto flex items-center gap-2">
+            <span className="m min-w-0 break-words">{trades.length} queued · sell % under 100 trims the model target by the same fraction</span>
+            <div className="ml-auto flex flex-wrap items-center gap-2">
               <button onClick={addTrade} className={BTN_SECONDARY}>
                 <AppIcon name="plus" size={13} /> Add another trade
               </button>
@@ -3700,7 +3749,7 @@ export function PimPortfolio({ groups }: Props) {
                     )}
                   </div>
                   <div className="grid gap-3 sm:grid-cols-2">
-                    <div className="flex flex-col gap-1.5">
+                    <div className="flex min-w-0 flex-col gap-1.5">
                       <label className="text-[11px] text-neg">Sell (optional)</label>
                       <select value={t.sellSymbol}
                         onChange={(e) => {
@@ -3714,7 +3763,7 @@ export function PimPortfolio({ groups }: Props) {
                             ...(soldClass ? { buyAssetClass: soldClass } : {}),
                           });
                         }}
-                        className={`${INPUT} w-full`}>
+                        className={`${INPUT} w-full min-w-0`}>
                         <option value="">None — buy only</option>
                 {sellCandidates.map((h) => (
                           <option key={h.symbol} value={h.symbol}>
@@ -3771,7 +3820,7 @@ export function PimPortfolio({ groups }: Props) {
                         </>
                       )}
                     </div>
-                    <div className="flex flex-col gap-1.5">
+                    <div className="flex min-w-0 flex-col gap-1.5">
                       <label className="text-[11px] text-pos">Buy (from Watchlist)</label>
                       {watchlistStocks.length === 0 ? (
                         <div className="rounded-control border border-dashed border-line bg-surface px-2.5 py-2 text-[11.5px] text-ink-3">
@@ -3804,7 +3853,7 @@ export function PimPortfolio({ groups }: Props) {
                                 ?? guessAssetClass(picked?.name || "", e.target.value),
                             });
                           }}
-                          className={`${INPUT} w-full font-mono`}>
+                          className={`${INPUT} w-full min-w-0 font-mono`}>
                           <option value="">— None — sell only —</option>
                           {watchlistStocks.map((s) => (
                             <option key={s.ticker} value={s.ticker}>
@@ -3819,11 +3868,11 @@ export function PimPortfolio({ groups }: Props) {
                             value={t.buyPrice}
                             onChange={(e) => updateTrade(t.id, { buyPrice: e.target.value })}
                             className={`${INPUT} w-full font-mono`} />
-                          <div className="flex items-center gap-2">
+                          <div className="flex min-w-0 items-center gap-2">
                             <span className="whitespace-nowrap text-[11px] text-ink-3">Sleeve</span>
                             <select value={t.buyAssetClass}
                               onChange={(e) => updateTrade(t.id, { buyAssetClass: e.target.value as PimAssetClass })}
-                              className={`${INPUT} w-full`}
+                              className={`${INPUT} w-full min-w-0`}
                               title="Which model sleeve the bought security belongs to. A switch must stay within one sleeve — changing the equity/fixed-income mix is a profile-allocation decision, not a trade.">
                               <option value="equity">Equity</option>
                               <option value="fixedIncome">Fixed income</option>
@@ -3902,8 +3951,8 @@ export function PimPortfolio({ groups }: Props) {
                             would not.
                           </p>
                         ) : (
-                          <div className="max-w-full overflow-x-auto">
-                            <table className="data-table min-w-[420px]">
+                          <div className="min-w-0">
+                            <table className="data-table">
                               <thead>
                                 <tr>
                                   <th className="pl-3">Model · Profile</th>
@@ -3972,19 +4021,20 @@ export function PimPortfolio({ groups }: Props) {
           .slice(0, 6);
         if (suggestions.length === 0) return null;
         return (
-          <section className="panel">
-            <div className="panel-h">
+          <section className="panel animate-panel-in">
+            <div className="panel-h flex-wrap gap-y-1.5 py-1.5">
+              <span className="t-mark bg-warn" aria-hidden />
               <span className="t">Suggested trades</span>
-              <span className="m">to reach the {PROFILE_LABELS[activeProfile]} target</span>
+              <span className="m min-w-0 break-words">to reach the {PROFILE_LABELS[activeProfile]} target</span>
               <button onClick={() => setShowRebalance(true)} className={`${BTN_SECONDARY} ml-auto`}>
                 Review &amp; execute all <AppIcon name="arrowR" size={13} />
               </button>
             </div>
-            <div className="flex flex-wrap items-center gap-2 px-3.5 py-2.5">
-              {suggestions.map((s) => {
+            <div className="stagger flex flex-wrap items-center gap-2 px-3.5 py-2.5">
+              {suggestions.map((s, i) => {
                 const isTrim = s.adj < 0;
                 return (
-                  <div key={s.symbol} className="inline-flex h-7 items-center gap-2 rounded-control border border-line bg-surface px-2.5 text-[12.5px]">
+                  <div key={s.symbol} style={{ "--i": Math.min(i, 8) } as React.CSSProperties} className="inline-flex h-7 items-center gap-2 rounded-control border border-line bg-surface px-2.5 text-[12.5px]">
                     <span className={`font-medium ${isTrim ? "text-warn" : "text-pos"}`}>{isTrim ? "Trim" : "Add"}</span>
                     <span className="font-mono font-medium text-ink">{displayTicker(s.symbol)}</span>
                     <span className={`font-mono ${isTrim ? "text-warn" : "text-pos"}`}>
@@ -4000,7 +4050,7 @@ export function PimPortfolio({ groups }: Props) {
 
       {/* No positions prompt */}
       {!hasPositions && !editMode && (
-        <section className="panel">
+        <section className="panel animate-panel-in">
           <EmptyState
             glyph={<AppIcon name="pie" size={18} />}
             title="No position data entered yet"
@@ -4016,12 +4066,13 @@ export function PimPortfolio({ groups }: Props) {
               writes real positions. */}
           {seedPlan.rows.length > 0 && (
             <div className="border-t border-line-soft">
-              <div className="panel-h flex-wrap py-1.5">
+              <div className="panel-h flex-wrap gap-y-1.5 py-1.5">
+                <span className="t-mark bg-hub-portfolio" aria-hidden />
                 <span className="t">Build {PROFILE_LABELS[activeProfile]} from</span>
                 <select
                   value={seedFrom}
                   onChange={(e) => setSeedFrom(e.target.value as PimProfileType)}
-                  className={INPUT}
+                  className={`${INPUT} min-w-0 max-w-full`}
                 >
                   {(["balanced", "growth", "allEquity"] as PimProfileType[])
                     .filter((p) => p !== activeProfile && profileMarketValue(p) > 0)
@@ -4031,7 +4082,7 @@ export function PimPortfolio({ groups }: Props) {
                       </option>
                     ))}
                 </select>
-                <span className="m">at this profile&apos;s own target weights</span>
+                <span className="m min-w-0 break-words">at this profile&apos;s own target weights</span>
                 <button
                   onClick={applySeed}
                   disabled={seeding}
@@ -4041,8 +4092,8 @@ export function PimPortfolio({ groups }: Props) {
                 </button>
               </div>
 
-              <div className="max-w-full overflow-x-auto">
-                <table className="data-table min-w-[520px]">
+              <div className="min-w-0">
+                <table className="data-table">
                   <thead>
                     <tr>
                       <th className="pl-3.5">Holding</th>

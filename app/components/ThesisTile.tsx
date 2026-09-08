@@ -13,6 +13,7 @@ import {
 } from "@/app/lib/kill-conditions";
 import type { ThesisReview, ReviewChange } from "@/app/lib/thesis-review";
 import { AppIcon } from "@/app/components/AppIcon";
+import { usePersistedOpen } from "@/app/lib/useCollapsed";
 
 /**
  * Thesis tile (stock page) — the pre-registration surface of the
@@ -59,6 +60,10 @@ const BTN = "inline-flex h-7 items-center gap-1.5 rounded-control border border-
 const BTN_PRI = "inline-flex h-7 items-center gap-1.5 rounded-control bg-ink px-2.5 text-[12.5px] font-medium !text-white hover:bg-ink-2 transition-colors disabled:opacity-40";
 const BTN_DANGER = "inline-flex h-7 items-center gap-1.5 rounded-control border border-neg-border bg-surface px-2.5 text-[12.5px] text-neg hover:bg-neg-soft transition-colors disabled:opacity-50";
 const INPUT = "h-7 rounded-control border border-line bg-surface px-2 text-[12.5px] text-ink outline-none focus:border-accent-border";
+
+/** Lines of the signed thesis shown before the "Show all N" fold. Keeps the
+ *  tile a readable height on a name whose thesis runs to a dozen bullets. */
+const WHY_PREVIEW_LINES = 4;
 
 /** Kinds the PM can add by hand. `metric` needs a recap line to bind to, so it
  *  arrives only via Draft with AI / a review (which validate the line exists). */
@@ -125,6 +130,9 @@ export default function ThesisTile({
   const [addThreshold, setAddThreshold] = useState<string>("");
   const [addNote, setAddNote] = useState("");
   const [journalNote, setJournalNote] = useState<string | null>(null);
+  // Persisted (pm:ui-prefs) fold for the signed thesis prose — site rule:
+  // every collapse/expand survives a refresh.
+  const [whyFull, toggleWhyFull] = usePersistedOpen("stock.thesis.full", false);
 
   // AI draft (Alfa-style generation). The route PROPOSES a thesis + conditions
   // from the rescore-generated investmentThesis/bearCase and live signals; it
@@ -527,8 +535,9 @@ export default function ThesisTile({
   const CHANGE_LABEL: Record<ReviewChange["type"], string> = { tighten: "Tighten", loosen: "Loosen", replace: "Replace", add: "Add", drop: "Drop", pillar: "Pillar" };
 
   return (
-    <section id="thesis-tile" className={`panel scroll-mt-24 ${className || ""}`}>
+    <section id="thesis-tile" className={`panel animate-panel-in scroll-mt-24 ${className || ""}`}>
       <div className="panel-h flex-wrap gap-y-1.5 py-1.5">
+        <span className={`t-mark ${tripped > 0 ? "bg-neg" : "bg-hub-portfolio"}`} aria-hidden />
         <span className="t">{entry?.why ? "Thesis as signed" : "Thesis"}</span>
         {auto > 0 && (
           <span className={`inline-flex items-center gap-1.5 text-[11.5px] ${tripped > 0 ? "text-neg" : "text-pos"}`}>
@@ -536,7 +545,7 @@ export default function ThesisTile({
             {tripped > 0 ? `${tripped} of ${auto} tripped` : `${auto} conditions OK`}
           </span>
         )}
-        <span className="m">
+        <span className="m min-w-0 break-words">
           {entry?.underwrittenAt ? (
             <>
               underwritten <span className="font-mono">{entry.underwrittenAt}</span>
@@ -553,7 +562,7 @@ export default function ThesisTile({
           )}
         </span>
         {!editing && (
-          <div className="ml-auto flex items-center gap-2">
+          <div className="ml-auto flex flex-wrap items-center gap-2">
             <button
               onClick={draftWithAi}
               disabled={drafting}
@@ -588,9 +597,47 @@ export default function ThesisTile({
       {!editing && (
         <>
           {entry?.why ? (
-            <p className="whitespace-pre-line px-3.5 py-2.5 text-[12.5px] leading-[1.5] text-ink-2">
-              {entry.why}
-            </p>
+            // The signed thesis is often a long bullet list, which made the
+            // tile the tallest thing on the page. Show the first few lines and
+            // fold the rest behind a persisted toggle — nothing is dropped.
+            (() => {
+              const lines = entry.why.split(/\r?\n/);
+              const nonEmpty = lines.filter((l) => l.trim().length > 0).length;
+              const byLines = nonEmpty > WHY_PREVIEW_LINES;
+              // One very long paragraph is just as tall as ten bullets — clamp
+              // it instead of slicing lines, same persisted toggle.
+              const longProse = !byLines && entry.why.length > 600;
+              const foldable = byLines || longProse;
+              let kept = lines;
+              if (byLines && !whyFull) {
+                const out: string[] = [];
+                let seen = 0;
+                for (const l of lines) {
+                  if (l.trim().length > 0) {
+                    if (seen === WHY_PREVIEW_LINES) break;
+                    seen += 1;
+                  }
+                  out.push(l);
+                }
+                kept = out;
+              }
+              return (
+                <div className="min-w-0 px-3.5 py-2.5">
+                  <p className={`min-w-0 whitespace-pre-line break-words text-[12.5px] leading-[1.5] text-ink-2 ${longProse && !whyFull ? "line-clamp-6" : ""}`}>
+                    {kept.join("\n").trimEnd()}
+                  </p>
+                  {foldable && (
+                    <button
+                      onClick={toggleWhyFull}
+                      className="mt-1.5 inline-flex items-center gap-1 text-[11.5px] text-accent hover:underline"
+                    >
+                      <AppIcon name={whyFull ? "chevU" : "chevD"} size={12} />
+                      {whyFull ? "Show less" : byLines ? `Show all ${nonEmpty}` : "Show all"}
+                    </button>
+                  )}
+                </div>
+              );
+            })()
           ) : (
             <p className="px-3.5 py-2.5 text-[12.5px] leading-[1.5] text-ink-3">
               No thesis registered. Write why you own {ticker} and pre-register the conditions
@@ -621,8 +668,8 @@ export default function ThesisTile({
                     <div key={pillar?.id ?? "loose"}>
                       {pillar ? (
                         <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5 bg-surface-2 px-3.5 py-1.5">
-                          <span className="text-[12px] font-medium text-ink">{pillar.title}</span>
-                          <span className="min-w-0 flex-1 text-[12px] text-ink-2">{pillar.claim}</span>
+                          <span className="min-w-0 break-words text-[12px] font-medium text-ink">{pillar.title}</span>
+                          <span className="min-w-0 flex-1 basis-[15rem] break-words text-[12px] text-ink-2">{pillar.claim}</span>
                           {rs && (
                             <span className={`inline-flex items-center gap-1.5 text-[11px] ${PILLAR_STATUS[rs.status]?.text ?? "text-ink-3"}`} title={rs.reading}>
                               <span className={`dot ${PILLAR_STATUS[rs.status]?.dot ?? "bg-ink-faint"}`} /> {PILLAR_STATUS[rs.status]?.word ?? rs.status}
@@ -636,9 +683,9 @@ export default function ThesisTile({
                       {rows.map((k) => {
                         const st = STATUS_STYLE[k.status];
                         return (
-                          <div key={k.condition.id} className="flex items-baseline gap-2 px-3.5 py-1.5 text-[12.5px]">
-                            <span className={`dot ${st.dot}`} aria-hidden />
-                            <span className="min-w-0 flex-1 text-ink-2">
+                          <div key={k.condition.id} className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5 px-3.5 py-1.5 text-[12.5px]">
+                            <span className={`dot ${st.dot} shrink-0`} aria-hidden />
+                            <span className="min-w-0 flex-1 basis-[15rem] break-words text-ink-2 [overflow-wrap:anywhere]">
                               {describeCondition(k.condition)}
                               {k.condition.kind === "custom" && (
                                 <button
@@ -654,14 +701,19 @@ export default function ThesisTile({
                                 <span className="ml-2 text-[11.5px] text-neg">{verifyErr}</span>
                               )}
                             </span>
-                            <span className="shrink-0 font-mono text-[11.5px] text-ink-3">{k.reading}</span>
-                            {k.status === "tripped" ? (
-                              <span className="shrink-0 text-[11.5px] font-medium text-neg">
-                                {k.condition.trippedAt ? `Tripped ${k.condition.trippedAt.slice(5)}` : "Tripped"}
-                              </span>
-                            ) : k.status !== "ok" ? (
-                              <span className="shrink-0 text-[11.5px] text-ink-3">{st.word}</span>
-                            ) : null}
+                            {/* Reading + status: its own right-aligned column
+                                that wraps to a second line rather than
+                                squeezing (or overlapping) the condition text. */}
+                            <span className="ml-auto flex min-w-0 items-baseline justify-end gap-2 text-right">
+                              <span className="min-w-0 font-mono text-[11.5px] text-ink-3 [overflow-wrap:anywhere]">{k.reading}</span>
+                              {k.status === "tripped" ? (
+                                <span className="shrink-0 text-[11.5px] font-medium text-neg">
+                                  {k.condition.trippedAt ? `Tripped ${k.condition.trippedAt.slice(5)}` : "Tripped"}
+                                </span>
+                              ) : k.status !== "ok" ? (
+                                <span className="shrink-0 text-[11.5px] text-ink-3">{st.word}</span>
+                              ) : null}
+                            </span>
                           </div>
                         );
                       })}
@@ -713,7 +765,7 @@ export default function ThesisTile({
                           >
                             <AppIcon name="check" size={11} />
                           </button>
-                          <div className="min-w-0 flex-1 text-[12.5px]">
+                          <div className="min-w-0 flex-1 break-words text-[12.5px] [overflow-wrap:anywhere]">
                             <span className="mr-1.5 text-[11px] text-ink-3">{CHANGE_LABEL[ch.type]}</span>
                             {ch.before && <span className="text-ink-3 line-through">{ch.before}</span>}
                             {ch.before && afterText && <span className="mx-1 text-ink-faint">→</span>}
@@ -742,7 +794,7 @@ export default function ThesisTile({
 
           {tripped > 0 && check && (
             <div className="border-t border-line-soft px-3.5 py-2.5">
-              <div className="mb-1.5 flex items-center gap-2">
+              <div className="mb-1.5 flex flex-wrap items-center gap-x-2 gap-y-1">
                 <span className="text-[12.5px] font-medium text-ink">Thesis check</span>
                 <span className={`inline-flex items-center gap-1.5 text-[11.5px] ${
                   check.result.breaksThesis === "direct" ? "text-neg" : check.result.breaksThesis === "partial" ? "text-warn" : "text-pos"
@@ -766,10 +818,10 @@ export default function ThesisTile({
           )}
           {tripped > 0 && (
             <div className="flex flex-wrap items-center gap-2 border-t border-line-soft bg-neg-soft px-3.5 py-2">
-              <span className="inline-flex items-center gap-1.5 text-[12.5px] font-medium text-neg">
-                <span className="dot bg-neg" /> A pre-registered exit condition is tripped — respond and it&apos;s logged.
+              <span className="inline-flex min-w-0 flex-1 basis-[18rem] items-baseline gap-1.5 break-words text-[12.5px] font-medium text-neg">
+                <span className="dot bg-neg shrink-0" /> A pre-registered exit condition is tripped — respond and it&apos;s logged.
               </span>
-              <div className="ml-auto flex gap-2">
+              <div className="ml-auto flex flex-wrap gap-2">
                 {!check && (
                   <button
                     onClick={runCheck}
@@ -846,7 +898,7 @@ export default function ThesisTile({
           </div>
           <div className="space-y-1.5">
             {draftConds.map((c) => (
-              <div key={c.id} className="flex items-center gap-2 text-[12.5px]">
+              <div key={c.id} className="flex flex-wrap items-center gap-2 text-[12.5px]">
                 <select
                   value={c.pillarId ?? ""}
                   onChange={(e) => setDraftConds((cs) => cs.map((x) => (x.id === c.id ? { ...x, pillarId: e.target.value || undefined, theme: draftPillars.find((p) => p.id === e.target.value)?.title ?? x.theme } : x)))}
@@ -858,7 +910,7 @@ export default function ThesisTile({
                     <option key={p.id} value={p.id}>{p.title || "(untitled)"}</option>
                   ))}
                 </select>
-                <span className="flex-1 text-ink">
+                <span className="min-w-0 flex-1 basis-[14rem] break-words text-ink [overflow-wrap:anywhere]">
                   {describeCondition(c)}
                   {c.kind === "metric" && <span className="ml-1.5 text-[11px] text-pos">reported metric</span>}
                 </span>
