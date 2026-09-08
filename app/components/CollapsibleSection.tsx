@@ -63,11 +63,15 @@ export function CollapsibleSection({
       className={
         flush
           ? `bg-surface px-4 py-2 scroll-mt-24 ${className || ""}`
-          : `overflow-hidden rounded-card border bg-surface scroll-mt-24 ${className || "border-line"}`
+          // `.panel` so the section inherits the page's hue: tinted header
+          // strip, coloured title and coloured table columns, same as every
+          // other panel. A caller can override the colour by putting a
+          // `.t-mark bg-warn` (etc.) in `right`.
+          : `panel scroll-mt-24 ${className || ""}`
       }
     >
       {/* Panel header: 38px, 13px semibold title, meta beside it. */}
-      <div className={`flex items-center justify-between gap-3 ${flush ? "" : `min-h-[38px] px-3.5 ${collapsed ? "" : "border-b border-line-soft"}`}`}>
+      <div className={flush ? "flex items-center justify-between gap-3" : `panel-h justify-between ${collapsed ? "border-b-0" : ""}`}>
         {/* The whole title region (arrow + title + subtitle + the empty space up
             to the right-side controls) toggles — not just the arrow. Uses a div
             with role="button" rather than <button> so the `right` slot can hold
@@ -93,7 +97,7 @@ export function CollapsibleSection({
               the same height as the Brief's other collapsed rails (a `block`
               title pushed the subtitle onto a second line: 61px vs 42px). */}
           <span className="min-w-0 flex-1 flex items-baseline gap-2 truncate">
-            <span className={`shrink-0 ${titleClass || "text-[13px] font-semibold text-ink"}`}>{title}</span>
+            <span className={`shrink-0 ${titleClass || "t"}`}>{title}</span>
             {subtitle && <span className="min-w-0 truncate text-[11.5px] text-ink-3">{subtitle}</span>}
           </span>
         </div>

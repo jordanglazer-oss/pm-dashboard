@@ -42,12 +42,19 @@ export function AttentionPanel() {
   const high = alerts.filter((a) => a.priority === "high").length;
   const medium = alerts.length - high;
   const lead = [...alerts.filter((a) => a.priority === "high"), ...alerts.filter((a) => a.priority !== "high")].slice(0, 3);
-  const dot = high > 0 ? "bg-neg" : alerts.length > 0 ? "bg-warn" : "bg-pos";
+  // The banner takes the colour of its worst item, so a calm day reads green
+  // and a day with a high-priority alert is unmistakably red.
+  const tone =
+    high > 0
+      ? { dot: "bg-neg", box: "border-neg-border bg-neg-soft", lead: "text-neg" }
+      : alerts.length > 0
+        ? { dot: "bg-warn", box: "border-warn-border bg-warn-soft", lead: "text-warn" }
+        : { dot: "bg-pos", box: "border-pos-border bg-pos-soft", lead: "text-pos" };
 
   return (
-    <section className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-card border border-line bg-surface px-3.5 py-2 text-[12.5px]">
-      <span className={`dot ${dot}`} aria-hidden />
-      <span className="font-medium">
+    <section className={`flex flex-wrap items-center gap-x-3 gap-y-1 rounded-card border px-3.5 py-2 text-[12.5px] ${tone.box}`}>
+      <span className={`dot ${tone.dot}`} aria-hidden />
+      <span className={`font-semibold ${tone.lead}`}>
         {high > 0 && <span className="text-neg">{high} high</span>}
         {high > 0 && medium > 0 && <span className="text-ink-faint"> · </span>}
         {medium > 0 && <span className="text-warn">{medium} to watch</span>}
