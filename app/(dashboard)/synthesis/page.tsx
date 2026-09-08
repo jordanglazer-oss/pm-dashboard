@@ -1,7 +1,7 @@
 "use client";
 
 import { usePersistedOpen } from "@/app/lib/useCollapsed";
-import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { IdeasRail } from "@/app/components/IdeasRail";
 import { ClampText } from "@/app/components/ClampText";
 import { AppIcon } from "@/app/components/AppIcon";
@@ -189,21 +189,35 @@ function EvidenceIcons({ evidence }: { evidence: Evidence }) {
 
 function Bullets({ title, bullets, tone, plain }: { title: string; bullets: SynthesisBullet[]; tone: string; plain?: string }) {
   return (
-    <div>
+    <div className="min-w-0">
       <div className={`mb-1 text-[11px] font-medium ${tone}`}>{title}</div>
       <ul className="space-y-1">
         {bullets.length === 0 && <li className="text-[12.5px] text-ink-3">—</li>}
         {bullets.map((b, i) => (
-          <li key={i} className="text-[12.5px] leading-[1.5] text-ink-2">
+          <li key={i} className="min-w-0 break-words text-[12.5px] leading-[1.5] text-ink-2">
             {b.text} <span className="text-[11px] text-ink-3">[{b.source}]</span>
           </li>
         ))}
       </ul>
       {plain && (
-        <div className="mt-2 border-t border-line-soft pt-1.5 text-[12.5px] italic leading-[1.5] text-ink">
+        <div className="mt-2 min-w-0 break-words border-t border-line-soft pt-1.5 text-[12.5px] italic leading-[1.5] text-ink">
           {plain}
         </div>
       )}
+    </div>
+  );
+}
+
+/**
+ * One labelled cell of the expanded detail grid. Label sits ABOVE its value
+ * (never beside it) and the value wraps — the expander is a grid of these, so
+ * nothing has to truncate and nothing scrolls sideways.
+ */
+function Field({ label, children, className = "" }: { label: string; children: ReactNode; className?: string }) {
+  return (
+    <div className={`min-w-0 ${className}`}>
+      <div className={`mb-0.5 ${LABEL}`}>{label}</div>
+      <div className="min-w-0 break-words text-[12.5px] leading-[1.5] text-ink-2">{children}</div>
     </div>
   );
 }
@@ -257,8 +271,8 @@ function LeadershipTable({ title, rows }: { title: string; rows: LeadershipRow[]
   };
 
   return (
-    <div className="overflow-x-auto">
-      <table className="data-table min-w-[280px]">
+    <div className="min-w-0">
+      <table className="data-table">
         <thead>
           <tr>
             {th("label", title, "left")}
@@ -270,7 +284,7 @@ function LeadershipTable({ title, rows }: { title: string; rows: LeadershipRow[]
         <tbody>
           {sorted.map((r) => (
             <tr key={r.symbol}>
-              <td className="pl-3.5 text-ink-2">
+              <td className="min-w-0 break-words pl-3.5 text-ink-2">
                 {r.label} <span className="font-mono text-[11px] text-ink-3">{r.symbol}</span>
               </td>
               {cell(r, "r1w")}
@@ -409,8 +423,19 @@ export default function SynthesisPage() {
     void load();
   }, [load]);
 
+  /**
+   * The ONE generation call on this page (per-row Generate, Refresh stale, and
+   * the sequential "Run selected" runner all go through it). Returns the
+   * per-name outcome so a caller running names one at a time can build a
+   * failure list without reading back the error state it just set.
+   */
   const generate = useCallback(
-    async (tickers: string[], opts?: { force?: boolean; webFill?: boolean; allowIncomplete?: boolean }) => {
+    async (
+      tickers: string[],
+      opts?: { force?: boolean; webFill?: boolean; allowIncomplete?: boolean },
+    ): Promise<{ ok: string[]; failed: string[] }> => {
+      const ok: string[] = [];
+      const failed: string[] = [];
       setGenerating((prev) => new Set([...prev, ...tickers]));
       setGenErrors((prev) => {
         const next = { ...prev };
@@ -439,9 +464,13 @@ export default function SynthesisPage() {
             error?: string;
           };
           if (!res.ok) throw new Error(json.error ?? `HTTP ${res.status}`);
+          const byTicker = new Map((json.results ?? []).map((r) => [r.ticker, r]));
+          // A name "succeeded" only if a card came back. Errors AND the
+          // completeness gate's refusals both count as failures for the run
+          // summary — neither produced a synthesis.
+          for (const t of batch) (byTicker.get(t)?.entry ? ok : failed).push(t);
           setData((prev) => {
             if (!prev) return prev;
-            const byTicker = new Map((json.results ?? []).map((r) => [r.ticker, r]));
             return {
               ...prev,
               rows: prev.rows.map((row) => {
@@ -485,10 +514,37 @@ export default function SynthesisPage() {
           for (const t of tickers) next.delete(t);
           return next;
         });
+        for (const t of tickers) if (!ok.includes(t) && !failed.includes(t)) failed.push(t);
       }
+      return { ok, failed };
     },
     [],
   );
+
+  /** ── Multi-select ───────────────────────────────────────────────────────
+   *  Check names, then "Run selected" generates them STRICTLY one at a time
+   *  (each awaited before the next starts) so an expensive call never fans
+   *  out. Selection is transient by design — it is an action scope, exactly
+   *  like Score selected on Holdings — and it is intersected with the rows
+   *  actually on screen at click time, so a tick left behind by a filter
+   *  change can never queue an off-screen name. No new endpoint, no new
+   *  Redis key: it reuses `generate` one ticker per call. */
+  const [selectedTickers, setSelectedTickers] = useState<Set<string>>(new Set());
+  const [running, setRunning] = useState(false);
+  const [runProgress, setRunProgress] = useState("");
+  const [runFailures, setRunFailures] = useState<string[]>([]);
+  // Ref drives the loop (it must be readable mid-await); the mirror state only
+  // exists so the "stopping" note can render.
+  const stopRef = useRef(false);
+  const [stopping, setStopping] = useState(false);
+
+  const toggleSelected = (ticker: string) =>
+    setSelectedTickers((prev) => {
+      const next = new Set(prev);
+      if (next.has(ticker)) next.delete(ticker);
+      else next.add(ticker);
+      return next;
+    });
 
   const toggle = (ticker: string) =>
     setExpanded((prev) => {
@@ -603,6 +659,45 @@ export default function SynthesisPage() {
     .filter((s) => stage === "all" || s.bucket === stage)
     .flatMap((s) => sortRows(allRows.filter((r) => r.bucket === s.bucket && (filters.size === 0 || filters.has(rowState(r))))));
 
+  // Selection is scoped to what is on screen — the header checkbox selects
+  // and clears exactly the visible rows.
+  const visibleTickers = visibleRows.map((r) => r.ticker);
+  const selectedInView = visibleTickers.filter((t) => selectedTickers.has(t));
+  const allVisibleSelected = visibleTickers.length > 0 && selectedInView.length === visibleTickers.length;
+  const toggleSelectAll = () => setSelectedTickers(allVisibleSelected ? new Set() : new Set(visibleTickers));
+
+  /** Generate the checked names one after another, never in parallel. A
+   *  failure is recorded and the run continues; Stop ends it after the name
+   *  currently in flight. */
+  const runSelected = async () => {
+    if (running || generating.size > 0) return;
+    // Snapshot the queue at click time — the action scope is what was on
+    // screen and checked when the PM pressed the button.
+    const queue = visibleRows
+      .filter((r) => selectedTickers.has(r.ticker))
+      .map((r) => ({ ticker: r.ticker, label: displayTicker(r.displayTicker ?? r.ticker) }));
+    if (queue.length === 0) return;
+    stopRef.current = false;
+    setStopping(false);
+    setRunning(true);
+    setRunFailures([]);
+    const failed: string[] = [];
+    try {
+      for (let i = 0; i < queue.length; i++) {
+        if (stopRef.current) break;
+        const { ticker, label } = queue[i];
+        setRunProgress(`Generating ${i + 1} of ${queue.length} · ${label}`);
+        const outcome = await generate([ticker]);
+        if (outcome.failed.length > 0) failed.push(label);
+      }
+    } finally {
+      setRunning(false);
+      setStopping(false);
+      setRunProgress("");
+      setRunFailures(failed);
+    }
+  };
+
   const latestGenerated = allRows.reduce<string | null>((acc, r) => {
     const d = r.entry?.generatedAt.slice(0, 10);
     return d && (!acc || d > acc) ? d : acc;
@@ -619,15 +714,21 @@ export default function SynthesisPage() {
     return { dot: "bg-pos", word: `Current ${row.entry.generatedAt.slice(5, 10)}`, title: `Generated ${row.entry.generatedAt.slice(0, 10)}${row.entry.webFillUsed ? " · web fill" : ""}`, cls: "text-ink-2" };
   };
 
-  const COLS = 8;
+  // Name · Stage · Status · Verdict · Next step · Upside · Score · Decision,
+  // plus the select column.
+  const COLS = 9;
 
   return (
     <div className="flex flex-col gap-3.5">
       <PipelineStages stages={stages} activeKey="synthesis" loading={pipeline.loading && !data} />
 
-      <div className="grid grid-cols-1 items-start gap-3.5 lg:grid-cols-[minmax(0,1.7fr)_minmax(0,1fr)]">
-        <section className="panel flex min-w-0 flex-col">
+      {/* The rail only sits beside the table at 2xl. Below that the table takes
+          the full content column, which is what keeps a 9-column row and its
+          three-up expander from ever needing side-to-side scrolling. */}
+      <div className="grid grid-cols-1 items-start gap-3.5 2xl:grid-cols-[minmax(0,1.7fr)_minmax(0,1fr)]">
+        <section className="panel animate-panel-in flex min-w-0 flex-col">
           <div className="panel-h flex-wrap gap-y-1.5 py-1.5">
+            <span className="t-mark bg-hub-ideas" aria-hidden />
             <span className="t">Synthesis</span>
             <span className="m">
               Suggested, Watchlist and Portfolio · sorted by {SORT_LABELS.find((s) => s.mode === sortMode)?.label.toLowerCase()}
@@ -662,17 +763,63 @@ export default function SynthesisPage() {
               </select>
               <button
                 onClick={() => void generate(staleTickers)}
-                disabled={staleTickers.length === 0 || generating.size > 0}
+                disabled={staleTickers.length === 0 || generating.size > 0 || running}
                 className={BTN}
                 title={staleNoReports > 0 ? `Skips ${staleNoReports} stale name(s) with no RBC/JPM report — generate those individually` : undefined}
               >
                 <AppIcon name="refresh" size={13} strokeWidth={2} />
                 Refresh stale <span className="font-mono text-[11px] text-ink-3">{staleTickers.length}</span>
               </button>
+              {running ? (
+                <button
+                  onClick={() => { stopRef.current = true; setStopping(true); }}
+                  className="inline-flex h-7 items-center gap-1.5 rounded-control border border-neg-border bg-surface px-2.5 text-[12.5px] text-neg hover:bg-neg-soft"
+                  title="Stop after the name currently generating"
+                >
+                  <AppIcon name="stop" size={13} strokeWidth={2} />
+                  Stop
+                </button>
+              ) : (
+                <button
+                  onClick={() => void runSelected()}
+                  disabled={selectedInView.length === 0 || generating.size > 0}
+                  className="inline-flex h-7 items-center gap-1.5 rounded-control bg-ink px-2.5 text-[12.5px] font-medium text-white hover:bg-ink-2 disabled:opacity-40"
+                  title={
+                    selectedInView.length > 0
+                      ? `Run the synthesis for ONLY the ${selectedInView.length} checked name${selectedInView.length === 1 ? "" : "s"}, one at a time`
+                      : "Check names in the table to run their synthesis one at a time"
+                  }
+                >
+                  <AppIcon name="play" size={13} strokeWidth={2} />
+                  Run selected{selectedInView.length > 0 && <span className="font-mono opacity-70">{selectedInView.length}</span>}
+                </button>
+              )}
             </div>
           </div>
 
           {data && <LeadershipStrip data={data.leadership} />}
+
+          {running && (
+            <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1 border-b border-line-soft bg-surface-2 px-3.5 py-1.5 text-[11.5px] text-ink-2">
+              <AppIcon name="refresh" size={13} strokeWidth={2} className="animate-spin text-ink-3" />
+              <span className="min-w-0 break-words">{runProgress || "Generating…"}</span>
+              <span className="text-ink-3">· one at a time</span>
+              {stopping && <span className="text-warn">· stopping after this name</span>}
+            </div>
+          )}
+          {!running && runFailures.length > 0 && (
+            <div className="flex flex-wrap items-center gap-x-2 gap-y-1 border-b border-line-soft bg-neg-soft px-3.5 py-1.5 text-[11.5px] text-neg">
+              <AppIcon name="warn" size={13} strokeWidth={2} />
+              <span className="min-w-0 break-words">
+                {runFailures.length} name{runFailures.length === 1 ? "" : "s"} did not generate:{" "}
+                <span className="font-mono [overflow-wrap:anywhere]">{runFailures.join(", ")}</span>
+              </span>
+              <span className="text-ink-3">— open the row for the reason, or Generate it on its own</span>
+              <button onClick={() => setRunFailures([])} className="ml-auto text-neg hover:text-ink" aria-label="Dismiss">
+                <AppIcon name="x" size={13} strokeWidth={2} />
+              </button>
+            </div>
+          )}
 
           {loadError ? (
             <div className="px-3.5 py-3 text-[12.5px] text-neg">Failed to load synthesis screen: {loadError}</div>
@@ -686,15 +833,30 @@ export default function SynthesisPage() {
               body={allRows.length === 0 ? "Suggested, Watchlist and Portfolio stocks appear here." : "No names match the current stage and state filters."}
             />
           ) : (
-            <div className="overflow-x-auto">
+            /* Desktop (1280px+) fits without scrolling: text cells wrap, Stage
+               and Next step drop at narrow breakpoints (both are still in the
+               row expander), and the wrapper is only a phone-sized fallback so
+               a narrow screen scrolls the table rather than the whole page. */
+            <div className="min-w-0 overflow-x-auto">
               <table className="data-table">
                 <thead>
                   <tr>
-                    <th className="pl-3.5">Name</th>
-                    <th>Stage</th>
+                    <th className="w-8 pl-3.5 pr-0">
+                      <input
+                        type="checkbox"
+                        checked={allVisibleSelected}
+                        onChange={toggleSelectAll}
+                        disabled={visibleTickers.length === 0}
+                        className="h-3.5 w-3.5 cursor-pointer accent-accent align-middle"
+                        title="Select all / none — checked names scope the Run selected button"
+                        aria-label="Select all rows"
+                      />
+                    </th>
+                    <th>Name</th>
+                    <th className="hidden md:table-cell">Stage</th>
                     <th>Status</th>
                     <th>Verdict</th>
-                    <th>Next step</th>
+                    <th className="hidden lg:table-cell">Next step</th>
                     <th className="n" title="Upside to the street average target at generation">Upside</th>
                     <th className="n" title="41-pt adjusted score (book names only)">Score</th>
                     <th>Decision</th>
@@ -712,23 +874,42 @@ export default function SynthesisPage() {
                       <Fragment key={row.ticker}>
                         <tr
                           id={`syn-${row.ticker.toUpperCase()}`}
-                          className={`scroll-mt-24 cursor-pointer ${isOpen ? "sel" : ""}`}
-                          onClick={() => toggle(row.ticker)}
+                          className={`row-link scroll-mt-24 ${isOpen ? "sel" : ""}`}
+                          onClick={(e) => {
+                            // The row toggles the expander, but never when the
+                            // click landed on a real control inside it.
+                            if ((e.target as HTMLElement).closest("a, button, input, [role='button']")) return;
+                            toggle(row.ticker);
+                          }}
                         >
-                          <td className="pl-3.5">
+                          <td className="w-8 pl-3.5 pr-0">
+                            <input
+                              type="checkbox"
+                              checked={selectedTickers.has(row.ticker)}
+                              onChange={() => toggleSelected(row.ticker)}
+                              onClick={(e) => e.stopPropagation()}
+                              className="h-3.5 w-3.5 cursor-pointer accent-accent align-middle"
+                              title={`Include ${displayTicker(row.displayTicker ?? row.ticker)} in the next Run selected`}
+                              aria-label={`Select ${displayTicker(row.displayTicker ?? row.ticker)}`}
+                            />
+                          </td>
+                          <td className="min-w-0 break-words">
                             <TickerLink ticker={row.ticker} className="font-mono font-medium text-ink hover:text-accent hover:underline">
                               {displayTicker(row.displayTicker ?? row.ticker)}
                             </TickerLink>
-                            <span className="ml-2 max-w-[160px] truncate text-[12px] text-ink-3" title={row.name}>{row.name}</span>
+                            <div className="text-[12px] leading-[1.35] text-ink-3">{row.name}</div>
+                            {/* Stage has its own column from md up; below that
+                                it rides along here so nothing is lost. */}
+                            <div className="text-[11px] text-ink-3 md:hidden">{row.bucket}</div>
                           </td>
-                          <td className="text-ink-2">{row.bucket}</td>
-                          <td className={st.cls} title={st.title}>
+                          <td className="hidden text-ink-2 md:table-cell">{row.bucket}</td>
+                          <td className={`min-w-0 break-words ${st.cls ?? ""}`} title={st.title}>
                             <span className={`dot mr-1.5 ${st.dot}`} />
                             {st.word}
                           </td>
                           <td>
                             {row.entry && r ? (
-                              <span className="inline-flex items-center gap-2">
+                              <span className="inline-flex flex-wrap items-center gap-x-2 gap-y-0.5">
                                 <VerdictChip entry={row.entry} />
                                 <SkewText skew={r.skew} />
                                 {row.previous && <VerdictChangeMarker current={r.verdict} previous={row.previous} />}
@@ -737,7 +918,7 @@ export default function SynthesisPage() {
                               <span className="text-ink-faint">—</span>
                             )}
                           </td>
-                          <td className="max-w-[260px] truncate text-[12px] text-ink-2" title={r ? [r.nextStep, r.verdictReason].filter(Boolean).join(" — ") : undefined}>
+                          <td className="hidden min-w-0 break-words text-[12px] leading-[1.4] text-ink-2 lg:table-cell" title={r ? [r.nextStep, r.verdictReason].filter(Boolean).join(" — ") : undefined}>
                             {r ? (r.nextStep ?? r.verdictReason) : <span className="text-ink-faint">—</span>}
                           </td>
                           <td className={`n ${upside == null ? "text-ink-faint" : upside >= 0 ? "text-pos" : "text-neg"}`}>
@@ -753,8 +934,8 @@ export default function SynthesisPage() {
                               </>
                             )}
                           </td>
-                          <td onClick={(e) => e.stopPropagation()}>
-                            <span className="inline-flex items-center gap-1">
+                          <td className="min-w-0" onClick={(e) => e.stopPropagation()}>
+                            <span className="inline-flex flex-wrap items-center gap-1 py-1">
                               {row.bucket === "Suggested" && row.decision && (
                                 <span
                                   className={`mr-1 text-[11px] ${DECISION_TONE[row.decision.verdict]}`}
@@ -799,9 +980,13 @@ export default function SynthesisPage() {
                         </tr>
                         {isOpen && r && (
                           <tr>
-                            <td colSpan={COLS} className="h-auto whitespace-normal bg-surface-2 px-4 py-3 align-top">
-                              <div className="space-y-3">
-                                <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11.5px] text-ink-3">
+                            <td colSpan={COLS} className="!h-auto min-w-0 whitespace-normal bg-surface-2 px-4 py-3 align-top">
+                              {/* The detail is a set of grids whose tracks are
+                                  minmax(0,1fr), so a long paragraph or an
+                                  unbroken mono string wraps instead of pushing
+                                  its neighbour or widening the table. */}
+                              <div className="flex min-w-0 flex-col gap-3.5">
+                                <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 text-[11.5px] text-ink-3">
                                   {row.evidence && <EvidenceIcons evidence={row.evidence} />}
                                   {row.stale.length > 0 && (
                                     <span className="text-warn">{row.stale.map((s) => STALE_LABEL[s]).join(" · ")}</span>
@@ -817,96 +1002,101 @@ export default function SynthesisPage() {
                                       {row.entry.webFillUsed ? " · web" : ""}
                                     </span>
                                   )}
-                                  {genErrors[row.ticker] && <span className="text-neg">Error: {genErrors[row.ticker]}</span>}
+                                  {genErrors[row.ticker] && <span className="min-w-0 break-words text-neg">Error: {genErrors[row.ticker]}</span>}
                                 </div>
                                 {r.verdictReason && (
-                                  <div className="text-[12.5px] leading-[1.5] text-ink">{r.verdictReason}</div>
+                                  <div className="min-w-0 break-words text-[12.5px] leading-[1.5] text-ink">{r.verdictReason}</div>
                                 )}
                                 {row.entry?.incomplete && row.entry.incomplete.length > 0 && (
-                                  <div className="rounded-control border border-neg-border bg-neg-soft px-3 py-2">
+                                  <div className="min-w-0 rounded-control border border-neg-border bg-neg-soft px-3 py-2">
                                     <div className="text-[11px] font-medium text-neg">Incomplete — generated without required evidence</div>
                                     <ul className="mt-1 list-disc pl-4 text-[12.5px] text-ink-2">
                                       {row.entry.incomplete.map((m, i) => (
-                                        <li key={i}>{m}</li>
+                                        <li key={i} className="break-words">{m}</li>
                                       ))}
                                     </ul>
                                     <div className="mt-1 text-[11px] text-ink-3">Do not rely on this as a clean read — regenerate once the source recovers.</div>
                                   </div>
                                 )}
-                                {r.whatTheyDo && (
-                                  <div>
-                                    <div className={LABEL}>What they do</div>
-                                    <ClampText text={r.whatTheyDo} lines={3} threshold={260} textClassName="text-[12.5px] leading-[1.5] text-ink-2" />
-                                  </div>
-                                )}
-                                {row.entry?.targets && row.entry.targets.length > 0 && (
-                                  <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[12.5px]">
-                                    <span className={LABEL}>Targets</span>
-                                    {row.entry.targets.map((t) => (
-                                      <span key={t.source} className="text-ink-2" title={t.asOf ? `as of ${t.asOf}` : undefined}>
-                                        {t.source} <span className="font-mono font-medium text-ink">{t.target.toFixed(2)}</span>
-                                        {t.upsidePct != null && (
-                                          <span className={`ml-1 font-mono ${t.upsidePct >= 0 ? "text-pos" : "text-neg"}`}>
-                                            {t.upsidePct >= 0 ? "+" : ""}
-                                            {t.upsidePct.toFixed(0)}%
-                                          </span>
-                                        )}
-                                      </span>
-                                    ))}
-                                  </div>
-                                )}
                                 {r.nextStep && (
-                                  <div className="rounded-control border border-accent-border bg-accent-soft px-2.5 py-1.5 text-[12.5px] text-accent-ink">
-                                    <span className="text-[11px]">Next step</span> {r.nextStep}
+                                  <div className="min-w-0 rounded-control border border-accent-border bg-accent-soft px-2.5 py-1.5 text-accent-ink">
+                                    <div className="text-[11px] opacity-80">Next step</div>
+                                    <div className="min-w-0 break-words text-[12.5px] leading-[1.5]">{r.nextStep}</div>
                                   </div>
                                 )}
-                                <div className="grid gap-4 sm:grid-cols-3">
-                                  <Bullets title="Base" bullets={r.base} tone="text-ink-2" plain={r.plain?.base} />
-                                  <Bullets title="Bull" bullets={r.bull} tone="text-pos" plain={r.plain?.bull} />
-                                  <Bullets title="Bear" bullets={r.bear} tone="text-neg" plain={r.plain?.bear} />
+
+                                {/* Base / Bull / Bear side by side from md up —
+                                    three columns on a 1280px+ screen. */}
+                                <div className="stagger grid min-w-0 gap-4 md:grid-cols-3">
+                                  <div className="min-w-0" style={{ "--i": 0 } as CSSProperties}>
+                                    <Bullets title="Base" bullets={r.base} tone="text-ink-2" plain={r.plain?.base} />
+                                  </div>
+                                  <div className="min-w-0" style={{ "--i": 1 } as CSSProperties}>
+                                    <Bullets title="Bull" bullets={r.bull} tone="text-pos" plain={r.plain?.bull} />
+                                  </div>
+                                  <div className="min-w-0" style={{ "--i": 2 } as CSSProperties}>
+                                    <Bullets title="Bear" bullets={r.bear} tone="text-neg" plain={r.plain?.bear} />
+                                  </div>
                                 </div>
-                                {r.priceAction && (
-                                  <div>
-                                    <div className={LABEL}>Price action — name &amp; sector</div>
-                                    <ClampText text={r.priceAction} lines={2} threshold={220} textClassName="text-[12.5px] leading-[1.5] text-ink-2" />
-                                  </div>
-                                )}
-                                <div className="grid gap-3 sm:grid-cols-2">
-                                  <div>
-                                    <div className={LABEL}>Key debate</div>
-                                    <div className="text-[12.5px] leading-[1.5] text-ink-2">{r.keyDebate || "—"}</div>
-                                  </div>
-                                  <div>
-                                    <div className={LABEL}>Catalysts</div>
+
+                                {/* Everything else as one labelled grid: label
+                                    above value, values wrap, nothing truncates. */}
+                                <div className="grid min-w-0 gap-x-5 gap-y-3.5 border-t border-line-soft pt-3 sm:grid-cols-2 xl:grid-cols-3">
+                                  {r.whatTheyDo && (
+                                    <Field label="What they do" className="sm:col-span-2 xl:col-span-1">
+                                      <ClampText text={r.whatTheyDo} textClassName="break-words text-[12.5px] leading-[1.5] text-ink-2" />
+                                    </Field>
+                                  )}
+                                  {r.priceAction && (
+                                    <Field label="Price action — name &amp; sector">
+                                      <ClampText text={r.priceAction} textClassName="break-words text-[12.5px] leading-[1.5] text-ink-2" />
+                                    </Field>
+                                  )}
+                                  <Field label="Key debate">{r.keyDebate || "—"}</Field>
+                                  {row.entry?.targets && row.entry.targets.length > 0 && (
+                                    <Field label="Targets">
+                                      <div className="grid grid-cols-[minmax(0,1fr)_auto_auto] items-baseline gap-x-2.5 gap-y-0.5">
+                                        {row.entry.targets.map((t) => (
+                                          <Fragment key={t.source}>
+                                            <span className="min-w-0 break-words" title={t.asOf ? `as of ${t.asOf}` : undefined}>{t.source}</span>
+                                            <span className="whitespace-nowrap text-right font-mono font-medium text-ink">{t.target.toFixed(2)}</span>
+                                            <span className={`whitespace-nowrap text-right font-mono ${t.upsidePct == null ? "text-ink-faint" : t.upsidePct >= 0 ? "text-pos" : "text-neg"}`}>
+                                              {t.upsidePct == null ? "—" : `${t.upsidePct >= 0 ? "+" : ""}${t.upsidePct.toFixed(0)}%`}
+                                            </span>
+                                          </Fragment>
+                                        ))}
+                                      </div>
+                                    </Field>
+                                  )}
+                                  <Field label="Catalysts">
                                     {r.catalysts.length === 0 ? (
-                                      <div className="text-[12.5px] text-ink-3">None identified in the data</div>
+                                      <span className="text-ink-3">None identified in the data</span>
                                     ) : (
-                                      <ul className="text-[12.5px] leading-[1.5] text-ink-2">
+                                      <ul className="space-y-0.5">
                                         {r.catalysts.map((c, i) => (
-                                          <li key={i}>{c.date ? `${c.date}: ` : ""}{c.event}</li>
+                                          <li key={i} className="min-w-0 break-words">{c.date ? `${c.date}: ` : ""}{c.event}</li>
                                         ))}
                                       </ul>
                                     )}
-                                  </div>
-                                  <div>
-                                    <div className={LABEL}>Would change the call</div>
-                                    <ul className="text-[12.5px] leading-[1.5] text-ink-2">
+                                  </Field>
+                                  <Field label="Would change the call">
+                                    <ul className="space-y-0.5">
                                       {r.wouldChangeCall.length === 0 && <li className="text-ink-3">—</li>}
                                       {r.wouldChangeCall.map((w, i) => (
-                                        <li key={i}>{w}</li>
+                                        <li key={i} className="min-w-0 break-words">{w}</li>
                                       ))}
                                     </ul>
-                                  </div>
-                                  <div>
-                                    <div className={LABEL}>Data gaps</div>
-                                    <ul className="text-[12.5px] leading-[1.5] text-ink-2">
+                                  </Field>
+                                  <Field label="Data gaps">
+                                    <ul className="space-y-0.5">
                                       {r.dataGaps.length === 0 && <li className="text-ink-3">None declared</li>}
                                       {r.dataGaps.map((g, i) => (
-                                        <li key={i}>{g}</li>
+                                        <li key={i} className="min-w-0 break-words">{g}</li>
                                       ))}
                                     </ul>
-                                  </div>
+                                  </Field>
                                 </div>
+
                                 <div className="flex justify-end">
                                   <button
                                     onClick={() => void generate([row.ticker], { force: true, webFill: true })}

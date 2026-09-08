@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type CSSProperties } from "react";
 import Link from "next/link";
 import TickerLink from "@/app/components/TickerLink";
 import { AppIcon } from "@/app/components/AppIcon";
@@ -90,8 +90,9 @@ export function ScreenPanel() {
   };
 
   return (
-    <section className="panel flex flex-col">
-      <div className="panel-h flex-wrap">
+    <section className="panel animate-panel-in flex min-w-0 flex-col">
+      <div className="panel-h flex-wrap gap-y-1.5 py-1.5">
+        <span className="t-mark bg-hub-ideas" aria-hidden />
         <span className="t">Screen</span>
         <div className="seg">
           {SCREEN_MODES.map((m) => (
@@ -112,7 +113,7 @@ export function ScreenPanel() {
           body={radar?.hint ?? "Populates after the weekly factor-universe build."}
         />
       ) : (
-        <div className="overflow-x-auto">
+        <div className="min-w-0">
           <table className="data-table">
             <thead>
               <tr>
@@ -130,7 +131,7 @@ export function ScreenPanel() {
                 const qual = n.groups?.quality;
                 return (
                   <tr key={n.ticker}>
-                    <td className="pl-3.5">
+                    <td className="nw pl-3.5">
                       <TickerLink ticker={n.ticker} className="font-mono font-medium text-ink hover:text-accent">
                         {displayTicker(n.ticker)}
                       </TickerLink>
@@ -196,8 +197,9 @@ export function ReadyToActPanel({ pipeline }: { pipeline: PipelineData }) {
   }, [pipeline]);
 
   return (
-    <section className="panel">
+    <section className="panel animate-panel-in min-w-0">
       <div className="panel-h">
+        <span className="t-mark bg-hub-ideas" aria-hidden />
         <span className="t">Ready to act</span>
         <span className="m">from the funnel</span>
         <Link href="/funnel" className="ml-auto text-[11.5px] !text-accent-ink hover:underline">Open pipeline</Link>
@@ -207,15 +209,23 @@ export function ReadyToActPanel({ pipeline }: { pipeline: PipelineData }) {
       ) : rows.length === 0 ? (
         <EmptyState className="!py-6" glyph={<AppIcon name="check" size={18} />} title="Nothing waiting" body="No name is ready to buy, advance, or under review." />
       ) : (
-        <div className="flex flex-col gap-1.5 px-3.5 pb-2.5 pt-1.5 text-[12.5px]">
-          {rows.map((r) => (
-            <div key={r.key} className="flex items-center gap-2.5">
-              <span className={`dot ${DOT[r.tone]}`} />
-              <TickerLink ticker={r.ticker} className="w-16 shrink-0 font-mono font-medium text-ink hover:text-accent">
+        <div className="stagger flex flex-col gap-2 px-3.5 pb-2.5 pt-1.5 text-[12.5px]">
+          {rows.map((r, i) => (
+            <div
+              key={r.key}
+              style={{ "--i": i } as CSSProperties}
+              className="flex min-w-0 items-start gap-2.5"
+            >
+              <span className={`dot mt-[7px] ${DOT[r.tone]}`} />
+              <TickerLink ticker={r.ticker} className="mt-px shrink-0 font-mono font-medium text-ink hover:text-accent">
                 {displayTicker(r.ticker)}
               </TickerLink>
-              <Link href={r.href} className="w-[120px] shrink-0 truncate hover:text-accent">{r.state}</Link>
-              <span className="min-w-0 truncate text-[12px] text-ink-3" title={r.meta}>{r.meta}</span>
+              {/* Label above its value, and the meta wraps rather than
+                  truncating — long reasons stay readable in a narrow rail. */}
+              <div className="min-w-0 flex-1">
+                <Link href={r.href} className="break-words hover:text-accent">{r.state}</Link>
+                {r.meta && <div className="min-w-0 break-words text-[12px] leading-[1.4] text-ink-3">{r.meta}</div>}
+              </div>
             </div>
           ))}
         </div>
