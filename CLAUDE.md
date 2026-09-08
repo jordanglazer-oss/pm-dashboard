@@ -165,6 +165,8 @@ When adding/removing a holding to a group, **do not** re-run rebalance on locked
 ### Tailwind v4 cascade gotcha
 `app/globals.css` has an unlayered `a { color: inherit; text-decoration: none; }`. In Tailwind v4 this overrides `.text-white` on `<Link>` elements. For navy/colored link-buttons use `!text-white` (and `inline-flex items-center` to match `<button>` box rendering).
 
+**Any UNLAYERED rule in `globals.css` beats EVERY Tailwind utility**, regardless of specificity — layered CSS always loses to unlayered CSS. The `a { color: inherit }` rule above is one instance; the control reset was another and is now fixed: `button, input, select { font: inherit; }` silently reset font-weight app-wide (`font: …` is a shorthand), so `font-medium` / `font-semibold` on any `<button>` or `<input>` rendered at 400 for months. It is now written as longhands (`font-family` / `font-size` / `line-height` / `letter-spacing`) so weight is left to the utility. When adding a bare-element rule to `globals.css`, never use a shorthand, and prefer the narrowest property you actually need. Note the same trap applies to the workspace helper classes (`.panel-h`, `.data-table td`, `.seg > *`): they are unlayered, so a Tailwind colour/size utility on those elements loses — put the utility on an inner `<span>` instead.
+
 ### Seed files
 `pim-seed.ts`, `pim-daily-value-seed.ts`, `defaults.ts`, the root `pim-model-data.json`, and the `*.xlsx` files at the repo root are reference data only — they are NOT loaded into Redis automatically. Do not wire them into any boot path.
 

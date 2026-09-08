@@ -202,10 +202,21 @@ a {
   text-decoration: none;
 }
 
+/* Controls inherit the page font — but NOT its weight. `font: inherit` is a
+   shorthand that also resets font-weight, and this rule is UNLAYERED, so in
+   Tailwind v4 it beat every layered `font-medium` / `font-semibold` utility:
+   bold on a <button> or <input> silently rendered at 400 app-wide. The
+   longhands keep the original intent (controls stop using the UA's system
+   font) and leave weight to the utility. Same class of gotcha as the
+   unlayered `a { color: inherit }` rule above. */
 button,
 input,
-select {
-  font: inherit;
+select,
+textarea {
+  font-family: inherit;
+  font-size: inherit;
+  line-height: inherit;
+  letter-spacing: inherit;
 }
 
 /* iOS zooms the whole page when a focused form control renders below 16px, and
