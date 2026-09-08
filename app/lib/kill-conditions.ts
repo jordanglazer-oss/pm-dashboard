@@ -21,8 +21,11 @@
  *   pm:score-history    — feeds score_floor / score_decay
  *   pm:analyst-snapshots — feeds revisions
  *   pm:stocks            — feeds risk_alert / ma200 (riskAlert, price,
- *                          twoHundredDayAvg via technicals)
+ *                          twoHundredDayAvg via technicals) and every
+ *                          `technical` condition (the cached technicals blob)
  */
+
+import type { TechnicalIndicators } from "./technicals";
 
 export type KillConditionKind =
   | "metric" // a REPORTED company figure (from the ingested FactSet Metrics Recap) vs a threshold — the pillar guard
@@ -33,7 +36,8 @@ export type KillConditionKind =
   | "score_decay" // composite must not fall by ≥ threshold points over ~45d
   | "revisions" // net FY+1 revisions (revUp − revDown) must stay > threshold
   | "risk_alert" // no CRITICAL technical risk alert on the name
-  | "ma200" // price must hold above the 200-day average
+  | "ma200" // price must hold above the 200-day average (the automatic baseline)
+  | "technical" // any registered technical read vs a threshold (see TECHNICAL_METRICS)
   | "custom"; // prose-only, AI-verified against filings after each report
 
 /**
@@ -64,6 +68,190 @@ export type MetricSpec = {
   unit?: string;
 };
 
+/**
+ * A `technical` condition's spec: WHICH registered technical read, against
+ * WHAT threshold.
+ *
+ * Every entry in TECHNICAL_METRICS resolves to a single NUMBER off the name's
+ * cached `technicals` blob (app/lib/technicals, refreshed by the nightly
+ * technicals sweep), so a technical condition is checked by the same pure
+ * evaluator as everything else — no LLM, no extra fetch. Reads that are
+ * categorical upstream ("death cross", "below the cloud", "MACD bearish") are
+ * expressed here as the numeric distance that defines them, so one comparator
+ * covers the whole registry.
+ *
+ * To add a technical factor, add ONE row to TECHNICAL_METRICS. Nothing else
+ * changes — the editor dropdown, the describe text, the checker and the
+ * nightly sweep all read the registry.
+ */
+export type TechnicalMetricId =
+  | "price_vs_sma200"
+  | "price_vs_sma50"
+  | "sma50_vs_sma200"
+  | "rsi14"
+  | "weekly_rsi"
+  | "macd_histogram"
+  | "weekly_macd_histogram"
+  | "ichimoku_cloud"
+  | "week52_position"
+  | "drawdown_from_ath"
+  | "price_change_20d";
+
+export type TechnicalSpec = {
+  metric: TechnicalMetricId;
+  comparator: ">=" | "<=";
+  threshold: number;
+};
+
+/** The slice of the cached technicals blob the registry reads. Partial, so a
+ *  blob cached before an indicator existed degrades to "unknown" rather than
+ *  to a fabricated OK. */
+export type TechnicalInput = Partial<TechnicalIndicators>;
+
+export type TechnicalMetricDef = {
+  id: TechnicalMetricId;
+  /** Shown in the editor dropdown and in every reading. */
+  label: string;
+  unit: "%" | "";
+  /** Decimal places for the reading. */
+  dp: number;
+  defaultComparator: ">=" | "<=";
+  defaultThreshold: number;
+  /** One line on what the number means, shown under the picker. */
+  hint: string;
+  /** Pure read off the signals. null = the data cannot answer today. */
+  read: (s: KillSignals) => number | null;
+};
+
+const numOrNull = (v: unknown): number | null => (typeof v === "number" && isFinite(v) ? v : null);
+
+/** Price for the technical reads: the live quote, else the close the cached
+ *  indicators were computed from. */
+const techPrice = (s: KillSignals): number | null =>
+  numOrNull(s.price) ?? numOrNull(s.technicals?.currentPrice);
+
+const pctVs = (price: number | null, level: number | null): number | null =>
+  price == null || level == null || level <= 0 ? null : ((price - level) / level) * 100;
+
+export const TECHNICAL_METRICS: TechnicalMetricDef[] = [
+  {
+    id: "price_vs_sma200",
+    label: "Price vs 200DMA",
+    unit: "%",
+    dp: 1,
+    defaultComparator: ">=",
+    defaultThreshold: 0,
+    hint: "0 = at the 200-day average. Use a negative floor (e.g. -5) to allow a brush below it.",
+    read: (s) => pctVs(techPrice(s), numOrNull(s.technicals?.sma200) ?? numOrNull(s.ma200)),
+  },
+  {
+    id: "price_vs_sma50",
+    label: "Price vs 50DMA",
+    unit: "%",
+    dp: 1,
+    defaultComparator: ">=",
+    defaultThreshold: 0,
+    hint: "0 = at the 50-day average.",
+    read: (s) => pctVs(techPrice(s), numOrNull(s.technicals?.sma50)),
+  },
+  {
+    id: "sma50_vs_sma200",
+    label: "50DMA vs 200DMA",
+    unit: "%",
+    dp: 1,
+    defaultComparator: ">=",
+    defaultThreshold: 0,
+    hint: "Below 0 is a death cross — the 50-day has crossed under the 200-day.",
+    read: (s) => pctVs(numOrNull(s.technicals?.sma50), numOrNull(s.technicals?.sma200)),
+  },
+  {
+    id: "rsi14",
+    label: "RSI(14)",
+    unit: "",
+    dp: 0,
+    defaultComparator: ">=",
+    defaultThreshold: 30,
+    hint: "Daily RSI. A floor of 30 trips on a washed-out tape; 40 is a tighter trend guard.",
+    read: (s) => numOrNull(s.technicals?.rsi14),
+  },
+  {
+    id: "weekly_rsi",
+    label: "Weekly RSI(14)",
+    unit: "",
+    dp: 0,
+    defaultComparator: ">=",
+    defaultThreshold: 40,
+    hint: "RSI on weekly closes — slower, with fewer false trips than the daily.",
+    read: (s) => numOrNull(s.technicals?.weeklyRsi),
+  },
+  {
+    id: "macd_histogram",
+    label: "MACD histogram",
+    unit: "",
+    dp: 2,
+    defaultComparator: ">=",
+    defaultThreshold: 0,
+    hint: "Below 0 means MACD sits under its signal line (bearish crossover).",
+    read: (s) => numOrNull(s.technicals?.macdHistogram),
+  },
+  {
+    id: "weekly_macd_histogram",
+    label: "Weekly MACD histogram",
+    unit: "",
+    dp: 2,
+    defaultComparator: ">=",
+    defaultThreshold: 0,
+    hint: "The same read on weekly closes — the higher-timeframe trend.",
+    read: (s) => numOrNull(s.technicals?.weeklyMacd?.histogram),
+  },
+  {
+    id: "ichimoku_cloud",
+    label: "Price vs Ichimoku cloud",
+    unit: "%",
+    dp: 1,
+    defaultComparator: ">=",
+    defaultThreshold: 0,
+    hint: "Distance to the nearest cloud edge. 0 = inside the cloud, negative = below it.",
+    read: (s) => numOrNull(s.technicals?.distanceFromCloudEdge?.pct),
+  },
+  {
+    id: "week52_position",
+    label: "Position in 52-week range",
+    unit: "%",
+    dp: 0,
+    defaultComparator: ">=",
+    defaultThreshold: 20,
+    hint: "0 = at the 52-week low, 100 = at the high.",
+    read: (s) => {
+      const v = numOrNull(s.technicals?.week52Position);
+      return v == null ? null : v * 100;
+    },
+  },
+  {
+    id: "drawdown_from_ath",
+    label: "Drawdown from all-time high",
+    unit: "%",
+    dp: 1,
+    defaultComparator: ">=",
+    defaultThreshold: -35,
+    hint: "Always 0 or negative. A floor of -35 trips once the name is more than 35% off its high.",
+    read: (s) => numOrNull(s.technicals?.distanceFromATH?.pct),
+  },
+  {
+    id: "price_change_20d",
+    label: "20-day price change",
+    unit: "%",
+    dp: 1,
+    defaultComparator: ">=",
+    defaultThreshold: -20,
+    hint: "Momentum over the last month of sessions.",
+    read: (s) => numOrNull(s.technicals?.priceChange20d),
+  },
+];
+
+export const technicalDef = (id: TechnicalMetricId | undefined): TechnicalMetricDef | undefined =>
+  TECHNICAL_METRICS.find((m) => m.id === id);
+
 /** A thesis pillar — one of the 2-4 things the case actually rests on. Every
  *  condition should guard exactly one pillar (`pillarId`). */
 export type ThesisPillar = {
@@ -92,6 +280,8 @@ export type KillCondition = {
   pillarId?: string;
   /** `metric` kind only — the reported-figure spec. */
   metric?: MetricSpec;
+  /** `technical` kind only — which registered technical read, vs what. */
+  technical?: TechnicalSpec;
   /** ISO date this condition was registered — pre-registration timestamp. */
   addedAt: string;
   /** Set by the caller when a check transitions OK → TRIPPED; cleared when it
@@ -151,6 +341,9 @@ export type KillSignals = {
   /** Latest price and 200-day average. */
   price?: number | null;
   ma200?: number | null;
+  /** The name's cached technicals blob — the source for every `technical`
+   *  condition. Undefined/null yields "unknown" for those, never an OK. */
+  technicals?: TechnicalInput | null;
   // ── Server-resolved extras (app/lib/metric-resolver) ──
   /** Reading per `metric` condition id, resolved from the ingested recap. null = no matching line. */
   metricReadings?: Record<string, MetricReading | null>;
@@ -191,6 +384,7 @@ export const KILL_TEMPLATES: {
   { kind: "revisions", label: "Estimate revisions", defaultThreshold: 0, describe: (t) => `Net FY+1 revisions stay ${(t ?? 0) === 0 ? "non-negative" : `> ${t}`}` },
   { kind: "risk_alert", label: "Risk alert", describe: () => "No CRITICAL technical alert" },
   { kind: "ma200", label: "200-day average", describe: () => "Price holds above the 200DMA" },
+  { kind: "technical", label: "Technical factor", describe: () => "A technical read vs a threshold (pick the factor below)" },
   { kind: "custom", label: "Custom (AI-checked)", describe: () => "Verified by AI web check after each earnings report" },
 ];
 
@@ -203,6 +397,12 @@ const fmtThreshold = (m: MetricSpec): string => {
 
 export function describeCondition(c: KillCondition): string {
   if (c.kind === "custom") return c.note || "Custom condition";
+  if (c.kind === "technical") {
+    const spec = c.technical;
+    const def = technicalDef(spec?.metric);
+    if (!spec || !def) return "Technical condition (unset)";
+    return `${def.label} stays ${spec.comparator === ">=" ? "≥" : "≤"} ${spec.threshold}${def.unit}`;
+  }
   if (c.kind === "metric" && c.metric) {
     const m = c.metric;
     const what = m.field === "yoy" ? `${m.label} (YoY)` : m.label;
@@ -263,6 +463,20 @@ export function checkCondition(c: KillCondition, s: KillSignals): KillCheck {
         condition: c,
         status: s.price >= s.ma200 ? "ok" : "tripped",
         reading: `${pct >= 0 ? "+" : ""}${fmt(pct, 1)}% vs 200DMA`,
+      };
+    }
+    case "technical": {
+      const spec = c.technical;
+      const def = technicalDef(spec?.metric);
+      if (!spec || !def) return { condition: c, status: "unknown", reading: "no technical spec" };
+      const v = def.read(s);
+      if (v == null) return { condition: c, status: "unknown", reading: `${def.label} unavailable` };
+      const ok = spec.comparator === ">=" ? v >= spec.threshold : v <= spec.threshold;
+      const sign = def.unit === "%" && v > 0 ? "+" : "";
+      return {
+        condition: c,
+        status: ok ? "ok" : "tripped",
+        reading: `${def.label} ${sign}${fmt(v, def.dp)}${def.unit}`,
       };
     }
     case "metric": {
@@ -340,4 +554,41 @@ export function checkAll(conditions: KillCondition[], s: KillSignals): KillCheck
 export function trippedCount(checks: KillCheck[]): { tripped: number; auto: number } {
   const auto = checks.filter((k) => k.status !== "manual");
   return { tripped: auto.filter((k) => k.status === "tripped").length, auto: auto.length };
+}
+
+// ── The automatic baseline ─────────────────────────────────────────────────
+//
+// Every thesis carries the 200-day trend breaker, whether or not the PM (or
+// an AI draft) thought to add it. A thesis can be right on the fundamentals
+// and still be a position the tape has left behind; the 200DMA is the one
+// technical read slow enough to sit under every name without generating
+// noise.
+//
+// It is composed at READ time rather than migrated into pm:position-theses,
+// so no stored blob is rewritten to introduce it: existing theses show it
+// immediately, and it persists on the PM's next save (or on its first trip,
+// when the tile stamps trippedAt). A condition that ALREADY guards the
+// 200-day — the `ma200` kind, or a `technical` price_vs_sma200 — suppresses
+// it, so the PM's own wording (a -5% buffer, say) always wins.
+
+export const BASELINE_MA200_ID = "baseline-ma200";
+
+/** True for the auto-added 200DMA breaker — the editor marks it automatic and
+ *  offers no remove button. */
+export const isBaselineCondition = (c: KillCondition): boolean => c.id === BASELINE_MA200_ID;
+
+const guardsMa200 = (c: KillCondition): boolean =>
+  c.kind === "ma200" || (c.kind === "technical" && c.technical?.metric === "price_vs_sma200");
+
+/**
+ * `conds` with the baseline 200DMA condition appended when nothing in the
+ * list already guards the 200-day. Pure — callers persist the result only
+ * when the PM saves.
+ */
+export function withBaselineConditions(conds: KillCondition[]): KillCondition[] {
+  if (conds.some(guardsMa200)) return conds;
+  return [
+    ...conds,
+    { id: BASELINE_MA200_ID, kind: "ma200", theme: "Trend", addedAt: new Date().toISOString().slice(0, 10) },
+  ];
 }

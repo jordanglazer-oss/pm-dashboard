@@ -2,7 +2,7 @@ import { getRedis } from "@/app/lib/redis";
 import { computeRegimeTransition, type RegimeTransition } from "@/app/lib/regime-transition";
 import type { MarketRegimeData } from "@/app/lib/market-regime";
 import type { StockContext } from "@/app/lib/alerts";
-import { checkAll, trippedCount, type KillCondition, type KillCheck } from "@/app/lib/kill-conditions";
+import { checkAll, trippedCount, withBaselineConditions, type KillCondition, type KillCheck, type TechnicalInput } from "@/app/lib/kill-conditions";
 import { loadKillSignalSources, killSignalExtrasFor } from "./metric-resolver";
 
 /**
@@ -70,6 +70,8 @@ type StoredStock = {
   earningsDate?: string;
   riskAlert?: { level?: string; summary?: string; signals?: Array<{ name: string; status: string }> };
   healthData?: { twoHundredDayAvg?: number; currentPrice?: number; earningsDate?: string };
+  /** Cached indicators — the source for `technical` kill conditions. */
+  technicals?: TechnicalInput;
 };
 
 function parse<T>(raw: string | null, fallback: T): T {
@@ -192,8 +194,11 @@ export async function loadAlertInputs(): Promise<AlertInputs> {
   // (one batch of reads, shared across every underwritten name).
   const extrasSrc = await loadKillSignalSources().catch(() => null);
   for (const [rawTk, t] of Object.entries(posTheses)) {
-    const conds = Array.isArray(t?.killConditions) ? t.killConditions : [];
-    if (!conds.length) continue;
+    const stored = Array.isArray(t?.killConditions) ? t.killConditions : [];
+    if (!stored.length) continue;
+    // Every underwritten name is swept against the 200-day trend breaker,
+    // whether or not it was saved with one (app/lib/kill-conditions).
+    const conds = withBaselineConditions(stored);
     const tk = rawTk.toUpperCase();
     const st = stockByTicker.get(tk);
     const fs = snaps[tk]?.factset;
@@ -208,6 +213,7 @@ export async function loadAlertInputs(): Promise<AlertInputs> {
       riskLevel: st?.riskAlert ? st.riskAlert.level ?? null : st ? null : undefined,
       price: typeof st?.price === "number" ? st.price : st?.healthData?.currentPrice ?? null,
       ma200: st?.healthData?.twoHundredDayAvg ?? null,
+      technicals: st?.technicals ?? null,
     });
     const { tripped, auto } = trippedCount(checks);
     killWatch.push({ ticker: tk, why: t?.why, checks, tripped, auto, underwrittenAt: t?.underwrittenAt, reUnderwriteBy: t?.reUnderwriteBy, aiDrafted: t?.aiDrafted });

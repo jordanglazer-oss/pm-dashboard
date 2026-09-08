@@ -3,12 +3,17 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
   KILL_TEMPLATES,
+  TECHNICAL_METRICS,
   checkAll,
   describeCondition,
+  isBaselineCondition,
+  technicalDef,
   trippedCount,
+  withBaselineConditions,
   type KillCondition,
   type KillSignals,
   type KillStatus,
+  type TechnicalMetricId,
   type ThesisPillar,
 } from "@/app/lib/kill-conditions";
 import type { ThesisReview, ReviewChange } from "@/app/lib/thesis-review";
@@ -79,6 +84,7 @@ function conditionFromChange(after: NonNullable<ReviewChange["after"]>, base?: K
     theme: after.theme ?? base?.theme,
     pillarId: after.pillarId ?? base?.pillarId,
     metric: after.metric ?? (after.kind === "metric" ? base?.metric : undefined),
+    technical: after.kind === "technical" ? base?.technical : undefined,
     addedAt: base?.addedAt ?? todayIso(),
     trippedAt: null,
   };
@@ -129,6 +135,9 @@ export default function ThesisTile({
   const [versionReason, setVersionReason] = useState<string>("edit");
   const [addThreshold, setAddThreshold] = useState<string>("");
   const [addNote, setAddNote] = useState("");
+  // `technical` kind: which registered read, and which way the guard points.
+  const [addTechMetric, setAddTechMetric] = useState<TechnicalMetricId>(TECHNICAL_METRICS[0].id);
+  const [addTechCmp, setAddTechCmp] = useState<">=" | "<=">(TECHNICAL_METRICS[0].defaultComparator);
   const [journalNote, setJournalNote] = useState<string | null>(null);
   // Persisted (pm:ui-prefs) fold for the signed thesis prose — site rule:
   // every collapse/expand survives a refresh.
@@ -159,18 +168,21 @@ export default function ThesisTile({
       const pillars: ThesisPillar[] = Array.isArray(d.draft.pillars) ? d.draft.pillars : [];
       setDraftPillars(pillars);
       setDraftConds(
-        (
-          d.draft.conditions as { kind: KillCondition["kind"]; threshold?: number; note?: string; theme?: string; pillarId?: string; metric?: KillCondition["metric"] }[]
-        ).map((c, i) => ({
-          id: `${c.kind}-${Date.now()}-${i}`,
-          kind: c.kind,
-          threshold: c.threshold,
-          note: c.note,
-          theme: c.theme,
-          pillarId: c.pillarId,
-          metric: c.metric,
-          addedAt: todayIso(),
-        })),
+        withBaselineConditions(
+          (
+            d.draft.conditions as { kind: KillCondition["kind"]; threshold?: number; note?: string; theme?: string; pillarId?: string; metric?: KillCondition["metric"]; technical?: KillCondition["technical"] }[]
+          ).map((c, i) => ({
+            id: `${c.kind}-${Date.now()}-${i}`,
+            kind: c.kind,
+            threshold: c.threshold,
+            note: c.note,
+            theme: c.theme,
+            pillarId: c.pillarId,
+            metric: c.metric,
+            technical: c.technical,
+            addedAt: todayIso(),
+          })),
+        ),
       );
       setAiDrafted(true);
       setVersionReason(entry ? "redrafted with AI" : "underwrite");
@@ -275,7 +287,10 @@ export default function ThesisTile({
     };
   }, [ticker]);
 
-  const conditions = useMemo(() => entry?.killConditions ?? [], [entry]);
+  // The 200DMA breaker rides under every thesis (app/lib/kill-conditions).
+  // Composed at read time so no stored blob is rewritten to introduce it; it
+  // persists on the next signed save or on its first trip.
+  const conditions = useMemo(() => (entry ? withBaselineConditions(entry.killConditions ?? []) : []), [entry]);
   const checks = useMemo(() => checkAll(conditions, liveSignals), [conditions, liveSignals]);
   const { tripped, auto } = trippedCount(checks);
 
@@ -338,7 +353,7 @@ export default function ThesisTile({
       }
     }
     setDraftWhy(entry?.why ?? "");
-    setDraftConds(conds);
+    setDraftConds(withBaselineConditions(conds));
     setDraftPillars(pillars);
     setAiDrafted(false);
     setVersionReason("review applied");
@@ -370,14 +385,22 @@ export default function ThesisTile({
     const tpl = MANUAL_TEMPLATES.find((t) => t.kind === addKind);
     if (!tpl) return;
     if (addKind === "custom" && !addNote.trim()) return;
-    const th = addThreshold.trim() === "" ? tpl.defaultThreshold : Number(addThreshold);
+    const techDef = addKind === "technical" ? technicalDef(addTechMetric) : undefined;
+    if (addKind === "technical" && !techDef) return;
+    const fallbackThreshold = techDef ? techDef.defaultThreshold : tpl.defaultThreshold;
+    const th = addThreshold.trim() === "" ? fallbackThreshold : Number(addThreshold);
+    const threshold = typeof th === "number" && isFinite(th) ? th : fallbackThreshold;
     setDraftConds((cs) => [
       ...cs,
       {
         id: `${addKind}-${Date.now()}`,
         kind: addKind,
-        threshold: typeof th === "number" && isFinite(th) ? th : tpl.defaultThreshold,
+        threshold: addKind === "technical" ? undefined : threshold,
         note: addKind === "custom" ? addNote.trim() : undefined,
+        technical:
+          techDef && threshold != null
+            ? { metric: techDef.id, comparator: addTechCmp, threshold }
+            : undefined,
         pillarId: addPillar || undefined,
         theme: addPillar ? draftPillars.find((p) => p.id === addPillar)?.title : undefined,
         addedAt: todayIso(),
@@ -390,10 +413,14 @@ export default function ThesisTile({
   const save = useCallback(async () => {
     setSaving(true);
     try {
+      // Blanking BOTH halves still clears the thesis (the route deletes an
+      // entry with no prose and no conditions) — the baseline rides along
+      // only on a thesis that actually says something.
+      const signedConds = !draftWhy.trim() && draftConds.length === 0 ? [] : withBaselineConditions(draftConds);
       const body: Record<string, unknown> = {
         ticker,
         why: draftWhy.trim(),
-        killConditions: draftConds,
+        killConditions: signedConds,
         pillars: draftPillars,
         aiDrafted, // provenance: started from an AI draft (PM edited + signed)
         versionReason, // the server versions the PRIOR signed state under this reason
@@ -427,7 +454,7 @@ export default function ThesisTile({
       setEntry((e) => ({
         why: draftWhy.trim(),
         updatedAt: new Date().toISOString(),
-        killConditions: draftConds,
+        killConditions: signedConds,
         pillars: draftPillars,
         underwrittenAt: e?.underwrittenAt ?? (body.underwrittenAt as string | undefined),
         underwritePrice: e?.underwritePrice ?? (body.underwritePrice as number | undefined) ?? null,
@@ -913,13 +940,21 @@ export default function ThesisTile({
                 <span className="min-w-0 flex-1 basis-[14rem] break-words text-ink [overflow-wrap:anywhere]">
                   {describeCondition(c)}
                   {c.kind === "metric" && <span className="ml-1.5 text-[11px] text-pos">reported metric</span>}
+                  {c.kind === "technical" && <span className="ml-1.5 text-[11px] text-accent">technical</span>}
+                  {isBaselineCondition(c) && <span className="ml-1.5 text-[11px] text-ink-3">automatic</span>}
                 </span>
-                <button
-                  onClick={() => setDraftConds((cs) => cs.filter((x) => x.id !== c.id))}
-                  className="text-[11.5px] text-ink-3 hover:text-neg"
-                >
-                  remove
-                </button>
+                {isBaselineCondition(c) ? (
+                  <span className="text-[11.5px] text-ink-faint" title="Every thesis carries the 200-day trend breaker. Add your own 200DMA condition to replace it with your wording.">
+                    always on
+                  </span>
+                ) : (
+                  <button
+                    onClick={() => setDraftConds((cs) => cs.filter((x) => x.id !== c.id))}
+                    className="text-[11.5px] text-ink-3 hover:text-neg"
+                  >
+                    remove
+                  </button>
+                )}
               </div>
             ))}
             <div className="flex flex-wrap items-center gap-2 pt-1">
@@ -945,7 +980,42 @@ export default function ThesisTile({
                   </option>
                 ))}
               </select>
-              {addKind !== "custom" && MANUAL_TEMPLATES.find((t) => t.kind === addKind)?.defaultThreshold != null && (
+              {addKind === "technical" && (
+                <>
+                  <select
+                    value={addTechMetric}
+                    onChange={(e) => {
+                      const id = e.target.value as TechnicalMetricId;
+                      setAddTechMetric(id);
+                      setAddTechCmp(technicalDef(id)?.defaultComparator ?? ">=");
+                      setAddThreshold("");
+                    }}
+                    className={`${INPUT} w-auto`}
+                    title="Which technical read to watch"
+                  >
+                    {TECHNICAL_METRICS.map((m) => (
+                      <option key={m.id} value={m.id}>{m.label}</option>
+                    ))}
+                  </select>
+                  <select
+                    value={addTechCmp}
+                    onChange={(e) => setAddTechCmp(e.target.value as ">=" | "<=")}
+                    className={`${INPUT} w-16`}
+                    title="Direction of the guard"
+                  >
+                    <option value=">=">stays ≥</option>
+                    <option value="<=">stays ≤</option>
+                  </select>
+                  <input
+                    value={addThreshold}
+                    onChange={(e) => setAddThreshold(e.target.value)}
+                    placeholder={String(technicalDef(addTechMetric)?.defaultThreshold ?? 0)}
+                    className={`${INPUT} w-20 font-mono`}
+                  />
+                  <span className="text-[11px] text-ink-3">{technicalDef(addTechMetric)?.unit}</span>
+                </>
+              )}
+              {addKind !== "custom" && addKind !== "technical" && MANUAL_TEMPLATES.find((t) => t.kind === addKind)?.defaultThreshold != null && (
                 <input
                   value={addThreshold}
                   onChange={(e) => setAddThreshold(e.target.value)}
@@ -964,6 +1034,9 @@ export default function ThesisTile({
               <button onClick={addCondition} className={BTN}>
                 <AppIcon name="plus" size={12} /> Add condition
               </button>
+              {addKind === "technical" && (
+                <p className="w-full text-[11.5px] text-ink-3">{technicalDef(addTechMetric)?.hint}</p>
+              )}
             </div>
           </div>
           <div className="flex items-center justify-end gap-2 border-t border-line-soft pt-2.5">

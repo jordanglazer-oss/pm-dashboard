@@ -2482,6 +2482,7 @@ export default function StockDetailPage() {
                   riskLevel: stock.riskAlert ? stock.riskAlert.level : stock.technicals ? null : undefined,
                   price: typeof stock.price === "number" ? stock.price : stock.healthData?.currentPrice ?? null,
                   ma200: stock.healthData?.twoHundredDayAvg ?? null,
+                  technicals: stock.technicals ?? null,
                 }}
               />
             );

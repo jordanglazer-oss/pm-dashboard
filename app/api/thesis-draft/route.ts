@@ -31,8 +31,10 @@ import type { SynthesisScreenCache, SynthesisEntry } from "@/app/lib/synthesis-s
  * Condition priorities (agreed 2026-09-06): company-specific first. `metric`
  * conditions against reported lines, then `custom` (AI-verified) for pillars
  * the recap doesn't print, then at most two position reads (SIA / Equate /
- * MarketEdge / 200-day). Score floor / decay are NOT proposed — the score is a
- * summary of these inputs and says nothing about which pillar broke.
+ * MarketEdge). Score floor / decay are NOT proposed — the score is a
+ * summary of these inputs and says nothing about which pillar broke. The
+ * 200-day trend breaker is not proposed either: it is appended to EVERY
+ * thesis by withBaselineConditions, so a slot spent on it would be wasted.
  */
 
 const client = new Anthropic();
@@ -48,7 +50,7 @@ type DraftCondition = {
 type Draft = { why: string; pillars: ThesisPillar[]; conditions: DraftCondition[] };
 
 const VALID_KINDS = new Set<KillConditionKind>(KILL_TEMPLATES.map((t) => t.kind));
-const POSITION_KINDS = new Set<KillConditionKind>(["sia_floor", "equate_rank", "marketedge", "ma200", "risk_alert", "revisions"]);
+const POSITION_KINDS = new Set<KillConditionKind>(["sia_floor", "equate_rank", "marketedge", "risk_alert", "revisions"]);
 const MAX_PILLARS = 4;
 const MAX_CONDITIONS = 8;
 const MAX_POSITION = 2;
@@ -69,7 +71,7 @@ const slug = (t: string) => t.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(
 function sanitize(
   raw: unknown,
   available: { results: string[]; guidance: string[] },
-  live: { aboveMa200: boolean | null; siaPercentile: number | null; equateRank: number | null | undefined; marketEdge: string | null; netRevisions: number | null },
+  live: { siaPercentile: number | null; equateRank: number | null | undefined; marketEdge: string | null; netRevisions: number | null },
 ): Draft | null {
   if (!raw || typeof raw !== "object") return null;
   const o = raw as { why?: unknown; pillars?: unknown; conditions?: unknown };
@@ -99,6 +101,10 @@ function sanitize(
     const kind = cc.kind as KillConditionKind;
     if (!VALID_KINDS.has(kind)) continue;
     if (kind === "score_floor" || kind === "score_decay") continue; // not proposed any more
+    // The 200-day breaker is appended to every thesis by
+    // withBaselineConditions — proposing it here would only burn one of the
+    // two position slots on a condition the PM gets for free.
+    if (kind === "ma200") continue;
     const pillarTitle = typeof cc.pillar === "string" ? cc.pillar.trim().toLowerCase() : "";
     const pillarId = pillarByTitle.get(pillarTitle) ?? (pillars.length ? undefined : undefined);
     const themeRaw = cc.theme;
@@ -141,7 +147,6 @@ function sanitize(
     if (POSITION_KINDS.has(kind)) {
       if (seenPosition.has(kind)) continue;
       // Don't propose a position read that is already tripped or unreadable today.
-      if (kind === "ma200" && live.aboveMa200 !== true) continue;
       if (kind === "sia_floor" && (live.siaPercentile == null || (threshold != null && live.siaPercentile < threshold))) continue;
       if (kind === "equate_rank" && (live.equateRank == null || (threshold != null && live.equateRank > threshold))) continue;
       if (kind === "marketedge" && (!live.marketEdge || live.marketEdge === "avoid")) continue;
@@ -266,7 +271,7 @@ ${watchingWhy}
 CONDITION KINDS:
 - metric: a reported figure from the Metrics Recap lines above vs a threshold. Checked automatically from the next recap. Fields: {"kind":"metric","pillar":"<pillar title>","metric":{"label":"<human label>","source":"results"|"guidance","match":"<the label EXACTLY as it appears in the lines above>","field":"actual"|"yoy","period":"<guidance only, e.g. FY2026>","comparator":">="|"<=","threshold":<number in the line's unit — % for yoy/margins, $B for dollar lines as printed>,"unit":"%"|"$"|""}}
 - custom: a company-specific test the recap does NOT print (a segment, backlog, contract, unit metric, market-share or competitive-position fact). AI-verified against filings after each report. Must name the metric, the comparison and the current reference figure, be reported EVERY quarter, and be one test (never "and"). {"kind":"custom","pillar":"...","note":"...","theme":"..."}
-- sia_floor (threshold = percentile, e.g. 50), equate_rank (threshold = rank, e.g. 60), marketedge, ma200, revisions (threshold = net floor, e.g. 0): the name's POSITION in the market / its universe. At most TWO of these, and only ones that currently pass.
+- sia_floor (threshold = percentile, e.g. 50), equate_rank (threshold = rank, e.g. 60), marketedge, revisions (threshold = net floor, e.g. 0): the name's POSITION in the market / its universe. At most TWO of these, and only ones that currently pass. Do NOT propose a 200-day-average condition — every thesis carries that trend breaker automatically.
 
 Answer in JSON only:
 {
@@ -306,7 +311,6 @@ Rules:
       return NextResponse.json({ error: `draft failed — unparseable response: ${parseResult.error}` }, { status: 502 });
     }
     const draft = sanitize(parseResult.value, available, {
-      aboveMa200,
       siaPercentile: extras.siaPercentile ?? null,
       equateRank: extras.equateRank,
       marketEdge: extras.marketEdgeOpinion ?? null,
