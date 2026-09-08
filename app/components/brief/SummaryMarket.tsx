@@ -47,6 +47,7 @@ function driversSentence(s: DailySummary, win: "1d" | "1w"): React.ReactNode {
 export function MarketPanel({ s, onRefresh, refreshing }: { s: DailySummary; onRefresh: () => void; refreshing: boolean }) {
   const { uiPrefs, setUiPref } = useStocks();
   const open = (uiPrefs[PREF] ?? "1") !== "1";
+  const toggleOpen = () => setUiPref(PREF, open ? "1" : "0");
   const [win, setWin] = useState<"1d" | "1w">("1d");
   const bench = s.performance?.benchmarks ?? [];
   const info = s.regime?.informational;
@@ -62,16 +63,29 @@ export function MarketPanel({ s, onRefresh, refreshing }: { s: DailySummary; onR
   return (
     <Card>
       <div className="panel-h" id="s-market" style={{ scrollMarginTop: 64 }}>
-        <span className="t-mark bg-hub-research" />
-        <span className="t">Market</span>
-        <span className="m">{win === "1d" ? "today" : "this week"}</span>
-        <div className="ml-auto flex items-center gap-2">
+        {/* The whole banner toggles, not just the chevron — same as every other
+            section on the site. The controls on the right stop the click so the
+            window switch and refresh still work. State persists in pm:ui-prefs. */}
+        <div
+          role="button"
+          tabIndex={0}
+          aria-expanded={open}
+          onClick={toggleOpen}
+          onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggleOpen(); } }}
+          className="group flex min-w-0 flex-1 cursor-pointer items-center gap-2.5"
+          title={open ? "Hide the full driver table and sector map" : "Show the full driver table and sector map"}
+        >
+          <span className="t-mark bg-hub-research" />
+          <span className="t">Market</span>
+          <span className="m">{win === "1d" ? "today" : "this week"}</span>
+        </div>
+        <div className="ml-auto flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
           <div className="seg">
             <button type="button" className={win === "1d" ? "on" : ""} onClick={() => setWin("1d")}>1d</button>
             <button type="button" className={win === "1w" ? "on" : ""} onClick={() => setWin("1w")}>1w</button>
           </div>
           <IconButton onClick={onRefresh} disabled={refreshing} spin={refreshing} title="Rebuild the market drivers from FactSet" icon="refresh" />
-          <IconButton onClick={() => setUiPref(PREF, open ? "1" : "0")} title={open ? "Hide the full driver table and sector map" : "Show the full driver table and sector map"} icon={open ? "chevU" : "chevD"} active={open} />
+          <IconButton onClick={toggleOpen} title={open ? "Hide the full driver table and sector map" : "Show the full driver table and sector map"} icon={open ? "chevU" : "chevD"} active={open} />
         </div>
       </div>
       {bench.length === 0 && levels.length === 0 ? (
@@ -143,23 +157,25 @@ export function MoversCard({ s, win }: { s: DailySummary; win: "1d" | "1w" }) {
       {!index || index.namesPriced === 0 ? (
         <Empty>{d?.error ?? "No driver data yet — the nightly job builds it, or use the refresh control."}</Empty>
       ) : (
-        <table className="data-table">
-          <thead>
-            <tr>
-              <th className="pl-3.5">Name</th>
-              <th className="w-[36px] px-1.5" />
-              <th className="n w-[72px]" title="Percentage points of the index return">Contrib pp</th>
-              <th className="n w-[58px]">Return</th>
-              <th className="n w-[58px] pr-3.5" title="Share of the priced universe">Weight</th>
-            </tr>
-          </thead>
-          <tbody>
-            <BandRow>Contributors</BandRow>
-            <DriverRows rows={top} contrib={contrib} ret={ret} maxAbs={maxAbs} limit={5} />
-            <BandRow>Detractors</BandRow>
-            <DriverRows rows={bottom} contrib={contrib} ret={ret} maxAbs={maxAbs} limit={5} />
-          </tbody>
-        </table>
+        <div className="tbl-wrap">
+          <table className="data-table">
+            <thead>
+              <tr>
+                <th className="pl-3.5">Name</th>
+                <th className="w-[36px] px-1.5" />
+                <th className="n w-[72px]" title="Percentage points of the index return">Contrib pp</th>
+                <th className="n w-[58px]">Return</th>
+                <th className="n w-[58px] pr-3.5" title="Share of the priced universe">Weight</th>
+              </tr>
+            </thead>
+            <tbody>
+              <BandRow>Contributors</BandRow>
+              <DriverRows rows={top} contrib={contrib} ret={ret} maxAbs={maxAbs} limit={5} />
+              <BandRow>Detractors</BandRow>
+              <DriverRows rows={bottom} contrib={contrib} ret={ret} maxAbs={maxAbs} limit={5} />
+            </tbody>
+          </table>
+        </div>
       )}
     </Card>
   );
@@ -208,54 +224,58 @@ export function DriversCard({ s, onRefresh, refreshing }: { s: DailySummary; onR
           {/* Contributors and detractors as one table so the columns line up and
               a long company name wraps in its cell instead of pushing the panel
               sideways. Numerics keep their own fixed columns. */}
-          <table className="data-table">
-            <thead>
-              <tr>
-                <th className="pl-3.5">Name</th>
-                <th className="w-[40px] px-1.5" />
-                <th className="n w-[72px]" title="Percentage points of the index return">Contrib pp</th>
-                <th className="n w-[58px]">Return</th>
-                <th className="n w-[58px] pr-3.5" title="Share of the priced universe">Weight</th>
-              </tr>
-            </thead>
-            <tbody>
-              <BandRow>Contributors</BandRow>
-              <DriverRows rows={top} contrib={contrib} ret={ret} maxAbs={maxAbs} />
-              <BandRow>Detractors</BandRow>
-              <DriverRows rows={bottom} contrib={contrib} ret={ret} maxAbs={maxAbs} />
-            </tbody>
-          </table>
-          <table className="data-table border-t border-line">
-            <thead>
-              <tr>
-                <th className="pl-3.5">Sector · {win === "1d" ? "today" : "week"}</th>
-                <th className="w-[40px] px-1.5" />
-                <th className="n w-[72px]">Contrib pp</th>
-                <th className="n w-[58px]">Return</th>
-                <th className="n w-[58px] pr-3.5">Weight</th>
-              </tr>
-            </thead>
-            <tbody>
-              {index.sectors.map((sec) => {
-                const v = win === "1d" ? sec.ret1d : sec.ret1w;
-                const c = win === "1d" ? sec.contrib1d : sec.contrib1w;
-                return (
-                  <tr key={sec.sector}>
-                    <td className="pl-3.5">
-                      <span className="break-words text-ink">{sec.sector}</span>
-                      {sec.leaders.length > 0 && (
-                        <span className="ml-1.5 break-all font-mono text-[10.5px] text-ink-faint">{sec.leaders.slice(0, 3).map((l) => l.ticker).join(" ")}</span>
-                      )}
-                    </td>
-                    <td className="px-1.5"><SectorBar v={v} /></td>
-                    <td className="n text-ink-2">{c == null ? "—" : `${c > 0 ? "+" : ""}${c.toFixed(2)}`}</td>
-                    <td className="n"><Pct v={v} digits={1} /></td>
-                    <td className="n pr-3.5 text-ink-2">{(sec.weight * 100).toFixed(1)}%</td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
+          <div className="tbl-wrap">
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th className="pl-3.5">Name</th>
+                  <th className="w-[40px] px-1.5" />
+                  <th className="n w-[72px]" title="Percentage points of the index return">Contrib pp</th>
+                  <th className="n w-[58px]">Return</th>
+                  <th className="n w-[58px] pr-3.5" title="Share of the priced universe">Weight</th>
+                </tr>
+              </thead>
+              <tbody>
+                <BandRow>Contributors</BandRow>
+                <DriverRows rows={top} contrib={contrib} ret={ret} maxAbs={maxAbs} />
+                <BandRow>Detractors</BandRow>
+                <DriverRows rows={bottom} contrib={contrib} ret={ret} maxAbs={maxAbs} />
+              </tbody>
+            </table>
+          </div>
+          <div className="tbl-wrap">
+            <table className="data-table border-t border-line">
+              <thead>
+                <tr>
+                  <th className="pl-3.5">Sector · {win === "1d" ? "today" : "week"}</th>
+                  <th className="w-[40px] px-1.5" />
+                  <th className="n w-[72px]">Contrib pp</th>
+                  <th className="n w-[58px]">Return</th>
+                  <th className="n w-[58px] pr-3.5">Weight</th>
+                </tr>
+              </thead>
+              <tbody>
+                {index.sectors.map((sec) => {
+                  const v = win === "1d" ? sec.ret1d : sec.ret1w;
+                  const c = win === "1d" ? sec.contrib1d : sec.contrib1w;
+                  return (
+                    <tr key={sec.sector}>
+                      <td className="pl-3.5">
+                        <span className="break-words text-ink">{sec.sector}</span>
+                        {sec.leaders.length > 0 && (
+                          <span className="ml-1.5 break-all font-mono text-[10.5px] text-ink-faint">{sec.leaders.slice(0, 3).map((l) => l.ticker).join(" ")}</span>
+                        )}
+                      </td>
+                      <td className="px-1.5"><SectorBar v={v} /></td>
+                      <td className="n text-ink-2">{c == null ? "—" : `${c > 0 ? "+" : ""}${c.toFixed(2)}`}</td>
+                      <td className="n"><Pct v={v} digits={1} /></td>
+                      <td className="n pr-3.5 text-ink-2">{(sec.weight * 100).toFixed(1)}%</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
         </>
       )}
     </Card>
@@ -344,54 +364,56 @@ export function SectorMapCard({ s }: { s: DailySummary }) {
       ) : (
         // No horizontal scroller: the four return columns are fixed-width
         // numerics and the sector name is the only cell that wraps.
-        <table className="data-table">
-          <thead>
-            <tr>
-              <th className="pl-3.5">Sector</th>
-              <th className="n w-[48px]">1d</th>
-              <th className="n w-[48px]">1w</th>
-              <th className="n w-[48px]">1m</th>
-              <th className="n w-[48px]">3m</th>
-              <th className="n w-[56px] pr-3.5" title="Book weight, and active vs the S&P weight beneath it">Book</th>
-            </tr>
-          </thead>
-          <tbody>
-            {sectors.map((r) => (
-              <tr key={r.symbol}>
-                <td className="pl-3.5">
-                  <span className="font-mono text-[11px] text-ink-faint">{r.symbol}</span>{" "}
-                  <span className="break-words">{r.label}</span>
-                </td>
-                <Cell v={r.ret1d} /><Cell v={r.ret1w} /><Cell v={r.ret1m} /><Cell v={r.ret3m} />
-                <td className="n pr-3.5">
-                  {r.bookWeightPct != null ? (
-                    <>
-                      <span className="block text-ink">{r.bookWeightPct.toFixed(1)}%</span>
-                      {r.activePct != null && (
-                        <span className={`block text-[11px] ${r.activePct > 0.5 ? "text-pos" : r.activePct < -0.5 ? "text-neg" : "text-ink-3"}`} title="Active vs the S&P weight">
-                          {r.activePct > 0 ? "+" : ""}{r.activePct.toFixed(1)}
-                        </span>
-                      )}
-                    </>
-                  ) : (
-                    <span className="text-ink-faint">—</span>
-                  )}
-                </td>
+        <div className="tbl-wrap">
+          <table className="data-table">
+            <thead>
+              <tr>
+                <th className="pl-3.5">Sector</th>
+                <th className="n w-[48px]">1d</th>
+                <th className="n w-[48px]">1w</th>
+                <th className="n w-[48px]">1m</th>
+                <th className="n w-[48px]">3m</th>
+                <th className="n w-[56px] pr-3.5" title="Book weight, and active vs the S&P weight beneath it">Book</th>
               </tr>
-            ))}
-            <tr><td colSpan={6} className="!h-7 bg-surface-2 pl-3.5 text-[11px] text-ink-3">Industries</td></tr>
-            {industries.map((r) => (
-              <tr key={r.symbol}>
-                <td className="pl-3.5">
-                  <span className="font-mono text-[11px] text-ink-faint">{r.symbol}</span>{" "}
-                  <span className="break-words">{r.label}</span>
-                </td>
-                <Cell v={r.ret1d} /><Cell v={r.ret1w} /><Cell v={r.ret1m} /><Cell v={r.ret3m} />
-                <td />
-              </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {sectors.map((r) => (
+                <tr key={r.symbol}>
+                  <td className="pl-3.5">
+                    <span className="font-mono text-[11px] text-ink-faint">{r.symbol}</span>{" "}
+                    <span className="break-words">{r.label}</span>
+                  </td>
+                  <Cell v={r.ret1d} /><Cell v={r.ret1w} /><Cell v={r.ret1m} /><Cell v={r.ret3m} />
+                  <td className="n pr-3.5">
+                    {r.bookWeightPct != null ? (
+                      <>
+                        <span className="block text-ink">{r.bookWeightPct.toFixed(1)}%</span>
+                        {r.activePct != null && (
+                          <span className={`block text-[11px] ${r.activePct > 0.5 ? "text-pos" : r.activePct < -0.5 ? "text-neg" : "text-ink-3"}`} title="Active vs the S&P weight">
+                            {r.activePct > 0 ? "+" : ""}{r.activePct.toFixed(1)}
+                          </span>
+                        )}
+                      </>
+                    ) : (
+                      <span className="text-ink-faint">—</span>
+                    )}
+                  </td>
+                </tr>
+              ))}
+              <tr><td colSpan={6} className="!h-7 bg-surface-2 pl-3.5 text-[11px] text-ink-3">Industries</td></tr>
+              {industries.map((r) => (
+                <tr key={r.symbol}>
+                  <td className="pl-3.5">
+                    <span className="font-mono text-[11px] text-ink-faint">{r.symbol}</span>{" "}
+                    <span className="break-words">{r.label}</span>
+                  </td>
+                  <Cell v={r.ret1d} /><Cell v={r.ret1w} /><Cell v={r.ret1m} /><Cell v={r.ret3m} />
+                  <td />
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       )}
     </Card>
   );
@@ -429,38 +451,40 @@ export function ModelsCard({ s }: { s: DailySummary }) {
       {rows.length === 0 ? (
         <Empty>No model series yet.</Empty>
       ) : (
-        <table className="data-table">
-          <thead>
-            <tr>
-              <th className="pl-3.5">Model</th>
-              {["1d", "1w", "1m", "3m", "YTD"].map((h) => <th key={h} className="n w-[52px] last:pr-3.5">{h}</th>)}
-            </tr>
-          </thead>
-          <tbody>
-            {shown.map((g) => {
-              const grp = rows.filter((r) => r.groupId === g);
-              return grp.map((r, i) => (
-                <tr key={`${g}-${r.profile}`}>
-                  <td className="pl-3.5">
-                    {i === 0 ? <span className="break-words font-medium text-ink">{r.groupName}</span> : <span className="break-words text-ink-faint">{r.groupName}</span>}
-                    <span className="ml-1.5 text-ink-2">{PROFILE_LABEL[r.profile] ?? r.profile}</span>
-                  </td>
+        <div className="tbl-wrap">
+          <table className="data-table">
+            <thead>
+              <tr>
+                <th className="pl-3.5">Model</th>
+                {["1d", "1w", "1m", "3m", "YTD"].map((h) => <th key={h} className="n w-[52px] last:pr-3.5">{h}</th>)}
+              </tr>
+            </thead>
+            <tbody>
+              {shown.map((g) => {
+                const grp = rows.filter((r) => r.groupId === g);
+                return grp.map((r, i) => (
+                  <tr key={`${g}-${r.profile}`}>
+                    <td className="pl-3.5">
+                      {i === 0 ? <span className="break-words font-medium text-ink">{r.groupName}</span> : <span className="break-words text-ink-faint">{r.groupName}</span>}
+                      <span className="ml-1.5 text-ink-2">{PROFILE_LABEL[r.profile] ?? r.profile}</span>
+                    </td>
+                    {(["1d", "1w", "1m", "3m", "ytd"] as const).map((k) => (
+                      <td key={k} className="n last:pr-3.5"><Pct v={r.returns[k]} /></td>
+                    ))}
+                  </tr>
+                ));
+              })}
+              {(s.performance?.benchmarks ?? []).map((b) => (
+                <tr key={b.key} className="bg-surface-2">
+                  <td className="pl-3.5 break-words text-ink-2">{b.label}</td>
                   {(["1d", "1w", "1m", "3m", "ytd"] as const).map((k) => (
-                    <td key={k} className="n last:pr-3.5"><Pct v={r.returns[k]} /></td>
+                    <td key={k} className="n last:pr-3.5"><Pct v={b.returns[k]} /></td>
                   ))}
                 </tr>
-              ));
-            })}
-            {(s.performance?.benchmarks ?? []).map((b) => (
-              <tr key={b.key} className="bg-surface-2">
-                <td className="pl-3.5 break-words text-ink-2">{b.label}</td>
-                {(["1d", "1w", "1m", "3m", "ytd"] as const).map((k) => (
-                  <td key={k} className="n last:pr-3.5"><Pct v={b.returns[k]} /></td>
-                ))}
-              </tr>
-            ))}
-          </tbody>
-        </table>
+              ))}
+            </tbody>
+          </table>
+        </div>
       )}
       <Link href="/aa-performance" className="flex h-8 items-center border-t border-line-soft px-3.5 text-[11.5px] text-accent hover:text-accent-ink">
         Full performance, every model

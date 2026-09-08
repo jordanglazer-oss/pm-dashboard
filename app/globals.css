@@ -192,11 +192,11 @@ body {
     overflow: hidden;
   }
   .tbl-wrap { overflow-x: auto; overscroll-behavior-x: contain; }
-  /* Any table sitting directly in a panel gets the same protection without a
-     wrapper, so a clipped column can never hide data outright. */
-  .panel > .data-table { display: block; overflow-x: auto; }
-  .panel > .data-table > thead,
-  .panel > .data-table > tbody { display: table; width: 100%; }
+  /* NEVER make a .data-table `display: block` to get it scrolling. That splits
+     thead and tbody into two independent tables, so the column widths stop
+     agreeing and every header sits over the wrong column — which is exactly
+     what happened on the Brief. A wide table needs a `.tbl-wrap` DIV around
+     it; the table itself always stays a table. */
   .panel-h {
     display: flex;
     align-items: center;

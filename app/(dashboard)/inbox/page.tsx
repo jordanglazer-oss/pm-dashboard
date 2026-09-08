@@ -1212,25 +1212,30 @@ export default function InboxPage() {
                 <th className="w-[86px] cursor-pointer select-none hover:text-ink" onClick={() => toggleCovSort("ticker")}>Ticker{covArrow("ticker")}</th>
                 <th className="cursor-pointer select-none hover:text-ink" onClick={() => toggleCovSort("name")}>Name{covArrow("name")}</th>
                 <th className="w-[76px] cursor-pointer select-none hover:text-ink" onClick={() => toggleCovSort("bucket")}>Bucket{covArrow("bucket")}</th>
-                <th className="w-[66px] text-center cursor-pointer select-none hover:text-ink" onClick={() => toggleCovSort("rbc")} title="Date the RBC PDF was last uploaded. Amber &gt;90d, red &gt;180d — a cue to fetch a newer report. Click to sort by recency (oldest first).">RBC{covArrow("rbc")}</th>
-                <th className="w-[66px] text-center cursor-pointer select-none hover:text-ink" onClick={() => toggleCovSort("jpm")} title="Date the JPM PDF was last uploaded. Amber &gt;90d, red &gt;180d — a cue to fetch a newer report. Click to sort by recency (oldest first).">JPM{covArrow("jpm")}</th>
-                <th className="w-[66px] text-center cursor-pointer select-none hover:text-ink" onClick={() => toggleCovSort("morn")} title="Date the Morningstar PDF was last uploaded. Amber &gt;90d, red &gt;180d. Morningstar is optional — a blank is not counted as a coverage gap in Status. Click to sort by recency (oldest first).">Morningstar{covArrow("morn")}</th>
-                {FACTSET_COLS.map((c, i) => (
-                  <th
-                    key={c.kind}
-                    className="w-[66px] text-center cursor-pointer select-none hover:text-ink"
-                    onClick={() => toggleCovSort("factset")}
-                    title={c.title}
-                  >
-                    {c.head}
-                    {i === 0 ? covArrow("factset") : null}
-                  </th>
-                ))}
+                {/* Seven date columns became two grouped cells. Fourteen columns
+                    could not fit the tile, so cell content overlapped its
+                    neighbour; every date is still here, sortable, in a third of
+                    the width. */}
+                <th className="w-[152px]" title="Analyst PDFs on file. Amber >90d, red >180d.">
+                  <div className="flex items-center gap-1.5">
+                    <span>Reports</span>
+                    <span className="flex gap-1 font-normal text-ink-faint">
+                      {([["rbc", "RBC"], ["jpm", "JPM"], ["morn", "MS"]] as const).map(([k, l]) => (
+                        <button key={k} type="button" onClick={() => toggleCovSort(k)} className="hover:text-ink" title={`Sort by ${l} recency (oldest first)`}>
+                          {l}{covArrow(k)}
+                        </button>
+                      ))}
+                    </span>
+                  </div>
+                </th>
+                <th className="w-[184px] cursor-pointer select-none hover:text-ink" onClick={() => toggleCovSort("factset")} title="Newest FactSet alert of each kind held for this name.">
+                  FactSet{covArrow("factset")}
+                </th>
                 <th className="n w-[68px] cursor-pointer select-none hover:text-ink" onClick={() => toggleCovSort("boostedAi")} title="Raw BoostedAI rating (0-5, decimals OK). Combined with Consensus to auto-derive the dashboard's aiRating (0-2).">Boosted.ai{covArrow("boostedAi")}</th>
                 <th className="w-[84px] cursor-pointer select-none hover:text-ink" onClick={() => toggleCovSort("consensus")} title="BoostedAI consensus recommendation. Combined with the numeric rating to auto-derive aiRating (Strong Buy / Buy → 2, Hold → 1, Sell / Strong Sell → 0).">Consensus{covArrow("consensus")}</th>
                 <th className="n w-[58px] cursor-pointer select-none hover:text-ink" onClick={() => toggleCovSort("sia")} title="SIA SMAX score (0-10 integer). Maps to relativeStrength: 8-10 → 2, 6-7 → 1, 0-5 → 0.">SIA SMAX{covArrow("sia")}</th>
                 <th className="n w-[88px] cursor-pointer select-none hover:text-ink" onClick={() => toggleCovSort("marketEdge")} title="MarketEdge Power Rating (−60…+100) and Opinion. Power Rating drives the marketEdge score: ≥ +60 → 2 (Long), −27…+59 → 1 (Neutral), < −27 → 0 (Avoid). Click the rating to edit; click the opinion chip to cycle. N/A for pure-Canadian names (MarketEdge covers US listings only).">MarketEdge{covArrow("marketEdge")}</th>
-                <th className="w-32 cursor-pointer select-none hover:text-ink" onClick={() => toggleCovSort("status")} title="Sort by overall coverage status (No reports / Partial / Both). Ascending shows gaps first.">Status{covArrow("status")}</th>
+                <th className="w-[104px] cursor-pointer select-none hover:text-ink" onClick={() => toggleCovSort("status")} title="Sort by overall coverage status (No reports / Partial / Both). Ascending shows gaps first.">Status{covArrow("status")}</th>
               </tr>
             </thead>
             <tbody>
@@ -1252,50 +1257,48 @@ export default function InboxPage() {
                     <td>
                       <span className={r.bucket === "Portfolio" ? "text-ink-2" : "text-ink-3"}>{r.bucket}</span>
                     </td>
-                    <td className="text-center">
-                      {r.rbcDate ? (
-                        <span className={`inline-block text-xs font-semibold ${staleClass(daysSince(r.rbcDate))}`} title={`RBC report last uploaded ${fmtTime(r.rbcDate)}${(daysSince(r.rbcDate) ?? 0) > 90 ? " — worth checking for a newer one" : ""}`}>
-                          {fmtReportDate(r.rbcDate)}
-                        </span>
-                      ) : (
-                        <span className="inline-block text-ink-faint text-base" title="No RBC report yet">—</span>
-                      )}
+                    <td>
+                      <div className="grid grid-cols-3 gap-x-1.5">
+                        {([
+                          ["RBC", r.rbcDate, "RBC report"],
+                          ["JPM", r.jpmDate, "JPM report"],
+                          ["MS", r.mornDate, "Morningstar report (optional source)"],
+                        ] as const).map(([label, date, what]) => (
+                          <div key={label} className="min-w-0 text-center">
+                            <div className="text-[10px] leading-none text-ink-faint">{label}</div>
+                            {date ? (
+                              <div className={`text-[11.5px] font-semibold leading-tight ${staleClass(daysSince(date))}`} title={`${what} last uploaded ${fmtTime(date)}${(daysSince(date) ?? 0) > 90 ? " — worth checking for a newer one" : ""}`}>
+                                {fmtReportDate(date)}
+                              </div>
+                            ) : (
+                              <div className="text-[11.5px] leading-tight text-ink-faint" title={`No ${what} yet`}>—</div>
+                            )}
+                          </div>
+                        ))}
+                      </div>
                     </td>
-                    <td className="text-center">
-                      {r.jpmDate ? (
-                        <span className={`inline-block text-xs font-semibold ${staleClass(daysSince(r.jpmDate))}`} title={`JPM report last uploaded ${fmtTime(r.jpmDate)}${(daysSince(r.jpmDate) ?? 0) > 90 ? " — worth checking for a newer one" : ""}`}>
-                          {fmtReportDate(r.jpmDate)}
-                        </span>
-                      ) : (
-                        <span className="inline-block text-ink-faint text-base" title="No JPM report yet">—</span>
-                      )}
+                    <td>
+                      <div className="grid grid-cols-4 gap-x-1.5">
+                        {FACTSET_COLS.map((c) => {
+                          const e = r.factset[c.kind];
+                          return (
+                            <div key={c.kind} className="min-w-0 text-center">
+                              <div className="truncate text-[10px] leading-none text-ink-faint" title={c.head}>{c.head.slice(0, 4)}</div>
+                              {e ? (
+                                <div
+                                  className={`text-[11.5px] font-semibold leading-tight ${staleClass(daysSince(e.date))}`}
+                                  title={`${e.label}${e.event ? ` — ${e.event}` : ""} (${e.date})`}
+                                >
+                                  {fmtReportDate(e.date)}
+                                </div>
+                              ) : (
+                                <div className="text-[11.5px] leading-tight text-ink-faint" title={`No ${c.head} alert ingested for this name yet`}>—</div>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
                     </td>
-                    <td className="text-center">
-                      {r.mornDate ? (
-                        <span className={`inline-block text-xs font-semibold ${staleClass(daysSince(r.mornDate))}`} title={`Morningstar report last uploaded ${fmtTime(r.mornDate)}${(daysSince(r.mornDate) ?? 0) > 90 ? " — worth checking for a newer one" : ""}`}>
-                          {fmtReportDate(r.mornDate)}
-                        </span>
-                      ) : (
-                        <span className="inline-block text-ink-faint text-base" title="No Morningstar report yet (optional source)">—</span>
-                      )}
-                    </td>
-                    {FACTSET_COLS.map((c) => {
-                      const e = r.factset[c.kind];
-                      return (
-                        <td key={c.kind} className="text-center">
-                          {e ? (
-                            <span
-                              className={`inline-block text-xs font-semibold ${staleClass(daysSince(e.date))}`}
-                              title={`${e.label}${e.event ? ` — ${e.event}` : ""} (${e.date})`}
-                            >
-                              {fmtReportDate(e.date)}
-                            </span>
-                          ) : (
-                            <span className="inline-block text-ink-faint text-base" title={`No ${c.head} alert ingested for this name yet`}>—</span>
-                          )}
-                        </td>
-                      );
-                    })}
                     <td className="n">
                       <div className="flex items-center justify-end gap-1">
                         {r.boostedAi == null && (
