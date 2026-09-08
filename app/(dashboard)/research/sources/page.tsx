@@ -1,16 +1,20 @@
 "use client";
 
 import React, { useState, useEffect, useCallback, useMemo, useRef } from "react";
+import Link from "next/link";
 import type { ResearchState, UptickEntry, IdeaEntry, RBCEntry, SectorViewEntry, SectorView, LeeFocusArea, AlphaPickEntry, FewEntry } from "@/app/lib/defaults";
 import { defaultResearch, GICS_SECTORS } from "@/app/lib/defaults";
 import { dedupeRbcEntries } from "@/app/lib/rbc-canonical";
 import { applyResearchEntries } from "@/app/lib/research-merge";
+import { rankResearch, SUGGESTED_MIN_LISTS } from "@/app/lib/research-ranked";
 import type { RemovalSource } from "@/app/lib/research-removals";
 import { displayTicker } from "@/app/lib/ticker";
 import TickerLink from "@/app/components/TickerLink";
 import { tickerIssue, suggestTickerFix } from "@/app/lib/ticker-health";
 import { ImageUpload, type BriefAttachment } from "@/app/components/ImageUpload";
 import { CollapsibleSection } from "@/app/components/CollapsibleSection";
+import { AppIcon } from "@/app/components/AppIcon";
+import { EmptyState } from "@/app/components/EmptyState";
 import { FlashValue } from "@/app/components/FlashValue";
 import { useStocks } from "@/app/lib/StockContext";
 import type { Stock, ScoreKey } from "@/app/lib/types";
@@ -58,7 +62,7 @@ function UptickAddForm({ onAdd }: { onAdd: (e: UptickEntry) => void }) {
 
   return (
     <form
-      className="flex flex-wrap gap-2 mt-3 items-end"
+      className="mt-3 flex flex-wrap items-end gap-2 border-t border-line-soft pt-3"
       onSubmit={async (e) => {
         e.preventDefault();
         const t = ticker.trim().toUpperCase();
@@ -89,22 +93,22 @@ function UptickAddForm({ onAdd }: { onAdd: (e: UptickEntry) => void }) {
       }}
     >
       <div>
-        <label className="text-xs text-ink-3 block">Ticker*</label>
-        <input value={ticker} onChange={(e) => setTicker(e.target.value.toUpperCase())} placeholder="AMZN" className="w-20 rounded-xl border border-line bg-surface-2 px-3 py-2 text-sm font-mono outline-none placeholder:text-ink-3 focus:bg-white focus:border-accent-border focus:ring-1 focus:ring-accent-border transition-all" />
+        <label className="mb-1 block text-[11px] text-ink-3">Ticker*</label>
+        <input value={ticker} onChange={(e) => setTicker(e.target.value.toUpperCase())} placeholder="AMZN" className="w-20 h-7 rounded-control border border-line bg-surface px-2.5 text-[12.5px] outline-none placeholder:text-ink-3 focus:border-accent-border font-mono" />
       </div>
       <div>
-        <label className="text-xs text-ink-3 block">Support</label>
-        <input value={support} onChange={(e) => setSupport(e.target.value)} placeholder="196, 161" className="w-24 rounded-xl border border-line bg-surface-2 px-3 py-2 text-sm outline-none placeholder:text-ink-3 focus:bg-white focus:border-accent-border focus:ring-1 focus:ring-accent-border transition-all" />
+        <label className="mb-1 block text-[11px] text-ink-3">Support</label>
+        <input value={support} onChange={(e) => setSupport(e.target.value)} placeholder="196, 161" className="w-24 h-7 rounded-control border border-line bg-surface px-2.5 text-[12.5px] outline-none placeholder:text-ink-3 focus:border-accent-border" />
       </div>
       <div>
-        <label className="text-xs text-ink-3 block">Resistance</label>
-        <input value={resistance} onChange={(e) => setResistance(e.target.value)} placeholder="220, 249" className="w-24 rounded-xl border border-line bg-surface-2 px-3 py-2 text-sm outline-none placeholder:text-ink-3 focus:bg-white focus:border-accent-border focus:ring-1 focus:ring-accent-border transition-all" />
+        <label className="mb-1 block text-[11px] text-ink-3">Resistance</label>
+        <input value={resistance} onChange={(e) => setResistance(e.target.value)} placeholder="220, 249" className="w-24 h-7 rounded-control border border-line bg-surface px-2.5 text-[12.5px] outline-none placeholder:text-ink-3 focus:border-accent-border" />
       </div>
       <div>
-        <label className="text-xs text-ink-3 block">Price Added</label>
-        <input value={priceWhenAdded} onChange={(e) => setPriceWhenAdded(e.target.value)} placeholder="161.26" type="number" step="0.01" className="w-24 rounded-xl border border-line bg-surface-2 px-3 py-2 text-sm outline-none placeholder:text-ink-3 focus:bg-white focus:border-accent-border focus:ring-1 focus:ring-accent-border transition-all" />
+        <label className="mb-1 block text-[11px] text-ink-3">Price Added</label>
+        <input value={priceWhenAdded} onChange={(e) => setPriceWhenAdded(e.target.value)} placeholder="161.26" type="number" step="0.01" className="w-24 h-7 rounded-control border border-line bg-surface px-2.5 text-[12.5px] outline-none placeholder:text-ink-3 focus:border-accent-border" />
       </div>
-      <button type="submit" disabled={adding} className="rounded-xl bg-accent px-5 py-2 text-sm font-semibold text-white hover:bg-accent transition-colors disabled:opacity-50">
+      <button type="submit" disabled={adding} className="h-7 rounded-control bg-ink px-3 text-[12.5px] font-medium text-white transition-colors hover:bg-ink-2 disabled:opacity-50">
         {adding ? "Adding..." : "Add"}
       </button>
     </form>
@@ -118,7 +122,7 @@ function IdeaAddForm({ onAdd }: { onAdd: (e: IdeaEntry) => void }) {
 
   return (
     <form
-      className="flex gap-2 mt-3 items-end"
+      className="mt-3 flex flex-wrap items-end gap-2 border-t border-line-soft pt-3"
       onSubmit={(e) => {
         e.preventDefault();
         if (!ticker.trim()) return;
@@ -127,14 +131,14 @@ function IdeaAddForm({ onAdd }: { onAdd: (e: IdeaEntry) => void }) {
       }}
     >
       <div>
-        <label className="text-xs text-ink-3 block">Ticker*</label>
-        <input value={ticker} onChange={(e) => setTicker(e.target.value.toUpperCase())} placeholder="AAPL" className="w-24 rounded-xl border border-line bg-surface-2 px-3 py-2 text-sm font-mono outline-none placeholder:text-ink-3 focus:bg-white focus:border-accent-border focus:ring-1 focus:ring-accent-border transition-all" />
+        <label className="mb-1 block text-[11px] text-ink-3">Ticker*</label>
+        <input value={ticker} onChange={(e) => setTicker(e.target.value.toUpperCase())} placeholder="AAPL" className="w-24 h-7 rounded-control border border-line bg-surface px-2.5 text-[12.5px] outline-none placeholder:text-ink-3 focus:border-accent-border font-mono" />
       </div>
       <div>
-        <label className="text-xs text-ink-3 block">Price Added</label>
-        <input value={price} onChange={(e) => setPrice(e.target.value)} placeholder="175.00" type="number" step="0.01" className="w-24 rounded-xl border border-line bg-surface-2 px-3 py-2 text-sm outline-none placeholder:text-ink-3 focus:bg-white focus:border-accent-border focus:ring-1 focus:ring-accent-border transition-all" />
+        <label className="mb-1 block text-[11px] text-ink-3">Price Added</label>
+        <input value={price} onChange={(e) => setPrice(e.target.value)} placeholder="175.00" type="number" step="0.01" className="w-24 h-7 rounded-control border border-line bg-surface px-2.5 text-[12.5px] outline-none placeholder:text-ink-3 focus:border-accent-border" />
       </div>
-      <button type="submit" className="rounded-xl bg-accent px-5 py-2 text-sm font-semibold text-white hover:bg-accent transition-colors">
+      <button type="submit" className="h-7 rounded-control bg-ink px-3 text-[12.5px] font-medium text-white transition-colors hover:bg-ink-2 disabled:opacity-50">
         Add
       </button>
     </form>
@@ -154,7 +158,7 @@ function AlphaPickAddForm({ onAdd }: { onAdd: (e: AlphaPickEntry) => void }) {
 
   return (
     <form
-      className="flex flex-wrap gap-2 mt-3 items-end"
+      className="mt-3 flex flex-wrap items-end gap-2 border-t border-line-soft pt-3"
       onSubmit={async (e) => {
         e.preventDefault();
         const t = ticker.trim().toUpperCase();
@@ -183,14 +187,14 @@ function AlphaPickAddForm({ onAdd }: { onAdd: (e: AlphaPickEntry) => void }) {
       }}
     >
       <div>
-        <label className="text-xs text-ink-3 block">Ticker*</label>
-        <input value={ticker} onChange={(e) => setTicker(e.target.value.toUpperCase())} placeholder="AMZN" className="w-24 rounded-xl border border-line bg-surface-2 px-3 py-2 text-sm font-mono outline-none placeholder:text-ink-3 focus:bg-white focus:border-accent-border focus:ring-1 focus:ring-accent-border transition-all" />
+        <label className="mb-1 block text-[11px] text-ink-3">Ticker*</label>
+        <input value={ticker} onChange={(e) => setTicker(e.target.value.toUpperCase())} placeholder="AMZN" className="w-24 h-7 rounded-control border border-line bg-surface px-2.5 text-[12.5px] outline-none placeholder:text-ink-3 focus:border-accent-border font-mono" />
       </div>
       <div>
-        <label className="text-xs text-ink-3 block">Price Picked</label>
-        <input value={priceWhenAdded} onChange={(e) => setPriceWhenAdded(e.target.value)} placeholder="215.40" type="number" step="0.01" className="w-28 rounded-xl border border-line bg-surface-2 px-3 py-2 text-sm outline-none placeholder:text-ink-3 focus:bg-white focus:border-accent-border focus:ring-1 focus:ring-accent-border transition-all" />
+        <label className="mb-1 block text-[11px] text-ink-3">Price Picked</label>
+        <input value={priceWhenAdded} onChange={(e) => setPriceWhenAdded(e.target.value)} placeholder="215.40" type="number" step="0.01" className="w-28 h-7 rounded-control border border-line bg-surface px-2.5 text-[12.5px] outline-none placeholder:text-ink-3 focus:border-accent-border" />
       </div>
-      <button type="submit" disabled={adding} className="rounded-xl bg-accent px-5 py-2 text-sm font-semibold text-white hover:bg-accent transition-colors disabled:opacity-50">
+      <button type="submit" disabled={adding} className="h-7 rounded-control bg-ink px-3 text-[12.5px] font-medium text-white transition-colors hover:bg-ink-2 disabled:opacity-50">
         {adding ? "Adding..." : "Add"}
       </button>
     </form>
@@ -219,9 +223,9 @@ function ResearchScraperBlock(props: {
   const hasAttachments = props.attachments.filter((a) => a.section === props.source).length > 0;
   return (
     <div className="mt-4 border-t border-line-soft pt-4">
-      <div className="flex items-center gap-3 mb-2">
-        <h4 className="text-sm font-bold text-ink-2">Screenshot Scanner</h4>
-        <span className="text-[10px] text-ink-3">{props.helperText}</span>
+      <div className="mb-2 flex items-baseline gap-2">
+        <span className="text-[12.5px] font-medium text-ink">Screenshot scanner</span>
+        <span className="min-w-0 flex-1 text-[11px] leading-4 text-ink-3">{props.helperText}</span>
       </div>
       <ImageUpload
         section={props.source}
@@ -232,13 +236,13 @@ function ResearchScraperBlock(props: {
       />
       <div className="flex items-center gap-3 mt-2">
         {props.status && (
-          <p className="text-[10px] text-ink-3">{props.status}</p>
+          <p className="text-[11px] text-ink-3">{props.status}</p>
         )}
         <div className="ml-auto flex items-center gap-2">
           <button
             onClick={() => { void props.onScrape(false); }}
             disabled={props.loading || !hasAttachments}
-            className="text-[10px] rounded-md bg-accent-soft px-2.5 py-1 font-semibold text-accent hover:bg-accent-soft disabled:opacity-50 transition-colors"
+            className="h-7 rounded-control bg-ink px-3 text-[12.5px] font-medium text-white transition-colors hover:bg-ink-2 disabled:opacity-50"
             title="Re-run vision against the current screenshot. Cached if the image hasn't changed since last scan (no Anthropic cost)."
           >
             {props.loading ? "Scanning..." : "Refresh"}
@@ -246,7 +250,7 @@ function ResearchScraperBlock(props: {
           <button
             onClick={() => { void props.onScrape(true); }}
             disabled={props.loading || !hasAttachments}
-            className="text-[10px] rounded-md border border-line bg-white px-2 py-1 font-medium text-ink-2 hover:bg-surface-2 disabled:opacity-50 transition-colors"
+            className="h-7 rounded-control border border-line bg-surface px-2.5 text-[12.5px] text-ink-2 transition-colors hover:bg-surface-hover disabled:opacity-50"
             title="Bypass the cache and re-run Anthropic vision. Use when the previous parse was incomplete."
           >
             Force re-scan
@@ -264,7 +268,7 @@ function RBCAddForm({ onAdd }: { onAdd: (e: RBCEntry) => void }) {
 
   return (
     <form
-      className="flex gap-2 mt-3 items-end"
+      className="mt-3 flex flex-wrap items-end gap-2 border-t border-line-soft pt-3"
       onSubmit={async (e) => {
         e.preventDefault();
         const t = ticker.trim().toUpperCase();
@@ -289,10 +293,10 @@ function RBCAddForm({ onAdd }: { onAdd: (e: RBCEntry) => void }) {
       }}
     >
       <div>
-        <label className="text-xs text-ink-3 block">Ticker*</label>
-        <input value={ticker} onChange={(e) => setTicker(e.target.value.toUpperCase())} placeholder="RY" className="w-24 rounded-xl border border-line bg-surface-2 px-3 py-2 text-sm font-mono outline-none placeholder:text-ink-3 focus:bg-white focus:border-accent-border focus:ring-1 focus:ring-accent-border transition-all" />
+        <label className="mb-1 block text-[11px] text-ink-3">Ticker*</label>
+        <input value={ticker} onChange={(e) => setTicker(e.target.value.toUpperCase())} placeholder="RY" className="w-24 h-7 rounded-control border border-line bg-surface px-2.5 text-[12.5px] outline-none placeholder:text-ink-3 focus:border-accent-border font-mono" />
       </div>
-      <button type="submit" disabled={adding} className="rounded-xl bg-accent px-5 py-2 text-sm font-semibold text-white hover:bg-accent transition-colors disabled:opacity-50">
+      <button type="submit" disabled={adding} className="h-7 rounded-control bg-ink px-3 text-[12.5px] font-medium text-white transition-colors hover:bg-ink-2 disabled:opacity-50">
         {adding ? "Adding..." : "Add"}
       </button>
     </form>
@@ -305,7 +309,7 @@ function FewAddForm({ onAdd }: { onAdd: (e: FewEntry) => void }) {
   const [adding, setAdding] = useState(false);
   return (
     <form
-      className="flex gap-2 mt-3 items-end"
+      className="mt-3 flex flex-wrap items-end gap-2 border-t border-line-soft pt-3"
       onSubmit={async (e) => {
         e.preventDefault();
         let t = ticker.trim().toUpperCase();
@@ -329,10 +333,10 @@ function FewAddForm({ onAdd }: { onAdd: (e: FewEntry) => void }) {
       }}
     >
       <div>
-        <label className="text-xs text-ink-3 block">Ticker*</label>
-        <input value={ticker} onChange={(e) => setTicker(e.target.value.toUpperCase())} placeholder="RY" className="w-24 rounded-xl border border-line bg-surface-2 px-3 py-2 text-sm font-mono outline-none placeholder:text-ink-3 focus:bg-white focus:border-violet-soft focus:ring-1 focus:ring-violet-soft transition-all" />
+        <label className="mb-1 block text-[11px] text-ink-3">Ticker*</label>
+        <input value={ticker} onChange={(e) => setTicker(e.target.value.toUpperCase())} placeholder="RY" className="w-24 h-7 rounded-control border border-line bg-surface px-2.5 text-[12.5px] outline-none placeholder:text-ink-3 focus:border-accent-border font-mono" />
       </div>
-      <button type="submit" disabled={adding} className="rounded-xl bg-violet px-5 py-2 text-sm font-semibold text-white hover:bg-violet transition-colors disabled:opacity-50">
+      <button type="submit" disabled={adding} className="h-7 rounded-control bg-ink px-3 text-[12.5px] font-medium text-white transition-colors hover:bg-ink-2 disabled:opacity-50">
         {adding ? "Adding..." : "Add"}
       </button>
     </form>
@@ -364,7 +368,7 @@ function EditableCell({
         onChange={(e) => setTemp(e.target.value)}
         onBlur={() => { onChange(temp); setEditing(false); }}
         onKeyDown={(e) => { if (e.key === "Enter") { onChange(temp); setEditing(false); } if (e.key === "Escape") setEditing(false); }}
-        className={`w-full bg-white border border-accent-border rounded-lg px-1 py-0.5 text-sm outline-none focus:ring-1 focus:ring-accent-border transition-all ${className}`}
+        className={`w-full rounded-control border border-accent-border bg-surface px-1 text-[12.5px] outline-none ${className}`}
       />
     );
   }
@@ -372,7 +376,7 @@ function EditableCell({
   return (
     <span
       onClick={() => { setTemp(String(value)); setEditing(true); }}
-      className={`cursor-pointer hover:bg-accent-soft rounded px-1 py-0.5 transition-colors ${className}`}
+      className={`cursor-pointer rounded px-1 transition-colors hover:bg-accent-soft ${className}`}
       title="Click to edit"
     >
       {value || "—"}
@@ -414,7 +418,7 @@ function SuspectTickerCell({ ticker, issue, onFix }: {
         onBlur={commit}
         onKeyDown={(e) => { if (e.key === "Enter") commit(); if (e.key === "Escape") { setTemp(ticker); setEditing(false); } }}
         aria-label={`Corrected ticker for ${ticker}`}
-        className="w-32 rounded-lg border border-warn-border bg-white px-2 py-0.5 font-mono text-sm outline-none focus:ring-1 focus:ring-accent-border transition-all"
+        className="w-32 rounded-control border border-warn-border bg-surface px-2 font-mono text-[12.5px] outline-none"
       />
     );
   }
@@ -422,9 +426,9 @@ function SuspectTickerCell({ ticker, issue, onFix }: {
     <button
       onClick={() => { setTemp(ticker); setEditing(true); }}
       title={`${issue} — click to fix`}
-      className="flex items-center gap-1 rounded px-1 font-mono font-bold text-warn hover:bg-warn-soft transition-colors"
+      className="inline-flex items-center gap-1 rounded px-1 font-mono font-medium text-warn transition-colors hover:bg-warn-soft"
     >
-      <span aria-hidden>⚠</span>
+      <span className="text-warn"><AppIcon name="warn" size={12} /></span>
       {ticker || "(blank)"}
     </button>
   );
@@ -446,10 +450,10 @@ function SourceRowsList({ rows, livePrices, isInList, onAdd, onRemove, onFixTick
   emptyLabel?: string;
 }) {
   if (rows.length === 0) {
-    return <div className="rounded-xl border border-line-soft px-3 py-8 text-center text-ink-3 italic">{emptyLabel}</div>;
+    return <EmptyState className="!py-8" glyph={<AppIcon name="list" size={18} />} title={emptyLabel} />;
   }
   return (
-    <div className="rounded-xl border border-line-soft overflow-hidden">
+    <div className="overflow-hidden rounded-card border border-line-soft">
       {rows.map((r, i) => {
         const livePrice = r.priceOverride ?? livePrices[r.ticker] ?? null;
         const changePct = r.changePctOverride ?? (livePrice != null && r.priceWhenAdded ? ((livePrice - r.priceWhenAdded) / r.priceWhenAdded) * 100 : null);
@@ -457,41 +461,41 @@ function SourceRowsList({ rows, livePrices, isInList, onAdd, onRemove, onFixTick
         return (
           <div
             key={r.ticker}
-            className="animate-row-in group flex items-center gap-3 border-b border-line-soft px-3 py-2.5 last:border-b-0 hover:bg-surface-2/50"
+            className="animate-row-in group flex items-center gap-3 border-b border-line-soft px-3 py-2 last:border-b-0 hover:bg-surface-hover"
             style={{ animationDelay: `${Math.min(i, 12) * 25}ms` }}
           >
-            <span className="shrink-0 text-ink-faint select-none" title="Use + Watch to add to the Watchlist">⋮⋮</span>
+            <span className="shrink-0 text-ink-faint" title="Use + Watch to add to the Watchlist"><AppIcon name="drag" size={12} /></span>
             <div className="min-w-0 flex-1">
               <div className="flex items-baseline gap-2">
                 {tickerIssue(r.ticker) && onFixTicker ? (
                   <SuspectTickerCell ticker={r.ticker} issue={tickerIssue(r.ticker)!} onFix={onFixTicker} />
                 ) : (
-                  <TickerLink ticker={r.ticker} className="font-mono font-bold text-ink hover:underline hover:text-accent transition-colors">{displayTicker(r.ticker)}</TickerLink>
+                  <TickerLink ticker={r.ticker} className="font-mono font-medium text-ink transition-colors hover:text-accent hover:underline">{displayTicker(r.ticker)}</TickerLink>
                 )}
-                {r.name && r.name !== r.ticker && <span className="truncate text-sm text-ink-2">{r.name}</span>}
+                {r.name && r.name !== r.ticker && <span className="truncate text-[12.5px] text-ink-2">{r.name}</span>}
               </div>
               {r.meta != null && r.meta !== "" && <div className="text-[11px] text-ink-3 truncate">{r.meta}</div>}
             </div>
             <div className="shrink-0 text-right">
-              <div className="font-mono text-sm text-ink"><FlashValue value={livePrice}>{livePrice != null ? `$${livePrice.toFixed(2)}` : "—"}</FlashValue></div>
+              <div className="font-mono text-[12.5px] text-ink"><FlashValue value={livePrice}>{livePrice != null ? `$${livePrice.toFixed(2)}` : "—"}</FlashValue></div>
               <div className={`font-mono text-xs ${changePct == null ? "text-ink-faint" : changePct >= 0 ? "text-pos" : "text-neg"}`}>
                 {changePct == null ? "" : `${changePct >= 0 ? "+" : ""}${changePct.toFixed(1)}%`}
               </div>
             </div>
             <div className="shrink-0 flex items-center gap-1">
               {inList ? (
-                <span className="text-[10px] text-pos font-medium px-1">In list</span>
+                <span className="px-1 text-[11px] text-ink-3">In list</span>
               ) : (
                 <button
                   onClick={(e) => { e.stopPropagation(); onAdd(r.ticker); }}
-                  className="flex items-center justify-center w-6 h-6 rounded-md border border-accent-border bg-accent-soft text-accent hover:bg-accent hover:text-white transition-colors"
+                  className="grid h-6 w-6 place-items-center rounded-control border border-line bg-surface text-ink-2 transition-colors hover:bg-surface-hover hover:text-accent"
                   title="Add to Watchlist"
                   aria-label={`Add ${r.ticker} to Watchlist`}
                 >
-                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" /></svg>
+                  <AppIcon name="plus" size={13} />
                 </button>
               )}
-              <button onClick={() => onRemove(r.ticker)} className="px-1 text-ink-faint hover:text-neg font-bold opacity-0 group-hover:opacity-100 transition-opacity" title="Remove">×</button>
+              <button onClick={() => onRemove(r.ticker)} className="px-1 text-ink-faint opacity-0 transition-opacity hover:text-neg group-hover:opacity-100" title="Remove"><AppIcon name="x" size={12} /></button>
             </div>
           </div>
         );
@@ -503,14 +507,23 @@ function SourceRowsList({ rows, livePrices, isInList, onAdd, onRemove, onFixTick
 /** The small "Rows view / Table view" toggle shown above each source list. */
 function ViewToggle({ view, onToggle }: { view: string; onToggle: () => void }) {
   return (
-    <div className="flex items-center justify-end mb-2">
-      <button
-        onClick={onToggle}
-        className="text-[11px] rounded-md border border-line bg-white px-2 py-1 font-medium text-ink-2 hover:bg-surface-2 transition-colors"
-        title={view === "rows" ? "Switch to the full sortable, inline-editable table" : "Switch to the compact rows view"}
-      >
-        {view === "rows" ? "Table view" : "Rows view"}
-      </button>
+    <div className="mb-2 flex items-center justify-end">
+      <div className="seg" role="group" aria-label="Row layout">
+        <button
+          className={view === "rows" ? "on" : undefined}
+          onClick={() => { if (view !== "rows") onToggle(); }}
+          title="Compact rows view"
+        >
+          Rows
+        </button>
+        <button
+          className={view === "rows" ? undefined : "on"}
+          onClick={() => { if (view === "rows") onToggle(); }}
+          title="Full sortable, inline-editable table"
+        >
+          Table
+        </button>
+      </div>
     </div>
   );
 }
@@ -645,14 +658,14 @@ function TickerFixBanner({ suspects, onFix, onOpenList }: {
   if (suspects.length === 0) return null;
   const rowKey = (s: SuspectTicker) => `${String(s.listKey)}::${s.ticker}`;
   return (
-    <div className="rounded-card border border-warn-border bg-warn-soft p-4">
+    <div className="rounded-card border border-warn-border bg-warn-soft px-3.5 py-3">
       <div className="flex items-baseline gap-2">
-        <span className="text-warn" aria-hidden>⚠</span>
-        <h2 className="text-sm font-bold text-ink">
+        <span className="text-warn"><AppIcon name="warn" size={14} /></span>
+        <h2 className="text-[13px] font-semibold text-ink">
           {suspects.length} ticker{suspects.length === 1 ? "" : "s"} need{suspects.length === 1 ? "s" : ""} a manual fix
         </h2>
       </div>
-      <p className="mt-1 text-[12px] leading-relaxed text-ink-2">
+      <p className="mt-1 text-[12.5px] leading-5 text-ink-2">
         These rows were ingested but their symbols aren&apos;t usable — no live price, no watchlist add, no
         cross-source match until they&apos;re corrected. Nothing was dropped. Edit the ticker here, or open the
         list and fix it on the row.
@@ -663,29 +676,29 @@ function TickerFixBanner({ suspects, onFix, onOpenList }: {
           const draft = drafts[key] ?? sp.suggestion;
           const unchanged = draft.trim() === sp.ticker.trim();
           return (
-            <div key={key} className="flex flex-wrap items-center gap-2 rounded-xl border border-warn-border bg-white px-3 py-2">
-              <span className="font-mono text-sm font-bold text-warn">{sp.ticker || "(blank)"}</span>
+            <div key={key} className="flex flex-wrap items-center gap-2 rounded-card border border-warn-border bg-surface px-3 py-2">
+              <span className="font-mono text-[12.5px] font-medium text-warn">{sp.ticker || "(blank)"}</span>
               <span className="text-[11px] text-ink-3">{sp.listLabel} · {sp.issue}</span>
               <div className="ml-auto flex items-center gap-2">
-                <span className="text-ink-faint" aria-hidden>→</span>
+                <span className="text-ink-faint"><AppIcon name="arrowR" size={12} /></span>
                 <input
                   value={draft}
                   onChange={(e) => setDrafts((d) => ({ ...d, [key]: e.target.value.toUpperCase() }))}
                   onKeyDown={(e) => { if (e.key === "Enter" && draft.trim() && !unchanged) onFix(sp.listKey, sp.ticker, draft.trim()); }}
                   aria-label={`Corrected ticker for ${sp.ticker}`}
-                  className="w-32 rounded-lg border border-line bg-surface-2 px-2 py-1 font-mono text-sm outline-none focus:border-accent-border focus:bg-white focus:ring-1 focus:ring-accent-border transition-all"
+                  className="w-32 h-7 rounded-control border border-line bg-surface px-2.5 text-[12.5px] outline-none placeholder:text-ink-3 focus:border-accent-border font-mono"
                 />
                 <button
                   onClick={() => onFix(sp.listKey, sp.ticker, draft.trim())}
                   disabled={!draft.trim() || unchanged}
-                  className="rounded-control border border-accent-border bg-accent-soft px-2.5 py-1 text-xs font-semibold text-accent transition-colors hover:bg-accent hover:text-white disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-accent-soft disabled:hover:text-accent"
+                  className="h-7 rounded-control bg-ink px-3 text-[12.5px] font-medium text-white transition-colors hover:bg-ink-2 disabled:opacity-50 disabled:cursor-not-allowed"
                   title="Save the corrected ticker to this list"
                 >
                   Fix
                 </button>
                 <button
                   onClick={() => onOpenList(sp.railKey)}
-                  className="rounded-control border border-line bg-white px-2.5 py-1 text-xs font-semibold text-ink-2 transition-colors hover:bg-surface-2"
+                  className="h-7 rounded-control border border-line bg-surface px-2.5 text-[12.5px] text-ink-2 transition-colors hover:bg-surface-hover disabled:opacity-50"
                   title={`Open ${sp.listLabel} and edit the row there`}
                 >
                   Open {sp.listLabel}
@@ -702,12 +715,49 @@ function TickerFixBanner({ suspects, onFix, onOpenList }: {
 /** Every collapsible pane the rail knows about — the target of Collapse all.
  *  Derived from RAIL_GROUPS so a new source added to the rail is covered
  *  automatically instead of needing a second list kept in sync. */
+/** Sort indicator for a `.data-table` column header — an icon, not a glyph.
+ *  Returns null for the inactive columns so the header stays quiet. */
+function sortArrow(active: boolean, dir: SortDir) {
+  if (!active) return null;
+  return (
+    <span className="ml-1 inline-flex align-middle text-ink-3">
+      <AppIcon name={dir === "asc" ? "sortAsc" : "sortDesc"} size={11} />
+    </span>
+  );
+}
+
 const ALL_RAIL_KEYS: string[] = RAIL_GROUPS.flatMap((g) => g.items.map((i) => i.key));
 
+/** Which source the master-detail pane shows. Stored in pm:ui-prefs beside the
+ *  panes' own collapse keys so the choice survives a refresh and follows the
+ *  PM across devices — deliberately NOT a second store. */
+const PREF_SOURCE_SEL = "research.sources.sel";
+
+/** The attachment `section` each source scans, for the "last scanned" column. */
+const SOURCE_ATTACHMENT_SECTION: Record<string, string> = {
+  "research.newton": "upticks",
+  "research.fsTop": "fundstrat-top",
+  "research.fsBottom": "fundstrat-bottom",
+  "research.fsSmidTop": "fundstrat-smid-top",
+  "research.fsSmidBottom": "fundstrat-smid-bottom",
+  "research.lcCore": "fundstrat-largecap-core",
+  "research.smidCore": "fundstrat-smid-core",
+  "research.alpha": "seeking-alpha-picks",
+  "research.rbcCa": "rbc-focus",
+  "research.rbcUs": "rbc-us-focus",
+  "research.jpm": "jpm-us-analyst-focus",
+  "research.few": "rbccm-few",
+};
+
+/** Short date for the rail's "last scanned" column ("Sep 2"), or "—". */
+function shortDate(value: string | number | undefined | null): string {
+  if (value == null || value === "") return "—";
+  const t = typeof value === "number" ? value : Date.parse(String(value));
+  if (!Number.isFinite(t)) return "—";
+  return new Date(t).toLocaleDateString("en-US", { month: "short", day: "numeric" });
+}
+
 export default function ResearchPage() {
-  // Master-detail rail: "all" = classic stacked view; a prefKey = show only
-  // that source's pane (canvas layout). View state only — nothing persisted.
-  const [railSel, setRailSel] = useState<string>("all");
   const [state, setState] = useState<ResearchState>(defaultResearch);
   // Latest state for async handlers that write back AFTER an await — a
   // pre-await closure would persist a snapshot taken before whatever else
@@ -718,6 +768,12 @@ export default function ResearchPage() {
   const [attachmentsSaveError, setAttachmentsSaveError] = useState<string | null>(null);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const { scoredStocks, addStock, brief, uiPrefs, setUiPref, refreshResearchMentions, priceRefreshNonce } = useStocks();
+
+  // Master-detail selection: "all" = the stacked everything view, a prefKey =
+  // show only that source's pane. Persisted through the SAME pm:ui-prefs store
+  // the panes already use for their collapse state — no second store.
+  const railSel = uiPrefs[PREF_SOURCE_SEL] ?? "all";
+  const setRailSel = useCallback((k: string) => setUiPref(PREF_SOURCE_SEL, k), [setUiPref]);
 
   // Add a research idea to the watchlist (auto-fetches name + sector)
   const addToWatchlist = useCallback(async (ticker: string) => {
@@ -1207,19 +1263,19 @@ export default function ResearchPage() {
     });
   }
 
-  const uArrow = (key: UptickSortKey) => uptickSort.key === key ? (uptickSort.dir === "asc" ? " ▲" : " ▼") : "";
-  const tArrow = (key: IdeaSortKey) => topSort.key === key ? (topSort.dir === "asc" ? " ▲" : " ▼") : "";
-  const bArrow = (key: IdeaSortKey) => bottomSort.key === key ? (bottomSort.dir === "asc" ? " ▲" : " ▼") : "";
-  const stArrow = (key: IdeaSortKey) => smidTopSort.key === key ? (smidTopSort.dir === "asc" ? " ▲" : " ▼") : "";
-  const sbArrow = (key: IdeaSortKey) => smidBottomSort.key === key ? (smidBottomSort.dir === "asc" ? " ▲" : " ▼") : "";
-  const rArrow = (key: RBCSortKey) => rbcSort.key === key ? (rbcSort.dir === "asc" ? " ▲" : " ▼") : "";
-  const rUsArrow = (key: RBCSortKey) => rbcUsSort.key === key ? (rbcUsSort.dir === "asc" ? " ▲" : " ▼") : "";
-  const ecArrow = (key: EquateSortKey) => equateCadSort.key === key ? (equateCadSort.dir === "asc" ? " ▲" : " ▼") : "";
-  const euArrow = (key: EquateSortKey) => equateUsdSort.key === key ? (equateUsdSort.dir === "asc" ? " ▲" : " ▼") : "";
-  const jArrow = (key: JpmSortKey) => jpmFocusSort.key === key ? (jpmFocusSort.dir === "asc" ? " ▲" : " ▼") : "";
-  const fArrow = (key: FewSortKey) => fewSort.key === key ? (fewSort.dir === "asc" ? " ▲" : " ▼") : "";
-  const lcArrow = (key: CoreSortKey) => lcCoreSort.key === key ? (lcCoreSort.dir === "asc" ? " ▲" : " ▼") : "";
-  const smcArrow = (key: CoreSortKey) => smidCoreSort.key === key ? (smidCoreSort.dir === "asc" ? " ▲" : " ▼") : "";
+  const uArrow = (key: UptickSortKey) => sortArrow(uptickSort.key === key, uptickSort.dir);
+  const tArrow = (key: IdeaSortKey) => sortArrow(topSort.key === key, topSort.dir);
+  const bArrow = (key: IdeaSortKey) => sortArrow(bottomSort.key === key, bottomSort.dir);
+  const stArrow = (key: IdeaSortKey) => sortArrow(smidTopSort.key === key, smidTopSort.dir);
+  const sbArrow = (key: IdeaSortKey) => sortArrow(smidBottomSort.key === key, smidBottomSort.dir);
+  const rArrow = (key: RBCSortKey) => sortArrow(rbcSort.key === key, rbcSort.dir);
+  const rUsArrow = (key: RBCSortKey) => sortArrow(rbcUsSort.key === key, rbcUsSort.dir);
+  const ecArrow = (key: EquateSortKey) => sortArrow(equateCadSort.key === key, equateCadSort.dir);
+  const euArrow = (key: EquateSortKey) => sortArrow(equateUsdSort.key === key, equateUsdSort.dir);
+  const jArrow = (key: JpmSortKey) => sortArrow(jpmFocusSort.key === key, jpmFocusSort.dir);
+  const fArrow = (key: FewSortKey) => sortArrow(fewSort.key === key, fewSort.dir);
+  const lcArrow = (key: CoreSortKey) => sortArrow(lcCoreSort.key === key, lcCoreSort.dir);
+  const smcArrow = (key: CoreSortKey) => sortArrow(smidCoreSort.key === key, smidCoreSort.dir);
 
   useEffect(() => {
     fetch("/api/kv/research", { cache: "no-store" })
@@ -1917,7 +1973,7 @@ export default function ResearchPage() {
         ? (summary.sameDayAccumulate ? " · same-day (added to today's earlier screenshot)" : " · ADDITIVE FALLBACK")
         : "";
       const removedLabel = summary.mode === "replace" && summary.removed > 0 ? ` · ${summary.removed} removed` : "";
-      const reasonLabel = summary.fallbackReason ? ` ⚠ ${summary.fallbackReason}` : "";
+      const reasonLabel = summary.fallbackReason ? ` — ${summary.fallbackReason}` : "";
       setScrapeStatusMap((m) => ({
         ...m,
         [source]: `${entries.length} rows${cachedLabel}${modeLabel} · ${summary.matched} matched · ${summary.added} added${removedLabel}${reasonLabel}`,
@@ -2349,109 +2405,209 @@ export default function ResearchPage() {
     setRailSel("all");
   };
 
+  /** Per-source count + last-scanned date for the Sources rail. Pure derivation
+   *  from data already in hand — no new reads. */
+  const sourceMeta = useMemo(() => {
+    const atts = state.attachments || [];
+    const lastAttachment = (railKey: string): number | null => {
+      const section = SOURCE_ATTACHMENT_SECTION[railKey];
+      if (!section) return null;
+      let best: number | null = null;
+      for (const a of atts) {
+        if (a.section !== section) continue;
+        const t = Date.parse(a.addedAt || "");
+        if (Number.isFinite(t) && (best == null || t > best)) best = t;
+      }
+      return best;
+    };
+    const lastRowDate = (rows: { dateAdded?: string }[] | undefined): number | null => {
+      let best: number | null = null;
+      for (const r of rows || []) {
+        const t = dateAddedMs(r.dateAdded);
+        if (t > 0 && (best == null || t > best)) best = t;
+      }
+      return best;
+    };
+    const counts: Record<string, number | null> = {
+      "research.synthesisCollapsed": synthesis
+        ? synthesis.topPicks.length + (synthesis.regimeAlignedHighlights?.length ?? 0) + synthesis.honorableMentions.length
+        : 0,
+      "research.sectorViews": 2,
+      "research.newton": state.newtonUpticks.length,
+      "research.fsTop": state.fundstratTop.length,
+      "research.fsBottom": state.fundstratBottom.length,
+      "research.fsSmidTop": (state.fundstratSmidTop ?? []).length,
+      "research.fsSmidBottom": (state.fundstratSmidBottom ?? []).length,
+      "research.lcCore": (state.fundstratLargeCapCore ?? []).length,
+      "research.smidCore": (state.fundstratSmidCore ?? []).length,
+      "research.alpha": (state.alphaPicks ?? []).length,
+      "research.leeFocus": (state.leeFocusAreas ?? []).length,
+      "research.rbcCa": (state.rbcCanadianFocus ?? []).length,
+      "research.rbcUs": (state.rbcUsFocus ?? []).length,
+      "research.jpm": (state.jpmUsAnalystFocus ?? []).length,
+      "research.few": (state.rbccmFew ?? []).length,
+      "research.equateCad": (state.equateCad ?? []).length,
+      "research.equateUsd": (state.equateUsd ?? []).length,
+      "research.quickRef": null,
+    };
+    const rowSources: Record<string, { dateAdded?: string }[] | undefined> = {
+      "research.newton": state.newtonUpticks,
+      "research.fsTop": state.fundstratTop as { dateAdded?: string }[],
+      "research.fsBottom": state.fundstratBottom as { dateAdded?: string }[],
+      "research.alpha": state.alphaPicks,
+      "research.rbcCa": state.rbcCanadianFocus,
+      "research.rbcUs": state.rbcUsFocus,
+      "research.jpm": state.jpmUsAnalystFocus,
+      "research.equateCad": state.equateCad,
+      "research.equateUsd": state.equateUsd,
+    };
+    const out: Record<string, { count: number | null; scanned: string }> = {};
+    for (const key of ALL_RAIL_KEYS) {
+      const stamp = key === "research.synthesisCollapsed"
+        ? (synthesisGeneratedAt ? Date.parse(synthesisGeneratedAt) : null)
+        : lastAttachment(key) ?? lastRowDate(rowSources[key]);
+      out[key] = { count: counts[key] ?? null, scanned: shortDate(stamp) };
+    }
+    return out;
+  }, [state, synthesis, synthesisGeneratedAt]);
+
+  /** Cross-source read: how many distinct names the lists carry and how many
+   *  of them more than one list agrees on. Same pure ranker the Ranked tab
+   *  uses — no extra fetch. */
+  const crossRead = useMemo(() => {
+    const rows = rankResearch(state, scoredStocks);
+    return {
+      names: rows.length,
+      multi: rows.filter((r) => r.listCount >= SUGGESTED_MIN_LISTS).length,
+      sources: ALL_RAIL_KEYS.length,
+    };
+  }, [state, scoredStocks]);
+
   if (!loaded) return null;
 
   return (
-    <main className="min-h-screen bg-ground px-4 py-6 text-ink md:px-8 md:py-8 overflow-x-hidden">
-      <div className="mx-auto flex max-w-[88rem] items-start gap-5">
-        {/* Source rail (xl+): one click opens + scrolls to a source instead of
-            hunting through 17 stacked panels. Preferences are the same
-            pm:ui-prefs collapse keys the sections already persist. */}
-        <nav className="hidden xl:block w-52 shrink-0 sticky top-20 max-h-[calc(100vh-6rem)] overflow-y-auto rounded-card border border-line bg-white p-2 shadow-sm">
-          <button
-            onClick={() => setRailSel("all")}
-            className={`block w-full rounded-[6px] px-2.5 py-1.5 text-left text-[12.5px] transition-colors ${railSel === "all" ? "bg-accent-soft font-semibold text-accent-ink" : "text-ink-2 hover:bg-surface-hover hover:text-ink"}`}
-          >
-            All sources
-          </button>
-          <div className="mt-1 mb-1.5 flex gap-1 border-b border-line-soft pb-2">
-            <button
-              onClick={() => setAllPanesCollapsed(true)}
-              className="flex-1 rounded-[6px] px-2 py-1 text-[11px] font-semibold text-ink-3 transition-colors hover:bg-surface-hover hover:text-ink"
-              title="Collapse every source pane"
-            >
-              Collapse all
-            </button>
-            <button
-              onClick={() => setAllPanesCollapsed(false)}
-              className="flex-1 rounded-[6px] px-2 py-1 text-[11px] font-semibold text-ink-3 transition-colors hover:bg-surface-hover hover:text-ink"
-              title="Expand every source pane"
-            >
-              Expand all
-            </button>
-          </div>
-          {RAIL_GROUPS.map((g) => (
-            <div key={g.label} className="mb-1.5">
-              <div className="px-2.5 pb-1 pt-1.5 text-[10px] font-bold uppercase tracking-wider text-ink-3">{g.label}</div>
-              {g.items.map((it) => (
-                <button
-                  key={it.key}
-                  onClick={() => {
-                    setRailSel(it.key);
-                    setUiPref(it.key, "0"); // make sure the pane is open
-                    window.scrollTo({ top: 0, behavior: "smooth" });
-                  }}
-                  className={`block w-full rounded-[6px] px-2.5 py-1.5 text-left text-[12.5px] transition-colors ${railSel === it.key ? "bg-accent-soft font-semibold text-accent-ink" : "text-ink-2 hover:bg-surface-hover hover:text-ink"}`}
-                >
-                  {it.label}
-                </button>
-              ))}
-            </div>
-          ))}
-        </nav>
-        <div className="research-col min-w-0 flex-1 space-y-5">
-          {railSel !== "all" && (
-            <style>{`@media (min-width: 1280px) { .research-col section[id^="research."] { display: none; } .research-col section[id="${railSel}"], .research-col section[id="research.synthesisCollapsed"] { display: block !important; } }`}</style>
-          )}
-        {/* Sits outside the source panes so the rail's single-source view
-            can't hide it — a ticker that needs fixing has to be visible from
-            whichever pane the PM happens to be on. */}
-        <TickerFixBanner
-          suspects={suspectTickers}
-          onFix={renameTicker}
-          onOpenList={openSourcePane}
-        />
-        {/* The hub band above already titles the page — this row keeps only the
-            synthesis action, right-aligned, plus the collapse-all pair below
-            xl (the source rail carries it at xl+, so exactly one copy of the
-            control is visible at any width). */}
-        <div className="flex items-center justify-end gap-3">
-          <div className="mr-auto flex gap-1 xl:hidden">
-            <button
-              onClick={() => setAllPanesCollapsed(true)}
-              className="rounded-control border border-line bg-surface px-2.5 py-1.5 text-xs font-semibold text-ink-2 hover:bg-surface-2 transition-colors"
-              title="Collapse every source pane"
-            >
-              Collapse all
-            </button>
-            <button
-              onClick={() => setAllPanesCollapsed(false)}
-              className="rounded-control border border-line bg-surface px-2.5 py-1.5 text-xs font-semibold text-ink-2 hover:bg-surface-2 transition-colors"
-              title="Expand every source pane"
-            >
-              Expand all
-            </button>
-          </div>
-          <button
-            onClick={() => {
-              if (synthesis) {
-                if (!confirm("Re-synthesize will overwrite the existing synthesis using the CURRENT brief. The previous synthesis (and its brief context) will be replaced. Continue?")) return;
-                void generateSynthesis(true);
-              } else {
-                void generateSynthesis(false);
-              }
-            }}
-            disabled={synthesisLoading}
-            className="shrink-0 inline-flex items-center gap-1.5 rounded-control border border-line bg-surface px-3 py-1.5 text-sm font-semibold text-ink-2 hover:bg-surface-2 disabled:opacity-50 transition-colors"
-            title="Regenerate the cross-source synthesis from the current research + brief."
-          >
-            <svg className={`w-3.5 h-3.5 ${synthesisLoading ? "animate-spin" : ""}`} fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
-            {synthesisLoading ? "Synthesizing…" : synthesis ? "Re-synthesize" : "Generate"}
-          </button>
-        </div>
+    <div className="flex flex-col gap-3.5">
+      {/* Sits outside the source panes so the single-source view can never hide
+          it — a ticker that needs fixing has to be visible from any pane. */}
+      <TickerFixBanner
+        suspects={suspectTickers}
+        onFix={renameTicker}
+        onOpenList={openSourcePane}
+      />
 
+      {/* ── Cross-source read ──
+          The one sentence the whole page is for, above the master-detail: what
+          the lists agree on today, how wide the agreement is, and the two ways
+          out of it (the ranked view, or a fresh synthesis). */}
+      <section className="panel">
+        <div className="flex flex-wrap items-center gap-x-5 gap-y-2 px-3.5 py-2.5">
+          <div className="text-[12.5px] text-ink-2">
+            <span className="font-semibold text-ink">Cross-source read</span>
+            {" · "}{synthesis?.regimeContext || "regime-aware"}
+            {" · "}{shortDate(synthesisGeneratedAt || Date.now())}
+          </div>
+          <p className="min-w-[240px] flex-1 text-[12.5px] leading-5 text-ink-2">
+            {synthesis?.summary
+              || (synthesisLoading ? "Reading across the lists…" : "No synthesis yet — generate one to read across every source at once.")}
+          </p>
+          <span className="font-mono text-[12px] text-ink-3" title="Distinct names across every research list, and how many of them two or more lists carry">
+            {crossRead.names} names · {crossRead.multi} on 2+ lists · {crossRead.sources} sources
+          </span>
+          <div className="ml-auto flex items-center gap-2">
+            <Link
+              href="/research"
+              className="inline-flex h-7 items-center gap-1.5 rounded-control border border-line bg-surface px-2.5 text-[12.5px] text-ink-2 transition-colors hover:bg-surface-hover"
+              title="Open the ranked cross-source view"
+            >
+              <AppIcon name="list" size={13} />
+              Open ranked
+            </Link>
+            <button
+              onClick={() => {
+                if (synthesis) {
+                  if (!confirm("Re-synthesize will overwrite the existing synthesis using the CURRENT brief. The previous synthesis (and its brief context) will be replaced. Continue?")) return;
+                  void generateSynthesis(true);
+                } else {
+                  void generateSynthesis(false);
+                }
+              }}
+              disabled={synthesisLoading}
+              className="inline-flex h-7 shrink-0 items-center gap-1.5 rounded-control bg-ink px-3 text-[12.5px] font-medium text-white transition-colors hover:bg-ink-2 disabled:opacity-50"
+              title="Regenerate the cross-source synthesis from the current research + brief."
+            >
+              <span className={synthesisLoading ? "animate-spin" : ""}><AppIcon name="refresh" size={13} /></span>
+              {synthesisLoading ? "Synthesizing…" : synthesis ? "Force re-generate" : "Generate"}
+            </button>
+          </div>
+        </div>
+      </section>
+
+      <div className="grid grid-cols-1 gap-3.5 xl:grid-cols-[264px_minmax(0,1fr)] xl:items-start">
+        {/* ── Sources ── the master list: one 34px row per source, its name,
+            how many names it carries and when it was last scanned. */}
+        <section className="panel flex flex-col xl:sticky xl:top-4 xl:max-h-[calc(100vh-2rem)]">
+          <div className="panel-h">
+            <span className="t">Sources</span>
+            <span className="m font-mono">{ALL_RAIL_KEYS.length}</span>
+            <button
+              onClick={() => openSourcePane(railSel === "all" ? RAIL_GROUPS[1].items[0].key : railSel)}
+              className="ml-auto grid h-7 w-7 place-items-center rounded-control text-ink-3 transition-colors hover:bg-surface-hover hover:text-ink"
+              title="Add a name — opens the selected source and its add form"
+              aria-label="Add a name to the selected source"
+            >
+              <AppIcon name="plus" size={14} />
+            </button>
+          </div>
+          <div className="min-h-0 flex-1 overflow-y-auto">
+            <button
+              onClick={() => setRailSel("all")}
+              className={`flex h-[34px] w-full items-center gap-2 border-b border-line-soft px-3.5 text-left text-[12.5px] transition-colors ${railSel === "all" ? "bg-accent-soft font-medium text-accent-ink" : "text-ink-2 hover:bg-surface-hover hover:text-ink"}`}
+              title="Show every source stacked, the way this page has always worked"
+            >
+              <span className="min-w-0 flex-1 truncate">All sources</span>
+              <span className="font-mono text-[11px] text-ink-3">{ALL_RAIL_KEYS.length}</span>
+            </button>
+            {RAIL_GROUPS.map((g) => (
+              <div key={g.label}>
+                <div className="border-b border-line-soft bg-surface-2 px-3.5 py-1 text-[11px] text-ink-3">{g.label}</div>
+                {g.items.map((it) => {
+                  const sel = railSel === it.key;
+                  const m = sourceMeta[it.key];
+                  return (
+                    <button
+                      key={it.key}
+                      onClick={() => {
+                        setRailSel(it.key);
+                        setUiPref(it.key, "0"); // make sure the pane is open
+                        window.scrollTo({ top: 0, behavior: "smooth" });
+                      }}
+                      className={`flex h-[34px] w-full items-center gap-2 border-b border-line-soft px-3.5 text-left text-[12.5px] transition-colors ${sel ? "bg-accent-soft font-medium text-accent-ink" : "text-ink-2 hover:bg-surface-hover hover:text-ink"}`}
+                    >
+                      <span className="min-w-0 flex-1 truncate">{it.label}</span>
+                      <span className={`font-mono text-[11px] ${sel ? "text-accent-ink" : "text-ink-3"}`}>{m?.count ?? ""}</span>
+                      <span className="w-[46px] text-right font-mono text-[11px] text-ink-3" title="Last scanned">{m?.scanned ?? "—"}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            ))}
+          </div>
+          <div className="mt-auto flex items-center gap-2 border-t border-line-soft px-3.5 py-2 text-[11.5px] text-ink-3">
+            <span className="min-w-0 flex-1 truncate">
+              Prices <span className="font-mono">{pricesFetchedAt ? new Date(pricesFetchedAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }) : "—"}</span>
+            </span>
+            <button onClick={() => setAllPanesCollapsed(true)} className="transition-colors hover:text-ink" title="Collapse every source pane">Collapse all</button>
+            <button onClick={() => setAllPanesCollapsed(false)} className="transition-colors hover:text-ink" title="Expand every source pane">Expand all</button>
+          </div>
+        </section>
+
+        {/* ── The selected source ── */}
+        <div className="research-col flex min-w-0 flex-col gap-3.5">
+          {railSel !== "all" && (
+            <style>{`@media (min-width: 1280px) { .research-col section[id^="research."] { display: none; } .research-col .research-pair { display: block; } .research-col section[id="${railSel}"] { display: block !important; } }`}</style>
+          )}
         {attachmentsSaveError && (
-          <div className="rounded-xl border border-warn-border bg-warn-soft px-4 py-3 text-sm text-warn">
+          <div className="rounded-card border border-warn-border bg-warn-soft px-3.5 py-2.5 text-[12.5px] text-warn">
             <strong>Screenshots not saved:</strong> {attachmentsSaveError}
           </div>
         )}
@@ -2465,21 +2621,16 @@ export default function ResearchPage() {
         <CollapsibleSection
           prefKey="research.synthesisCollapsed"
           className="border-line"
-          titleClass="text-xs font-bold uppercase tracking-wider text-violet"
-          title={
-            <span className="inline-flex items-center gap-2">
-              <span className="inline-block h-2 w-2 rounded-full bg-violet" />
-              Cross-Source Synthesis
-              <span className="text-xs font-normal normal-case tracking-normal text-ink-3">Claude · regime-aware</span>
-            </span>
-          }
+          titleClass="text-[13px] font-semibold text-ink"
+          title={<>Cross-source synthesis</>}
+          subtitle={<>Claude · regime-aware</>}
           right={
             <>
               {synthesisStatus && (
-                <span className="text-[11px] text-ink-3">{synthesisStatus}</span>
+                <span className="text-[11.5px] text-ink-3">{synthesisStatus}</span>
               )}
               {synthesisGeneratedAt && (
-                <span className="text-[10px] text-ink-3" title={`Generated ${new Date(synthesisGeneratedAt).toLocaleString()}`}>
+                <span className="font-mono text-[11.5px] text-ink-3" title={`Generated ${new Date(synthesisGeneratedAt).toLocaleString()}`}>
                   {new Date(synthesisGeneratedAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}
                 </span>
               )}
@@ -2488,7 +2639,7 @@ export default function ResearchPage() {
         >
 
           {!synthesis && !synthesisLoading && (
-            <div className="rounded-lg border border-dashed border-line bg-white/70 p-4 text-sm text-ink-3">
+            <div className="rounded-card border border-dashed border-line px-3.5 py-3 text-[12.5px] text-ink-3">
               {synthesisStatus
                 ? <>{synthesisStatus}</>
                 : <>No synthesis generated yet. Add some research picks across the sources below, then click <strong>Generate</strong>.</>}
@@ -2500,10 +2651,10 @@ export default function ResearchPage() {
             // colors visually separate the model's OPINION on regime
             // alignment from the source-derived thesis text below.
             const fitColor: Record<RegimeFitRating, string> = {
-              high: "bg-pos-soft text-pos ring-1 ring-pos-border",
-              medium: "bg-surface-2 text-ink-2 ring-1 ring-line",
-              low: "bg-warn-soft text-warn ring-1 ring-warn-border",
-              contrary: "bg-neg-soft text-neg ring-1 ring-neg-border",
+              high: "text-pos",
+              medium: "text-ink-2",
+              low: "text-warn",
+              contrary: "text-neg",
             };
             const fitLabel: Record<RegimeFitRating, string> = {
               high: "Regime: HIGH fit",
@@ -2519,12 +2670,12 @@ export default function ResearchPage() {
               if (typeof p.conviction !== "number") return null;
               const c = p.conviction;
               const tone =
-                c >= 75 ? "bg-pos-soft text-pos border-pos-border"
-                : c >= 60 ? "bg-warn-soft text-warn border-warn-border"
-                : "bg-surface-2 text-ink-2 border-line";
+                c >= 75 ? "text-pos"
+                : c >= 60 ? "text-warn"
+                : "text-ink-3";
               return (
                 <span
-                  className={`text-[10px] font-bold rounded-full px-2 py-0.5 border ${tone}`}
+                  className={`font-mono text-[11.5px] ${tone}`}
                   title={`Model conviction: ${c}/100 (combines source count, regime fit, and absence of dissent)`}
                 >
                   Conviction {c}
@@ -2534,12 +2685,12 @@ export default function ResearchPage() {
             const RegimeFitBlock = ({ p }: { p: SynthesisPick }) => {
               if (!p.regimeFit) return null;
               return (
-                <div className="mt-2 flex items-start gap-2 rounded-md bg-surface-2 px-2 py-1.5">
-                  <span className={`text-[10px] font-bold uppercase tracking-wider rounded-full px-2 py-0.5 whitespace-nowrap ${fitColor[p.regimeFit]}`}>
+                <div className="mt-2 flex items-start gap-2 rounded-control bg-surface-2 px-2 py-1.5">
+                  <span className={`whitespace-nowrap text-[11.5px] font-medium ${fitColor[p.regimeFit]}`}>
                     {fitLabel[p.regimeFit]}
                   </span>
                   {p.regimeFitRationale && (
-                    <span className="text-[11px] leading-5 text-ink-2 italic">
+                    <span className="text-[11.5px] leading-5 text-ink-2">
                       {p.regimeFitRationale}
                     </span>
                   )}
@@ -2550,25 +2701,25 @@ export default function ResearchPage() {
             // expand the references (source pills), conviction, and regime fit.
             const PickRow = ({ p, accent }: { p: SynthesisPick; accent: "violet" | "accent" | "ink" }) => {
               const expanded = isPickExpanded(p.ticker);
-              const tickerCls = accent === "violet" ? "text-violet" : accent === "accent" ? "text-accent" : "text-ink";
+              const tickerCls = "text-ink";
               return (
-                <li className="rounded-lg border border-line-soft bg-white">
-                  <button onClick={() => togglePickExpand(p.ticker)} className="w-full text-left px-3 py-2 flex items-start gap-2 hover:bg-surface-2/40 transition-colors rounded-lg">
+                <li className="rounded-card border border-line-soft bg-surface">
+                  <button onClick={() => togglePickExpand(p.ticker)} className="flex w-full items-start gap-2 rounded-card px-3 py-2 text-left transition-colors hover:bg-surface-hover">
                     <div className="min-w-0 flex-1">
                       <div className="flex items-baseline gap-1.5">
-                        <TickerLink ticker={p.ticker} className={`font-mono font-bold ${tickerCls} hover:underline`}>{displayTicker(p.ticker)}</TickerLink>
-                        <span className="text-xs text-ink-3">· {p.sourceCount} {p.sourceCount === 1 ? "list" : "lists"}</span>
+                        <TickerLink ticker={p.ticker} className={`font-mono font-medium ${tickerCls} hover:text-accent hover:underline`}>{displayTicker(p.ticker)}</TickerLink>
+                        <span className="text-[11.5px] text-ink-3">· {p.sourceCount} {p.sourceCount === 1 ? "list" : "lists"}</span>
                       </div>
-                      <p className={`text-sm leading-6 text-ink-2 ${expanded ? "" : "line-clamp-2"}`}>{p.thesis}</p>
+                      <p className={`text-[12.5px] leading-5 text-ink-2 ${expanded ? "" : "line-clamp-2"}`}>{p.thesis}</p>
                     </div>
-                    <svg className={`w-4 h-4 mt-0.5 shrink-0 text-ink-faint transition-transform ${expanded ? "rotate-180" : ""}`} fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" /></svg>
+                    <span className={`mt-0.5 shrink-0 text-ink-3 transition-transform ${expanded ? "rotate-180" : ""}`}><AppIcon name="chevD" size={14} /></span>
                   </button>
                   {expanded && (
                     <div className="px-3 pb-3 space-y-2">
                       <div className="flex items-center gap-1.5 flex-wrap">
                         <ConvictionBadge p={p} />
                         {p.sources.map((s) => (
-                          <span key={s} className="text-[10px] rounded-full bg-surface-2 text-ink-2 px-2 py-0.5">{s}</span>
+                          <span key={s} className="text-[11.5px] text-ink-3">{s}</span>
                         ))}
                       </div>
                       <RegimeFitBlock p={p} />
@@ -2582,7 +2733,7 @@ export default function ResearchPage() {
                 {/* Summary line + regime tag */}
                 <div className="flex items-start gap-2 flex-wrap">
                   {synthesis.regimeContext && (
-                    <span className={`text-[10px] font-bold uppercase tracking-wider rounded-full px-2 py-0.5 mt-0.5 ${
+                    <span className={`mt-px inline-flex h-[18px] items-center rounded px-1.5 text-[11px] font-medium ${
                       synthesis.regimeContext === "Risk-On"  ? "bg-pos-soft text-pos"
                       : synthesis.regimeContext === "Risk-Off" ? "bg-neg-soft text-neg"
                       : "bg-warn-soft text-warn"
@@ -2590,31 +2741,31 @@ export default function ResearchPage() {
                       {synthesis.regimeContext}
                     </span>
                   )}
-                  <p className="text-sm leading-6 text-ink-2 flex-1 min-w-[260px]">{synthesis.summary}</p>
+                  <p className="min-w-[260px] flex-1 text-[12.5px] leading-5 text-ink-2">{synthesis.summary}</p>
                 </div>
 
                 {/* Regime tilts — the model's distilled view of what the
                     current environment favors. These drove the regimeFit
                     ratings on each pick below. */}
                 {synthesis.regimeTilts && synthesis.regimeTilts.length > 0 && (
-                  <div className="rounded-lg border border-accent-border bg-accent-soft/60 p-3">
-                    <h4 className="text-[10px] font-bold uppercase tracking-wider text-accent mb-1.5">
-                      Regime Tilts <span className="text-accent font-normal normal-case">· model&apos;s read of what this market favors</span>
-                    </h4>
-                    <ul className="text-xs leading-5 text-accent space-y-0.5 list-disc list-inside">
+                  <div className="rounded-card border border-line-soft bg-surface-2 px-3 py-2.5">
+                    <div className="mb-1.5 text-[11px] text-ink-3">
+                      Regime tilts · the model&apos;s read of what this market favors
+                    </div>
+                    <ul className="list-inside list-disc space-y-0.5 text-[12.5px] leading-5 text-ink-2">
                       {synthesis.regimeTilts.map((t, i) => <li key={i}>{t}</li>)}
                     </ul>
                   </div>
                 )}
 
                 {/* Pick columns — mockup's 3-across layout. */}
-                <div className="grid gap-5 md:grid-cols-3 items-start">
+                <div className="grid items-start gap-3.5 md:grid-cols-3">
                 {/* Top picks — multi-source. Always primary, regardless
                     of regime fit. The fit pill on each card lets the PM
                     spot multi-source picks the regime doesn't favor. */}
                 {synthesis.topPicks.length > 0 && (
                   <div>
-                    <h4 className="text-xs font-bold uppercase tracking-wider text-violet mb-2">Top Picks</h4>
+                    <div className="mb-2 text-[11px] text-ink-3">Top picks</div>
                     <ul className="space-y-2">
                       {synthesis.topPicks.map((p) => <PickRow key={p.ticker} p={p} accent="violet" />)}
                     </ul>
@@ -2628,7 +2779,7 @@ export default function ResearchPage() {
                     picks above. */}
                 {synthesis.regimeAlignedHighlights && synthesis.regimeAlignedHighlights.length > 0 && (
                   <div>
-                    <h4 className="text-xs font-bold uppercase tracking-wider text-accent mb-2">Regime-Aligned</h4>
+                    <div className="mb-2 text-[11px] text-ink-3">Regime-aligned</div>
                     <ul className="space-y-2">
                       {synthesis.regimeAlignedHighlights.map((p) => <PickRow key={p.ticker} p={p} accent="accent" />)}
                     </ul>
@@ -2638,28 +2789,28 @@ export default function ResearchPage() {
                 {/* Honorable mentions — single source, weaker regime fit. */}
                 {synthesis.honorableMentions.length > 0 && (
                   <div>
-                    <h4 className="text-xs font-bold uppercase tracking-wider text-warn mb-2">Honorable Mentions</h4>
+                    <div className="mb-2 text-[11px] text-ink-3">Honorable mentions</div>
                     <div className="flex flex-wrap gap-1.5">
                       {synthesis.honorableMentions.map((p) => {
                         const open = isPickExpanded(p.ticker);
                         return (
-                          <button key={p.ticker} onClick={() => togglePickExpand(p.ticker)} className={`font-mono text-xs font-bold rounded-md border px-2 py-1 transition-colors ${open ? "bg-ink text-white border-ink" : "bg-white text-ink border-line hover:bg-surface-2"}`} title="Click to expand references + fit">
+                          <button key={p.ticker} onClick={() => togglePickExpand(p.ticker)} className={`h-7 rounded-control border px-2.5 font-mono text-[12px] transition-colors ${open ? "border-ink bg-ink text-white" : "border-line bg-surface text-ink hover:bg-surface-hover"}`} title="Click to expand references + fit">
                             {displayTicker(p.ticker)}
                           </button>
                         );
                       })}
                     </div>
                     {synthesis.honorableMentions.map((p) => isPickExpanded(p.ticker) ? (
-                      <div key={p.ticker} className="mt-2 rounded-lg border border-line-soft bg-white p-3">
+                      <div key={p.ticker} className="mt-2 rounded-card border border-line-soft bg-surface p-3">
                         <div className="flex items-center gap-1.5 flex-wrap mb-1">
-                          <TickerLink ticker={p.ticker} className="font-mono font-bold text-ink hover:underline hover:text-accent transition-colors">{displayTicker(p.ticker)}</TickerLink>
-                          <span className="text-xs text-ink-3">· {p.sourceCount} {p.sourceCount === 1 ? "list" : "lists"}</span>
+                          <TickerLink ticker={p.ticker} className="font-mono font-medium text-ink transition-colors hover:text-accent hover:underline">{displayTicker(p.ticker)}</TickerLink>
+                          <span className="text-[11.5px] text-ink-3">· {p.sourceCount} {p.sourceCount === 1 ? "list" : "lists"}</span>
                           <ConvictionBadge p={p} />
                           {p.sources.map((s) => (
-                            <span key={s} className="text-[10px] rounded-full bg-surface-2 text-ink-2 px-2 py-0.5">{s}</span>
+                            <span key={s} className="text-[11.5px] text-ink-3">{s}</span>
                           ))}
                         </div>
-                        <p className="text-sm leading-6 text-ink-2">{p.thesis}</p>
+                        <p className="text-[12.5px] leading-5 text-ink-2">{p.thesis}</p>
                         <RegimeFitBlock p={p} />
                       </div>
                     ) : null)}
@@ -2670,10 +2821,10 @@ export default function ResearchPage() {
 
                 {/* Cautions — compact: a ticker chip per caution; click to reveal its note. */}
                 {synthesis.cautions && synthesis.cautions.length > 0 && (
-                  <div className="rounded-lg border border-warn-border bg-warn-soft/60 p-3">
-                    <h4 className="text-xs font-bold uppercase tracking-wider text-warn mb-2">
-                      Cautions <span className="font-normal normal-case text-warn/70">· {synthesis.cautions.length}</span>
-                    </h4>
+                  <div className="rounded-card border border-warn-border bg-warn-soft px-3 py-2.5">
+                    <div className="mb-2 text-[11px] text-ink-3">
+                      Cautions · {synthesis.cautions.length}
+                    </div>
                     <div className="flex flex-wrap gap-1.5">
                       {synthesis.cautions.map((c, i) => {
                         const m = c.match(/^\$?([A-Z][A-Z.]{0,5})\b/);
@@ -2681,14 +2832,14 @@ export default function ResearchPage() {
                         const key = `caution:${i}`;
                         const open = isPickExpanded(key);
                         return (
-                          <button key={i} onClick={() => togglePickExpand(key)} className={`text-[11px] font-semibold rounded-full border px-2 py-0.5 transition-colors ${open ? "bg-warn text-white border-warn" : "bg-white text-warn border-warn-border hover:bg-warn-soft"}`} title="Click to show this caution">
+                          <button key={i} onClick={() => togglePickExpand(key)} className={`h-7 rounded-control border px-2.5 text-[12px] transition-colors ${open ? "border-warn bg-warn text-white" : "border-warn-border bg-surface text-warn hover:bg-warn-soft"}`} title="Click to show this caution">
                             {label}
                           </button>
                         );
                       })}
                     </div>
                     {synthesis.cautions.map((c, i) => isPickExpanded(`caution:${i}`) ? (
-                      <p key={i} className="mt-2 text-xs leading-5 text-warn">{c}</p>
+                      <p key={i} className="mt-2 text-[12.5px] leading-5 text-warn">{c}</p>
                     ) : null)}
                   </div>
                 )}
@@ -2701,42 +2852,34 @@ export default function ResearchPage() {
         <CollapsibleSection
           prefKey="research.newton"
           className="border-line"
-          titleClass="text-[15px] font-bold"
+          titleClass="text-[13px] font-semibold text-ink"
           title={<>Newton&apos;s Upticks</>}
           subtitle={<>Fundstrat technical uptick list &mdash; click any cell to edit</>}
-          right={<span className="text-sm text-ink-3">{state.newtonUpticks.length} stocks</span>}
+          right={<span className="font-mono text-[11.5px] text-ink-3">{state.newtonUpticks.length} stocks</span>}
         >
 
           {pricesFetchedAt && (
-            <p className="text-[10px] text-ink-3 mb-2">
+            <p className="mb-2 text-[11px] text-ink-3">
               Prices updated {new Date(pricesFetchedAt).toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit", hour12: true })}
             </p>
           )}
 
           {/* View toggle: compact mockup rows (default) vs the full sortable + inline-editable table. */}
-          <div className="flex items-center justify-end mb-2">
-            <button
-              onClick={() => setUiPref("research.newton.view", newtonView === "rows" ? "table" : "rows")}
-              className="text-[11px] rounded-md border border-line bg-white px-2 py-1 font-medium text-ink-2 hover:bg-surface-2 transition-colors"
-              title={newtonView === "rows" ? "Switch to the full sortable, inline-editable table" : "Switch to the compact rows view"}
-            >
-              {newtonView === "rows" ? "Table view" : "Rows view"}
-            </button>
-          </div>
+          <ViewToggle view={newtonView} onToggle={() => setUiPref("research.newton.view", newtonView === "rows" ? "table" : "rows")} />
 
           {newtonView === "rows" ? (
-            <div className="rounded-xl border border-line-soft overflow-hidden">
+            <div className="overflow-hidden rounded-card border border-line-soft">
               {sortedUpticks().map((u) => {
                 const livePrice = livePrices[u.ticker];
                 const pctChange = livePrice && u.priceWhenAdded ? ((livePrice - u.priceWhenAdded) / u.priceWhenAdded * 100) : null;
                 const inList = scoredStocks.some((s) => s.ticker === u.ticker);
                 return (
-                  <div key={u.ticker} className="group flex items-center gap-3 border-b border-line-soft px-3 py-2.5 last:border-b-0 hover:bg-surface-2/50">
-                    <span className="shrink-0 text-ink-faint select-none" title="Use + Watch to add to the Watchlist">⋮⋮</span>
+                  <div key={u.ticker} className="group flex items-center gap-3 border-b border-line-soft px-3 py-2 last:border-b-0 hover:bg-surface-hover">
+                    <span className="shrink-0 text-ink-faint" title="Use + Watch to add to the Watchlist"><AppIcon name="drag" size={12} /></span>
                     <div className="min-w-0 flex-1">
                       <div className="flex items-baseline gap-2">
-                        <TickerLink ticker={u.ticker} className="font-mono font-bold text-ink hover:underline hover:text-accent transition-colors">{displayTicker(u.ticker)}</TickerLink>
-                        {u.name && u.name !== u.ticker && <span className="truncate text-sm text-ink-2">{u.name}</span>}
+                        <TickerLink ticker={u.ticker} className="font-mono font-medium text-ink transition-colors hover:text-accent hover:underline">{displayTicker(u.ticker)}</TickerLink>
+                        {u.name && u.name !== u.ticker && <span className="truncate text-[12.5px] text-ink-2">{u.name}</span>}
                       </div>
                       <div className="text-[11px] text-ink-3 truncate">
                         {u.sector && u.sector !== "—" ? u.sector : "—"}
@@ -2744,61 +2887,61 @@ export default function ResearchPage() {
                       </div>
                     </div>
                     <div className="shrink-0 text-right">
-                      <div className="font-mono text-sm text-ink">{livePrice != null ? `$${livePrice.toFixed(2)}` : "—"}</div>
+                      <div className="font-mono text-[12.5px] text-ink">{livePrice != null ? `$${livePrice.toFixed(2)}` : "—"}</div>
                       <div className={`font-mono text-xs ${pctChange == null ? "text-ink-faint" : pctChange >= 0 ? "text-pos" : "text-neg"}`}>
                         {pctChange == null ? "" : `${pctChange >= 0 ? "+" : ""}${pctChange.toFixed(1)}%`}
                       </div>
                     </div>
                     <div className="shrink-0 flex items-center gap-1">
                       {inList ? (
-                        <span className="text-[10px] text-pos font-medium px-1">In list</span>
+                        <span className="px-1 text-[11px] text-ink-3">In list</span>
                       ) : (
-                        <button onClick={(e) => { e.stopPropagation(); addToWatchlist(u.ticker); }} className="flex items-center justify-center w-6 h-6 rounded-md border border-accent-border bg-accent-soft text-accent hover:bg-accent hover:text-white transition-colors" title="Add to Watchlist" aria-label={`Add ${u.ticker} to Watchlist`}>
-                          <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" /></svg>
+                        <button onClick={(e) => { e.stopPropagation(); addToWatchlist(u.ticker); }} className="grid h-6 w-6 place-items-center rounded-control border border-line bg-surface text-ink-2 transition-colors hover:bg-surface-hover hover:text-accent" title="Add to Watchlist" aria-label={`Add ${u.ticker} to Watchlist`}>
+                          <AppIcon name="plus" size={13} />
                         </button>
                       )}
-                      <button onClick={() => removeUptick(u.ticker)} className="px-1 text-ink-faint hover:text-neg font-bold opacity-0 group-hover:opacity-100 transition-opacity" title="Remove">×</button>
+                      <button onClick={() => removeUptick(u.ticker)} className="px-1 text-ink-faint opacity-0 transition-opacity hover:text-neg group-hover:opacity-100" title="Remove"><AppIcon name="x" size={12} /></button>
                     </div>
                   </div>
                 );
               })}
-              {state.newtonUpticks.length === 0 && <div className="px-3 py-8 text-center text-ink-3 italic">No upticks added yet</div>}
+              {state.newtonUpticks.length === 0 && <EmptyState className="!py-8" glyph={<AppIcon name="list" size={18} />} title="No upticks yet" />}
             </div>
           ) : (
           <div className="overflow-x-auto">
-            <div className="overflow-x-auto"><table className="w-full text-sm">
+            <div className="overflow-x-auto"><table className="data-table min-w-[620px]">
               <thead>
-                <tr className="border-b-2 border-accent-border text-left">
-                  <th className="py-2 pr-2 text-xs font-semibold text-accent w-8">#</th>
-                  <th className="py-2 pr-3 text-xs font-semibold text-accent cursor-pointer hover:text-accent select-none" onClick={() => toggleUptickSort("ticker")}>Ticker{uArrow("ticker")}</th>
-                  <th className="py-2 pr-3 text-xs font-semibold text-accent cursor-pointer hover:text-accent select-none" onClick={() => toggleUptickSort("name")}>Name{uArrow("name")}</th>
-                  <th className="py-2 pr-3 text-xs font-semibold text-accent cursor-pointer hover:text-accent select-none" onClick={() => toggleUptickSort("sector")}>Sector{uArrow("sector")}</th>
-                  <th className="py-2 pr-3 text-xs font-semibold text-accent text-right cursor-pointer hover:text-accent select-none" onClick={() => toggleUptickSort("price")}>Price{uArrow("price")}</th>
-                  <th className="py-2 pr-3 text-xs font-semibold text-accent text-right cursor-pointer hover:text-accent select-none" onClick={() => toggleUptickSort("priceWhenAdded")}>Price Added{uArrow("priceWhenAdded")}</th>
-                  <th className="py-2 pr-3 text-xs font-semibold text-accent text-right">Chg</th>
-                  <th className="py-2 pr-3 text-xs font-semibold text-accent text-right">Support</th>
-                  <th className="py-2 pr-3 text-xs font-semibold text-accent text-right">Resistance</th>
-                  <th className="py-2 pr-3 text-xs font-semibold text-accent cursor-pointer hover:text-accent select-none" onClick={() => toggleUptickSort("dateAdded")}>Date Added{uArrow("dateAdded")}</th>
-                  <th className="py-2 text-xs font-semibold text-accent w-8"></th>
+                <tr>
+                  <th className="w-8">#</th>
+                  <th className="cursor-pointer select-none hover:text-ink" onClick={() => toggleUptickSort("ticker")}>Ticker{uArrow("ticker")}</th>
+                  <th className="cursor-pointer select-none hover:text-ink" onClick={() => toggleUptickSort("name")}>Name{uArrow("name")}</th>
+                  <th className="cursor-pointer select-none hover:text-ink" onClick={() => toggleUptickSort("sector")}>Sector{uArrow("sector")}</th>
+                  <th className="n cursor-pointer select-none hover:text-ink" onClick={() => toggleUptickSort("price")}>Price{uArrow("price")}</th>
+                  <th className="n cursor-pointer select-none hover:text-ink" onClick={() => toggleUptickSort("priceWhenAdded")}>Price Added{uArrow("priceWhenAdded")}</th>
+                  <th className="n">Chg</th>
+                  <th className="n">Support</th>
+                  <th className="n">Resistance</th>
+                  <th className="cursor-pointer select-none hover:text-ink" onClick={() => toggleUptickSort("dateAdded")}>Date Added{uArrow("dateAdded")}</th>
+                  <th className="w-8"></th>
                 </tr>
               </thead>
               <tbody>
                 {sortedUpticks().map((u, i) => {
                   const isNew = u.dateAdded === new Date().toLocaleDateString("en-US", { month: "numeric", day: "numeric", year: "numeric" });
-                  const rowBg = isNew ? "bg-warn-soft font-semibold" : i % 2 === 0 ? "bg-white" : "bg-surface-2/50";
+                  const rowBg = isNew ? "[&>td]:bg-warn-soft" : "";
                   const livePrice = livePrices[u.ticker];
                   const pctChange = livePrice && u.priceWhenAdded ? ((livePrice - u.priceWhenAdded) / u.priceWhenAdded * 100) : null;
                   return (
-                    <tr key={u.ticker} className={`border-b border-line-soft ${rowBg} hover:bg-accent-soft/40 transition-colors`}>
-                      <td className="py-2 pr-2 text-ink-3">{i + 1}</td>
-                      <td className="py-2 pr-3 font-mono font-bold text-accent">$<TickerLink ticker={u.ticker} className="hover:underline">{displayTicker(u.ticker)}</TickerLink></td>
-                      <td className="py-2 pr-3 text-ink-2 truncate max-w-[160px]">
-                        {u.name && u.name !== u.ticker ? u.name : <span className="text-ink-faint italic text-xs">loading...</span>}
+                    <tr key={u.ticker} className={rowBg}>
+                      <td className="text-ink-3">{i + 1}</td>
+                      <td><TickerLink ticker={u.ticker} className="font-mono font-medium text-ink hover:text-accent hover:underline">{displayTicker(u.ticker)}</TickerLink></td>
+                      <td className="max-w-[160px] truncate text-ink-2">
+                        {u.name && u.name !== u.ticker ? u.name : <span className="text-ink-faint">…</span>}
                       </td>
-                      <td className="py-2 pr-3 text-ink-2 truncate max-w-[140px]">
-                        {u.sector && u.sector !== "—" ? u.sector : <span className="text-ink-faint italic text-xs">loading...</span>}
+                      <td className="max-w-[140px] truncate text-ink-2">
+                        {u.sector && u.sector !== "—" ? u.sector : <span className="text-ink-faint">…</span>}
                       </td>
-                      <td className="py-2 pr-3 text-right font-mono">
+                      <td className="n">
                         {pricesLoading ? (
                           <span className="text-ink-faint animate-pulse">...</span>
                         ) : livePrice != null ? (
@@ -2807,14 +2950,14 @@ export default function ResearchPage() {
                           <span className="text-ink-faint">—</span>
                         )}
                       </td>
-                      <td className="py-2 pr-3 text-right font-mono">
+                      <td className="n">
                         {u.priceWhenAdded ? (
                           <EditableCell value={`$${u.priceWhenAdded.toFixed(2)}`} onChange={(v) => updateUptick(u.ticker, "priceWhenAdded", v.replace("$", ""))} />
                         ) : (
                           <span className="text-pos font-semibold">NEW</span>
                         )}
                       </td>
-                      <td className="py-2 pr-3 text-right font-mono text-xs">
+                      <td className="n">
                         {pctChange != null ? (
                           <span className={pctChange >= 0 ? "text-pos" : "text-neg"}>
                             {pctChange >= 0 ? "+" : ""}{pctChange.toFixed(1)}%
@@ -2823,29 +2966,29 @@ export default function ResearchPage() {
                           <span className="text-ink-faint">—</span>
                         )}
                       </td>
-                      <td className="py-2 pr-3 text-right font-mono">
+                      <td className="n">
                         <EditableCell value={u.support} onChange={(v) => updateUptick(u.ticker, "support", v)} />
                       </td>
-                      <td className="py-2 pr-3 text-right font-mono">
+                      <td className="n">
                         <EditableCell value={u.resistance} onChange={(v) => updateUptick(u.ticker, "resistance", v)} />
                       </td>
-                      <td className="py-2 pr-3 text-ink-3">
+                      <td className="text-ink-3">
                         <EditableCell value={u.dateAdded} onChange={(v) => updateUptick(u.ticker, "dateAdded", v)} />
                       </td>
-                      <td className="py-2 text-right whitespace-nowrap">
+                      <td className="text-right">
                         {scoredStocks.some((s) => s.ticker === u.ticker) ? (
-                          <span className="text-[10px] text-pos font-medium">In list</span>
+                          <span className="text-[11px] text-ink-3">In list</span>
                         ) : (
                           <button
                             onClick={(e) => { e.stopPropagation(); addToWatchlist(u.ticker); }}
-                            className="text-[10px] text-accent hover:text-accent font-semibold transition-colors"
+                            className="text-[12px] text-accent hover:underline"
                             title="Add to Watchlist"
                           >
                             + Watch
                           </button>
                         )}
-                        <button onClick={() => removeUptick(u.ticker)} className="ml-2 text-ink-faint hover:text-neg font-bold transition-colors" title="Remove">
-                          &times;
+                        <button onClick={() => removeUptick(u.ticker)} className="ml-2 align-middle text-ink-faint transition-colors hover:text-neg" title="Remove">
+                          <AppIcon name="x" size={12} />
                         </button>
                       </td>
                     </tr>
@@ -2853,7 +2996,7 @@ export default function ResearchPage() {
                 })}
                 {state.newtonUpticks.length === 0 && (
                   <tr>
-                    <td colSpan={11} className="py-8 text-center text-ink-3 italic">No upticks added yet</td>
+                    <td colSpan={11} className="!h-auto"><EmptyState className="!py-8" glyph={<AppIcon name="list" size={18} />} title="No upticks added yet" /></td>
                   </tr>
                 )}
               </tbody>
@@ -2871,10 +3014,10 @@ export default function ResearchPage() {
             if the image fingerprint changed (same caching pattern as JPM
             flows). Unchanged images = zero tokens spent.
           */}
-          <div className="mt-5 border-t border-line-soft pt-4">
-            <div className="flex items-center gap-3 mb-2">
-              <h4 className="text-sm font-bold text-accent">Screenshot Scanner</h4>
-              <span className="text-[10px] text-ink-3">
+          <div className="mt-4 border-t border-line-soft pt-4">
+            <div className="mb-2 flex items-baseline gap-2">
+              <span className="text-[12.5px] font-medium text-ink">Screenshot scanner</span>
+              <span className="min-w-0 flex-1 text-[11px] leading-4 text-ink-3">
                 Upload a Newton&apos;s Upticks screenshot. On Refresh, support/resistance/price/date fields are auto-populated from the image. Re-scans only if the image changes.
               </span>
             </div>
@@ -2887,12 +3030,12 @@ export default function ResearchPage() {
             />
             <div className="flex items-center gap-3 mt-2">
               {scrapeStatus && (
-                <p className="text-[10px] text-ink-3">{scrapeStatus}</p>
+                <p className="text-[11px] text-ink-3">{scrapeStatus}</p>
               )}
               <button
                 onClick={() => { void scrapeUpticks(true); }}
                 disabled={scrapeLoading || (state.attachments || []).filter((a) => a.section === "upticks").length === 0}
-                className="ml-auto text-[10px] rounded-md border border-line bg-white px-2 py-1 font-medium text-ink-2 hover:bg-surface-2 disabled:opacity-50 transition-colors"
+                className="ml-auto h-7 rounded-control border border-line bg-surface px-2.5 text-[12.5px] text-ink-2 transition-colors hover:bg-surface-hover disabled:opacity-50"
                 title="Ignore the cached parse and re-run Anthropic vision against the current screenshot. Use this if the last scan missed support/resistance or other fields."
               >
                 Force re-scan
@@ -2903,29 +3046,29 @@ export default function ResearchPage() {
                 the screenshot. If rows show here with empty support/resistance,
                 the prompt needs improvement — not the merge logic. */}
             {lastScrape.length > 0 && (
-              <details className="mt-2 text-[10px] text-ink-3">
+              <details className="mt-2 text-[11px] text-ink-3">
                 <summary className="cursor-pointer hover:text-ink-2">
                   View parsed rows from screenshot ({lastScrape.length})
                 </summary>
                 <div className="mt-1 overflow-x-auto">
-                  <div className="overflow-x-auto"><table className="w-full text-[10px]">
+                  <div className="overflow-x-auto"><table className="data-table">
                     <thead>
-                      <tr className="text-ink-3 border-b border-line">
-                        <th className="py-1 pr-2 text-left">Ticker</th>
-                        <th className="py-1 pr-2 text-left">Support</th>
-                        <th className="py-1 pr-2 text-left">Resistance</th>
-                        <th className="py-1 pr-2 text-right">Price Added</th>
-                        <th className="py-1 text-left">Date Added</th>
+                      <tr>
+                        <th>Ticker</th>
+                        <th>Support</th>
+                        <th>Resistance</th>
+                        <th className="n">Price Added</th>
+                        <th>Date Added</th>
                       </tr>
                     </thead>
                     <tbody>
                       {lastScrape.map((r, i) => (
-                        <tr key={`${r.ticker}-${i}`} className="border-b border-line-soft">
-                          <td className="py-0.5 pr-2 font-mono font-semibold"><TickerLink ticker={r.ticker} className="hover:underline">{displayTicker(r.ticker)}</TickerLink></td>
-                          <td className="py-0.5 pr-2">{r.support ?? <span className="text-ink-faint">—</span>}</td>
-                          <td className="py-0.5 pr-2">{r.resistance ?? <span className="text-ink-faint">—</span>}</td>
-                          <td className="py-0.5 pr-2 text-right">{r.priceWhenAdded != null ? `$${r.priceWhenAdded}` : <span className="text-ink-faint">—</span>}</td>
-                          <td className="py-0.5">{r.dateAdded ?? <span className="text-ink-faint">—</span>}</td>
+                        <tr key={`${r.ticker}-${i}`}>
+                          <td><TickerLink ticker={r.ticker} className="font-mono font-medium text-ink hover:text-accent hover:underline">{displayTicker(r.ticker)}</TickerLink></td>
+                          <td>{r.support ?? <span className="text-ink-faint">—</span>}</td>
+                          <td>{r.resistance ?? <span className="text-ink-faint">—</span>}</td>
+                          <td className="n">{r.priceWhenAdded != null ? `$${r.priceWhenAdded}` : <span className="text-ink-faint">—</span>}</td>
+                          <td>{r.dateAdded ?? <span className="text-ink-faint">—</span>}</td>
                         </tr>
                       ))}
                     </tbody>
@@ -2941,17 +3084,17 @@ export default function ResearchPage() {
         <CollapsibleSection
           prefKey="research.sectorViews"
           className="border-line"
-          titleClass="text-[15px] font-bold"
-          title={<>Sector Views</>}
+          titleClass="text-[13px] font-semibold text-ink"
+          title={<>Sector views</>}
           subtitle={<>Newton&apos;s &amp; Lee&apos;s sector tilts — click any chip to cycle OW / N / UW. These feed the morning brief.</>}
-          right={<span className="text-sm text-ink-3">2 sources</span>}
+          right={<span className="font-mono text-[11.5px] text-ink-3">2 sources</span>}
         >
-          <div className="grid gap-5 lg:grid-cols-2">
+          <div className="grid gap-3.5 lg:grid-cols-2">
             {/* Newton sector views */}
             <div>
-              <div className="flex items-center gap-3 mb-3">
-                <h4 className="text-sm font-bold text-accent">Newton&apos;s Sector Views</h4>
-                <span className="text-[10px] text-ink-3">Click to toggle OW / N / UW</span>
+              <div className="mb-2.5 flex items-baseline gap-2">
+                <span className="text-[12.5px] font-medium text-ink">Newton&apos;s sector views</span>
+                <span className="text-[11px] text-ink-3">Click to cycle OW / N / UW</span>
               </div>
               <div className="flex flex-wrap gap-2">
                 {(state.newtonSectors ?? GICS_SECTORS.map((s) => ({ sector: s, view: "neutral" as SectorView }))).map((sv) => {
@@ -2975,10 +3118,10 @@ export default function ResearchPage() {
                     <button
                       key={sv.sector}
                       onClick={cycle}
-                      className={`rounded-full border px-3 py-1 text-xs font-semibold transition-all hover:shadow-sm select-none ${bg}`}
+                      className={`h-7 select-none rounded-control border px-2.5 text-[12.5px] transition-colors ${bg}`}
                       title={`${sv.sector}: ${sv.view} — click to cycle`}
                     >
-                      {sv.sector} <span className="font-bold ml-0.5">{badge}</span>
+                      {sv.sector} <span className="ml-1 font-mono font-medium">{badge}</span>
                     </button>
                   );
                 })}
@@ -2987,9 +3130,9 @@ export default function ResearchPage() {
 
             {/* Lee sector views */}
             <div>
-              <div className="flex items-center gap-3 mb-3">
-                <h4 className="text-sm font-bold text-warn">Lee&apos;s Sector Views</h4>
-                <span className="text-[10px] text-ink-3">Click to toggle OW / N / UW</span>
+              <div className="mb-2.5 flex items-baseline gap-2">
+                <span className="text-[12.5px] font-medium text-ink">Lee&apos;s sector views</span>
+                <span className="text-[11px] text-ink-3">Click to cycle OW / N / UW</span>
               </div>
               <div className="flex flex-wrap gap-2">
                 {(state.leeSectors ?? GICS_SECTORS.map((s) => ({ sector: s, view: "neutral" as SectorView }))).map((sv) => {
@@ -3013,10 +3156,10 @@ export default function ResearchPage() {
                     <button
                       key={sv.sector}
                       onClick={cycle}
-                      className={`rounded-full border px-3 py-1 text-xs font-semibold transition-all hover:shadow-sm select-none ${bg}`}
+                      className={`h-7 select-none rounded-control border px-2.5 text-[12.5px] transition-colors ${bg}`}
                       title={`${sv.sector}: ${sv.view} — click to cycle`}
                     >
-                      {sv.sector} <span className="font-bold ml-0.5">{badge}</span>
+                      {sv.sector} <span className="ml-1 font-mono font-medium">{badge}</span>
                     </button>
                   );
                 })}
@@ -3026,16 +3169,16 @@ export default function ResearchPage() {
         </CollapsibleSection>
 
         {/* ── Fundstrat Ideas ── */}
-        <div className="grid gap-5 lg:grid-cols-2">
+        <div className="research-pair grid gap-3.5 lg:grid-cols-2">
           {/* Top Ideas */}
           <CollapsibleSection
             prefKey="research.fsTop"
             linkedKeys={["research.fsBottom"]}
             className="border-line min-w-0"
-            titleClass="text-[15px] font-bold text-pos"
+            titleClass="text-[13px] font-semibold text-ink"
             title={<>Fundstrat Large-Cap Top Ideas</>}
             subtitle={<>Best long ideas — large-cap names</>}
-            right={<><span className="text-sm text-ink-3">{state.fundstratTop.length} names</span></>}
+            right={<><span className="font-mono text-[11.5px] text-ink-3">{state.fundstratTop.length} names</span></>}
           >
 
             <ViewToggle view={fsTopView} onToggle={() => setUiPref("research.fsTop.view", fsTopView === "rows" ? "table" : "rows")} />
@@ -3050,15 +3193,15 @@ export default function ResearchPage() {
                 emptyLabel="No names added yet"
               />
             ) : (
-            <div className="overflow-x-auto"><table className="w-full text-sm">
+            <div className="overflow-x-auto"><table className="data-table min-w-[620px]">
               <thead>
-                <tr className="border-b-2 border-pos-border text-left">
-                  <th className="py-2 pr-2 text-xs font-semibold text-pos w-8">#</th>
-                  <th className="py-2 pr-3 text-xs font-semibold text-pos cursor-pointer hover:text-pos select-none" onClick={() => toggleTopSort("ticker")}>Ticker{tArrow("ticker")}</th>
-                  <th className="py-2 pr-3 text-xs font-semibold text-pos text-right cursor-pointer hover:text-pos select-none" onClick={() => toggleTopSort("currentPrice")}>Current Price{tArrow("currentPrice")}</th>
-                  <th className="py-2 pr-3 text-xs font-semibold text-pos text-right cursor-pointer hover:text-pos select-none" onClick={() => toggleTopSort("priceWhenAdded")}>Price Added{tArrow("priceWhenAdded")}</th>
-                  <th className="py-2 pr-2 text-xs font-semibold text-pos text-right">Chg</th>
-                  <th className="py-2 w-8"></th>
+                <tr>
+                  <th className="w-8">#</th>
+                  <th className="cursor-pointer select-none hover:text-ink" onClick={() => toggleTopSort("ticker")}>Ticker{tArrow("ticker")}</th>
+                  <th className="n cursor-pointer select-none hover:text-ink" onClick={() => toggleTopSort("currentPrice")}>Current Price{tArrow("currentPrice")}</th>
+                  <th className="n cursor-pointer select-none hover:text-ink" onClick={() => toggleTopSort("priceWhenAdded")}>Price Added{tArrow("priceWhenAdded")}</th>
+                  <th className="n">Chg</th>
+                  <th className="w-8"></th>
                 </tr>
               </thead>
               <tbody>
@@ -3066,10 +3209,10 @@ export default function ResearchPage() {
                   const livePrice = livePrices[item.ticker];
                   const pctChange = livePrice && item.priceWhenAdded ? ((livePrice - item.priceWhenAdded) / item.priceWhenAdded * 100) : null;
                   return (
-                    <tr key={item.ticker} className={`border-b border-line-soft ${i % 2 === 0 ? "bg-white" : "bg-pos-soft/30"} hover:bg-pos-soft/60 transition-colors`}>
-                      <td className="py-2 pr-2 text-ink-3">{i + 1}</td>
-                      <td className="py-2 pr-3 font-mono font-bold text-pos">$<TickerLink ticker={item.ticker} className="hover:underline">{displayTicker(item.ticker)}</TickerLink></td>
-                      <td className="py-2 pr-3 text-right font-mono">
+                    <tr key={item.ticker}>
+                      <td className="text-ink-3">{i + 1}</td>
+                      <td><TickerLink ticker={item.ticker} className="font-mono font-medium text-ink hover:text-accent hover:underline">{displayTicker(item.ticker)}</TickerLink></td>
+                      <td className="n">
                         {pricesLoading ? (
                           <span className="text-ink-faint animate-pulse">...</span>
                         ) : livePrice != null ? (
@@ -3078,13 +3221,13 @@ export default function ResearchPage() {
                           <span className="text-ink-faint">—</span>
                         )}
                       </td>
-                      <td className="py-2 pr-3 text-right font-mono">
+                      <td className="n">
                         <EditableCell
                           value={item.priceWhenAdded ? `$${item.priceWhenAdded.toFixed(2)}` : "—"}
                           onChange={(v) => updateIdea("fundstratTop", i, v.replace("$", ""))}
                         />
                       </td>
-                      <td className="py-2 pr-2 text-right font-mono text-xs">
+                      <td className="n">
                         {pctChange != null ? (
                           <span className={pctChange >= 0 ? "text-pos" : "text-neg"}>
                             {pctChange >= 0 ? "+" : ""}{pctChange.toFixed(1)}%
@@ -3093,25 +3236,25 @@ export default function ResearchPage() {
                           <span className="text-ink-faint">—</span>
                         )}
                       </td>
-                      <td className="py-2 text-right whitespace-nowrap">
+                      <td className="text-right">
                         {scoredStocks.some((s) => s.ticker === item.ticker) ? (
-                          <span className="text-[10px] text-pos font-medium">In list</span>
+                          <span className="text-[11px] text-ink-3">In list</span>
                         ) : (
                           <button
                             onClick={(e) => { e.stopPropagation(); addToWatchlist(item.ticker); }}
-                            className="text-[10px] text-accent hover:text-accent font-semibold transition-colors"
+                            className="text-[12px] text-accent hover:underline"
                             title="Add to Watchlist"
                           >
                             + Watch
                           </button>
                         )}
-                        <button onClick={() => removeIdea("fundstratTop", item.ticker)} className="ml-2 text-ink-faint hover:text-neg font-bold transition-colors">&times;</button>
+                        <button onClick={() => removeIdea("fundstratTop", item.ticker)} className="ml-2 align-middle text-ink-faint transition-colors hover:text-neg" title="Remove"><AppIcon name="x" size={12} /></button>
                       </td>
                     </tr>
                   );
                 })}
                 {state.fundstratTop.length === 0 && (
-                  <tr><td colSpan={6} className="py-6 text-center text-ink-3 italic">No top ideas added yet</td></tr>
+                  <tr><td colSpan={6} className="!h-auto"><EmptyState className="!py-8" glyph={<AppIcon name="list" size={18} />} title="No top ideas added yet" /></td></tr>
                 )}
               </tbody>
             </table></div>
@@ -3138,10 +3281,10 @@ export default function ResearchPage() {
             prefKey="research.fsBottom"
             linkedKeys={["research.fsTop"]}
             className="border-line min-w-0"
-            titleClass="text-[15px] font-bold text-neg"
+            titleClass="text-[13px] font-semibold text-ink"
             title={<>Fundstrat Large-Cap Bottom Ideas</>}
             subtitle={<>Names to avoid or short — large-cap</>}
-            right={<><span className="text-sm text-ink-3">{state.fundstratBottom.length} names</span></>}
+            right={<><span className="font-mono text-[11.5px] text-ink-3">{state.fundstratBottom.length} names</span></>}
           >
 
             <ViewToggle view={fsBottomView} onToggle={() => setUiPref("research.fsBottom.view", fsBottomView === "rows" ? "table" : "rows")} />
@@ -3156,15 +3299,15 @@ export default function ResearchPage() {
                 emptyLabel="No names added yet"
               />
             ) : (
-            <div className="overflow-x-auto"><table className="w-full text-sm">
+            <div className="overflow-x-auto"><table className="data-table min-w-[620px]">
               <thead>
-                <tr className="border-b-2 border-neg-border text-left">
-                  <th className="py-2 pr-2 text-xs font-semibold text-neg w-8">#</th>
-                  <th className="py-2 pr-3 text-xs font-semibold text-neg cursor-pointer hover:text-neg select-none" onClick={() => toggleBottomSort("ticker")}>Ticker{bArrow("ticker")}</th>
-                  <th className="py-2 pr-3 text-xs font-semibold text-neg text-right cursor-pointer hover:text-neg select-none" onClick={() => toggleBottomSort("currentPrice")}>Current Price{bArrow("currentPrice")}</th>
-                  <th className="py-2 pr-3 text-xs font-semibold text-neg text-right cursor-pointer hover:text-neg select-none" onClick={() => toggleBottomSort("priceWhenAdded")}>Price Added{bArrow("priceWhenAdded")}</th>
-                  <th className="py-2 pr-2 text-xs font-semibold text-neg text-right">Chg</th>
-                  <th className="py-2 w-8"></th>
+                <tr>
+                  <th className="w-8">#</th>
+                  <th className="cursor-pointer select-none hover:text-ink" onClick={() => toggleBottomSort("ticker")}>Ticker{bArrow("ticker")}</th>
+                  <th className="n cursor-pointer select-none hover:text-ink" onClick={() => toggleBottomSort("currentPrice")}>Current Price{bArrow("currentPrice")}</th>
+                  <th className="n cursor-pointer select-none hover:text-ink" onClick={() => toggleBottomSort("priceWhenAdded")}>Price Added{bArrow("priceWhenAdded")}</th>
+                  <th className="n">Chg</th>
+                  <th className="w-8"></th>
                 </tr>
               </thead>
               <tbody>
@@ -3172,10 +3315,10 @@ export default function ResearchPage() {
                   const livePrice = livePrices[item.ticker];
                   const pctChange = livePrice && item.priceWhenAdded ? ((livePrice - item.priceWhenAdded) / item.priceWhenAdded * 100) : null;
                   return (
-                    <tr key={item.ticker} className={`border-b border-line-soft ${i % 2 === 0 ? "bg-white" : "bg-neg-soft/30"} hover:bg-neg-soft/60 transition-colors`}>
-                      <td className="py-2 pr-2 text-ink-3">{i + 1}</td>
-                      <td className="py-2 pr-3 font-mono font-bold text-neg">$<TickerLink ticker={item.ticker} className="hover:underline">{displayTicker(item.ticker)}</TickerLink></td>
-                      <td className="py-2 pr-3 text-right font-mono">
+                    <tr key={item.ticker}>
+                      <td className="text-ink-3">{i + 1}</td>
+                      <td><TickerLink ticker={item.ticker} className="font-mono font-medium text-ink hover:text-accent hover:underline">{displayTicker(item.ticker)}</TickerLink></td>
+                      <td className="n">
                         {pricesLoading ? (
                           <span className="text-ink-faint animate-pulse">...</span>
                         ) : livePrice != null ? (
@@ -3184,13 +3327,13 @@ export default function ResearchPage() {
                           <span className="text-ink-faint">—</span>
                         )}
                       </td>
-                      <td className="py-2 pr-3 text-right font-mono">
+                      <td className="n">
                         <EditableCell
                           value={item.priceWhenAdded ? `$${item.priceWhenAdded.toFixed(2)}` : "—"}
                           onChange={(v) => updateIdea("fundstratBottom", i, v.replace("$", ""))}
                         />
                       </td>
-                      <td className="py-2 pr-2 text-right font-mono text-xs">
+                      <td className="n">
                         {pctChange != null ? (
                           <span className={pctChange >= 0 ? "text-pos" : "text-neg"}>
                             {pctChange >= 0 ? "+" : ""}{pctChange.toFixed(1)}%
@@ -3199,25 +3342,25 @@ export default function ResearchPage() {
                           <span className="text-ink-faint">—</span>
                         )}
                       </td>
-                      <td className="py-2 text-right whitespace-nowrap">
+                      <td className="text-right">
                         {scoredStocks.some((s) => s.ticker === item.ticker) ? (
-                          <span className="text-[10px] text-pos font-medium">In list</span>
+                          <span className="text-[11px] text-ink-3">In list</span>
                         ) : (
                           <button
                             onClick={(e) => { e.stopPropagation(); addToWatchlist(item.ticker); }}
-                            className="text-[10px] text-accent hover:text-accent font-semibold transition-colors"
+                            className="text-[12px] text-accent hover:underline"
                             title="Add to Watchlist"
                           >
                             + Watch
                           </button>
                         )}
-                        <button onClick={() => removeIdea("fundstratBottom", item.ticker)} className="ml-2 text-ink-faint hover:text-neg font-bold transition-colors">&times;</button>
+                        <button onClick={() => removeIdea("fundstratBottom", item.ticker)} className="ml-2 align-middle text-ink-faint transition-colors hover:text-neg" title="Remove"><AppIcon name="x" size={12} /></button>
                       </td>
                     </tr>
                   );
                 })}
                 {state.fundstratBottom.length === 0 && (
-                  <tr><td colSpan={6} className="py-6 text-center text-ink-3 italic">No bottom ideas added yet</td></tr>
+                  <tr><td colSpan={6} className="!h-auto"><EmptyState className="!py-8" glyph={<AppIcon name="list" size={18} />} title="No bottom ideas added yet" /></td></tr>
                 )}
               </tbody>
             </table></div>
@@ -3244,16 +3387,16 @@ export default function ResearchPage() {
              Large-Cap pair). Top is positive (buy), Bottom is negative
              (avoid/short, treated identically to Large-Cap Bottom by
              the cross-source synthesis). */}
-        <div className="grid gap-5 lg:grid-cols-2">
+        <div className="research-pair grid gap-3.5 lg:grid-cols-2">
           {/* SMID Top Ideas */}
           <CollapsibleSection
             prefKey="research.fsSmidTop"
             linkedKeys={["research.fsSmidBottom"]}
             className="border-line min-w-0"
-            titleClass="text-[15px] font-bold text-pos"
+            titleClass="text-[13px] font-semibold text-ink"
             title={<>Fundstrat Top SMID-Cap Core Ideas</>}
             subtitle={<>Best long ideas — small/mid-cap names</>}
-            right={<><span className="text-sm text-ink-3">{(state.fundstratSmidTop ?? []).length} names</span></>}
+            right={<><span className="font-mono text-[11.5px] text-ink-3">{(state.fundstratSmidTop ?? []).length} names</span></>}
           >
 
             <ViewToggle view={fsSmidTopView} onToggle={() => setUiPref("research.fsSmidTop.view", fsSmidTopView === "rows" ? "table" : "rows")} />
@@ -3268,15 +3411,15 @@ export default function ResearchPage() {
                 emptyLabel="No names added yet"
               />
             ) : (
-            <div className="overflow-x-auto"><table className="w-full text-sm">
+            <div className="overflow-x-auto"><table className="data-table min-w-[620px]">
               <thead>
-                <tr className="border-b-2 border-pos-border text-left">
-                  <th className="py-2 pr-2 text-xs font-semibold text-pos w-8">#</th>
-                  <th className="py-2 pr-3 text-xs font-semibold text-pos cursor-pointer hover:text-pos select-none" onClick={() => toggleSmidTopSort("ticker")}>Ticker{stArrow("ticker")}</th>
-                  <th className="py-2 pr-3 text-xs font-semibold text-pos text-right cursor-pointer hover:text-pos select-none" onClick={() => toggleSmidTopSort("currentPrice")}>Current Price{stArrow("currentPrice")}</th>
-                  <th className="py-2 pr-3 text-xs font-semibold text-pos text-right cursor-pointer hover:text-pos select-none" onClick={() => toggleSmidTopSort("priceWhenAdded")}>Price Added{stArrow("priceWhenAdded")}</th>
-                  <th className="py-2 pr-2 text-xs font-semibold text-pos text-right">Chg</th>
-                  <th className="py-2 w-8"></th>
+                <tr>
+                  <th className="w-8">#</th>
+                  <th className="cursor-pointer select-none hover:text-ink" onClick={() => toggleSmidTopSort("ticker")}>Ticker{stArrow("ticker")}</th>
+                  <th className="n cursor-pointer select-none hover:text-ink" onClick={() => toggleSmidTopSort("currentPrice")}>Current Price{stArrow("currentPrice")}</th>
+                  <th className="n cursor-pointer select-none hover:text-ink" onClick={() => toggleSmidTopSort("priceWhenAdded")}>Price Added{stArrow("priceWhenAdded")}</th>
+                  <th className="n">Chg</th>
+                  <th className="w-8"></th>
                 </tr>
               </thead>
               <tbody>
@@ -3284,46 +3427,46 @@ export default function ResearchPage() {
                   const livePrice = livePrices[item.ticker];
                   const pctChange = livePrice && item.priceWhenAdded ? ((livePrice - item.priceWhenAdded) / item.priceWhenAdded * 100) : null;
                   return (
-                    <tr key={item.ticker} className={`border-b border-line-soft ${i % 2 === 0 ? "bg-white" : "bg-pos-soft/30"} hover:bg-pos-soft/60 transition-colors`}>
-                      <td className="py-2 pr-2 text-ink-3">{i + 1}</td>
-                      <td className="py-2 pr-3 font-mono font-bold text-pos">$<TickerLink ticker={item.ticker} className="hover:underline">{displayTicker(item.ticker)}</TickerLink></td>
-                      <td className="py-2 pr-3 text-right font-mono">
+                    <tr key={item.ticker}>
+                      <td className="text-ink-3">{i + 1}</td>
+                      <td><TickerLink ticker={item.ticker} className="font-mono font-medium text-ink hover:text-accent hover:underline">{displayTicker(item.ticker)}</TickerLink></td>
+                      <td className="n">
                         {pricesLoading ? <span className="text-ink-faint animate-pulse">...</span>
                           : livePrice != null ? <span className="font-semibold">${livePrice.toFixed(2)}</span>
                           : <span className="text-ink-faint">—</span>}
                       </td>
-                      <td className="py-2 pr-3 text-right font-mono">
+                      <td className="n">
                         <EditableCell
                           value={item.priceWhenAdded ? `$${item.priceWhenAdded.toFixed(2)}` : "—"}
                           onChange={(v) => updateIdea("fundstratSmidTop", i, v.replace("$", ""))}
                         />
                       </td>
-                      <td className="py-2 pr-2 text-right font-mono text-xs">
+                      <td className="n">
                         {pctChange != null ? (
                           <span className={pctChange >= 0 ? "text-pos" : "text-neg"}>
                             {pctChange >= 0 ? "+" : ""}{pctChange.toFixed(1)}%
                           </span>
                         ) : <span className="text-ink-faint">—</span>}
                       </td>
-                      <td className="py-2 text-right whitespace-nowrap">
+                      <td className="text-right">
                         {scoredStocks.some((s) => s.ticker === item.ticker) ? (
-                          <span className="text-[10px] text-pos font-medium">In list</span>
+                          <span className="text-[11px] text-ink-3">In list</span>
                         ) : (
                           <button
                             onClick={(e) => { e.stopPropagation(); addToWatchlist(item.ticker); }}
-                            className="text-[10px] text-accent hover:text-accent font-semibold transition-colors"
+                            className="text-[12px] text-accent hover:underline"
                             title="Add to Watchlist"
                           >
                             + Watch
                           </button>
                         )}
-                        <button onClick={() => removeIdea("fundstratSmidTop", item.ticker)} className="ml-2 text-ink-faint hover:text-neg font-bold transition-colors">&times;</button>
+                        <button onClick={() => removeIdea("fundstratSmidTop", item.ticker)} className="ml-2 align-middle text-ink-faint transition-colors hover:text-neg" title="Remove"><AppIcon name="x" size={12} /></button>
                       </td>
                     </tr>
                   );
                 })}
                 {(state.fundstratSmidTop ?? []).length === 0 && (
-                  <tr><td colSpan={6} className="py-6 text-center text-ink-3 italic">No top SMID ideas added yet</td></tr>
+                  <tr><td colSpan={6} className="!h-auto"><EmptyState className="!py-8" glyph={<AppIcon name="list" size={18} />} title="No top SMID ideas added yet" /></td></tr>
                 )}
               </tbody>
             </table></div>
@@ -3350,10 +3493,10 @@ export default function ResearchPage() {
             prefKey="research.fsSmidBottom"
             linkedKeys={["research.fsSmidTop"]}
             className="border-line min-w-0"
-            titleClass="text-[15px] font-bold text-neg"
+            titleClass="text-[13px] font-semibold text-ink"
             title={<>Fundstrat Bottom SMID-Cap Core Ideas</>}
             subtitle={<>Names to avoid or short — small/mid-cap</>}
-            right={<><span className="text-sm text-ink-3">{(state.fundstratSmidBottom ?? []).length} names</span></>}
+            right={<><span className="font-mono text-[11.5px] text-ink-3">{(state.fundstratSmidBottom ?? []).length} names</span></>}
           >
 
             <ViewToggle view={fsSmidBottomView} onToggle={() => setUiPref("research.fsSmidBottom.view", fsSmidBottomView === "rows" ? "table" : "rows")} />
@@ -3368,15 +3511,15 @@ export default function ResearchPage() {
                 emptyLabel="No names added yet"
               />
             ) : (
-            <div className="overflow-x-auto"><table className="w-full text-sm">
+            <div className="overflow-x-auto"><table className="data-table min-w-[620px]">
               <thead>
-                <tr className="border-b-2 border-neg-border text-left">
-                  <th className="py-2 pr-2 text-xs font-semibold text-neg w-8">#</th>
-                  <th className="py-2 pr-3 text-xs font-semibold text-neg cursor-pointer hover:text-neg select-none" onClick={() => toggleSmidBottomSort("ticker")}>Ticker{sbArrow("ticker")}</th>
-                  <th className="py-2 pr-3 text-xs font-semibold text-neg text-right cursor-pointer hover:text-neg select-none" onClick={() => toggleSmidBottomSort("currentPrice")}>Current Price{sbArrow("currentPrice")}</th>
-                  <th className="py-2 pr-3 text-xs font-semibold text-neg text-right cursor-pointer hover:text-neg select-none" onClick={() => toggleSmidBottomSort("priceWhenAdded")}>Price Added{sbArrow("priceWhenAdded")}</th>
-                  <th className="py-2 pr-2 text-xs font-semibold text-neg text-right">Chg</th>
-                  <th className="py-2 w-8"></th>
+                <tr>
+                  <th className="w-8">#</th>
+                  <th className="cursor-pointer select-none hover:text-ink" onClick={() => toggleSmidBottomSort("ticker")}>Ticker{sbArrow("ticker")}</th>
+                  <th className="n cursor-pointer select-none hover:text-ink" onClick={() => toggleSmidBottomSort("currentPrice")}>Current Price{sbArrow("currentPrice")}</th>
+                  <th className="n cursor-pointer select-none hover:text-ink" onClick={() => toggleSmidBottomSort("priceWhenAdded")}>Price Added{sbArrow("priceWhenAdded")}</th>
+                  <th className="n">Chg</th>
+                  <th className="w-8"></th>
                 </tr>
               </thead>
               <tbody>
@@ -3384,46 +3527,46 @@ export default function ResearchPage() {
                   const livePrice = livePrices[item.ticker];
                   const pctChange = livePrice && item.priceWhenAdded ? ((livePrice - item.priceWhenAdded) / item.priceWhenAdded * 100) : null;
                   return (
-                    <tr key={item.ticker} className={`border-b border-line-soft ${i % 2 === 0 ? "bg-white" : "bg-neg-soft/30"} hover:bg-neg-soft/60 transition-colors`}>
-                      <td className="py-2 pr-2 text-ink-3">{i + 1}</td>
-                      <td className="py-2 pr-3 font-mono font-bold text-neg">$<TickerLink ticker={item.ticker} className="hover:underline">{displayTicker(item.ticker)}</TickerLink></td>
-                      <td className="py-2 pr-3 text-right font-mono">
+                    <tr key={item.ticker}>
+                      <td className="text-ink-3">{i + 1}</td>
+                      <td><TickerLink ticker={item.ticker} className="font-mono font-medium text-ink hover:text-accent hover:underline">{displayTicker(item.ticker)}</TickerLink></td>
+                      <td className="n">
                         {pricesLoading ? <span className="text-ink-faint animate-pulse">...</span>
                           : livePrice != null ? <span className="font-semibold">${livePrice.toFixed(2)}</span>
                           : <span className="text-ink-faint">—</span>}
                       </td>
-                      <td className="py-2 pr-3 text-right font-mono">
+                      <td className="n">
                         <EditableCell
                           value={item.priceWhenAdded ? `$${item.priceWhenAdded.toFixed(2)}` : "—"}
                           onChange={(v) => updateIdea("fundstratSmidBottom", i, v.replace("$", ""))}
                         />
                       </td>
-                      <td className="py-2 pr-2 text-right font-mono text-xs">
+                      <td className="n">
                         {pctChange != null ? (
                           <span className={pctChange >= 0 ? "text-pos" : "text-neg"}>
                             {pctChange >= 0 ? "+" : ""}{pctChange.toFixed(1)}%
                           </span>
                         ) : <span className="text-ink-faint">—</span>}
                       </td>
-                      <td className="py-2 text-right whitespace-nowrap">
+                      <td className="text-right">
                         {scoredStocks.some((s) => s.ticker === item.ticker) ? (
-                          <span className="text-[10px] text-pos font-medium">In list</span>
+                          <span className="text-[11px] text-ink-3">In list</span>
                         ) : (
                           <button
                             onClick={(e) => { e.stopPropagation(); addToWatchlist(item.ticker); }}
-                            className="text-[10px] text-accent hover:text-accent font-semibold transition-colors"
+                            className="text-[12px] text-accent hover:underline"
                             title="Add to Watchlist"
                           >
                             + Watch
                           </button>
                         )}
-                        <button onClick={() => removeIdea("fundstratSmidBottom", item.ticker)} className="ml-2 text-ink-faint hover:text-neg font-bold transition-colors">&times;</button>
+                        <button onClick={() => removeIdea("fundstratSmidBottom", item.ticker)} className="ml-2 align-middle text-ink-faint transition-colors hover:text-neg" title="Remove"><AppIcon name="x" size={12} /></button>
                       </td>
                     </tr>
                   );
                 })}
                 {(state.fundstratSmidBottom ?? []).length === 0 && (
-                  <tr><td colSpan={6} className="py-6 text-center text-ink-3 italic">No bottom SMID ideas added yet</td></tr>
+                  <tr><td colSpan={6} className="!h-auto"><EmptyState className="!py-8" glyph={<AppIcon name="list" size={18} />} title="No bottom SMID ideas added yet" /></td></tr>
                 )}
               </tbody>
             </table></div>
@@ -3453,7 +3596,7 @@ export default function ResearchPage() {
              forward P/E, DQM rank, momentum rating, and trend flags. Stored
              as RBCEntry[] (the quant columns are optional RBCEntry fields);
              live price comes from Yahoo like the other US lists. */}
-        <div className="grid gap-5 lg:grid-cols-2">
+        <div className="research-pair grid gap-3.5 lg:grid-cols-2">
           {([
             {
               key: "lc", source: "fundstrat-largecap-core" as const, prefKey: "research.lcCore", linked: "research.smidCore",
@@ -3461,8 +3604,7 @@ export default function ResearchPage() {
               helper: "Upload a Fundstrat Large-Cap Core Ideas screenshot. On Refresh, ticker + company + sector + DQM rank + momentum + relative perf are extracted and merged.",
               list: sortedLcCore(), rawLen: (state.fundstratLargeCapCore || []).length, view: lcCoreView,
               sort: lcCoreSort, toggle: toggleLcCoreSort, arrow: lcArrow, onAdd: addLcCore, onRemove: removeLcCore,
-              titleClass: "text-[15px] font-bold text-violet", border: "border-line min-w-0",
-              th: "text-violet", ticker: "text-violet", rowAlt: "bg-violet-soft/30", rowHover: "hover:bg-violet-soft/60",
+              titleClass: "text-[13px] font-semibold text-ink", border: "border-line min-w-0",
             },
             {
               key: "smid", source: "fundstrat-smid-core" as const, prefKey: "research.smidCore", linked: "research.lcCore",
@@ -3470,8 +3612,7 @@ export default function ResearchPage() {
               helper: "Upload a Fundstrat SMID Core Ideas screenshot. On Refresh, ticker + company + sector + DQM rank + momentum + relative perf are extracted and merged.",
               list: sortedSmidCore(), rawLen: (state.fundstratSmidCore || []).length, view: smidCoreView,
               sort: smidCoreSort, toggle: toggleSmidCoreSort, arrow: smcArrow, onAdd: addSmidCore, onRemove: removeSmidCore,
-              titleClass: "text-[15px] font-bold text-accent", border: "border-line min-w-0",
-              th: "text-accent", ticker: "text-accent", rowAlt: "bg-accent-soft/30", rowHover: "hover:bg-accent-soft/60",
+              titleClass: "text-[13px] font-semibold text-ink", border: "border-line min-w-0",
             },
           ]).map((cfg) => (
             <CollapsibleSection
@@ -3482,7 +3623,7 @@ export default function ResearchPage() {
               titleClass={cfg.titleClass}
               title={<>{cfg.title}</>}
               subtitle={<>{cfg.subtitle}</>}
-              right={<span className="text-sm text-ink-3">{cfg.rawLen} names</span>}
+              right={<span className="font-mono text-[11.5px] text-ink-3">{cfg.rawLen} names</span>}
             >
               <ViewToggle view={cfg.view} onToggle={() => setUiPref(`${cfg.prefKey}.view`, cfg.view === "rows" ? "table" : "rows")} />
               {cfg.view === "rows" ? (
@@ -3506,19 +3647,19 @@ export default function ResearchPage() {
                   emptyLabel="No names added yet"
                 />
               ) : (
-                <div className="overflow-x-auto"><table className="w-full text-sm">
+                <div className="overflow-x-auto"><table className="data-table min-w-[620px]">
                   <thead>
-                    <tr className={`border-b-2 ${cfg.border.replace(" min-w-0", "")} text-left`}>
-                      <th className={`py-2 pr-2 text-xs font-semibold ${cfg.th} cursor-pointer select-none`} onClick={() => cfg.toggle("dqmRank")}>DQM{cfg.arrow("dqmRank")}</th>
-                      <th className={`py-2 pr-3 text-xs font-semibold ${cfg.th} cursor-pointer select-none`} onClick={() => cfg.toggle("ticker")}>Ticker{cfg.arrow("ticker")}</th>
-                      <th className={`py-2 pr-3 text-xs font-semibold ${cfg.th} cursor-pointer select-none`} onClick={() => cfg.toggle("name")}>Name{cfg.arrow("name")}</th>
-                      <th className={`py-2 pr-3 text-xs font-semibold ${cfg.th} cursor-pointer select-none`} onClick={() => cfg.toggle("sector")}>Sector{cfg.arrow("sector")}</th>
-                      <th className={`py-2 pr-3 text-xs font-semibold ${cfg.th} text-right cursor-pointer select-none`} onClick={() => cfg.toggle("momentumRating")}>Mom{cfg.arrow("momentumRating")}</th>
-                      <th className={`py-2 pr-3 text-xs font-semibold ${cfg.th} text-right cursor-pointer select-none`} onClick={() => cfg.toggle("perf1M")}>1M rel{cfg.arrow("perf1M")}</th>
-                      <th className={`py-2 pr-3 text-xs font-semibold ${cfg.th} text-right cursor-pointer select-none`} onClick={() => cfg.toggle("perfYTD")}>YTD rel{cfg.arrow("perfYTD")}</th>
-                      <th className={`py-2 pr-3 text-xs font-semibold ${cfg.th} text-right cursor-pointer select-none`} onClick={() => cfg.toggle("pe")}>P/E{cfg.arrow("pe")}</th>
-                      <th className={`py-2 pr-3 text-xs font-semibold ${cfg.th} text-right cursor-pointer select-none`} onClick={() => cfg.toggle("currentPrice")}>Price{cfg.arrow("currentPrice")}</th>
-                      <th className="py-2 w-20"></th>
+                    <tr>
+                      <th className="cursor-pointer select-none hover:text-ink" onClick={() => cfg.toggle("dqmRank")}>DQM{cfg.arrow("dqmRank")}</th>
+                      <th className="cursor-pointer select-none hover:text-ink" onClick={() => cfg.toggle("ticker")}>Ticker{cfg.arrow("ticker")}</th>
+                      <th className="cursor-pointer select-none hover:text-ink" onClick={() => cfg.toggle("name")}>Name{cfg.arrow("name")}</th>
+                      <th className="cursor-pointer select-none hover:text-ink" onClick={() => cfg.toggle("sector")}>Sector{cfg.arrow("sector")}</th>
+                      <th className="n cursor-pointer select-none hover:text-ink" onClick={() => cfg.toggle("momentumRating")}>Mom{cfg.arrow("momentumRating")}</th>
+                      <th className="n cursor-pointer select-none hover:text-ink" onClick={() => cfg.toggle("perf1M")}>1M rel{cfg.arrow("perf1M")}</th>
+                      <th className="n cursor-pointer select-none hover:text-ink" onClick={() => cfg.toggle("perfYTD")}>YTD rel{cfg.arrow("perfYTD")}</th>
+                      <th className="n cursor-pointer select-none hover:text-ink" onClick={() => cfg.toggle("pe")}>P/E{cfg.arrow("pe")}</th>
+                      <th className="n cursor-pointer select-none hover:text-ink" onClick={() => cfg.toggle("currentPrice")}>Price{cfg.arrow("currentPrice")}</th>
+                      <th className="w-20"></th>
                     </tr>
                   </thead>
                   <tbody>
@@ -3528,29 +3669,29 @@ export default function ResearchPage() {
                         ? <span className={v >= 0 ? "text-pos" : "text-neg"}>{v >= 0 ? "+" : ""}{v.toFixed(1)}%</span>
                         : <span className="text-ink-faint">—</span>;
                       return (
-                        <tr key={item.ticker} className={`border-b border-line-soft ${i % 2 === 0 ? "bg-white" : cfg.rowAlt} ${cfg.rowHover} transition-colors`}>
-                          <td className="py-2 pr-2 text-ink-3 font-mono">{typeof item.dqmRank === "number" ? item.dqmRank : "—"}</td>
-                          <td className={`py-2 pr-3 font-mono font-bold ${cfg.ticker}`}>$<TickerLink ticker={item.ticker} className="hover:underline">{displayTicker(item.ticker)}</TickerLink></td>
-                          <td className="py-2 pr-3 text-ink-2 truncate max-w-[200px]" title={item.name || item.ticker}>{item.name || <span className="text-ink-faint italic">—</span>}</td>
-                          <td className="py-2 pr-3 text-ink-2 truncate max-w-[140px]" title={item.sector || ""}>{item.sector || <span className="text-ink-faint">—</span>}</td>
-                          <td className="py-2 pr-3 text-right font-mono text-ink-2">{typeof item.momentumRating === "number" ? item.momentumRating : <span className="text-ink-faint">—</span>}</td>
-                          <td className="py-2 pr-3 text-right font-mono">{pct(item.perf1M)}</td>
-                          <td className="py-2 pr-3 text-right font-mono">{pct(item.perfYTD)}</td>
-                          <td className="py-2 pr-3 text-right font-mono text-ink-2">{typeof item.pe === "number" ? `${item.pe.toFixed(1)}x` : <span className="text-ink-faint">—</span>}</td>
-                          <td className="py-2 pr-3 text-right font-mono text-ink-2 whitespace-nowrap">{typeof live === "number" ? `$${live.toFixed(2)}` : <span className="text-ink-faint">—</span>}</td>
-                          <td className="py-2 text-right whitespace-nowrap">
+                        <tr key={item.ticker}>
+                          <td className="font-mono text-ink-3">{typeof item.dqmRank === "number" ? item.dqmRank : "—"}</td>
+                          <td><TickerLink ticker={item.ticker} className="font-mono font-medium text-ink hover:text-accent hover:underline">{displayTicker(item.ticker)}</TickerLink></td>
+                          <td className="max-w-[200px] truncate text-ink-2" title={item.name || item.ticker}>{item.name || <span className="text-ink-faint">—</span>}</td>
+                          <td className="max-w-[140px] truncate text-ink-2" title={item.sector || ""}>{item.sector || <span className="text-ink-faint">—</span>}</td>
+                          <td className="n">{typeof item.momentumRating === "number" ? item.momentumRating : <span className="text-ink-faint">—</span>}</td>
+                          <td className="n">{pct(item.perf1M)}</td>
+                          <td className="n">{pct(item.perfYTD)}</td>
+                          <td className="n">{typeof item.pe === "number" ? `${item.pe.toFixed(1)}x` : <span className="text-ink-faint">—</span>}</td>
+                          <td className="n">{typeof live === "number" ? `$${live.toFixed(2)}` : <span className="text-ink-faint">—</span>}</td>
+                          <td className="text-right">
                             {scoredStocks.some((s) => s.ticker === item.ticker) ? (
-                              <span className="text-[10px] text-pos font-medium">In list</span>
+                              <span className="text-[11px] text-ink-3">In list</span>
                             ) : (
-                              <button onClick={(e) => { e.stopPropagation(); addToWatchlist(item.ticker); }} className="text-[10px] text-accent hover:text-accent font-semibold transition-colors" title="Add to Watchlist">+ Watch</button>
+                              <button onClick={(e) => { e.stopPropagation(); addToWatchlist(item.ticker); }} className="text-[12px] text-accent hover:underline" title="Add to Watchlist">+ Watch</button>
                             )}
-                            <button onClick={() => cfg.onRemove(item.ticker)} className="ml-2 text-ink-faint hover:text-neg font-bold transition-colors">&times;</button>
+                            <button onClick={() => cfg.onRemove(item.ticker)} className="ml-2 align-middle text-ink-faint transition-colors hover:text-neg" title="Remove"><AppIcon name="x" size={12} /></button>
                           </td>
                         </tr>
                       );
                     })}
                     {cfg.rawLen === 0 && (
-                      <tr><td colSpan={10} className="py-6 text-center text-ink-3 italic">No names added yet</td></tr>
+                      <tr><td colSpan={10} className="!h-auto"><EmptyState className="!py-8" glyph={<AppIcon name="list" size={18} />} title="No names added yet" /></td></tr>
                     )}
                   </tbody>
                 </table></div>
@@ -3577,16 +3718,16 @@ export default function ResearchPage() {
         <CollapsibleSection
           prefKey="research.leeFocus"
           className="border-line"
-          titleClass="text-lg font-bold text-warn"
+          titleClass="text-[13px] font-semibold text-ink"
           title={<>Tom Lee&apos;s Focus Areas</>}
           subtitle={<>Key themes and areas Lee is emphasizing — type freely, these feed into the morning brief</>}
-          right={<><span className="text-sm text-ink-3">{(state.leeFocusAreas ?? []).length} themes</span></>}
+          right={<><span className="font-mono text-[11.5px] text-ink-3">{(state.leeFocusAreas ?? []).length} themes</span></>}
         >
           <div className="flex flex-wrap gap-2 mb-3">
             {(state.leeFocusAreas ?? []).map((area, idx) => (
               <span
                 key={idx}
-                className="inline-flex items-center gap-1 rounded-full border border-warn-border bg-warn-soft px-3 py-1 text-sm font-medium text-warn"
+                className="inline-flex h-7 items-center gap-1.5 rounded-control border border-line bg-surface px-2.5 text-[12.5px] text-ink-2"
               >
                 {area.label}
                 <button
@@ -3594,15 +3735,15 @@ export default function ResearchPage() {
                     const updated = (state.leeFocusAreas ?? []).filter((_, i) => i !== idx);
                     save({ ...state, leeFocusAreas: updated });
                   }}
-                  className="ml-0.5 text-warn hover:text-neg font-bold transition-colors text-xs"
+                  className="ml-0.5 text-ink-3 transition-colors hover:text-neg"
                   title="Remove"
                 >
-                  &times;
+                  <AppIcon name="x" size={11} />
                 </button>
               </span>
             ))}
             {(state.leeFocusAreas ?? []).length === 0 && (
-              <span className="text-sm text-ink-3 italic">No focus areas added yet</span>
+              <span className="text-[12.5px] text-ink-3">No focus areas yet</span>
             )}
           </div>
           <form
@@ -3622,27 +3763,27 @@ export default function ResearchPage() {
             <input
               name="leeArea"
               placeholder="e.g. AI infrastructure, GARP names, epicenter stocks…"
-              className="flex-1 rounded-xl border border-line bg-surface-2 px-3 py-2 text-sm outline-none placeholder:text-ink-3 focus:bg-white focus:border-warn-border focus:ring-1 focus:ring-warn-border transition-all"
+              className="flex-1 h-7 rounded-control border border-line bg-surface px-2.5 text-[12.5px] outline-none placeholder:text-ink-3 focus:border-accent-border"
             />
             <button
               type="submit"
-              className="rounded-xl bg-warn px-4 py-2 text-sm font-semibold text-white hover:bg-warn transition-colors"
+              className="h-7 rounded-control bg-ink px-3 text-[12.5px] font-medium text-white transition-colors hover:bg-ink-2 disabled:opacity-50"
             >
               Add
             </button>
           </form>
         </CollapsibleSection>
 
-        <div className="grid gap-5 lg:grid-cols-2 items-start">
+        <div className="research-pair grid items-start gap-3.5 lg:grid-cols-2">
         {/* ── RBC Canadian Focus List ── */}
         <CollapsibleSection
           prefKey="research.rbcCa"
           linkedKeys={["research.rbcUs"]}
           className="border-line min-w-0"
-          titleClass="text-[15px] font-bold text-accent"
+          titleClass="text-[13px] font-semibold text-ink"
           title={<>RBC Canadian Focus List</>}
           subtitle={<>RBC Capital Markets Canadian equity picks</>}
-          right={<><span className="text-sm text-ink-3">{(state.rbcCanadianFocus || []).length} names</span></>}
+          right={<><span className="font-mono text-[11.5px] text-ink-3">{(state.rbcCanadianFocus || []).length} names</span></>}
         >
 
           <ViewToggle view={rbcCaView} onToggle={() => setUiPref("research.rbcCa.view", rbcCaView === "rows" ? "table" : "rows")} />
@@ -3657,25 +3798,25 @@ export default function ResearchPage() {
               emptyLabel="No names added yet"
             />
           ) : (
-          <div className="overflow-x-auto"><table className="w-full text-sm">
+          <div className="overflow-x-auto"><table className="data-table min-w-[620px]">
             <thead>
-              <tr className="border-b-2 border-accent-border text-left">
-                <th className="py-2 pr-2 text-xs font-semibold text-accent w-8">#</th>
-                <th className="py-2 pr-3 text-xs font-semibold text-accent cursor-pointer hover:text-accent select-none" onClick={() => toggleRbcSort("ticker")}>Ticker{rArrow("ticker")}</th>
-                <th className="py-2 pr-3 text-xs font-semibold text-accent cursor-pointer hover:text-accent select-none" onClick={() => toggleRbcSort("name")}>Name{rArrow("name")}</th>
-                <th className="py-2 pr-3 text-xs font-semibold text-accent cursor-pointer hover:text-accent select-none" onClick={() => toggleRbcSort("sector")}>Sector{rArrow("sector")}</th>
-                <th className="py-2 pr-3 text-xs font-semibold text-accent cursor-pointer hover:text-accent select-none" onClick={() => toggleRbcSort("weight")}>Weight (%){rArrow("weight")}</th>
-                <th className="py-2 w-24"></th>
+              <tr>
+                <th className="w-8">#</th>
+                <th className="cursor-pointer select-none hover:text-ink" onClick={() => toggleRbcSort("ticker")}>Ticker{rArrow("ticker")}</th>
+                <th className="cursor-pointer select-none hover:text-ink" onClick={() => toggleRbcSort("name")}>Name{rArrow("name")}</th>
+                <th className="cursor-pointer select-none hover:text-ink" onClick={() => toggleRbcSort("sector")}>Sector{rArrow("sector")}</th>
+                <th className="cursor-pointer select-none hover:text-ink" onClick={() => toggleRbcSort("weight")}>Weight (%){rArrow("weight")}</th>
+                <th className="w-24"></th>
               </tr>
             </thead>
             <tbody>
               {sortedRbc().map((item, i) => (
-                <tr key={item.ticker} className={`border-b border-line-soft ${i % 2 === 0 ? "bg-white" : "bg-accent-soft/30"} hover:bg-accent-soft/60 transition-colors`}>
-                  <td className="py-2 pr-2 text-ink-3">{i + 1}</td>
-                  <td className="py-2 pr-3 font-mono font-bold text-accent">$<TickerLink ticker={item.ticker} className="hover:underline">{displayTicker(item.ticker)}</TickerLink></td>
-                  <td className="py-2 pr-3 text-ink-2 truncate max-w-[260px]" title={item.name || item.ticker}>{item.name || <span className="text-ink-faint italic">—</span>}</td>
-                  <td className="py-2 pr-3 text-ink-2">{item.sector}</td>
-                  <td className="py-2 pr-3 text-ink-3">
+                <tr key={item.ticker}>
+                  <td className="text-ink-3">{i + 1}</td>
+                  <td><TickerLink ticker={item.ticker} className="font-mono font-medium text-ink hover:text-accent hover:underline">{displayTicker(item.ticker)}</TickerLink></td>
+                  <td className="max-w-[260px] truncate text-ink-2" title={item.name || item.ticker}>{item.name || <span className="text-ink-faint">—</span>}</td>
+                  <td>{item.sector}</td>
+                  <td className="text-ink-3">
                     <input
                       type="text"
                       inputMode="decimal"
@@ -3689,27 +3830,27 @@ export default function ResearchPage() {
                           save({ ...state, rbcCanadianFocus: list });
                         }
                       }}
-                      className="w-16 rounded border border-transparent px-1 py-0.5 text-sm text-center hover:border-line focus:border-accent-border focus:outline-none bg-transparent"
+                      className="w-16 rounded-control border border-transparent bg-transparent px-1 text-right font-mono text-[12.5px] hover:border-line focus:border-accent-border focus:outline-none"
                     />
                   </td>
-                  <td className="py-2 text-right whitespace-nowrap">
+                  <td className="text-right">
                     {scoredStocks.some((s) => s.ticker === item.ticker) ? (
-                      <span className="text-[10px] text-pos font-medium">In list</span>
+                      <span className="text-[11px] text-ink-3">In list</span>
                     ) : (
                       <button
                         onClick={(e) => { e.stopPropagation(); addToWatchlist(item.ticker); }}
-                        className="text-[10px] text-accent hover:text-accent font-semibold transition-colors"
+                        className="text-[12px] text-accent hover:underline"
                         title="Add to Watchlist"
                       >
                         + Watch
                       </button>
                     )}
-                    <button onClick={() => removeRbc(item.ticker)} className="ml-2 text-ink-faint hover:text-neg font-bold transition-colors">&times;</button>
+                    <button onClick={() => removeRbc(item.ticker)} className="ml-2 align-middle text-ink-faint transition-colors hover:text-neg" title="Remove"><AppIcon name="x" size={12} /></button>
                   </td>
                 </tr>
               ))}
               {(state.rbcCanadianFocus || []).length === 0 && (
-                <tr><td colSpan={6} className="py-6 text-center text-ink-3 italic">No names added yet</td></tr>
+                <tr><td colSpan={6} className="!h-auto"><EmptyState className="!py-8" glyph={<AppIcon name="list" size={18} />} title="No names added yet" /></td></tr>
               )}
             </tbody>
           </table></div>
@@ -3738,10 +3879,10 @@ export default function ResearchPage() {
           prefKey="research.rbcUs"
           linkedKeys={["research.rbcCa"]}
           className="border-line min-w-0"
-          titleClass="text-[15px] font-bold text-accent"
+          titleClass="text-[13px] font-semibold text-ink"
           title={<>RBC US Focus List</>}
           subtitle={<>RBC Capital Markets US equity picks</>}
-          right={<><span className="text-sm text-ink-3">{(state.rbcUsFocus || []).length} names</span></>}
+          right={<><span className="font-mono text-[11.5px] text-ink-3">{(state.rbcUsFocus || []).length} names</span></>}
         >
 
           <ViewToggle view={rbcUsView} onToggle={() => setUiPref("research.rbcUs.view", rbcUsView === "rows" ? "table" : "rows")} />
@@ -3756,25 +3897,25 @@ export default function ResearchPage() {
               emptyLabel="No names added yet"
             />
           ) : (
-          <div className="overflow-x-auto"><table className="w-full text-sm">
+          <div className="overflow-x-auto"><table className="data-table min-w-[620px]">
             <thead>
-              <tr className="border-b-2 border-accent-border text-left">
-                <th className="py-2 pr-2 text-xs font-semibold text-accent w-8">#</th>
-                <th className="py-2 pr-3 text-xs font-semibold text-accent cursor-pointer hover:text-accent select-none" onClick={() => toggleRbcUsSort("ticker")}>Ticker{rUsArrow("ticker")}</th>
-                <th className="py-2 pr-3 text-xs font-semibold text-accent cursor-pointer hover:text-accent select-none" onClick={() => toggleRbcUsSort("name")}>Name{rUsArrow("name")}</th>
-                <th className="py-2 pr-3 text-xs font-semibold text-accent cursor-pointer hover:text-accent select-none" onClick={() => toggleRbcUsSort("sector")}>Sector{rUsArrow("sector")}</th>
-                <th className="py-2 pr-3 text-xs font-semibold text-accent cursor-pointer hover:text-accent select-none" onClick={() => toggleRbcUsSort("weight")}>Weight (%){rUsArrow("weight")}</th>
-                <th className="py-2 w-24"></th>
+              <tr>
+                <th className="w-8">#</th>
+                <th className="cursor-pointer select-none hover:text-ink" onClick={() => toggleRbcUsSort("ticker")}>Ticker{rUsArrow("ticker")}</th>
+                <th className="cursor-pointer select-none hover:text-ink" onClick={() => toggleRbcUsSort("name")}>Name{rUsArrow("name")}</th>
+                <th className="cursor-pointer select-none hover:text-ink" onClick={() => toggleRbcUsSort("sector")}>Sector{rUsArrow("sector")}</th>
+                <th className="cursor-pointer select-none hover:text-ink" onClick={() => toggleRbcUsSort("weight")}>Weight (%){rUsArrow("weight")}</th>
+                <th className="w-24"></th>
               </tr>
             </thead>
             <tbody>
               {sortedRbcUs().map((item, i) => (
-                <tr key={item.ticker} className={`border-b border-line-soft ${i % 2 === 0 ? "bg-white" : "bg-accent-soft/30"} hover:bg-accent-soft/60 transition-colors`}>
-                  <td className="py-2 pr-2 text-ink-3">{i + 1}</td>
-                  <td className="py-2 pr-3 font-mono font-bold text-accent">$<TickerLink ticker={item.ticker} className="hover:underline">{displayTicker(item.ticker)}</TickerLink></td>
-                  <td className="py-2 pr-3 text-ink-2 truncate max-w-[260px]" title={item.name || item.ticker}>{item.name || <span className="text-ink-faint italic">—</span>}</td>
-                  <td className="py-2 pr-3 text-ink-2">{item.sector}</td>
-                  <td className="py-2 pr-3 text-ink-3">
+                <tr key={item.ticker}>
+                  <td className="text-ink-3">{i + 1}</td>
+                  <td><TickerLink ticker={item.ticker} className="font-mono font-medium text-ink hover:text-accent hover:underline">{displayTicker(item.ticker)}</TickerLink></td>
+                  <td className="max-w-[260px] truncate text-ink-2" title={item.name || item.ticker}>{item.name || <span className="text-ink-faint">—</span>}</td>
+                  <td>{item.sector}</td>
+                  <td className="text-ink-3">
                     <input
                       type="text"
                       inputMode="decimal"
@@ -3788,27 +3929,27 @@ export default function ResearchPage() {
                           save({ ...state, rbcUsFocus: list });
                         }
                       }}
-                      className="w-16 rounded border border-transparent px-1 py-0.5 text-sm text-center hover:border-line focus:border-accent-border focus:outline-none bg-transparent"
+                      className="w-16 rounded-control border border-transparent bg-transparent px-1 text-right font-mono text-[12.5px] hover:border-line focus:border-accent-border focus:outline-none"
                     />
                   </td>
-                  <td className="py-2 text-right whitespace-nowrap">
+                  <td className="text-right">
                     {scoredStocks.some((s) => s.ticker === item.ticker) ? (
-                      <span className="text-[10px] text-pos font-medium">In list</span>
+                      <span className="text-[11px] text-ink-3">In list</span>
                     ) : (
                       <button
                         onClick={(e) => { e.stopPropagation(); addToWatchlist(item.ticker); }}
-                        className="text-[10px] text-accent hover:text-accent font-semibold transition-colors"
+                        className="text-[12px] text-accent hover:underline"
                         title="Add to Watchlist"
                       >
                         + Watch
                       </button>
                     )}
-                    <button onClick={() => removeRbcUs(item.ticker)} className="ml-2 text-ink-faint hover:text-neg font-bold transition-colors">&times;</button>
+                    <button onClick={() => removeRbcUs(item.ticker)} className="ml-2 align-middle text-ink-faint transition-colors hover:text-neg" title="Remove"><AppIcon name="x" size={12} /></button>
                   </td>
                 </tr>
               ))}
               {(state.rbcUsFocus || []).length === 0 && (
-                <tr><td colSpan={6} className="py-6 text-center text-ink-3 italic">No names added yet</td></tr>
+                <tr><td colSpan={6} className="!h-auto"><EmptyState className="!py-8" glyph={<AppIcon name="list" size={18} />} title="No names added yet" /></td></tr>
               )}
             </tbody>
           </table></div>
@@ -3830,7 +3971,7 @@ export default function ResearchPage() {
         </CollapsibleSection>
         </div>
 
-        <div className="grid gap-5 lg:grid-cols-2 items-start">
+        <div className="research-pair grid items-start gap-3.5 lg:grid-cols-2">
         {/* ── RBC Equate — Canada All Cap, top decile ──
             Same RBCEntry shape and manual-add flow as the RBC Focus cards,
             but there is NO screenshot/PDF scan: the list is written by the
@@ -3840,10 +3981,10 @@ export default function ResearchPage() {
           prefKey="research.equateCad"
           linkedKeys={["research.equateUsd"]}
           className="border-line min-w-0"
-          titleClass="text-[15px] font-bold text-accent"
+          titleClass="text-[13px] font-semibold text-ink"
           title={<>RBC Equate — Canada All Cap (top decile)</>}
           subtitle={<>Top decile of the weekly RBC EQUATE Canada All Cap quant ranking — emailed xlsx, no AI parse. Rank 1 is best.</>}
-          right={<><span className="text-sm text-ink-3">{(state.equateCad || []).length} names</span></>}
+          right={<><span className="font-mono text-[11.5px] text-ink-3">{(state.equateCad || []).length} names</span></>}
         >
 
           <ViewToggle view={equateCadView} onToggle={() => setUiPref("research.equateCad.view", equateCadView === "rows" ? "table" : "rows")} />
@@ -3858,47 +3999,46 @@ export default function ResearchPage() {
               emptyLabel="No names added yet"
             />
           ) : (
-          <div className="overflow-x-auto"><table className="w-full text-sm">
+          <div className="overflow-x-auto"><table className="data-table min-w-[620px]">
             <thead>
-              <tr className="border-b-2 border-accent-border text-left">
-                <th className="py-2 pr-3 text-xs font-semibold text-accent text-right cursor-pointer hover:text-accent select-none" onClick={() => toggleEquateCadSort("rank")} title="RBC EQUATE composite rank — 1 is the best name in that region's universe">Rank{ecArrow("rank")}</th>
-                <th className="py-2 pr-3 text-xs font-semibold text-accent cursor-pointer hover:text-accent select-none" onClick={() => toggleEquateCadSort("name")}>Company name{ecArrow("name")}</th>
-                <th className="py-2 pr-3 text-xs font-semibold text-accent cursor-pointer hover:text-accent select-none" onClick={() => toggleEquateCadSort("ticker")}>Ticker{ecArrow("ticker")}</th>
-                <th className="py-2 pr-3 text-xs font-semibold text-accent cursor-pointer hover:text-accent select-none" onClick={() => toggleEquateCadSort("industry")}>Sector{ecArrow("industry")}</th>
-                <th className="py-2 pr-3 text-xs font-semibold text-accent text-right cursor-pointer hover:text-accent select-none" onClick={() => toggleEquateCadSort("currentPrice")}>Current price{ecArrow("currentPrice")}</th>
-                <th className="py-2 w-24"></th>
+              <tr>
+                <th className="n cursor-pointer select-none hover:text-ink" onClick={() => toggleEquateCadSort("rank")} title="RBC EQUATE composite rank — 1 is the best name in that region's universe">Rank{ecArrow("rank")}</th>
+                <th className="cursor-pointer select-none hover:text-ink" onClick={() => toggleEquateCadSort("name")}>Company name{ecArrow("name")}</th>
+                <th className="cursor-pointer select-none hover:text-ink" onClick={() => toggleEquateCadSort("ticker")}>Ticker{ecArrow("ticker")}</th>
+                <th className="cursor-pointer select-none hover:text-ink" onClick={() => toggleEquateCadSort("industry")}>Sector{ecArrow("industry")}</th>
+                <th className="n cursor-pointer select-none hover:text-ink" onClick={() => toggleEquateCadSort("currentPrice")}>Current price{ecArrow("currentPrice")}</th>
+                <th className="w-24"></th>
               </tr>
             </thead>
             <tbody>
               {sortedEquateCad().map((item, i) => {
                 const fsPrice = livePrices[item.ticker] ?? null;
                 return (
-                <tr key={item.ticker} className={`border-b border-line-soft ${i % 2 === 0 ? "bg-white" : "bg-accent-soft/30"} hover:bg-accent-soft/60 transition-colors`}>
-                  <td className="py-2 pr-3 text-right font-mono text-ink-3 whitespace-nowrap">{typeof item.equateRank === "number" ? `#${item.equateRank}` : <span className="text-ink-faint">—</span>}</td>
-                  <td className="py-2 pr-3 text-right font-mono text-ink-3 whitespace-nowrap">{typeof item.equateRank === "number" ? `#${item.equateRank}` : <span className="text-ink-faint">—</span>}</td>
-                  <td className="py-2 pr-3 text-ink-2 truncate max-w-[240px]" title={item.name || item.ticker}>{item.name || <span className="text-ink-faint italic">—</span>}</td>
-                  <td className="py-2 pr-3 font-mono font-bold text-accent">$<TickerLink ticker={item.ticker} className="hover:underline">{displayTicker(item.ticker)}</TickerLink></td>
-                  <td className="py-2 pr-3 text-ink-2 truncate max-w-[180px]" title={factsetSectors[item.ticker] || item.industry || ""}>{factsetSectors[item.ticker] || item.industry || <span className="text-ink-faint">—</span>}</td>
-                  <td className="py-2 pr-3 text-right font-mono text-ink-2 whitespace-nowrap">{typeof fsPrice === "number" ? `$${fsPrice.toFixed(2)}` : <span className="text-ink-faint">—</span>}</td>
-                  <td className="py-2 text-right whitespace-nowrap">
+                <tr key={item.ticker}>
+                  <td className="n text-ink-3">{typeof item.equateRank === "number" ? `#${item.equateRank}` : <span className="text-ink-faint">—</span>}</td>
+                  <td className="max-w-[240px] truncate text-ink-2" title={item.name || item.ticker}>{item.name || <span className="text-ink-faint">—</span>}</td>
+                  <td><TickerLink ticker={item.ticker} className="font-mono font-medium text-ink hover:text-accent hover:underline">{displayTicker(item.ticker)}</TickerLink></td>
+                  <td className="max-w-[180px] truncate text-ink-2" title={factsetSectors[item.ticker] || item.industry || ""}>{factsetSectors[item.ticker] || item.industry || <span className="text-ink-faint">—</span>}</td>
+                  <td className="n">{typeof fsPrice === "number" ? `$${fsPrice.toFixed(2)}` : <span className="text-ink-faint">—</span>}</td>
+                  <td className="text-right">
                     {scoredStocks.some((s) => s.ticker === item.ticker) ? (
-                      <span className="text-[10px] text-pos font-medium">In list</span>
+                      <span className="text-[11px] text-ink-3">In list</span>
                     ) : (
                       <button
                         onClick={(e) => { e.stopPropagation(); addToWatchlist(item.ticker); }}
-                        className="text-[10px] text-accent hover:text-accent font-semibold transition-colors"
+                        className="text-[12px] text-accent hover:underline"
                         title="Add to Watchlist"
                       >
                         + Watch
                       </button>
                     )}
-                    <button onClick={() => removeEquateCad(item.ticker)} className="ml-2 text-ink-faint hover:text-neg font-bold transition-colors">&times;</button>
+                    <button onClick={() => removeEquateCad(item.ticker)} className="ml-2 align-middle text-ink-faint transition-colors hover:text-neg" title="Remove"><AppIcon name="x" size={12} /></button>
                   </td>
                 </tr>
                 );
               })}
               {(state.equateCad || []).length === 0 && (
-                <tr><td colSpan={6} className="py-6 text-center text-ink-3 italic">No names added yet</td></tr>
+                <tr><td colSpan={6} className="!h-auto"><EmptyState className="!py-8" glyph={<AppIcon name="list" size={18} />} title="No names added yet" /></td></tr>
               )}
             </tbody>
           </table></div>
@@ -3919,10 +4059,10 @@ export default function ResearchPage() {
           prefKey="research.equateUsd"
           linkedKeys={["research.equateCad"]}
           className="border-line min-w-0"
-          titleClass="text-[15px] font-bold text-accent"
+          titleClass="text-[13px] font-semibold text-ink"
           title={<>RBC Equate — U.S. All Cap (top decile)</>}
           subtitle={<>Top decile of the weekly RBC EQUATE U.S. All Cap quant ranking — emailed xlsx, no AI parse. Rank 1 is best.</>}
-          right={<><span className="text-sm text-ink-3">{(state.equateUsd || []).length} names</span></>}
+          right={<><span className="font-mono text-[11.5px] text-ink-3">{(state.equateUsd || []).length} names</span></>}
         >
 
           <ViewToggle view={equateUsdView} onToggle={() => setUiPref("research.equateUsd.view", equateUsdView === "rows" ? "table" : "rows")} />
@@ -3937,45 +4077,46 @@ export default function ResearchPage() {
               emptyLabel="No names added yet"
             />
           ) : (
-          <div className="overflow-x-auto"><table className="w-full text-sm">
+          <div className="overflow-x-auto"><table className="data-table min-w-[620px]">
             <thead>
-              <tr className="border-b-2 border-accent-border text-left">
-                <th className="py-2 pr-3 text-xs font-semibold text-accent text-right cursor-pointer hover:text-accent select-none" onClick={() => toggleEquateUsdSort("rank")} title="RBC EQUATE composite rank — 1 is the best name in that region's universe">Rank{euArrow("rank")}</th>
-                <th className="py-2 pr-3 text-xs font-semibold text-accent cursor-pointer hover:text-accent select-none" onClick={() => toggleEquateUsdSort("name")}>Company name{euArrow("name")}</th>
-                <th className="py-2 pr-3 text-xs font-semibold text-accent cursor-pointer hover:text-accent select-none" onClick={() => toggleEquateUsdSort("ticker")}>Ticker{euArrow("ticker")}</th>
-                <th className="py-2 pr-3 text-xs font-semibold text-accent cursor-pointer hover:text-accent select-none" onClick={() => toggleEquateUsdSort("industry")}>Sector{euArrow("industry")}</th>
-                <th className="py-2 pr-3 text-xs font-semibold text-accent text-right cursor-pointer hover:text-accent select-none" onClick={() => toggleEquateUsdSort("currentPrice")}>Current price{euArrow("currentPrice")}</th>
-                <th className="py-2 w-24"></th>
+              <tr>
+                <th className="n cursor-pointer select-none hover:text-ink" onClick={() => toggleEquateUsdSort("rank")} title="RBC EQUATE composite rank — 1 is the best name in that region's universe">Rank{euArrow("rank")}</th>
+                <th className="cursor-pointer select-none hover:text-ink" onClick={() => toggleEquateUsdSort("name")}>Company name{euArrow("name")}</th>
+                <th className="cursor-pointer select-none hover:text-ink" onClick={() => toggleEquateUsdSort("ticker")}>Ticker{euArrow("ticker")}</th>
+                <th className="cursor-pointer select-none hover:text-ink" onClick={() => toggleEquateUsdSort("industry")}>Sector{euArrow("industry")}</th>
+                <th className="n cursor-pointer select-none hover:text-ink" onClick={() => toggleEquateUsdSort("currentPrice")}>Current price{euArrow("currentPrice")}</th>
+                <th className="w-24"></th>
               </tr>
             </thead>
             <tbody>
               {sortedEquateUsd().map((item, i) => {
                 const fsPrice = livePrices[item.ticker] ?? null;
                 return (
-                <tr key={item.ticker} className={`border-b border-line-soft ${i % 2 === 0 ? "bg-white" : "bg-accent-soft/30"} hover:bg-accent-soft/60 transition-colors`}>
-                  <td className="py-2 pr-3 text-ink-2 truncate max-w-[240px]" title={item.name || item.ticker}>{item.name || <span className="text-ink-faint italic">—</span>}</td>
-                  <td className="py-2 pr-3 font-mono font-bold text-accent">$<TickerLink ticker={item.ticker} className="hover:underline">{displayTicker(item.ticker)}</TickerLink></td>
-                  <td className="py-2 pr-3 text-ink-2 truncate max-w-[180px]" title={factsetSectors[item.ticker] || item.industry || ""}>{factsetSectors[item.ticker] || item.industry || <span className="text-ink-faint">—</span>}</td>
-                  <td className="py-2 pr-3 text-right font-mono text-ink-2 whitespace-nowrap">{typeof fsPrice === "number" ? `$${fsPrice.toFixed(2)}` : <span className="text-ink-faint">—</span>}</td>
-                  <td className="py-2 text-right whitespace-nowrap">
+                <tr key={item.ticker}>
+                  <td className="n text-ink-3">{typeof item.equateRank === "number" ? `#${item.equateRank}` : <span className="text-ink-faint">—</span>}</td>
+                  <td className="max-w-[240px] truncate text-ink-2" title={item.name || item.ticker}>{item.name || <span className="text-ink-faint">—</span>}</td>
+                  <td><TickerLink ticker={item.ticker} className="font-mono font-medium text-ink hover:text-accent hover:underline">{displayTicker(item.ticker)}</TickerLink></td>
+                  <td className="max-w-[180px] truncate text-ink-2" title={factsetSectors[item.ticker] || item.industry || ""}>{factsetSectors[item.ticker] || item.industry || <span className="text-ink-faint">—</span>}</td>
+                  <td className="n">{typeof fsPrice === "number" ? `$${fsPrice.toFixed(2)}` : <span className="text-ink-faint">—</span>}</td>
+                  <td className="text-right">
                     {scoredStocks.some((s) => s.ticker === item.ticker) ? (
-                      <span className="text-[10px] text-pos font-medium">In list</span>
+                      <span className="text-[11px] text-ink-3">In list</span>
                     ) : (
                       <button
                         onClick={(e) => { e.stopPropagation(); addToWatchlist(item.ticker); }}
-                        className="text-[10px] text-accent hover:text-accent font-semibold transition-colors"
+                        className="text-[12px] text-accent hover:underline"
                         title="Add to Watchlist"
                       >
                         + Watch
                       </button>
                     )}
-                    <button onClick={() => removeEquateUsd(item.ticker)} className="ml-2 text-ink-faint hover:text-neg font-bold transition-colors">&times;</button>
+                    <button onClick={() => removeEquateUsd(item.ticker)} className="ml-2 align-middle text-ink-faint transition-colors hover:text-neg" title="Remove"><AppIcon name="x" size={12} /></button>
                   </td>
                 </tr>
                 );
               })}
               {(state.equateUsd || []).length === 0 && (
-                <tr><td colSpan={6} className="py-6 text-center text-ink-3 italic">No names added yet</td></tr>
+                <tr><td colSpan={6} className="!h-auto"><EmptyState className="!py-8" glyph={<AppIcon name="list" size={18} />} title="No names added yet" /></td></tr>
               )}
             </tbody>
           </table></div>
@@ -3991,7 +4132,7 @@ export default function ResearchPage() {
         </CollapsibleSection>
         </div>
 
-        <div className="grid gap-5 lg:grid-cols-2 items-start">
+        <div className="research-pair grid items-start gap-3.5 lg:grid-cols-2">
         {/* ── JPM US Equity Analyst Focus List ──
             J.P. Morgan's US equity analyst focus picks. Columns: company name,
             ticker, industry, strategy, current price (LIVE from FactSet via
@@ -4002,10 +4143,10 @@ export default function ResearchPage() {
           prefKey="research.jpm"
           linkedKeys={["research.few"]}
           className="border-line min-w-0"
-          titleClass="text-[15px] font-bold text-warn"
+          titleClass="text-[13px] font-semibold text-ink"
           title={<>JPM US Equity Analyst Focus List</>}
           subtitle={<>J.P. Morgan US equity analyst focus picks · prices live from FactSet</>}
-          right={<span className="text-sm text-ink-3">{(state.jpmUsAnalystFocus || []).length} names</span>}
+          right={<span className="font-mono text-[11.5px] text-ink-3">{(state.jpmUsAnalystFocus || []).length} names</span>}
         >
 
           <ViewToggle view={jpmView} onToggle={() => setUiPref("research.jpm.view", jpmView === "rows" ? "table" : "rows")} />
@@ -4030,52 +4171,52 @@ export default function ResearchPage() {
               emptyLabel="No names added yet"
             />
           ) : (
-          <div className="overflow-x-auto"><table className="w-full text-sm">
+          <div className="overflow-x-auto"><table className="data-table min-w-[620px]">
             <thead>
-              <tr className="border-b-2 border-warn-border text-left">
-                <th className="py-2 pr-3 text-xs font-semibold text-warn cursor-pointer hover:text-warn select-none" onClick={() => toggleJpmFocusSort("name")}>Company name{jArrow("name")}</th>
-                <th className="py-2 pr-3 text-xs font-semibold text-warn cursor-pointer hover:text-warn select-none" onClick={() => toggleJpmFocusSort("ticker")}>Ticker{jArrow("ticker")}</th>
-                <th className="py-2 pr-3 text-xs font-semibold text-warn cursor-pointer hover:text-warn select-none" onClick={() => toggleJpmFocusSort("industry")}>Sector{jArrow("industry")}</th>
-                <th className="py-2 pr-3 text-xs font-semibold text-warn cursor-pointer hover:text-warn select-none" onClick={() => toggleJpmFocusSort("strategy")}>Strategy{jArrow("strategy")}</th>
-                <th className="py-2 pr-3 text-xs font-semibold text-warn text-right cursor-pointer hover:text-warn select-none" onClick={() => toggleJpmFocusSort("currentPrice")}>Current price{jArrow("currentPrice")}</th>
-                <th className="py-2 pr-3 text-xs font-semibold text-warn text-right cursor-pointer hover:text-warn select-none" onClick={() => toggleJpmFocusSort("priceTarget")}>Price target{jArrow("priceTarget")}</th>
-                <th className="py-2 w-24"></th>
+              <tr>
+                <th className="cursor-pointer select-none hover:text-ink" onClick={() => toggleJpmFocusSort("name")}>Company name{jArrow("name")}</th>
+                <th className="cursor-pointer select-none hover:text-ink" onClick={() => toggleJpmFocusSort("ticker")}>Ticker{jArrow("ticker")}</th>
+                <th className="cursor-pointer select-none hover:text-ink" onClick={() => toggleJpmFocusSort("industry")}>Sector{jArrow("industry")}</th>
+                <th className="cursor-pointer select-none hover:text-ink" onClick={() => toggleJpmFocusSort("strategy")}>Strategy{jArrow("strategy")}</th>
+                <th className="n cursor-pointer select-none hover:text-ink" onClick={() => toggleJpmFocusSort("currentPrice")}>Current price{jArrow("currentPrice")}</th>
+                <th className="n cursor-pointer select-none hover:text-ink" onClick={() => toggleJpmFocusSort("priceTarget")}>Price target{jArrow("priceTarget")}</th>
+                <th className="w-24"></th>
               </tr>
             </thead>
             <tbody>
               {sortedJpmFocus().map((item, i) => {
                 const fsPrice = livePrices[item.ticker] ?? null;
                 return (
-                <tr key={item.ticker} className={`border-b border-line-soft ${i % 2 === 0 ? "bg-white" : "bg-warn-soft/30"} hover:bg-warn-soft/60 transition-colors`}>
-                  <td className="py-2 pr-3 text-ink-2 truncate max-w-[240px]" title={item.name || item.ticker}>{item.name || <span className="text-ink-faint italic">—</span>}</td>
-                  <td className="py-2 pr-3 font-mono font-bold text-warn">$<TickerLink ticker={item.ticker} className="hover:underline">{displayTicker(item.ticker)}</TickerLink></td>
-                  <td className="py-2 pr-3 text-ink-2 truncate max-w-[180px]" title={factsetSectors[item.ticker] || item.industry || ""}>{factsetSectors[item.ticker] || item.industry || <span className="text-ink-faint">—</span>}</td>
-                  <td className="py-2 pr-3 text-ink-2">{item.strategy || <span className="text-ink-faint">—</span>}</td>
-                  <td className="py-2 pr-3 text-right font-mono text-ink-2 whitespace-nowrap">
+                <tr key={item.ticker}>
+                  <td className="max-w-[240px] truncate text-ink-2" title={item.name || item.ticker}>{item.name || <span className="text-ink-faint">—</span>}</td>
+                  <td><TickerLink ticker={item.ticker} className="font-mono font-medium text-ink hover:text-accent hover:underline">{displayTicker(item.ticker)}</TickerLink></td>
+                  <td className="max-w-[180px] truncate text-ink-2" title={factsetSectors[item.ticker] || item.industry || ""}>{factsetSectors[item.ticker] || item.industry || <span className="text-ink-faint">—</span>}</td>
+                  <td>{item.strategy || <span className="text-ink-faint">—</span>}</td>
+                  <td className="n">
                     {typeof fsPrice === "number" ? `$${fsPrice.toFixed(2)}` : <span className="text-ink-faint">—</span>}
                   </td>
-                  <td className="py-2 pr-3 text-right font-mono text-ink-2 whitespace-nowrap">
+                  <td className="n">
                     {typeof item.priceTarget === "number" ? `$${item.priceTarget.toFixed(2)}` : <span className="text-ink-faint">—</span>}
                   </td>
-                  <td className="py-2 text-right whitespace-nowrap">
+                  <td className="text-right">
                     {scoredStocks.some((s) => s.ticker === item.ticker) ? (
-                      <span className="text-[10px] text-pos font-medium">In list</span>
+                      <span className="text-[11px] text-ink-3">In list</span>
                     ) : (
                       <button
                         onClick={(e) => { e.stopPropagation(); addToWatchlist(item.ticker); }}
-                        className="text-[10px] text-accent hover:text-accent font-semibold transition-colors"
+                        className="text-[12px] text-accent hover:underline"
                         title="Add to Watchlist"
                       >
                         + Watch
                       </button>
                     )}
-                    <button onClick={() => removeJpmFocus(item.ticker)} className="ml-2 text-ink-faint hover:text-neg font-bold transition-colors">&times;</button>
+                    <button onClick={() => removeJpmFocus(item.ticker)} className="ml-2 align-middle text-ink-faint transition-colors hover:text-neg" title="Remove"><AppIcon name="x" size={12} /></button>
                   </td>
                 </tr>
                 );
               })}
               {(state.jpmUsAnalystFocus || []).length === 0 && (
-                <tr><td colSpan={7} className="py-6 text-center text-ink-3 italic">No names added yet</td></tr>
+                <tr><td colSpan={7} className="!h-auto"><EmptyState className="!py-8" glyph={<AppIcon name="list" size={18} />} title="No names added yet" /></td></tr>
               )}
             </tbody>
           </table></div>
@@ -4103,11 +4244,11 @@ export default function ResearchPage() {
         <CollapsibleSection
           prefKey="research.few"
           linkedKeys={["research.jpm"]}
-          className="border-violet-soft min-w-0"
-          titleClass="text-[15px] font-bold text-violet"
+          className="border-line min-w-0"
+          titleClass="text-[13px] font-semibold text-ink"
           title={<>RBCCM Canadian FEW Portfolio</>}
           subtitle={<>RBC Capital Markets Canadian Fundamental Equity Weighting portfolio</>}
-          right={<><span className="text-sm text-ink-3">{(state.rbccmFew || []).length} names</span></>}
+          right={<><span className="font-mono text-[11.5px] text-ink-3">{(state.rbccmFew || []).length} names</span></>}
         >
 
           <ViewToggle view={fewView} onToggle={() => setUiPref("research.few.view", fewView === "rows" ? "table" : "rows")} />
@@ -4122,46 +4263,46 @@ export default function ResearchPage() {
               emptyLabel="No names added yet"
             />
           ) : (
-          <div className="overflow-x-auto"><table className="w-full text-sm">
+          <div className="overflow-x-auto"><table className="data-table min-w-[620px]">
             <thead>
-              <tr className="border-b-2 border-violet-soft text-left">
-                <th className="py-2 pr-2 text-xs font-semibold text-violet w-8">#</th>
-                <th className="py-2 pr-3 text-xs font-semibold text-violet cursor-pointer hover:text-violet select-none" onClick={() => toggleFewSort("ticker")}>Ticker{fArrow("ticker")}</th>
-                <th className="py-2 pr-3 text-xs font-semibold text-violet cursor-pointer hover:text-violet select-none" onClick={() => toggleFewSort("name")}>Company{fArrow("name")}</th>
-                <th className="py-2 pr-3 text-xs font-semibold text-violet cursor-pointer hover:text-violet select-none" onClick={() => toggleFewSort("industry")}>Industry{fArrow("industry")}</th>
-                <th className="py-2 pr-3 text-xs font-semibold text-violet cursor-pointer hover:text-violet select-none text-right" onClick={() => toggleFewSort("price")}>Price{fArrow("price")}</th>
-                <th className="py-2 w-24"></th>
+              <tr>
+                <th className="w-8">#</th>
+                <th className="cursor-pointer select-none hover:text-ink" onClick={() => toggleFewSort("ticker")}>Ticker{fArrow("ticker")}</th>
+                <th className="cursor-pointer select-none hover:text-ink" onClick={() => toggleFewSort("name")}>Company{fArrow("name")}</th>
+                <th className="cursor-pointer select-none hover:text-ink" onClick={() => toggleFewSort("industry")}>Industry{fArrow("industry")}</th>
+                <th className="n cursor-pointer select-none hover:text-ink" onClick={() => toggleFewSort("price")}>Price{fArrow("price")}</th>
+                <th className="w-24"></th>
               </tr>
             </thead>
             <tbody>
               {sortedFew().map((item, i) => {
                 const px = fewPrice(item);
                 return (
-                <tr key={item.ticker} className={`border-b border-line-soft ${i % 2 === 0 ? "bg-white" : "bg-violet-soft/30"} hover:bg-violet-soft/60 transition-colors`}>
-                  <td className="py-2 pr-2 text-ink-3">{i + 1}</td>
-                  <td className="py-2 pr-3 font-mono font-bold text-violet">$<TickerLink ticker={item.ticker} className="hover:underline">{displayTicker(item.ticker)}</TickerLink></td>
-                  <td className="py-2 pr-3 text-ink-2 truncate max-w-[260px]" title={item.name || item.ticker}>{item.name || <span className="text-ink-faint italic">—</span>}</td>
-                  <td className="py-2 pr-3 text-ink-2">{item.industry || <span className="text-ink-faint italic">—</span>}</td>
-                  <td className="py-2 pr-3 text-ink-2 text-right font-mono">{px > 0 ? `$${px.toFixed(2)}` : <span className="text-ink-faint">—</span>}</td>
-                  <td className="py-2 text-right whitespace-nowrap">
+                <tr key={item.ticker}>
+                  <td className="text-ink-3">{i + 1}</td>
+                  <td><TickerLink ticker={item.ticker} className="font-mono font-medium text-ink hover:text-accent hover:underline">{displayTicker(item.ticker)}</TickerLink></td>
+                  <td className="max-w-[260px] truncate text-ink-2" title={item.name || item.ticker}>{item.name || <span className="text-ink-faint">—</span>}</td>
+                  <td>{item.industry || <span className="text-ink-faint">—</span>}</td>
+                  <td className="n">{px > 0 ? `$${px.toFixed(2)}` : <span className="text-ink-faint">—</span>}</td>
+                  <td className="text-right">
                     {scoredStocks.some((s) => s.ticker === item.ticker) ? (
-                      <span className="text-[10px] text-pos font-medium">In list</span>
+                      <span className="text-[11px] text-ink-3">In list</span>
                     ) : (
                       <button
                         onClick={(e) => { e.stopPropagation(); addToWatchlist(item.ticker); }}
-                        className="text-[10px] text-violet hover:text-violet font-semibold transition-colors"
+                        className="text-[12px] text-accent hover:underline"
                         title="Add to Watchlist"
                       >
                         + Watch
                       </button>
                     )}
-                    <button onClick={() => removeFew(item.ticker)} className="ml-2 text-ink-faint hover:text-neg font-bold transition-colors">&times;</button>
+                    <button onClick={() => removeFew(item.ticker)} className="ml-2 align-middle text-ink-faint transition-colors hover:text-neg" title="Remove"><AppIcon name="x" size={12} /></button>
                   </td>
                 </tr>
                 );
               })}
               {(state.rbccmFew || []).length === 0 && (
-                <tr><td colSpan={6} className="py-6 text-center text-ink-3 italic">No names added yet</td></tr>
+                <tr><td colSpan={6} className="!h-auto"><EmptyState className="!py-8" glyph={<AppIcon name="list" size={18} />} title="No names added yet" /></td></tr>
               )}
             </tbody>
           </table></div>
@@ -4192,10 +4333,10 @@ export default function ResearchPage() {
         <CollapsibleSection
           prefKey="research.alpha"
           className="border-line"
-          titleClass="text-[15px] font-bold"
+          titleClass="text-[13px] font-semibold text-ink"
           title={<>Seeking Alpha &mdash; Alpha Picks</>}
           subtitle={<>Institutional buy recommendations &mdash; primarily populated by uploading the Alpha Picks dashboard screenshot. Manual adds also work.</>}
-          right={<><span className="text-sm text-ink-3">{(state.alphaPicks ?? []).length} picks</span></>}
+          right={<><span className="font-mono text-[11.5px] text-ink-3">{(state.alphaPicks ?? []).length} picks</span></>}
         >
           {(() => {
             // ── Derived data for the Alpha Picks section ────────────
@@ -4225,14 +4366,14 @@ export default function ResearchPage() {
             };
             const ratingTone = (r: string | undefined): string => {
               const c = canonicalRating(r);
-              if (c === "Strong Buy") return "bg-pos text-white";
-              if (c === "Buy") return "bg-pos-soft text-pos ring-1 ring-pos-border";
-              if (c === "Hold") return "bg-warn-soft text-warn ring-1 ring-warn-border";
-              if (c === "Sell") return "bg-neg-soft text-neg ring-1 ring-neg-border";
-              if (c === "Strong Sell") return "bg-neg text-white";
-              return "bg-surface-2 text-ink-3";
+              if (c === "Strong Buy") return "font-medium text-pos";
+              if (c === "Buy") return "text-pos";
+              if (c === "Hold") return "text-warn";
+              if (c === "Sell") return "text-neg";
+              if (c === "Strong Sell") return "font-medium text-neg";
+              return "text-ink-3";
             };
-            const manualSellTone = "bg-neg text-white";
+            const manualSellTone = "font-medium text-neg";
 
             // Sell candidates per SA's rules + the PM's manual flag:
             //   - Rating is Sell or Strong Sell → SA sells.
@@ -4345,7 +4486,7 @@ export default function ResearchPage() {
                 setAlphaSort({ key, dir: defaultDir });
               }
             };
-            const alphaArrow = (key: AlphaSortKey) => alphaSort.key === key ? (alphaSort.dir === "asc" ? " ▲" : " ▼") : "";
+            const alphaArrow = (key: AlphaSortKey) => sortArrow(alphaSort.key === key, alphaSort.dir);
 
             // Toggle the PM's manual-sell flag on a single pick.
             // Updates state directly without touching the rest of the
@@ -4388,8 +4529,8 @@ export default function ResearchPage() {
                 {/* Rating filter chips. The 'Drop sell candidates' bulk
                     action was removed in favor of the per-row 'Sell' button
                     which handles removal + weight redistribution directly. */}
-                <div className="flex items-center gap-3 mb-3 flex-wrap">
-                  <div className="flex flex-wrap gap-1.5">
+                <div className="mb-2.5 flex flex-wrap items-center gap-3">
+                  <div className="seg !h-auto flex-wrap" role="group" aria-label="Rating filter">
                     {filterButtons.map((b) => {
                       const active = alphaRatingFilter === b.key;
                       const c = counts[b.key ?? "All"] ?? 0;
@@ -4398,13 +4539,9 @@ export default function ResearchPage() {
                         <button
                           key={b.label}
                           onClick={() => setAlphaRatingFilter(b.key)}
-                          className={`text-[11px] font-semibold rounded-full px-2.5 py-1 transition-colors ${
-                            active
-                              ? "bg-ink text-white"
-                              : "bg-surface-2 text-ink-2 hover:bg-line"
-                          }`}
+                          className={active ? "on" : undefined}
                         >
-                          {b.label} <span className="opacity-70">({c})</span>
+                          {b.label} <span className="c">{c}</span>
                         </button>
                       );
                     })}
@@ -4430,21 +4567,21 @@ export default function ResearchPage() {
                   />
                 ) : (
                 <div className="overflow-x-auto">
-                  <div className="overflow-x-auto"><table className="w-full text-sm">
+                  <div className="overflow-x-auto"><table className="data-table min-w-[620px]">
                     <thead>
-                      <tr className="border-b-2 border-line text-left">
-                        <th className="py-2 pr-2 text-xs font-semibold text-ink-2 w-8">#</th>
-                        <th className="py-2 pr-3 text-xs font-semibold text-ink-2 cursor-pointer select-none hover:text-ink" onClick={() => toggleAlphaSort("name")}>Name{alphaArrow("name")}</th>
-                        <th className="py-2 pr-3 text-xs font-semibold text-ink-2 cursor-pointer select-none hover:text-ink" onClick={() => toggleAlphaSort("ticker")}>Ticker{alphaArrow("ticker")}</th>
-                        <th className="py-2 pr-3 text-xs font-semibold text-ink-2 cursor-pointer select-none hover:text-ink" onClick={() => toggleAlphaSort("sector")}>Sector{alphaArrow("sector")}</th>
-                        <th className="py-2 pr-2 text-xs font-semibold text-ink-2 cursor-pointer select-none hover:text-ink" onClick={() => toggleAlphaSort("rating")}>Rating{alphaArrow("rating")}</th>
-                        <th className="py-2 pr-2 text-xs font-semibold text-ink-2 text-right cursor-pointer select-none hover:text-ink" onClick={() => toggleAlphaSort("holdingWeight")}>Holding %{alphaArrow("holdingWeight")}</th>
-                        <th className="py-2 pr-3 text-xs font-semibold text-ink-2 text-right cursor-pointer select-none hover:text-ink" onClick={() => toggleAlphaSort("currentPrice")}>Current Price{alphaArrow("currentPrice")}</th>
-                        <th className="py-2 pr-3 text-xs font-semibold text-ink-2 text-right cursor-pointer select-none hover:text-ink" onClick={() => toggleAlphaSort("priceWhenAdded")}>Price Picked{alphaArrow("priceWhenAdded")}</th>
-                        <th className="py-2 pr-2 text-xs font-semibold text-ink-2 text-right cursor-pointer select-none hover:text-ink" onClick={() => toggleAlphaSort("returnSinceAdded")}>SA Return{alphaArrow("returnSinceAdded")}</th>
-                        <th className="py-2 pr-3 text-xs font-semibold text-ink-2 cursor-pointer select-none hover:text-ink" onClick={() => toggleAlphaSort("dateAdded")}>Date Added{alphaArrow("dateAdded")}</th>
-                        <th className="py-2 pr-2 text-xs font-semibold text-ink-2 text-right cursor-pointer select-none hover:text-ink" onClick={() => toggleAlphaSort("days")}>Days{alphaArrow("days")}</th>
-                        <th className="py-2 w-16"></th>
+                      <tr>
+                        <th className="w-8">#</th>
+                        <th className="cursor-pointer select-none hover:text-ink" onClick={() => toggleAlphaSort("name")}>Name{alphaArrow("name")}</th>
+                        <th className="cursor-pointer select-none hover:text-ink" onClick={() => toggleAlphaSort("ticker")}>Ticker{alphaArrow("ticker")}</th>
+                        <th className="cursor-pointer select-none hover:text-ink" onClick={() => toggleAlphaSort("sector")}>Sector{alphaArrow("sector")}</th>
+                        <th className="cursor-pointer select-none hover:text-ink" onClick={() => toggleAlphaSort("rating")}>Rating{alphaArrow("rating")}</th>
+                        <th className="n cursor-pointer select-none hover:text-ink" onClick={() => toggleAlphaSort("holdingWeight")}>Holding %{alphaArrow("holdingWeight")}</th>
+                        <th className="n cursor-pointer select-none hover:text-ink" onClick={() => toggleAlphaSort("currentPrice")}>Current Price{alphaArrow("currentPrice")}</th>
+                        <th className="n cursor-pointer select-none hover:text-ink" onClick={() => toggleAlphaSort("priceWhenAdded")}>Price Picked{alphaArrow("priceWhenAdded")}</th>
+                        <th className="n cursor-pointer select-none hover:text-ink" onClick={() => toggleAlphaSort("returnSinceAdded")}>SA Return{alphaArrow("returnSinceAdded")}</th>
+                        <th className="cursor-pointer select-none hover:text-ink" onClick={() => toggleAlphaSort("dateAdded")}>Date Added{alphaArrow("dateAdded")}</th>
+                        <th className="n cursor-pointer select-none hover:text-ink" onClick={() => toggleAlphaSort("days")}>Days{alphaArrow("days")}</th>
+                        <th className="w-16"></th>
                       </tr>
                     </thead>
                     <tbody>
@@ -4457,62 +4594,62 @@ export default function ResearchPage() {
                         const days = daysSince(pick.dateAdded);
                         const flagged = isSellCandidate(pick);
                         return (
-                          <tr key={`${pick.ticker}|${pick.dateAdded || ""}|${i}`} className={`border-b border-line-soft ${flagged ? "bg-neg-soft/40" : i % 2 === 0 ? "bg-white" : "bg-surface-2/40"} hover:bg-surface-2 transition-colors`}>
-                            <td className="py-2 pr-2 text-ink-3">{i + 1}</td>
-                            <td className="py-2 pr-3 text-ink-2 truncate max-w-[200px]" title={pick.name}>{pick.name}</td>
-                            <td className="py-2 pr-3 font-mono font-bold">$<TickerLink ticker={pick.ticker} className="hover:underline">{displayTicker(pick.ticker)}</TickerLink></td>
-                            <td className="py-2 pr-3 text-xs text-ink-3">{pick.sector || "—"}</td>
-                            <td className="py-2 pr-2">
+                          <tr key={`${pick.ticker}|${pick.dateAdded || ""}|${i}`} className={flagged ? "[&>td]:bg-neg-soft" : ""}>
+                            <td className="text-ink-3">{i + 1}</td>
+                            <td className="max-w-[200px] truncate text-ink-2" title={pick.name}>{pick.name}</td>
+                            <td><TickerLink ticker={pick.ticker} className="font-mono font-medium text-ink hover:text-accent hover:underline">{displayTicker(pick.ticker)}</TickerLink></td>
+                            <td className="text-ink-3">{pick.sector || "—"}</td>
+                            <td>
                               <div className="flex items-center gap-1 flex-wrap">
                                 {pick.rating ? (
-                                  <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider ${ratingTone(pick.rating)}`}>
+                                  <span className={`text-[12px] ${ratingTone(pick.rating)}`}>
                                     {canonicalRating(pick.rating) ?? pick.rating}
                                   </span>
-                                ) : <span className="text-ink-faint text-[10px]">—</span>}
+                                ) : <span className="text-[12px] text-ink-faint">—</span>}
                                 {pick.manualSell && (
-                                  <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider ${manualSellTone}`} title="Manually flagged as sold by the PM (overrides SA rating for sell-candidate logic)">
-                                    Manual Sell
+                                  <span className={`text-[12px] ${manualSellTone}`} title="Manually flagged as sold by the PM (overrides SA rating for sell-candidate logic)">
+                                    Manual sell
                                   </span>
                                 )}
                               </div>
                             </td>
-                            <td className="py-2 pr-2 text-right font-mono text-xs">
+                            <td className="n">
                               {pick.holdingWeight != null
                                 ? <span className="text-ink-2">{pick.holdingWeight.toFixed(2)}%</span>
                                 : <span className="text-ink-faint">—</span>}
                             </td>
-                            <td className="py-2 pr-3 text-right font-mono">
+                            <td className="n">
                               {pricesLoading ? <span className="text-ink-faint animate-pulse">...</span>
                                 : livePrice != null ? <span className="font-semibold">${livePrice.toFixed(2)}</span>
                                 : <span className="text-ink-faint">—</span>}
                             </td>
-                            <td className="py-2 pr-3 text-right font-mono">
+                            <td className="n">
                               {pick.priceWhenAdded > 0
                                 ? `$${pick.priceWhenAdded.toFixed(2)}`
                                 : <span className="text-ink-faint">—</span>}
                             </td>
-                            <td className="py-2 pr-2 text-right font-mono text-xs">
+                            <td className="n">
                               {pick.returnSinceAdded != null ? (
                                 <span className={pick.returnSinceAdded >= 0 ? "text-pos" : "text-neg"}>
                                   {pick.returnSinceAdded >= 0 ? "+" : ""}{pick.returnSinceAdded.toFixed(1)}%
                                 </span>
                               ) : <span className="text-ink-faint">—</span>}
                             </td>
-                            <td className="py-2 pr-3 text-xs text-ink-3">{pick.dateAdded || "—"}</td>
-                            <td className="py-2 pr-2 text-right text-xs">
+                            <td className="text-ink-3">{pick.dateAdded || "—"}</td>
+                            <td className="n">
                               {days != null ? (
                                 <span className={canonicalRating(pick.rating) === "Hold" && days >= 150 ? "text-neg font-semibold" : "text-ink-3"} title={canonicalRating(pick.rating) === "Hold" && days >= 180 ? "Hold ≥ 180 days — SA would sell" : canonicalRating(pick.rating) === "Hold" && days >= 150 ? "Approaching SA's 180-day Hold sell rule" : ""}>
                                   {days}d
                                 </span>
                               ) : <span className="text-ink-faint">—</span>}
                             </td>
-                            <td className="py-2 text-right whitespace-nowrap">
+                            <td className="text-right">
                               {scoredStocks.some((s) => s.ticker === pick.ticker) ? (
-                                <span className="text-[10px] text-pos font-medium">In list</span>
+                                <span className="text-[11px] text-ink-3">In list</span>
                               ) : (
                                 <button
                                   onClick={(e) => { e.stopPropagation(); addToWatchlist(pick.ticker); }}
-                                  className="text-[10px] text-accent hover:text-accent font-semibold transition-colors"
+                                  className="text-[12px] text-accent hover:underline"
                                   title="Add to Watchlist"
                                 >
                                   + Watch
@@ -4520,7 +4657,7 @@ export default function ResearchPage() {
                               )}
                               <button
                                 onClick={() => sellPick(pick.ticker, pick.dateAdded)}
-                                className="ml-2 text-[10px] font-semibold text-neg hover:text-neg transition-colors"
+                                className="ml-2 text-[12px] text-neg hover:underline"
                                 title="Sell this pick — removes it from the list AND redistributes its weight equally across the remaining picks (per SA's documented rule)."
                               >
                                 Sell
@@ -4530,19 +4667,19 @@ export default function ResearchPage() {
                                   if (!confirm(`Remove ${pick.name || pick.ticker} from the list WITHOUT redistributing weight?\n\n(Use the "Sell" button if you want weight redistribution.)`)) return;
                                   save({ ...state, alphaPicks: allPicks.filter((p) => !(p.ticker === pick.ticker && (p.dateAdded || "") === (pick.dateAdded || ""))) });
                                 }}
-                                className="ml-2 text-ink-faint hover:text-neg font-bold transition-colors"
+                                className="ml-2 align-middle text-ink-faint transition-colors hover:text-neg"
                                 title="Remove this specific pick with NO weight redistribution. Use this for duplicates or wrong tickers. Other picks with the same ticker on different dates stay."
                               >
-                                &times;
+                                <AppIcon name="x" size={12} />
                               </button>
                             </td>
                           </tr>
                         );
                       })}
                       {visiblePicks.length === 0 && (
-                        <tr><td colSpan={12} className="py-8 text-center text-ink-3 italic">
-                          {allPicks.length === 0 ? "No picks yet — upload a screenshot below or add manually" : "No picks match this rating filter"}
-                        </td></tr>
+                        <tr><td colSpan={12} className="!h-auto"><EmptyState className="!py-8" glyph={<AppIcon name="list" size={18} />}
+                          title={allPicks.length === 0 ? "No picks yet" : "No picks match this rating filter"}
+                          body={allPicks.length === 0 ? "Upload an Alpha Picks screenshot below, or add a pick manually." : undefined} /></td></tr>
                       )}
                     </tbody>
                   </table></div>
@@ -4580,49 +4717,49 @@ export default function ResearchPage() {
         <CollapsibleSection
           prefKey="research.quickRef"
           className="border-line"
-          titleClass="text-lg font-semibold"
-          title={<>Quick Reference</>}
+          titleClass="text-[13px] font-semibold text-ink"
+          title={<>Quick reference</>}
         >
-          <div className="grid gap-5 md:grid-cols-3">
-            <div className="rounded-xl bg-surface-2 p-4">
-              <div className="text-xs font-bold uppercase tracking-wider text-ink-3 mb-3">PIM Score Thresholds</div>
-              <div className="space-y-1.5 text-sm">
-                <div className="flex justify-between"><span className="text-pos font-medium">Strong Buy</span><span>&ge; 30/40</span></div>
-                <div className="flex justify-between"><span className="text-pos font-medium">Moderate Buy</span><span>&ge; 26/40</span></div>
-                <div className="flex justify-between"><span className="text-warn font-medium">Hold</span><span>&ge; 22/40</span></div>
-                <div className="flex justify-between"><span className="text-neg font-medium">Underweight</span><span>&ge; 18/40</span></div>
-                <div className="flex justify-between"><span className="text-neg font-medium">Sell</span><span>&lt; 18/40</span></div>
+          <div className="grid overflow-hidden rounded-card border border-line md:grid-cols-3">
+            <div className="-ml-px -mt-px border-l border-t border-line-soft px-3.5 py-3">
+              <div className="mb-2 text-[11px] text-ink-3">PIM score thresholds</div>
+              <div className="space-y-1 text-[12.5px]">
+                <div className="flex justify-between"><span className="text-pos">Strong Buy</span><span className="font-mono text-ink-2">&ge; 30/40</span></div>
+                <div className="flex justify-between"><span className="text-pos">Moderate Buy</span><span className="font-mono text-ink-2">&ge; 26/40</span></div>
+                <div className="flex justify-between"><span className="text-warn">Hold</span><span className="font-mono text-ink-2">&ge; 22/40</span></div>
+                <div className="flex justify-between"><span className="text-neg">Underweight</span><span className="font-mono text-ink-2">&ge; 18/40</span></div>
+                <div className="flex justify-between"><span className="text-neg">Sell</span><span className="font-mono text-ink-2">&lt; 18/40</span></div>
               </div>
             </div>
-            <div className="rounded-xl bg-surface-2 p-4">
-              <div className="text-xs font-bold uppercase tracking-wider text-ink-3 mb-3">Regime Multipliers</div>
-              <div className="space-y-1.5 text-sm">
-                <div className="text-xs font-bold text-neg mt-1">Risk-Off</div>
-                <div className="flex justify-between"><span>Growth</span><span className="text-neg font-medium">0.85x</span></div>
-                <div className="flex justify-between"><span>Cyclical</span><span className="text-warn font-medium">0.90x</span></div>
-                <div className="flex justify-between"><span>Defensive</span><span className="text-pos font-medium">1.10x</span></div>
-                <div className="text-xs font-bold text-warn mt-2">Neutral</div>
-                <div className="flex justify-between"><span>All sectors</span><span className="text-ink-3 font-medium">1.0x</span></div>
-                <div className="text-xs font-bold text-pos mt-2">Risk-On</div>
-                <div className="flex justify-between"><span>Growth</span><span className="text-pos font-medium">1.10x</span></div>
-                <div className="flex justify-between"><span>Cyclical</span><span className="text-pos font-medium">1.05x</span></div>
-                <div className="flex justify-between"><span>Defensive</span><span className="text-warn font-medium">0.92x</span></div>
+            <div className="-ml-px -mt-px border-l border-t border-line-soft px-3.5 py-3">
+              <div className="mb-2 text-[11px] text-ink-3">Regime multipliers</div>
+              <div className="space-y-1 text-[12.5px]">
+                <div className="mt-1 text-[11px] text-ink-3">Risk-Off</div>
+                <div className="flex justify-between"><span>Growth</span><span className="font-mono text-neg">0.85x</span></div>
+                <div className="flex justify-between"><span>Cyclical</span><span className="font-mono text-warn">0.90x</span></div>
+                <div className="flex justify-between"><span>Defensive</span><span className="font-mono text-pos">1.10x</span></div>
+                <div className="mt-2 text-[11px] text-ink-3">Neutral</div>
+                <div className="flex justify-between"><span>All sectors</span><span className="font-mono text-ink-3">1.0x</span></div>
+                <div className="mt-2 text-[11px] text-ink-3">Risk-On</div>
+                <div className="flex justify-between"><span>Growth</span><span className="font-mono text-pos">1.10x</span></div>
+                <div className="flex justify-between"><span>Cyclical</span><span className="font-mono text-pos">1.05x</span></div>
+                <div className="flex justify-between"><span>Defensive</span><span className="font-mono text-warn">0.92x</span></div>
               </div>
-              <p className="mt-3 text-xs text-ink-3">Growth: Tech, Comm Svc, Consumer Disc · Cyclical: Fin, Ind, Mat · Neutral: Energy, Real Estate · Quality dampening ±35%</p>
+              <p className="mt-2.5 text-[11px] leading-4 text-ink-3">Growth: Tech, Comm Svc, Consumer Disc · Cyclical: Fin, Ind, Mat · Neutral: Energy, Real Estate · Quality dampening ±35%</p>
             </div>
-            <div className="rounded-xl bg-surface-2 p-4">
-              <div className="text-xs font-bold uppercase tracking-wider text-ink-3 mb-3">Contrarian Thresholds</div>
-              <div className="space-y-1.5 text-sm">
-                <div className="flex justify-between"><span>F&G &le; 15</span><span className="text-pos font-medium">Contrarian Buy</span></div>
-                <div className="flex justify-between"><span>F&G &ge; 75</span><span className="text-neg font-medium">Contrarian Sell</span></div>
-                <div className="flex justify-between"><span>AAII &le; -20</span><span className="text-pos font-medium">Contrarian Buy</span></div>
-                <div className="flex justify-between"><span>AAII &ge; +30</span><span className="text-neg font-medium">Contrarian Sell</span></div>
+            <div className="-ml-px -mt-px border-l border-t border-line-soft px-3.5 py-3">
+              <div className="mb-2 text-[11px] text-ink-3">Contrarian thresholds</div>
+              <div className="space-y-1 text-[12.5px]">
+                <div className="flex justify-between"><span>F&G &le; 15</span><span className="text-pos">Contrarian buy</span></div>
+                <div className="flex justify-between"><span>F&G &ge; 75</span><span className="text-neg">Contrarian sell</span></div>
+                <div className="flex justify-between"><span>AAII &le; -20</span><span className="text-pos">Contrarian buy</span></div>
+                <div className="flex justify-between"><span>AAII &ge; +30</span><span className="text-neg">Contrarian sell</span></div>
               </div>
             </div>
           </div>
         </CollapsibleSection>
         </div>
       </div>
-    </main>
+    </div>
   );
 }
