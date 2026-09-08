@@ -94,41 +94,35 @@ export function PortfolioXray() {
   if (count === 0) return null;
 
   return (
-    // Collapsed by default: six aggregate metrics and an earnings calendar are
-    // reference, not something to re-read on every visit, and at full height
-    // they pushed the positions table off the first screen. The header keeps
-    // the holding count visible so it's obvious what's tucked away.
+    // Persisted fold (pm:ui-prefs `portfolio.xrayCollapsed`), open by default:
+    // one hairline strip of six aggregates plus the earnings calendar. The
+    // header keeps the holding count visible when it is folded away.
     <CollapsibleSection
       prefKey="portfolio.xrayCollapsed"
-      defaultCollapsed
-      title={
-        <span className="text-sm font-bold text-ink">
-          Portfolio X-ray <span className="font-normal text-ink-3">· FactSet fundamentals</span>
-        </span>
-      }
-      right={<span className="text-[11px] text-ink-3">{count} holdings · {basis}</span>}
+      title="Portfolio X-ray"
+      subtitle={`FactSet fundamentals · ${count} holdings · ${basis}`}
     >
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
-        {tiles.map((t) => (
-          <div key={t.label} className="hover-lift rounded-lg border border-line-soft bg-surface-hover px-3 py-2.5">
-            <div className="text-[10px] font-semibold uppercase tracking-wider text-ink-3">{t.label}</div>
-            <div className={`mt-1 text-lg font-bold tabular-nums ${t.accent || "text-ink"}`}>{t.value}</div>
-          </div>
-        ))}
-      </div>
-      {upcomingEarnings.length > 0 && (
-        <div className="mt-3 border-t border-line-soft pt-3">
-          <div className="mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-ink-3">Upcoming earnings</div>
-          <div className="flex flex-wrap gap-1.5">
+      <div className="-mx-3.5 -my-2">
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6">
+          {tiles.map((t) => (
+            <div key={t.label} className="-ml-px min-w-0 border-l border-line-soft px-3.5 py-2">
+              <div className="truncate text-[11px] text-ink-3">{t.label}</div>
+              <div className={`mt-0.5 font-mono text-[13px] font-medium tabular-nums ${t.accent || "text-ink"}`}>{t.value}</div>
+            </div>
+          ))}
+        </div>
+        {upcomingEarnings.length > 0 && (
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 border-t border-line-soft px-3.5 py-2 text-[12px]">
+            <span className="text-[11px] text-ink-3">Upcoming earnings</span>
             {upcomingEarnings.map((e) => (
-              <span key={e.ticker} className="inline-flex items-center gap-1 rounded-full border border-line bg-surface-2 px-2 py-0.5 text-[11px]">
-                <TickerLink ticker={e.ticker} className="font-mono font-semibold text-ink hover:underline hover:text-accent">{displayTicker(e.ticker)}</TickerLink>
-                <span className="text-ink-3">{formatYmd(e.date)}</span>
+              <span key={e.ticker} className="inline-flex items-center gap-1.5">
+                <TickerLink ticker={e.ticker} className="font-mono font-medium text-ink hover:text-accent">{displayTicker(e.ticker)}</TickerLink>
+                <span className="font-mono text-[11.5px] text-ink-3">{formatYmd(e.date)}</span>
               </span>
             ))}
           </div>
-        </div>
-      )}
+        )}
+      </div>
     </CollapsibleSection>
   );
 }

@@ -8,6 +8,8 @@ import { MAX_SCORE } from "@/app/lib/types";
 import { displayTicker } from "@/app/lib/ticker";
 import { SkeletonTable } from "@/app/components/Skeleton";
 import { EmptyState } from "@/app/components/EmptyState";
+import { AppIcon } from "@/app/components/AppIcon";
+import { usePersistedOpen } from "@/app/lib/useCollapsed";
 
 /**
  * /factor-lab — the shadow factor model's read-out surface (Phase B3).
@@ -127,6 +129,9 @@ const GROUP_LABEL: Record<string, string> = {
   quality: "Qual", growth: "Grow", valuation: "Val", momentum: "Mom",
 };
 
+const BTN = "inline-flex h-7 items-center gap-1.5 rounded-control border border-line bg-surface px-2.5 text-[12.5px] text-ink-2 hover:bg-surface-hover";
+const SELECT = "h-7 rounded-control border border-line bg-surface px-2 text-[12.5px] text-ink-2 outline-none";
+
 function pctColor(p: number | null): string {
   if (p == null) return "text-ink-3";
   if (p >= 70) return "text-pos";
@@ -157,14 +162,15 @@ export default function FactorLabPage() {
   const [builtAt, setBuiltAt] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [sortKey, setSortKey] = useState<SortKey>("disagreement");
-  const [showMethod, setShowMethod] = useState(false);
+  // Methodology disclosure — persisted so a PM who opened it once keeps it.
+  const [showMethod, toggleMethod] = usePersistedOpen("factorLab.method.open", false);
   // Which book row's math trail is open (click the ticker row to toggle).
   const [openMath, setOpenMath] = useState<string | null>(null);
   const [validation, setValidation] = useState<Validation | null>(null);
   const [screen, setScreen] = useState<ScreenName[] | null>(null);
   const [screenBuiltAt, setScreenBuiltAt] = useState<string | null>(null);
   const [screenSector, setScreenSector] = useState<string>("All");
-  const [screenShowAll, setScreenShowAll] = useState(false);
+  const [screenShowAll, toggleScreenShowAll] = usePersistedOpen("factorLab.screen.showAll", false);
   const [consolSort, setConsolSort] = useState<ConsolSortKey>("rankMove");
   const [consolDir, setConsolDir] = useState<"asc" | "desc">("desc");
 
@@ -350,60 +356,79 @@ export default function FactorLabPage() {
     if (consolSort === key) setConsolDir(consolDir === "asc" ? "desc" : "asc");
     else { setConsolSort(key); setConsolDir(key === "ticker" ? "asc" : "desc"); }
   };
-  const consolArrow = (key: ConsolSortKey) =>
-    consolSort === key ? (consolDir === "asc" ? " ▲" : " ▼") : "";
+  const ConsolTh = ({ id, label, className = "", title }: { id: ConsolSortKey; label: string; className?: string; title?: string }) => (
+    <th className={className} title={title}>
+      <button type="button" onClick={() => toggleConsolSort(id)} className={`inline-flex items-center gap-0.5 hover:text-ink ${consolSort === id ? "text-ink-2" : ""}`}>
+        {label}
+        {consolSort === id && <AppIcon name={consolDir === "asc" ? "chevU" : "chevD"} size={11} strokeWidth={2} />}
+      </button>
+    </th>
+  );
 
   return (
-    <div className="mx-auto max-w-[1200px] px-4 py-6">
-      <div className="mb-2 flex items-center justify-between">
-        <h1 className="text-[15px] font-bold text-ink">Factor Lab <span className="ml-2 rounded bg-surface-2 px-2 py-0.5 text-[11px] font-medium text-ink-3 align-middle">shadow · read-only</span></h1>
-      </div>
-      <p className="mb-4 max-w-3xl text-sm text-ink-2">
-        A from-scratch quantitative factor model computed <em>beside</em> the 41-point score — it changes nothing.
-        Each name is z-scored against its GICS-sector peers in a ~540-name S&amp;P 500 + TSX 60 universe,
-        rolled into a 0–100 <strong>quant percentile</strong>. The <strong>judgment overlay</strong> is the 41-pt
-        system&rsquo;s qualitative categories (brand, moat, catalysts, charting, track record) — the part no factor
-        replicates. The <strong>blends</strong> are the integration candidates a later validation phase will race.
-      </p>
-
-      <div className="mb-4 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-ink-3">
-        <span>{coveredCount} of {rows.length} book names factor-scored</span>
-        {built && <span>· universe/scores built {built}</span>}
-        <button onClick={() => setShowMethod((v) => !v)} className="text-accent hover:underline">
-          {showMethod ? "hide" : "how to read this"}
+    <div className="flex flex-col gap-3.5">
+      {/* ── Toolbar ── */}
+      <div className="flex flex-wrap items-center gap-2.5">
+        <div className="seg" role="group" aria-label="Sort">
+          {([
+            ["disagreement", "Disagreement"],
+            ["quant", "Quant %ile"],
+            ["adjusted", "41-pt"],
+            ["overlay", "Overlay"],
+            ["blend70", "Blend 70/30"],
+          ] as [SortKey, string][]).map(([k, label]) => (
+            <button key={k} onClick={() => setSortKey(k)} className={sortKey === k ? "on" : ""}>{label}</button>
+          ))}
+        </div>
+        <span className="text-[11.5px] text-ink-3">
+          shadow · read-only · {coveredCount} of {rows.length} book names factor-scored{built && ` · built ${built}`}
+        </span>
+        <button onClick={toggleMethod} aria-expanded={showMethod} className={`${BTN} ml-auto`}>
+          <AppIcon name="help" size={13} strokeWidth={2} />
+          How to read this
+          <AppIcon name={showMethod ? "chevU" : "chevD"} size={12} strokeWidth={2} className="text-ink-3" />
         </button>
       </div>
 
       {showMethod && (
-        <div className="mb-5 rounded-card border border-line bg-surface p-4 text-xs leading-relaxed text-ink-2">
-          <div className="mb-2 font-semibold text-ink">Reading the columns</div>
-          <ul className="ml-4 list-disc space-y-1">
-            <li><strong>41-pt</strong> — the current committee score (adjusted, out of {MAX_SCORE}). Unchanged.</li>
-            <li><strong>Quant %ile</strong> — pure factor percentile vs sector peers. 70+ green, 30− red. This is the machine&rsquo;s cross-sectional read; it knows nothing about the 41-pt score.</li>
-            <li><strong>ΔRank</strong> — 41-pt rank minus quant rank, over the {coveredCount} scored names. <span className="text-pos">Positive</span> = the factor model likes it <em>more</em> than the committee; <span className="text-neg">negative</span> = less. Big magnitudes are where the two views genuinely disagree — the rows worth a human look.</li>
-            <li><strong>Overlay</strong> — judgment lens (qualitative categories only), 0–100. Blank = not yet assessed.</li>
-            <li><strong>70/30</strong> and <strong>Mod</strong> — the two integration candidates: 0.7·quant + 0.3·overlay, and quant nudged ±15 by the overlay.</li>
-            <li><strong>Factor z-bars</strong> — mean sector z per group (Quality / Growth / Valuation / Momentum). Right/green good, left/red bad, ±3 scale.</li>
-          </ul>
-        </div>
+        <section className="panel">
+          <div className="panel-h"><span className="t">Reading the columns</span><span className="m">a from-scratch factor model computed beside the 41-point score — it changes nothing</span></div>
+          <div className="flex flex-col gap-2 px-3.5 py-3 text-[12.5px] leading-[1.5] text-ink-2">
+            <p>
+              Each name is z-scored against its GICS-sector peers in a ~540-name S&amp;P 500 + TSX 60 universe,
+              rolled into a 0–100 <span className="font-medium text-ink">quant percentile</span>. The <span className="font-medium text-ink">judgment overlay</span> is the 41-pt
+              system&rsquo;s qualitative categories (brand, moat, catalysts, charting, track record) — the part no factor
+              replicates. The <span className="font-medium text-ink">blends</span> are the integration candidates a later validation phase will race.
+            </p>
+            <ul className="ml-4 list-disc space-y-1">
+              <li><span className="font-medium text-ink">41-pt</span> — the current committee score (adjusted, out of {MAX_SCORE}). Unchanged.</li>
+              <li><span className="font-medium text-ink">Quant %ile</span> — pure factor percentile vs sector peers. 70+ green, 30− red. This is the machine&rsquo;s cross-sectional read; it knows nothing about the 41-pt score.</li>
+              <li><span className="font-medium text-ink">ΔRank</span> — 41-pt rank minus quant rank, over the {coveredCount} scored names. <span className="text-pos">Positive</span> = the factor model likes it <em>more</em> than the committee; <span className="text-neg">negative</span> = less. Big magnitudes are where the two views genuinely disagree — the rows worth a human look.</li>
+              <li><span className="font-medium text-ink">Overlay</span> — judgment lens (qualitative categories only), 0–100. Blank = not yet assessed.</li>
+              <li><span className="font-medium text-ink">70/30</span> and <span className="font-medium text-ink">Mod</span> — the two integration candidates: 0.7·quant + 0.3·overlay, and quant nudged ±15 by the overlay.</li>
+              <li><span className="font-medium text-ink">Factor z-bars</span> — mean sector z per group (Quality / Growth / Valuation / Momentum). Right/green good, left/red bad, ±3 scale.</li>
+            </ul>
+          </div>
+        </section>
       )}
 
       {topDisagree.length > 0 && (
-        <div className="mb-5 grid grid-cols-1 gap-3 sm:grid-cols-3">
+        <div className="panel grid grid-cols-1 divide-y divide-line-soft sm:grid-cols-3 sm:divide-x sm:divide-y-0">
           {topDisagree.map((r) => {
             const factorHigher = (r.deltaRank ?? 0) > 0;
             return (
-              <div key={r.ticker} className="rounded-card border border-line bg-surface p-3">
+              <div key={r.ticker} className="px-4 py-2.5">
                 <div className="flex items-center justify-between">
-                  <span className="font-mono text-sm font-semibold text-ink">{displayTicker(r.ticker)}</span>
-                  <span className={`text-xs font-semibold ${factorHigher ? "text-pos" : "text-neg"}`}>
-                    factor {factorHigher ? "▲" : "▼"} {Math.abs(r.deltaRank ?? 0)} ranks
+                  <span className="font-mono text-[13px] font-medium text-ink">{displayTicker(r.ticker)}</span>
+                  <span className={`inline-flex items-center gap-0.5 font-mono text-[12px] ${factorHigher ? "text-pos" : "text-neg"}`}>
+                    <AppIcon name={factorHigher ? "chevU" : "chevD"} size={11} strokeWidth={2.25} />
+                    factor {Math.abs(r.deltaRank ?? 0)} ranks
                   </span>
                 </div>
-                <div className="mt-1 text-[11px] text-ink-3">
+                <div className="mt-0.5 text-[11px] text-ink-3">
                   41-pt {Number(r.adjusted.toFixed(1))}/{MAX_SCORE} · quant {r.quant}%ile
                 </div>
-                <div className="mt-1 text-[11px] text-ink-2">
+                <div className="mt-1 text-[11.5px] leading-[1.5] text-ink-2">
                   {factorHigher
                     ? "Factors rate it higher than the committee — a name the qualitative read may be discounting."
                     : "Committee rates it higher than the factors — conviction the numbers don't yet support."}
@@ -414,228 +439,214 @@ export default function FactorLabPage() {
         </div>
       )}
 
-      <div className="mb-3 flex flex-wrap items-center gap-2 text-xs">
-        <span className="text-ink-3">Sort:</span>
-        {([
-          ["disagreement", "Disagreement"],
-          ["quant", "Quant %ile"],
-          ["adjusted", "41-pt"],
-          ["overlay", "Overlay"],
-          ["blend70", "Blend 70/30"],
-        ] as [SortKey, string][]).map(([k, label]) => (
-          <button
-            key={k}
-            onClick={() => setSortKey(k)}
-            className={`rounded-full px-3 py-1 ${sortKey === k ? "bg-accent text-white" : "bg-surface-2 text-ink-2 hover:text-ink"}`}
-          >
-            {label}
-          </button>
-        ))}
-      </div>
-
-      {loading ? (
-        <div className="rounded-card border border-line bg-surface p-4">
-          <SkeletonTable rows={10} cols={9} />
+      {/* ── Book: 41-pt beside the factor lens ── */}
+      <section className="panel">
+        <div className="panel-h">
+          <span className="t">Book</span>
+          <span className="m">Portfolio + Watchlist · 41-pt beside the factor lens · click a row for the math</span>
         </div>
-      ) : coveredCount === 0 ? (
-        <div className="rounded-card border border-line bg-surface">
+        {loading ? (
+          <div className="p-3.5"><SkeletonTable rows={10} cols={9} /></div>
+        ) : coveredCount === 0 ? (
           <EmptyState
-            glyph={<span className="text-lg">◷</span>}
+            className="!py-8"
+            glyph={<AppIcon name="clock" size={18} />}
             title="No factor scores yet"
             body={
               <>
                 They&rsquo;re written nightly by the shadow job. To force a run now, open{" "}
-                <code className="rounded bg-surface-2 px-1 font-mono">/api/admin/factor-debug?book=1&amp;run=1</code>.
+                <code className="rounded bg-surface-2 px-1 font-mono text-[11.5px]">/api/admin/factor-debug?book=1&amp;run=1</code>.
               </>
             }
           />
-        </div>
-      ) : (
-        <div className="overflow-x-auto rounded-card border border-line">
-          <table className="w-full border-collapse text-sm">
-            <thead>
-              <tr className="border-b border-line bg-surface text-left text-xs text-ink-3">
-                <th className="px-3 py-2">Ticker</th>
-                <th className="px-3 py-2">Sector</th>
-                <th className="px-3 py-2 text-right">41-pt</th>
-                <th className="px-3 py-2 text-right">Quant %ile</th>
-                <th className="px-3 py-2 text-right">ΔRank</th>
-                <th className="px-3 py-2 text-right">Overlay</th>
-                <th className="px-3 py-2 text-right">70/30</th>
-                <th className="px-3 py-2 text-right">Mod</th>
-                {GROUP_ORDER.map((g) => (
-                  <th key={g} className="px-2 py-2 text-center">{GROUP_LABEL[g]}</th>
-                ))}
-                <th className="px-2 py-2 text-right">Conf</th>
-              </tr>
-            </thead>
-            <tbody>
-              {sorted.map((r) => {
-                const hasQuant = r.quant != null;
-                const entry = entries[r.ticker.toUpperCase()];
-                const mathOpen = openMath === r.ticker;
-                const hasTrail = Boolean(entry?.perMetric && Object.keys(entry.perMetric).length);
-                return (
-                  <React.Fragment key={r.ticker}>
-                  <tr
-                    className={`border-b border-line/60 ${hasQuant ? "" : "opacity-50"} ${hasTrail ? "cursor-pointer hover:bg-surface-2/50" : ""}`}
-                    onClick={() => hasTrail && setOpenMath(mathOpen ? null : r.ticker)}
-                    title={hasTrail ? "Click to see the math behind this percentile" : undefined}
-                  >
-                    <td className="px-3 py-2">
-                      <Link href={`/stock/${encodeURIComponent(r.ticker)}`} onClick={(e) => e.stopPropagation()} className="font-mono font-semibold text-ink hover:text-accent">
-                        {displayTicker(r.ticker)}
-                      </Link>
-                      <span className="ml-1 text-[10px] text-ink-3">{r.bucket === "Portfolio" ? "P" : "W"}</span>
-                      {hasTrail && <span className="ml-1.5 text-[10px] text-ink-faint">{mathOpen ? "▾" : "▸"}</span>}
-                    </td>
-                    <td className="px-3 py-2 text-xs text-ink-3">{r.sector || "—"}</td>
-                    <td className="px-3 py-2 text-right font-mono text-ink-2">{Number(r.adjusted.toFixed(1))}</td>
-                    <td className={`px-3 py-2 text-right font-mono font-semibold ${pctColor(r.quant)}`}>
-                      {hasQuant ? r.quant : "—"}
-                    </td>
-                    <td className="px-3 py-2 text-right font-mono text-xs">
-                      {r.deltaRank == null ? "—" : (
-                        <span className={r.deltaRank > 0 ? "text-pos" : r.deltaRank < 0 ? "text-neg" : "text-ink-3"}>
-                          {r.deltaRank > 0 ? "+" : ""}{r.deltaRank}
+        ) : (
+          <div className="tbl-wrap">
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th className="pl-3.5">Ticker</th>
+                  <th>Sector</th>
+                  <th className="n">41-pt</th>
+                  <th className="n">Quant %ile</th>
+                  <th className="n">ΔRank</th>
+                  <th className="n">Overlay</th>
+                  <th className="n">70/30</th>
+                  <th className="n">Mod</th>
+                  {GROUP_ORDER.map((g) => (
+                    <th key={g} className="text-center">{GROUP_LABEL[g]}</th>
+                  ))}
+                  <th className="n pr-3.5">Conf</th>
+                </tr>
+              </thead>
+              <tbody>
+                {sorted.map((r) => {
+                  const hasQuant = r.quant != null;
+                  const entry = entries[r.ticker.toUpperCase()];
+                  const mathOpen = openMath === r.ticker;
+                  const hasTrail = Boolean(entry?.perMetric && Object.keys(entry.perMetric).length);
+                  return (
+                    <React.Fragment key={r.ticker}>
+                    <tr
+                      className={`${hasQuant ? "" : "opacity-50"} ${hasTrail ? "cursor-pointer" : ""} ${mathOpen ? "sel" : ""}`}
+                      onClick={() => hasTrail && setOpenMath(mathOpen ? null : r.ticker)}
+                      title={hasTrail ? "Click to see the math behind this percentile" : undefined}
+                    >
+                      <td className="pl-3.5">
+                        <span className="inline-flex items-center gap-1.5">
+                          {hasTrail ? <AppIcon name={mathOpen ? "chevD" : "chevR"} size={12} strokeWidth={2} className="text-ink-faint" /> : <span className="inline-block w-3" />}
+                          <Link href={`/stock/${encodeURIComponent(r.ticker)}`} onClick={(e) => e.stopPropagation()} className="font-mono font-medium text-ink hover:text-accent hover:underline">
+                            {displayTicker(r.ticker)}
+                          </Link>
+                          <span className="text-[11px] text-ink-3" title={r.bucket}>{r.bucket === "Portfolio" ? "P" : "W"}</span>
                         </span>
-                      )}
-                    </td>
-                    <td className="px-3 py-2 text-right font-mono text-ink-2">{r.overlay ?? "—"}</td>
-                    <td className="px-3 py-2 text-right font-mono text-ink-2">{r.blend70 ?? "—"}</td>
-                    <td className="px-3 py-2 text-right font-mono text-ink-2">{r.blendMod ?? "—"}</td>
-                    {GROUP_ORDER.map((g) => (
-                      <td key={g} className="px-2 py-2 text-center"><ZBar z={r.groups[g]} /></td>
-                    ))}
-                    <td className="px-2 py-2 text-right text-xs text-ink-3">{r.confidence ?? "—"}</td>
-                  </tr>
-                  {/* ── Math trail: raw value → sector-neutral z → group → composite ── */}
-                  {mathOpen && entry?.perMetric && (
-                    <tr className="border-b border-line/60 bg-surface-2/40">
-                      <td colSpan={9 + GROUP_ORDER.length} className="px-4 py-3">
-                        <div className="mb-2 text-[11px] text-ink-3">
-                          Each metric is compared against every <b>{r.sector || "sector"}</b> name in the
-                          ~560-name universe (winsorized, z clamped to ±3, sign-normalized so higher = better;
-                          missing metrics are dropped from both sides, never counted as bearish). Group z = mean
-                          of its metrics; composite = Σ group z × weight → percentile via the normal CDF.
-                        </div>
-                        <div className="grid grid-cols-1 gap-x-6 gap-y-2 sm:grid-cols-2 lg:grid-cols-4">
-                          {GROUP_ORDER.map((g) => {
-                            const rows = Object.entries(entry.perMetric!).filter(([k]) => METRIC_META[k]?.group === g);
-                            if (!rows.length) return (
-                              <div key={g}>
-                                <div className="mb-1 text-[10px] font-bold uppercase tracking-wider text-ink-3">{g} · ×{GROUP_WEIGHTS[g]}</div>
-                                <div className="text-[11px] text-ink-faint">no metrics available</div>
-                              </div>
-                            );
-                            return (
-                              <div key={g}>
-                                <div className="mb-1 text-[10px] font-bold uppercase tracking-wider text-ink-3">
-                                  {g} · ×{GROUP_WEIGHTS[g]}
-                                  {typeof r.groups[g] === "number" && (
-                                    <span className={`ml-1.5 font-mono normal-case ${r.groups[g] >= 0 ? "text-pos" : "text-neg"}`}>
-                                      z {r.groups[g] >= 0 ? "+" : ""}{r.groups[g].toFixed(2)}
-                                    </span>
-                                  )}
-                                </div>
-                                {rows.map(([k, z]) => (
-                                  <div key={k} className="flex items-baseline gap-2 text-[11px] leading-5">
-                                    <span className="text-ink-2">{METRIC_META[k]?.label ?? k}</span>
-                                    <span className="ml-auto font-mono text-ink-3">
-                                      {entry.metrics?.[k] != null ? fmtMetric(k, entry.metrics[k]) : "—"}
-                                    </span>
-                                    <span className={`w-12 text-right font-mono ${z >= 0 ? "text-pos" : "text-neg"}`}>
-                                      {z >= 0 ? "+" : ""}{z.toFixed(2)}
-                                    </span>
-                                  </div>
-                                ))}
-                              </div>
-                            );
-                          })}
-                        </div>
                       </td>
+                      <td className="text-[12px] text-ink-2">{r.sector || "—"}</td>
+                      <td className="n text-ink-2">{Number(r.adjusted.toFixed(1))}</td>
+                      <td className={`n font-medium ${pctColor(r.quant)}`}>{hasQuant ? r.quant : "—"}</td>
+                      <td className="n">
+                        {r.deltaRank == null ? <span className="text-ink-faint">—</span> : (
+                          <span className={r.deltaRank > 0 ? "text-pos" : r.deltaRank < 0 ? "text-neg" : "text-ink-3"}>
+                            {r.deltaRank > 0 ? "+" : ""}{r.deltaRank}
+                          </span>
+                        )}
+                      </td>
+                      <td className="n text-ink-2">{r.overlay ?? "—"}</td>
+                      <td className="n text-ink-2">{r.blend70 ?? "—"}</td>
+                      <td className="n text-ink-2">{r.blendMod ?? "—"}</td>
+                      {GROUP_ORDER.map((g) => (
+                        <td key={g} className="text-center"><ZBar z={r.groups[g]} /></td>
+                      ))}
+                      <td className="n pr-3.5 text-ink-3">{r.confidence ?? "—"}</td>
                     </tr>
-                  )}
-                  </React.Fragment>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-      )}
+                    {/* ── Math trail: raw value → sector-neutral z → group → composite ── */}
+                    {mathOpen && entry?.perMetric && (
+                      <tr>
+                        <td colSpan={9 + GROUP_ORDER.length} className="whitespace-normal bg-surface-2/40 px-4 py-3">
+                          <div className="mb-2 text-[11.5px] leading-[1.5] text-ink-3">
+                            Each metric is compared against every <span className="text-ink-2">{r.sector || "sector"}</span> name in the
+                            ~560-name universe (winsorized, z clamped to ±3, sign-normalized so higher = better;
+                            missing metrics are dropped from both sides, never counted as bearish). Group z = mean
+                            of its metrics; composite = Σ group z × weight → percentile via the normal CDF.
+                          </div>
+                          <div className="grid grid-cols-1 gap-x-6 gap-y-2 sm:grid-cols-2 lg:grid-cols-4">
+                            {GROUP_ORDER.map((g) => {
+                              const rows = Object.entries(entry.perMetric!).filter(([k]) => METRIC_META[k]?.group === g);
+                              if (!rows.length) return (
+                                <div key={g}>
+                                  <div className="mb-1 text-[11px] text-ink-3">{g} · ×{GROUP_WEIGHTS[g]}</div>
+                                  <div className="text-[11px] text-ink-faint">no metrics available</div>
+                                </div>
+                              );
+                              return (
+                                <div key={g}>
+                                  <div className="mb-1 text-[11px] text-ink-3">
+                                    {g} · ×{GROUP_WEIGHTS[g]}
+                                    {typeof r.groups[g] === "number" && (
+                                      <span className={`ml-1.5 font-mono ${r.groups[g] >= 0 ? "text-pos" : "text-neg"}`}>
+                                        z {r.groups[g] >= 0 ? "+" : ""}{r.groups[g].toFixed(2)}
+                                      </span>
+                                    )}
+                                  </div>
+                                  {rows.map(([k, z]) => (
+                                    <div key={k} className="flex items-baseline gap-2 text-[11.5px] leading-5">
+                                      <span className="text-ink-2">{METRIC_META[k]?.label ?? k}</span>
+                                      <span className="ml-auto font-mono text-ink-3">
+                                        {entry.metrics?.[k] != null ? fmtMetric(k, entry.metrics[k]) : "—"}
+                                      </span>
+                                      <span className={`w-12 text-right font-mono ${z >= 0 ? "text-pos" : "text-neg"}`}>
+                                        {z >= 0 ? "+" : ""}{z.toFixed(2)}
+                                      </span>
+                                    </div>
+                                  ))}
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </td>
+                      </tr>
+                    )}
+                    </React.Fragment>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+        {!loading && coveredCount > 0 && (
+          <div className="flex h-8 items-center border-t border-line-soft px-3.5 text-[11.5px] text-ink-3">
+            {coveredCount} of {rows.length} factor-scored · P = Portfolio, W = Watchlist · unscored names sink to the bottom
+          </div>
+        )}
+      </section>
 
       {/* ── Universe Screen: idea generation from the full ~540-name universe ── */}
-      <div className="mt-8 rounded-card border border-line bg-surface p-4">
-        <div className="flex flex-wrap items-baseline justify-between gap-2">
-          <h2 className="text-sm font-semibold text-ink">Universe Screen — top quant names you don&rsquo;t own</h2>
-          {screenBuiltAt && (
-            <span className="text-[11px] text-ink-3">built {new Date(screenBuiltAt).toLocaleDateString()}</span>
-          )}
-        </div>
-        <p className="mt-1 max-w-3xl text-xs text-ink-2">
-          Every S&amp;P 500 + TSX 60 constituent scored by the same factor model, Portfolio and Watchlist names
-          excluded — what the machine says you&rsquo;re missing. A <span className="font-semibold text-neg">distress</span> or{" "}
-          <span className="font-semibold text-warn">grey</span> badge is an Altman-style balance-sheet veto: the name
-          screens well but the balance sheet disagrees — treat the percentile with suspicion.
-        </p>
-
-        {!screen ? (
-          <div className="mt-3"><SkeletonTable rows={6} cols={9} /></div>
-        ) : screen.length === 0 ? (
-          <EmptyState
-            className="!py-8"
-            glyph={<span className="text-lg">🛰</span>}
-            title="Universe screen not built yet"
-            body="The per-name read-outs are written by the weekly universe rebuild (Sunday). This section populates automatically after the next rebuild."
-          />
-        ) : (
-          <>
-            <div className="mt-3 flex flex-wrap items-center gap-2 text-xs">
-              <span className="text-ink-3">Sector:</span>
-              <select
-                value={screenSector}
-                onChange={(e) => setScreenSector(e.target.value)}
-                className="rounded border border-line bg-white px-2 py-1 text-xs text-ink-2 outline-none focus:border-accent-border"
-              >
+      <section className="panel">
+        <div className="panel-h flex-wrap gap-y-1.5 py-1.5">
+          <span className="t">Universe screen</span>
+          <span className="m">top quant names you don&rsquo;t own{screenBuiltAt && ` · built ${new Date(screenBuiltAt).toLocaleDateString()}`}</span>
+          {screen && screen.length > 0 && (
+            <label className="ml-auto inline-flex items-center gap-1.5 text-[11px] text-ink-3">
+              Sector
+              <select value={screenSector} onChange={(e) => setScreenSector(e.target.value)} className={SELECT}>
                 <option value="All">All ({screenRows.length})</option>
                 {screenSectors.map((s) => (
                   <option key={s} value={s}>{s}</option>
                 ))}
               </select>
-            </div>
-            <div className="mt-3 overflow-x-auto">
-              <table className="w-full border-collapse text-sm">
+            </label>
+          )}
+        </div>
+        <p className="border-b border-line-soft px-3.5 py-2 text-[11.5px] leading-5 text-ink-3">
+          Every S&amp;P 500 + TSX 60 constituent scored by the same factor model, Portfolio and Watchlist names
+          excluded — what the machine says you&rsquo;re missing. A <span className="text-neg">distress</span> or{" "}
+          <span className="text-warn">grey</span> veto is an Altman-style balance-sheet read: the name
+          screens well but the balance sheet disagrees — treat the percentile with suspicion.
+        </p>
+
+        {!screen ? (
+          <div className="p-3.5"><SkeletonTable rows={6} cols={9} /></div>
+        ) : screen.length === 0 ? (
+          <EmptyState
+            className="!py-8"
+            glyph={<AppIcon name="search" size={18} />}
+            title="Universe screen not built yet"
+            body="The per-name read-outs are written by the weekly universe rebuild (Sunday). This section populates automatically after the next rebuild."
+          />
+        ) : (
+          <>
+            <div className="tbl-wrap">
+              <table className="data-table">
                 <thead>
-                  <tr className="border-b border-line text-left text-xs text-ink-3">
-                    <th className="py-2 pr-3">#</th>
-                    <th className="py-2 pr-3">Ticker</th>
-                    <th className="py-2 pr-3">Sector</th>
-                    <th className="py-2 pr-3 text-right">Quant %ile</th>
+                  <tr>
+                    <th className="n pl-3.5 w-10">#</th>
+                    <th>Ticker</th>
+                    <th>Sector</th>
+                    <th className="n">Quant %ile</th>
                     {GROUP_ORDER.map((g) => (
-                      <th key={g} className="px-2 py-2 text-center">{GROUP_LABEL[g]}</th>
+                      <th key={g} className="text-center">{GROUP_LABEL[g]}</th>
                     ))}
-                    <th className="py-2 pr-3 text-right">Conf</th>
-                    <th className="py-2">Veto</th>
+                    <th className="n">Conf</th>
+                    <th className="pr-3.5">Veto</th>
                   </tr>
                 </thead>
                 <tbody>
                   {screenVisible.map((n, i) => (
-                    <tr key={n.ticker} className="border-b border-line/60">
-                      <td className="py-2 pr-3 text-xs text-ink-3">{i + 1}</td>
-                      <td className="py-2 pr-3 font-mono font-semibold text-ink">{displayTicker(n.ticker)}</td>
-                      <td className="py-2 pr-3 text-xs text-ink-3">{n.sector}</td>
-                      <td className={`py-2 pr-3 text-right font-mono font-semibold ${pctColor(n.quant)}`}>{n.quant}</td>
+                    <tr key={n.ticker}>
+                      <td className="n pl-3.5 text-ink-3">{i + 1}</td>
+                      <td className="font-mono font-medium text-ink">{displayTicker(n.ticker)}</td>
+                      <td className="text-[12px] text-ink-2">{n.sector}</td>
+                      <td className={`n font-medium ${pctColor(n.quant)}`}>{n.quant}</td>
                       {GROUP_ORDER.map((g) => (
-                        <td key={g} className="px-2 py-2 text-center"><ZBar z={n.groups?.[g]} /></td>
+                        <td key={g} className="text-center"><ZBar z={n.groups?.[g]} /></td>
                       ))}
-                      <td className="py-2 pr-3 text-right text-xs text-ink-3">{n.confidence}</td>
-                      <td className="py-2">
+                      <td className="n text-ink-3">{n.confidence}</td>
+                      <td className="pr-3.5">
                         {n.distress === "distress" ? (
-                          <span className="rounded bg-neg-soft px-1.5 py-0.5 text-[10px] font-semibold text-neg border border-neg-border" title={`Altman-style Z ${n.altmanZ}`}>distress</span>
+                          <span className="inline-flex items-center gap-1.5 text-[11.5px] text-neg" title={`Altman-style Z ${n.altmanZ}`}><span className="dot bg-neg" />distress</span>
                         ) : n.distress === "grey" ? (
-                          <span className="rounded bg-warn-soft px-1.5 py-0.5 text-[10px] font-semibold text-warn border border-warn-border" title={`Altman-style Z ${n.altmanZ}`}>grey</span>
+                          <span className="inline-flex items-center gap-1.5 text-[11.5px] text-warn" title={`Altman-style Z ${n.altmanZ}`}><span className="dot bg-warn" />grey</span>
                         ) : (
-                          <span className="text-[10px] text-ink-3">—</span>
+                          <span className="text-[11.5px] text-ink-faint">—</span>
                         )}
                       </td>
                     </tr>
@@ -643,80 +654,81 @@ export default function FactorLabPage() {
                 </tbody>
               </table>
             </div>
-            {screenRows.length > 25 && (
-              <button onClick={() => setScreenShowAll((v) => !v)} className="mt-2 text-xs text-accent hover:underline">
-                {screenShowAll ? "show top 25" : `show top 100 (of ${screenRows.length})`}
-              </button>
-            )}
+            <div className="flex h-8 items-center border-t border-line-soft px-3.5 text-[11.5px] text-ink-3">
+              {screenVisible.length} of {screenRows.length} · sorted by quant percentile
+              {screenRows.length > 25 && (
+                <button onClick={toggleScreenShowAll} className="ml-auto text-accent hover:underline">
+                  {screenShowAll ? "Show top 25" : `Show top 100 (of ${screenRows.length})`}
+                </button>
+              )}
+            </div>
           </>
         )}
-      </div>
+      </section>
 
       {/* ── Consolidation Preview: WHAT-IF only — nothing here is live ── */}
-      <div className="mt-8 rounded-card border border-dashed border-accent-border bg-accent-soft/40 p-4">
-        <div className="flex flex-wrap items-baseline justify-between gap-2">
-          <h2 className="text-sm font-semibold text-ink">
-            Consolidation Preview
-            <span className="ml-2 rounded bg-white px-2 py-0.5 text-[10px] font-medium text-ink-3 border border-line align-middle">what-if · not live · Phase D decision pending</span>
-          </h2>
+      <section className="panel">
+        <div className="panel-h">
+          <span className="t">Consolidation preview</span>
+          <span className="m">what-if · not live · Phase D decision pending</span>
         </div>
-        <p className="mt-1 max-w-3xl text-xs text-ink-2">
-          If the book were rated on <strong>Blend 70/30</strong> (0.7·quant + 0.3·judgment) today, using the same
+        <p className="border-b border-line-soft px-3.5 py-2 text-[11.5px] leading-5 text-ink-3">
+          If the book were rated on <span className="text-ink-2">Blend 70/30</span> (0.7·quant + 0.3·judgment) today, using the same
           fractional Buy/Sell thresholds as the 41-pt system (Buy ≥ 73%, Sell ≤ 44%) — here&rsquo;s exactly what would
           change. This is a preview of the integration decision, not the decision: blend weights are earned in the
           Validation table below, and nothing switches over until the evidence and an explicit sign-off say so.
         </p>
 
         {!consolidation ? (
-          <div className="mt-3 text-xs text-ink-3">Needs at least 5 factor-scored book names.</div>
+          <div className="px-3.5 py-3 text-[12.5px] text-ink-3">Needs at least 5 factor-scored book names.</div>
         ) : (
           <>
-            <div className="mt-3 flex flex-wrap gap-4 text-xs">
-              <span className="text-ink"><strong>{consolidation.changes70}</strong> of {consolidation.n} ratings would change</span>
-              <span className="text-pos">▲ {consolidation.up70} upgrades</span>
-              <span className="text-neg">▼ {consolidation.down70} downgrades</span>
-              <span className="text-ink-3">(±15-mod variant: {consolidation.changesMod} changes)</span>
+            <div className="grid grid-cols-2 divide-x divide-line-soft border-b border-line-soft sm:grid-cols-4">
+              <div className="px-4 py-2.5"><div className="text-[11px] text-ink-3">Ratings would change</div><div className="mt-0.5 font-mono text-[13px] font-medium text-ink">{consolidation.changes70}<span className="text-ink-faint">/{consolidation.n}</span></div></div>
+              <div className="px-4 py-2.5"><div className="text-[11px] text-ink-3">Upgrades</div><div className="mt-0.5 font-mono text-[13px] font-medium text-pos">{consolidation.up70}</div></div>
+              <div className="px-4 py-2.5"><div className="text-[11px] text-ink-3">Downgrades</div><div className="mt-0.5 font-mono text-[13px] font-medium text-neg">{consolidation.down70}</div></div>
+              <div className="px-4 py-2.5"><div className="text-[11px] text-ink-3">±15-mod variant</div><div className="mt-0.5 font-mono text-[13px] font-medium text-ink-2">{consolidation.changesMod} <span className="text-[11px] font-normal text-ink-3">changes</span></div></div>
             </div>
-            <div className="mt-3 overflow-x-auto">
-              <table className="w-full border-collapse text-sm">
+            <div className="tbl-wrap">
+              <table className="data-table">
                 <thead>
-                  <tr className="border-b border-line text-left text-xs text-ink-3">
-                    <th className="cursor-pointer select-none py-2 pr-3 hover:text-ink" onClick={() => toggleConsolSort("ticker")}>Ticker{consolArrow("ticker")}</th>
-                    <th className="cursor-pointer select-none py-2 pr-3 text-right hover:text-ink" onClick={() => toggleConsolSort("adjusted")}>41-pt{consolArrow("adjusted")}</th>
-                    <th className="cursor-pointer select-none py-2 pr-3 text-right hover:text-ink" onClick={() => toggleConsolSort("adjusted")} title="The 41-pt adjusted score rescaled to /100 for visual comparability. NOTE: an absolute grade, not a percentile — same axis, different meaning than Quant.">/100{consolArrow("adjusted")}</th>
-                    <th className="cursor-pointer select-none py-2 pr-3 hover:text-ink" onClick={() => toggleConsolSort("rating")}>Rating now{consolArrow("rating")}</th>
-                    <th className="cursor-pointer select-none py-2 pr-3 text-right hover:text-ink" onClick={() => toggleConsolSort("quant")}>Quant{consolArrow("quant")}</th>
-                    <th className="cursor-pointer select-none py-2 pr-3 text-right hover:text-ink" onClick={() => toggleConsolSort("overlay")}>Overlay{consolArrow("overlay")}</th>
-                    <th className="cursor-pointer select-none py-2 pr-3 text-right hover:text-ink" onClick={() => toggleConsolSort("blend70")}>Blend 70/30{consolArrow("blend70")}</th>
-                    <th className="cursor-pointer select-none py-2 pr-3 hover:text-ink" onClick={() => toggleConsolSort("changed")}>Implied rating{consolArrow("changed")}</th>
-                    <th className="cursor-pointer select-none py-2 pr-3 text-right hover:text-ink" onClick={() => toggleConsolSort("rankMove")}>Rank move{consolArrow("rankMove")}</th>
+                  <tr>
+                    <ConsolTh id="ticker" label="Ticker" className="pl-3.5" />
+                    <ConsolTh id="adjusted" label="41-pt" className="n" />
+                    <ConsolTh id="adjusted" label="/100" className="n" title="The 41-pt adjusted score rescaled to /100 for visual comparability. NOTE: an absolute grade, not a percentile — same axis, different meaning than Quant." />
+                    <ConsolTh id="rating" label="Rating now" />
+                    <ConsolTh id="quant" label="Quant" className="n" />
+                    <ConsolTh id="overlay" label="Overlay" className="n" />
+                    <ConsolTh id="blend70" label="Blend 70/30" className="n" />
+                    <ConsolTh id="changed" label="Implied rating" />
+                    <ConsolTh id="rankMove" label="Rank move" className="n pr-3.5" />
                   </tr>
                 </thead>
                 <tbody>
                   {consolItems.map((r) => (
-                    <tr key={r.ticker} className={`border-b border-line/60 ${r.changed70 ? "bg-white/70" : ""}`}>
-                      <td className="py-2 pr-3">
-                        <Link href={`/stock/${encodeURIComponent(r.ticker)}`} className="font-mono font-semibold text-ink hover:text-accent">
+                    <tr key={r.ticker} className={r.changed70 ? "sel" : ""}>
+                      <td className="pl-3.5">
+                        <Link href={`/stock/${encodeURIComponent(r.ticker)}`} className="font-mono font-medium text-ink hover:text-accent hover:underline">
                           {displayTicker(r.ticker)}
                         </Link>
-                        <span className="ml-1 text-[10px] text-ink-3">{r.bucket === "Portfolio" ? "P" : "W"}</span>
+                        <span className="ml-1.5 text-[11px] text-ink-3" title={r.bucket}>{r.bucket === "Portfolio" ? "P" : "W"}</span>
                       </td>
-                      <td className="py-2 pr-3 text-right font-mono text-ink-2">{Number(r.adjusted.toFixed(1))}</td>
-                      <td className="py-2 pr-3 text-right font-mono text-ink-3">{Math.round((r.adjusted / MAX_SCORE) * 100)}</td>
-                      <td className="py-2 pr-3 text-xs">{r.rating}</td>
-                      <td className={`py-2 pr-3 text-right font-mono ${pctColor(r.quant)}`}>{r.quant}</td>
-                      <td className="py-2 pr-3 text-right font-mono text-ink-2">{r.overlay ?? "—"}</td>
-                      <td className="py-2 pr-3 text-right font-mono font-semibold text-ink">{r.blend70}</td>
-                      <td className="py-2 pr-3 text-xs">
+                      <td className="n text-ink-2">{Number(r.adjusted.toFixed(1))}</td>
+                      <td className="n text-ink-3">{Math.round((r.adjusted / MAX_SCORE) * 100)}</td>
+                      <td className="text-ink-2">{r.rating}</td>
+                      <td className={`n ${pctColor(r.quant)}`}>{r.quant}</td>
+                      <td className="n text-ink-2">{r.overlay ?? "—"}</td>
+                      <td className="n font-medium text-ink">{r.blend70}</td>
+                      <td>
                         {r.changed70 ? (
-                          <span className={`font-semibold ${r.b70 === "Buy" ? "text-pos" : r.b70 === "Sell" ? "text-neg" : "text-ink"}`}>
-                            {r.rating} → {r.b70}
+                          <span className={`inline-flex items-center gap-1 font-medium ${r.b70 === "Buy" ? "text-pos" : r.b70 === "Sell" ? "text-neg" : "text-ink"}`}>
+                            {r.rating} <AppIcon name="arrowR" size={11} strokeWidth={2} className="text-ink-3" /> {r.b70}
                           </span>
                         ) : (
                           <span className="text-ink-3">{r.b70 ?? "—"} (no change)</span>
                         )}
                       </td>
-                      <td className="py-2 pr-3 text-right font-mono text-xs">
+                      <td className="n pr-3.5">
                         <span className={r.rankMove > 0 ? "text-pos" : r.rankMove < 0 ? "text-neg" : "text-ink-3"} title={`41-pt rank ${r.rank41} → blend rank ${r.blendRank}`}>
                           {r.rankMove > 0 ? "+" : ""}{r.rankMove}
                         </span>
@@ -726,7 +738,7 @@ export default function FactorLabPage() {
                 </tbody>
               </table>
             </div>
-            <div className="mt-2 text-[11px] text-ink-3">
+            <div className="border-t border-line-soft px-3.5 py-2 text-[11.5px] leading-5 text-ink-3">
               All {consolidation.n} factor-scored book names (P = Portfolio, W = Watchlist). Click any header to sort.
               Highlighted rows = rating would change under Blend 70/30. Rank move = 41-pt rank minus blend rank
               (positive = the blend ranks it higher); hover for the exact ranks. Names without an overlay are
@@ -734,39 +746,40 @@ export default function FactorLabPage() {
             </div>
           </>
         )}
-      </div>
+      </section>
 
       {/* ── Phase C: four-way IC validation ── */}
-      <div className="mt-8 rounded-card border border-line bg-surface p-4">
-        <div className="flex flex-wrap items-baseline justify-between gap-2">
-          <h2 className="text-sm font-semibold text-ink">Validation — which lens predicts forward returns?</h2>
-          {validation && validation.dataDays > 0 && (
-            <span className="text-[11px] text-ink-3">
-              {validation.dataDays} day{validation.dataDays === 1 ? "" : "s"} of history · {validation.tickers} names · since {validation.firstDate}
-            </span>
-          )}
+      <section className="panel">
+        <div className="panel-h">
+          <span className="t">Validation</span>
+          <span className="m">
+            which lens predicts forward returns?
+            {validation && validation.dataDays > 0 && (
+              <> · {validation.dataDays} day{validation.dataDays === 1 ? "" : "s"} of history · {validation.tickers} names · since {validation.firstDate}</>
+            )}
+          </span>
         </div>
-        <p className="mt-1 max-w-3xl text-xs text-ink-2">
+        <p className="border-b border-line-soft px-3.5 py-2 text-[11.5px] leading-5 text-ink-3">
           Mean Spearman rank IC of each lens vs realized forward returns, from the nightly point-in-time log.
           Positive = higher-ranked names outperformed. This table is what earns the blend weights — no
           integration happens until it says so.
         </p>
 
         {!validation ? (
-          <div className="mt-3"><SkeletonTable rows={5} cols={5} /></div>
+          <div className="p-3.5"><SkeletonTable rows={5} cols={5} /></div>
         ) : (
           <>
-            <div className="mt-2 text-xs text-ink-2">{validation.note}</div>
+            <div className="px-3.5 py-2 text-[12.5px] leading-[1.5] text-ink-2">{validation.note}</div>
             {validation.horizons.some((h) => Object.keys(h.lenses).length > 0) && (
-              <div className="mt-3 overflow-x-auto">
-                <table className="w-full max-w-2xl border-collapse text-sm">
+              <div className="tbl-wrap border-t border-line-soft">
+                <table className="data-table max-w-2xl">
                   <thead>
-                    <tr className="border-b border-line text-left text-xs text-ink-3">
-                      <th className="py-2 pr-3">Lens</th>
+                    <tr>
+                      <th className="pl-3.5">Lens</th>
                       {validation.horizons.map((h) => (
-                        <th key={h.horizon} className="py-2 pr-3 text-right">{h.horizon} IC</th>
+                        <th key={h.horizon} className="n">{h.horizon} IC</th>
                       ))}
-                      <th className="py-2 text-right">obs</th>
+                      <th className="n pr-3.5">obs</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -775,20 +788,20 @@ export default function FactorLabPage() {
                       if (cells.every((c) => !c)) return null;
                       const maxObs = Math.max(...cells.map((c) => c?.nDates ?? 0));
                       return (
-                        <tr key={lens} className="border-b border-line/60">
-                          <td className="py-2 pr-3 text-ink">{LENS_LABEL[lens]}</td>
+                        <tr key={lens}>
+                          <td className="pl-3.5 text-ink">{LENS_LABEL[lens]}</td>
                           {cells.map((c, i) => (
-                            <td key={i} className="py-2 pr-3 text-right font-mono">
+                            <td key={i} className="n">
                               {c ? (
                                 <span className={c.meanIC > 0.02 ? "text-pos" : c.meanIC < -0.02 ? "text-neg" : "text-ink-2"} title={`std ${c.icStd} · t ${c.tStat ?? "—"} · avg ${c.avgNames} names`}>
                                   {c.meanIC > 0 ? "+" : ""}{c.meanIC.toFixed(3)}
                                 </span>
                               ) : (
-                                <span className="text-ink-3">—</span>
+                                <span className="text-ink-faint">—</span>
                               )}
                             </td>
                           ))}
-                          <td className="py-2 text-right text-xs text-ink-3">{maxObs || "—"}</td>
+                          <td className="n pr-3.5 text-ink-3">{maxObs || "—"}</td>
                         </tr>
                       );
                     })}
@@ -798,7 +811,7 @@ export default function FactorLabPage() {
             )}
           </>
         )}
-      </div>
+      </section>
     </div>
   );
 }

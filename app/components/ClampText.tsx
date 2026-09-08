@@ -1,54 +1,36 @@
 "use client";
 
-import { useState } from "react";
-
 /**
- * Collapsible long-form text. AI-generated brief paragraphs (composite / credit
- * / volatility / breadth / sector / contrarian / hedging analysis) can run
- * several sentences; by default we clamp them to a few lines to keep the page
- * compact and let the reader expand the ones they care about. The FULL text is
- * always preserved — this is purely a display affordance, no content is lost.
+ * Long-form text block.
  *
- * The toggle only appears when the text is long enough to actually overflow
- * (char-length heuristic — avoids a useless "Show more" on a one-liner and
- * keeps this render-pure, no layout-measuring effect).
+ * This used to clamp AI prose to a few lines behind a "Show more" toggle. That
+ * was wrong twice over: the sections these paragraphs live in are ALREADY
+ * collapsible, so opening one and then being asked to expand again is a second
+ * gate on the same content — and the char-length heuristic that decided
+ * whether to show the toggle fired on paragraphs that fit anyway, so the
+ * button frequently did nothing at all.
+ *
+ * Now it renders the full text. `lines` and `threshold` are accepted and
+ * ignored so the call sites did not have to change in lockstep. Default type
+ * is the workspace's AI-prose size: 12.5px / 1.5 ink-2.
  */
 export function ClampText({
   text,
-  lines = 3,
   className = "",
-  textClassName = "text-sm leading-6 text-ink-2",
-  threshold = 180,
+  textClassName = "text-[12.5px] leading-[1.5] text-ink-2",
 }: {
   text: string | null | undefined;
+  /** @deprecated no longer clamped — accepted so call sites keep compiling. */
   lines?: number;
   className?: string;
   textClassName?: string;
+  /** @deprecated no longer clamped. */
   threshold?: number;
 }) {
-  const [expanded, setExpanded] = useState(false);
   if (!text) return null;
-  const clampable = text.length > threshold;
   return (
     <div className={className}>
-      <p
-        className={textClassName}
-        style={
-          !expanded && clampable
-            ? { display: "-webkit-box", WebkitLineClamp: lines, WebkitBoxOrient: "vertical", overflow: "hidden" }
-            : undefined
-        }
-      >
-        {text}
-      </p>
-      {clampable && (
-        <button
-          onClick={() => setExpanded((v) => !v)}
-          className="mt-1 text-[11px] font-semibold text-accent hover:underline"
-        >
-          {expanded ? "Show less" : "Show more"}
-        </button>
-      )}
+      <p className={textClassName}>{text}</p>
     </div>
   );
 }

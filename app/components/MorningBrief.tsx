@@ -1,5 +1,6 @@
 "use client";
 
+import { usePersistedOpen } from "@/app/lib/useCollapsed";
 import React, { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import type {
   MarketData,
@@ -7,7 +8,6 @@ import type {
   Stock,
   ScoredStock,
   ForwardLookingBundle,
-  ForwardPointBundle,
 } from "@/app/lib/types";
 import { SignalPill } from "./SignalPill";
 import { ClampText } from "./ClampText";
@@ -20,44 +20,10 @@ import { BriefCommandBar } from "./BriefCommandBar";
 import { CollapsibleSection } from "./CollapsibleSection";
 import { BriefGenerationModal } from "./BriefGenerationModal";
 import { MacroBoard } from "./MacroBoard";
-import type { MarketRegimeData, RegimeDirection } from "@/app/lib/market-regime";
+import type { MarketRegimeData } from "@/app/lib/market-regime";
 import { regimeValence } from "@/app/lib/regime-transition";
-import { HORIZONS } from "@/app/lib/horizons";
 import { useStocks } from "@/app/lib/StockContext";
-
-/**
- * Eyebrow-style fold for whole Brief zones (canvas: secondary reads sit one
- * click away). Renders the familiar section eyebrow as a toggle; open/closed
- * persists in pm:ui-prefs. Children render untouched when open.
- */
-function BriefFold({ prefKey, title, meta, id, defaultCollapsed = true, children }: {
-  prefKey: string;
-  title: string;
-  meta?: React.ReactNode;
-  /** Anchor id for the command-bar jump links (e.g. "s-horizon"). */
-  id?: string;
-  defaultCollapsed?: boolean;
-  children: React.ReactNode;
-}) {
-  const { uiPrefs, setUiPref } = useStocks();
-  const collapsed = (uiPrefs[prefKey] ?? (defaultCollapsed ? "1" : "0")) === "1";
-  return (
-    <>
-      <div style={{ scrollMarginTop: "var(--brief-scroll-mt, 132px)" }} id={id} className="mb-2 mt-2">
-        <button
-          onClick={() => setUiPref(prefKey, collapsed ? "0" : "1")}
-          aria-expanded={!collapsed}
-          className="flex items-baseline gap-2.5 text-left cursor-pointer hover:opacity-80 transition-opacity"
-        >
-          <svg className={`h-3 w-3 self-center text-ink-3 transition-transform ${collapsed ? "-rotate-90" : ""}`} fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" /></svg>
-          <h2 className="text-xs font-bold uppercase tracking-[0.22em] text-ink-3">{title}</h2>
-          {meta && <span className="text-[11px] text-ink-faint">{meta}</span>}
-        </button>
-      </div>
-      {!collapsed && children}
-    </>
-  );
-}
+import { AppIcon } from "./AppIcon";
 
 /** Numeric input with an inline save indicator.
  *  Value only persists when the user clicks the save icon (or presses Enter).
@@ -114,17 +80,11 @@ function SaveableNumericInput({
         onClick={handleSave}
         disabled={!isDirty}
         title={isDirty ? "Save changes" : "Saved"}
-        className={`absolute right-2 top-1/2 -translate-y-1/2 flex items-center justify-center w-5 h-5 rounded-full transition-all ${
-          isDirty
-            ? "bg-accent text-white hover:bg-accent shadow-sm cursor-pointer"
-            : "text-pos"
+        className={`absolute right-1.5 top-1/2 grid h-5 w-5 -translate-y-1/2 place-items-center rounded-control transition-colors ${
+          isDirty ? "cursor-pointer bg-accent text-white" : "text-pos"
         }`}
       >
-        {isDirty ? (
-          <svg className="w-3 h-3" fill="none" stroke="currentColor" strokeWidth="3" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" /></svg>
-        ) : (
-          <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" /></svg>
-        )}
+        <AppIcon name="check" size={12} />
       </button>
     </div>
   );
@@ -170,9 +130,9 @@ function SaveableSelect({
         <button
           onClick={() => onSave(value)}
           title="Save changes"
-          className="absolute right-7 top-1/2 -translate-y-1/2 flex items-center justify-center w-5 h-5 rounded-full bg-accent text-white hover:bg-accent shadow-sm cursor-pointer transition-all"
+          className="absolute right-7 top-1/2 grid h-5 w-5 -translate-y-1/2 cursor-pointer place-items-center rounded-control bg-accent text-white"
         >
-          <svg className="w-3 h-3" fill="none" stroke="currentColor" strokeWidth="3" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" /></svg>
+          <AppIcon name="check" size={12} />
         </button>
       )}
     </div>
@@ -217,9 +177,9 @@ function SaveableTextarea({
     return (
       <button
         onClick={() => setOpen(true)}
-        className="w-full rounded-xl border border-dashed border-line bg-surface-2 px-3 py-2.5 text-left text-sm text-ink-3 hover:bg-white hover:border-line transition-all"
+        className="flex w-full items-center gap-1.5 rounded-control border border-dashed border-line bg-surface-2 px-3 py-2.5 text-left text-[12.5px] text-ink-3 transition-colors hover:bg-surface-hover"
       >
-        + Paste {label} report
+        <AppIcon name="plus" size={13} /> Paste {label} report
       </button>
     );
   }
@@ -235,17 +195,17 @@ function SaveableTextarea({
         onBlur={handleSave}
         placeholder={placeholder}
         rows={4}
-        className="w-full rounded-xl border border-line bg-surface-2 px-3 py-2.5 text-sm leading-relaxed focus:bg-white focus:border-accent-border focus:ring-1 focus:ring-accent-border transition-all outline-none resize-y min-h-[80px] max-h-[300px]"
+        className="max-h-[300px] min-h-[80px] w-full resize-y rounded-control border border-line bg-surface px-3 py-2.5 text-[12.5px] leading-relaxed outline-none transition-colors focus:border-accent-border"
       />
       <div className="flex items-center justify-between mt-1">
-        <span className="text-[10px] text-ink-3">
+        <span className="text-[11px] text-ink-3">
           {wordCount > 0 ? `${wordCount} words` : "empty"}
         </span>
         <div className="flex items-center gap-2">
           {isDirty && (
             <button
               onClick={handleSave}
-              className="rounded-full bg-accent px-2 py-0.5 text-[10px] font-bold text-white hover:bg-accent transition-all"
+              className="inline-flex h-6 items-center rounded-control bg-ink px-2.5 text-[11.5px] font-medium text-white transition-opacity hover:opacity-90"
             >
               Save
             </button>
@@ -257,7 +217,7 @@ function SaveableTextarea({
                 onSave("");
                 setOpen(false);
               }}
-              className="text-[10px] text-ink-3 hover:text-neg transition-colors"
+              className="text-[11.5px] text-ink-3 transition-colors hover:text-neg"
               title="Clear report"
             >
               Clear
@@ -269,16 +229,6 @@ function SaveableTextarea({
   );
 }
 
-/**
- * Section wrapper for the Forward View macro-tile categories.
- * Provides a strong, unambiguous visual break between groups:
- *   - Colored left accent bar
- *   - Bold title + one-line subtitle
- *   - Divider between the header and the tile grid
- *   - Subtle panel tint so each bucket reads as its own card
- *
- * Keeps ForwardTile styling unchanged.
- */
 /** One-click "information horizon" toggle for a strategist note. Cycles
  *  unset → Prior close → Pre-mkt on click. Module-scope so it isn't a
  *  render-defined component. */
@@ -303,317 +253,10 @@ function StrategistTimingToggle({
       type="button"
       onClick={() => onChange(cycle[(idx + 1) % cycle.length])}
       title="Information horizon of this note. Click to cycle: unset → Prior close (reflects yesterday's close, has NOT seen the overnight move) → Pre-mkt (published this morning, already digests the overnight tape). The Brief down-weights a prior-close read on a gap day and prefers the fresher horizon when notes conflict."
-      className={`rounded-full border px-2 py-0.5 text-[10px] font-semibold transition-colors hover:opacity-90 ${tone}`}
+      className={`inline-flex h-6 items-center rounded-control border px-2 text-[11px] transition-colors hover:opacity-90 ${tone}`}
     >
       {label}
     </button>
-  );
-}
-
-function BriefSection({
-  title,
-  subtitle,
-  accent,
-  children,
-}: {
-  title: string;
-  subtitle: string;
-  accent: "blue" | "emerald" | "amber" | "rose";
-  children: React.ReactNode;
-}) {
-  const dotMap: Record<typeof accent, string> = {
-    blue: "bg-accent",
-    emerald: "bg-pos",
-    amber: "bg-warn",
-    rose: "bg-neg",
-  };
-  return (
-    <section className="rounded-card border border-line bg-white shadow-sm overflow-hidden">
-      <header className="flex items-baseline gap-2 px-4 pt-3 pb-2">
-        <span className={`inline-block h-2 w-2 rounded-full ${dotMap[accent]}`} />
-        <h3 className="text-sm font-bold tracking-tight text-ink">{title}</h3>
-        <span className="text-xs text-ink-3 truncate">· {subtitle}</span>
-      </header>
-      <div className="border-t border-line-soft px-4 py-3">{children}</div>
-    </section>
-  );
-}
-
-/** Composite pill tone helper for the Market Regime strip. */
-function regimePillClasses(direction: RegimeDirection): string {
-  if (direction === "risk-on") return "border-pos-border bg-pos-soft text-pos";
-  if (direction === "risk-off") return "border-neg-border bg-neg-soft text-neg";
-  return "border-line bg-surface-2 text-ink-2";
-}
-
-/** Format a signed pct number as "+X.X%" / "-X.X%" (or "—" when null). */
-function fmtPct(v: number | null | undefined, digits = 1): string {
-  if (v == null || !isFinite(v)) return "—";
-  return `${v >= 0 ? "+" : ""}${v.toFixed(digits)}%`;
-}
-
-/**
- * Compact Market Regime strip shown above the forward-looking tile grid.
- * Driven entirely by pm:market-regime (Yahoo-derived, deterministic).
- * Composite label on the left, individual signal pills in the middle,
- * cross-asset + global spot/20d moves on the bottom row.
- */
-function MarketRegimeStrip({ regime }: { regime: MarketRegimeData }) {
-  const comp = regime.composite;
-  const label = comp.label;
-  const labelTone: "green" | "red" | "amber" =
-    label === "Risk-On" ? "green" : label === "Risk-Off" ? "red" : "amber";
-  const cross = regime.crossAsset;
-  const global = regime.global;
-  const crossRow: { label: string; body: string }[] = [];
-  if (cross.dxy) crossRow.push({ label: "DXY", body: `${cross.dxy.price.toFixed(2)} · 20d ${fmtPct(cross.dxy.change20dPct)}` });
-  if (cross.tnx) crossRow.push({ label: "10Y", body: `${cross.tnx.price.toFixed(2)}% · 20d ${fmtPct(cross.tnx.change20dPct)}` });
-  if (cross.oil) crossRow.push({ label: "WTI", body: `$${cross.oil.price.toFixed(2)} · 20d ${fmtPct(cross.oil.change20dPct)}` });
-  if (global.stoxx) crossRow.push({ label: "STOXX", body: `${global.stoxx.price.toFixed(0)} · 20d ${fmtPct(global.stoxx.change20dPct)}` });
-  if (global.nikkei) crossRow.push({ label: "Nikkei", body: `${global.nikkei.price.toFixed(0)} · 20d ${fmtPct(global.nikkei.change20dPct)}` });
-
-  return (
-    <div className="mb-5 overflow-hidden rounded-card border border-line bg-white/80 p-3 sm:p-4">
-      <div className="mb-3 flex flex-wrap items-start justify-between gap-2 sm:gap-3">
-        <div className="flex flex-wrap items-center gap-2">
-          <span className="text-[10px] font-bold uppercase tracking-wider text-ink-3">Market Regime</span>
-          <SignalPill tone={labelTone}>{label}</SignalPill>
-          <span className="text-xs text-ink-3">
-            {comp.score}/{comp.total} risk-on signals
-          </span>
-        </div>
-        <span
-          className="text-[10px] text-ink-3"
-          title={`Computed from Yahoo Finance at ${regime.computedAt}`}
-        >
-          Yahoo-derived · cached 30m
-        </span>
-      </div>
-
-      {comp.signals.length > 0 && (
-        <div className="mb-3 flex flex-wrap gap-1 sm:gap-1.5">
-          {comp.signals.map((s, i) => (
-            <span
-              key={i}
-              className={`inline-flex max-w-full items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] sm:gap-1.5 sm:px-2.5 sm:py-1 sm:text-[11px] ${regimePillClasses(s.direction)}`}
-              title={s.detail}
-            >
-              <span className="truncate font-semibold">{s.name}</span>
-              <span className="truncate opacity-70">· {s.detail}</span>
-            </span>
-          ))}
-        </div>
-      )}
-
-      {/* Horizon-projected composites (1-3M / 3-6M / 6-12M, weighted 50/30/20).
-          Renders only when the cached blob has the new `horizons` field; older
-          snapshots silently skip and the rest of the strip is unaffected. */}
-      {regime.horizons && (
-        <div className="mb-3 border-t border-line-soft pt-2">
-          <div className="flex flex-wrap items-center gap-1 sm:gap-1.5">
-            <span className="mr-1 text-[10px] font-bold uppercase tracking-wider text-ink-3">By Horizon</span>
-            {HORIZONS.map((h) => {
-              const b = regime.horizons!.byHorizon[h.id];
-              const empty = b.total === 0;
-              const tone: "green" | "red" | "amber" = empty
-                ? "amber"
-                : b.label_ === "Risk-On" ? "green" : b.label_ === "Risk-Off" ? "red" : "amber";
-              return (
-                <span
-                  key={h.id}
-                  className={`inline-flex max-w-full items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] sm:gap-1.5 sm:px-2.5 sm:py-1 sm:text-[11px] ${
-                    empty ? "border-line bg-surface-2 text-ink-3" : regimePillClasses(
-                      tone === "green" ? "risk-on" : tone === "red" ? "risk-off" : "neutral"
-                    )
-                  }`}
-                  title={
-                    empty
-                      ? `${h.description} · No signals available yet.`
-                      : `${h.description}\n\n${b.signals.map((s) => `• ${s.name}: ${s.detail}`).join("\n")}`
-                  }
-                >
-                  <span className="font-semibold">{h.shortLabel}</span>
-                  <span className="opacity-70">·</span>
-                  <span className="font-bold">{empty ? "—" : b.label_}</span>
-                  {!empty && (
-                    <span className="font-mono opacity-70">{b.riskOn}↑ {b.riskOff}↓ <span className="opacity-60">/ {b.total}</span></span>
-                  )}
-                  <span className="text-[10px] opacity-50">×{Math.round(h.weight * 100)}%</span>
-                </span>
-              );
-            })}
-          </div>
-          {isFinite(regime.horizons.weightedScore) && (
-            <div className="mt-2 text-[10px] text-ink-3 sm:text-right">
-              Weighted: <span className="font-semibold text-ink-2">{regime.horizons.weightedLabel}</span>{" "}
-              <span className="font-mono opacity-70">
-                ({regime.horizons.weightedScore >= 0 ? "+" : ""}
-                {regime.horizons.weightedScore.toFixed(2)})
-              </span>
-            </div>
-          )}
-        </div>
-      )}
-
-      {crossRow.length > 0 && (
-        <div className="flex flex-wrap gap-x-4 gap-y-1 pt-2 border-t border-line-soft text-[11px] text-ink-3">
-          {crossRow.map((r, i) => (
-            <span key={i}>
-              <span className="font-semibold text-ink-2">{r.label}</span>{" "}
-              <span className="font-mono">{r.body}</span>
-            </span>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
-
-/** Compact tile for a single forward-looking data point with source link.
- *  Shows value, a week-over-week delta if `previous` is set, the source
- *  badge that opens the underlying page in a new tab, and a methodology
- *  note the user can hover for full provenance. */
-// Horizon chip metadata for ForwardTile. Colors mirror the Forward View
-// horizon cards (tactical=blue, cyclical=emerald, structural=violet) so
-// the same visual language carries across the Brief.
-const HORIZON_CHIP: Record<"tactical" | "cyclical" | "structural", { label: string; cls: string; full: string }> = {
-  tactical:  { label: "1–3M",  cls: "border-accent-border bg-accent-soft text-accent",       full: "Tactical · 1–3M" },
-  cyclical:  { label: "3–6M",  cls: "border-pos-border bg-pos-soft text-pos", full: "Cyclical · 3–6M" },
-  structural:{ label: "6–12M", cls: "border-violet-soft bg-violet-soft text-violet",   full: "Structural · 6–12M" },
-};
-
-function ForwardTile({
-  label,
-  point,
-  unit = "",
-  deltaUnit,
-  deltaPeriod = "wk/wk",
-  invertDeltaColor = false,
-  horizon,
-}: {
-  label: string;
-  point: ForwardPointBundle | undefined;
-  unit?: string;
-  deltaUnit?: "bps" | "pct" | "raw" | "pp";
-  deltaPeriod?: "wk/wk" | "mo/mo";
-  invertDeltaColor?: boolean;
-  horizon?: "tactical" | "cyclical" | "structural";
-}) {
-  const available = point && point.value != null;
-  let deltaStr: string | null = null;
-  let deltaPositive: boolean | null = null;
-  if (available && point!.previous != null) {
-    const cur = Number(point!.value);
-    const prev = Number(point!.previous);
-    if (!isNaN(cur) && !isNaN(prev)) {
-      if (deltaUnit === "pct") {
-        if (prev !== 0) {
-          const d = ((cur - prev) / prev) * 100;
-          deltaPositive = d >= 0;
-          deltaStr = `${d >= 0 ? "+" : ""}${d.toFixed(1)}% ${deltaPeriod}`;
-        }
-      } else if (deltaUnit === "bps") {
-        const d = cur - prev;
-        deltaPositive = d >= 0;
-        deltaStr = `${d >= 0 ? "+" : ""}${d.toFixed(0)}bps ${deltaPeriod}`;
-      } else if (deltaUnit === "raw") {
-        const d = cur - prev;
-        deltaPositive = d >= 0;
-        deltaStr = `${d >= 0 ? "+" : ""}${d.toFixed(2)} ${deltaPeriod}`;
-      } else if (deltaUnit === "pp") {
-        // Percentage-point change — used for breadth where both current
-        // and prior are themselves percentages of the index.
-        const d = cur - prev;
-        deltaPositive = d >= 0;
-        deltaStr = `${d >= 0 ? "+" : ""}${d.toFixed(1)}% ${deltaPeriod}`;
-      }
-    }
-  }
-  const deltaColor =
-    deltaPositive == null
-      ? "text-ink-3"
-      : (invertDeltaColor ? !deltaPositive : deltaPositive)
-      ? "text-pos"
-      : "text-neg";
-
-  // Map the ForwardPoint status to a LiveStatusBadge status. "stale" also
-  // renders as the amber Stale badge so the user sees at a glance that a
-  // FRED series hasn't refreshed. A helpful reason tooltip is attached in
-  // each case so the user knows WHY the tile is in that state.
-  const badgeStatus: LiveStatus | undefined = !point
-    ? undefined
-    : point.status === "stale"
-    ? "failed"
-    : point.status;
-  const badgeReason = !point
-    ? undefined
-    : point.status === "stale"
-    ? `${point.sourceLabel} data is older than 5 days (latest observation ${point.asOf}). The source may not have refreshed yet.`
-    : point.status === "not-configured"
-    ? point.note ?? "Source requires additional configuration — showing manual value."
-    : point.status === "failed"
-    ? point.note ?? `${point.sourceLabel} fetch failed — value is unavailable.`
-    : `${point.sourceLabel} · fetched successfully${point.asOf ? " (" + point.asOf + ")" : ""}`;
-
-  return (
-    <div className="rounded-card border border-line-soft bg-surface-2/60 p-3 md:p-4">
-      <div className="flex items-start justify-between gap-2 mb-1">
-        <div className="flex items-center gap-1.5 min-w-0 flex-wrap">
-          <span className="text-[11px] font-semibold uppercase tracking-wider text-ink-3">
-            {label}
-          </span>
-          {horizon && (
-            <span
-              className={`inline-flex items-center rounded-full border px-1.5 py-px text-[9px] font-bold uppercase tracking-wider ${HORIZON_CHIP[horizon].cls}`}
-              title={HORIZON_CHIP[horizon].full}
-            >
-              {HORIZON_CHIP[horizon].label}
-            </span>
-          )}
-        </div>
-        <div className="flex items-center gap-1.5 shrink-0">
-          <LiveStatusBadge status={badgeStatus} reason={badgeReason} />
-          {point?.source && (
-            <a
-              href={point.source}
-              target="_blank"
-              rel="noopener noreferrer"
-              title={`${point.sourceLabel}${point.note ? " — " + point.note : ""}`}
-              className="text-accent hover:text-accent transition-colors"
-            >
-              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
-              </svg>
-            </a>
-          )}
-        </div>
-      </div>
-      <div className="text-2xl font-bold text-ink leading-tight">
-        {available ? (
-          <>
-            {point!.value}
-            {unit && <span className="text-sm font-normal text-ink-3 ml-1">{unit}</span>}
-          </>
-        ) : (
-          <span className="text-base font-normal text-ink-3">N/A</span>
-        )}
-      </div>
-      {deltaStr ? (
-        <div className={`text-xs font-semibold mt-0.5 ${deltaColor}`}>{deltaStr}</div>
-      ) : available && deltaUnit && point?.previous == null ? (
-        <div
-          className="text-xs font-medium mt-0.5 text-ink-3"
-          title="Prior snapshot not yet in history cache. Deltas will populate as subsequent refreshes accumulate."
-        >
-          {deltaPeriod ?? "wk/wk"} building…
-        </div>
-      ) : null}
-      {point?.sourceLabel && (
-        <div className="text-[10px] text-ink-3 mt-1 truncate" title={point.note}>
-          {point.sourceLabel}
-        </div>
-      )}
-    </div>
   );
 }
 
@@ -636,8 +279,8 @@ function LiveStatusBadge({
   if (!status) return null;
   if (status === "live") {
     return (
-      <span className="rounded-full bg-pos-soft px-1.5 py-0.5 text-[9px] font-bold text-pos uppercase leading-none">
-        Live
+      <span className="inline-flex items-center gap-1 text-[11px] text-ink-3">
+        <span className="dot bg-pos" aria-hidden /> Live
       </span>
     );
   }
@@ -645,18 +288,18 @@ function LiveStatusBadge({
     return (
       <span
         title={reason ?? "Source not configured — manual value shown"}
-        className="rounded-full bg-surface-2 px-1.5 py-0.5 text-[9px] font-bold text-ink-3 uppercase leading-none cursor-help"
+        className="inline-flex cursor-help items-center gap-1 text-[11px] text-ink-3"
       >
-        Manual
+        <span className="dot bg-ink-faint" aria-hidden /> Manual
       </span>
     );
   }
   return (
     <span
       title={reason ?? "Auto-fetch failed — last saved value shown"}
-      className="rounded-full bg-warn-soft px-1.5 py-0.5 text-[9px] font-bold text-warn uppercase leading-none cursor-help"
+      className="inline-flex cursor-help items-center gap-1 text-[11px] text-warn"
     >
-      Stale
+      <span className="dot bg-warn" aria-hidden /> Stale
     </span>
   );
 }
@@ -669,6 +312,18 @@ type Props = {
   scoredStocks: ScoredStock[];
   onBriefGenerated: (brief: MorningBriefType) => void;
   onUpdateMarketData: (updates: Partial<MarketData>) => void;
+  /**
+   * "summary" (the Brief page since Sept 2026): the deterministic
+   * DailySummaryView is rendered in the `summary` slot directly under the
+   * command bar, and the legacy Decide / Act sections are NOT rendered —
+   * their tiles (hedging, cash, earnings, do-today, risk flags) all live in
+   * the summary now. Board / Horizons / Narrative folds and Daily Input mode
+   * are untouched. "full" keeps the previous layout verbatim.
+   */
+  variant?: "full" | "summary";
+  summary?: React.ReactNode;
+  /** Rail entries for the command bar in summary mode. */
+  sections?: { id: string; label: string }[];
 };
 
 export function MorningBrief({
@@ -679,6 +334,9 @@ export function MorningBrief({
   scoredStocks,
   onBriefGenerated,
   onUpdateMarketData,
+  variant = "full",
+  summary,
+  sections,
 }: Props) {
   const [generating, setGenerating] = useState(false);
   // Modal visibility is separate from `generating` so "Run in background"
@@ -840,7 +498,7 @@ export function MorningBrief({
   // Which view is showing: the generated "brief" (default) or the "input" form.
   const [briefMode, setBriefMode] = useState<"brief" | "input">("brief");
   // Catalyst watch — collapse a long event list to keep the brief uncluttered.
-  const [catalystExpanded, setCatalystExpanded] = useState(false);
+  const [catalystExpanded, toggleCatalyst] = usePersistedOpen("brief.catalyst.expanded", false);
   const [error, setError] = useState("");
   const [liveLoading, setLiveLoading] = useState(false);
   const [liveFields, setLiveFields] = useState<Record<string, LiveStatus>>({});
@@ -1427,18 +1085,19 @@ export function MorningBrief({
         onRunInBackground={() => setGenModalOpen(false)}
         hasPreviousBrief={Boolean(brief?.bottomLine)}
       />
+      {/* The regime read, its score and the section rail moved into the
+          decision panel + rail shell; the command bar now carries only the
+          date line, the Brief / Daily-input toggle and Regenerate. */}
       <BriefCommandBar
         date={brief?.date || marketData.date}
         generatedAt={brief?.generatedAt}
-        regime={brief?.marketRegime}
-        regimeScore={brief?.regimeScore}
-        regimeSignals={brief?.regimeSignals}
-        boundaryGap={regimeTransition?.boundaryGap}
         briefMode={briefMode}
         onModeChange={setBriefMode}
         onRegenerate={() => generateBrief(true)}
         generating={generating}
       />
+
+      {variant === "summary" && briefMode === "brief" && summary}
 
       {briefMode === "input" && (() => {
         /* ── Daily Input, in the design's card language. Every control,
@@ -1503,12 +1162,12 @@ export function MorningBrief({
           return ts ? { label: ts.slice(5, 10), cls: "text-warn" } : { label: "empty", cls: "text-ink-faint" };
         };
         const Ext = ({ href, title }: { href: string; title: string }) => (
-          <a href={href} target="_blank" rel="noopener noreferrer" className="text-accent transition-colors" title={title}>
-            <svg className="h-3 w-3" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
+          <a href={href} target="_blank" rel="noopener noreferrer" className="shrink-0 text-accent transition-colors" title={title}>
+            <AppIcon name="external" size={13} />
           </a>
         );
         const breadthInputCls =
-          "w-24 rounded-lg border border-line bg-surface-2 px-2 py-1.5 text-right font-mono text-sm font-semibold text-ink outline-none focus:border-accent-border focus:bg-white focus:ring-1 focus:ring-accent-border transition-all";
+          "h-7 w-24 rounded-control border border-line bg-surface px-2.5 text-right font-mono text-[12.5px] text-ink outline-none transition-colors focus:border-accent-border";
         const words = (s?: string) => (s ? s.trim().split(/\s+/).filter(Boolean).length : 0);
         const ring = (2 * Math.PI * 15).toFixed(2);
 
@@ -1521,14 +1180,14 @@ export function MorningBrief({
               const fieldLabel: Record<string, string> = { putCall: "Put/Call", termStructure: "VIX Term Structure" };
               if (marketDataError) {
                 return (
-                  <div className="mb-4 rounded-xl border border-warn-border bg-warn-soft px-4 py-3 text-xs text-warn">
-                    <strong className="font-semibold">Auto-fetch unavailable:</strong> {marketDataError}
+                  <div className="rounded-card border border-warn-border bg-warn-soft px-3.5 py-2.5 text-[12px] text-warn">
+                    <strong className="font-medium">Auto-fetch unavailable:</strong> {marketDataError}
                   </div>
                 );
               }
               if (failedKeys.length > 0 || notConfiguredKeys.length > 0) {
                 return (
-                  <div className="mb-4 space-y-1 rounded-xl border border-warn-border bg-warn-soft px-4 py-3 text-xs text-warn">
+                  <div className="space-y-1 rounded-card border border-warn-border bg-warn-soft px-3.5 py-2.5 text-[12px] text-warn">
                     {failedKeys.length > 0 && (
                       <div><strong className="font-semibold">Stale values shown for:</strong> {failedKeys.map((k) => fieldLabel[k] ?? k).join(", ")}. Hover each badge for the specific reason.</div>
                     )}
@@ -1542,7 +1201,7 @@ export function MorningBrief({
             })()}
 
             {/* ── Progress card ── */}
-            <section className="mb-4 rounded-card border border-line bg-white p-4 shadow-sm">
+            <section className="panel p-3.5">
               <div className="flex items-center gap-3.5">
                 <div className="relative h-12 w-12 shrink-0">
                   <svg viewBox="0 0 36 36" className="h-12 w-12 -rotate-90">
@@ -1554,13 +1213,13 @@ export function MorningBrief({
                       strokeDashoffset={(Number(ring) * (1 - (marked ? 9 : done) / 9)).toFixed(2)}
                     />
                   </svg>
-                  <span className="absolute inset-0 flex items-center justify-center font-mono text-[11px] font-bold text-ink">
+                  <span className="absolute inset-0 flex items-center justify-center font-mono text-[11px] font-medium text-ink">
                     {marked ? 9 : done}/9
                   </span>
                 </div>
                 <div className="min-w-0">
-                  <div className="text-base font-semibold text-ink">Daily input</div>
-                  <div className="truncate text-xs text-ink-3">
+                  <div className="text-[13px] font-semibold text-ink">Daily input</div>
+                  <div className="truncate text-[11.5px] text-ink-3">
                     {liveLoading
                       ? "Fetching live data…"
                       : marked
@@ -1574,31 +1233,31 @@ export function MorningBrief({
               <div className="mt-3 flex gap-2">
                 <button
                   onClick={() => setUiPref("briefInputMarked", marked ? "" : today)}
-                  className="flex-1 rounded-control bg-ink px-4 py-2 text-sm font-semibold text-white transition-opacity hover:opacity-90"
+                  className="inline-flex h-7 flex-1 items-center justify-center rounded-control bg-ink px-4 text-[12.5px] font-medium text-white transition-opacity hover:opacity-90"
                   title="Acknowledge today's input as complete — anything still empty is intentionally skipped. Resets automatically tomorrow."
                 >
                   {marked ? "Unmark" : "Mark all entered"}
                 </button>
                 <button
                   onClick={() => setUiPref("briefInputMarked", "")}
-                  className="rounded-control border border-line bg-white px-4 py-2 text-sm font-semibold text-ink-2 hover:text-ink"
+                  className="inline-flex h-7 items-center rounded-control border border-line bg-surface px-4 text-[12.5px] text-ink-2 transition-colors hover:bg-surface-hover"
                 >
                   Reset
                 </button>
               </div>
             </section>
 
-            <div className="grid gap-4 lg:grid-cols-2">
+            <div className="grid gap-3.5 lg:grid-cols-2">
               {/* ── BREADTH ── */}
-              <section className="overflow-hidden rounded-card border border-line bg-white shadow-sm">
-                <div className="flex items-baseline gap-2 border-b border-line bg-surface-2/50 px-4 py-2.5">
-                  <span className="text-[11px] font-bold uppercase tracking-[0.18em] text-ink-3">Breadth</span>
-                  <span className="text-[11px] text-ink-3">from your Barchart / BCMM read</span>
-                  <span className="ml-auto font-mono text-[10px] text-ink-faint">7 fields</span>
+              <section className="panel">
+                <div className="panel-h">
+                  <span className="t">Breadth</span>
+                  <span className="m">from your Barchart / BCMM read</span>
+                  <span className="ml-auto font-mono text-[11px] text-ink-faint">7 fields</span>
                   <button
                     type="button"
                     onClick={clearAllBreadth}
-                    className="rounded border border-line px-1.5 py-0.5 text-[10px] font-semibold text-ink-3 transition-colors hover:border-neg-border hover:text-neg"
+                    className="inline-flex h-7 shrink-0 items-center rounded-control border border-line bg-surface px-2.5 text-[12.5px] text-ink-2 transition-colors hover:border-neg-border hover:text-neg"
                     title="Clear every manual breadth value and its freshness tag."
                   >
                     Clear
@@ -1617,8 +1276,8 @@ export function MorningBrief({
                   ).map(([field, label, unit, href, ph, step]) => {
                     const st = rowState(field);
                     return (
-                      <div key={field} className="flex items-center gap-2 px-4 py-2.5">
-                        <span className="text-sm text-ink">{label}{unit && <span className="ml-1 text-ink-faint">{unit}</span>}</span>
+                      <div key={field} className="flex items-center gap-2 px-3.5 py-2">
+                        <span className="text-[12.5px] text-ink">{label}{unit && <span className="ml-1 text-ink-faint">{unit}</span>}</span>
                         <Ext href={href} title={`Open source: ${href}`} />
                         <input
                           type="number" step={step} min={0} placeholder={ph}
@@ -1626,13 +1285,13 @@ export function MorningBrief({
                           onChange={(e) => updateBreadthField(field, e.target.value)}
                           className={`ml-auto ${breadthInputCls}`}
                         />
-                        <span className={`w-11 shrink-0 text-right text-[11px] font-semibold ${st.cls}`}>{st.label}</span>
+                        <span className={`w-11 shrink-0 text-right text-[11px] ${st.cls}`}>{st.label}</span>
                       </div>
                     );
                   })}
                   {/* Up / down volume — one row, two boxes (only the ratio matters). */}
-                  <div className="flex items-center gap-2 px-4 py-2.5">
-                    <span className="text-sm text-ink">Up / down volume <span className="ml-1 text-ink-faint">bn</span></span>
+                  <div className="flex items-center gap-2 px-3.5 py-2">
+                    <span className="text-[12.5px] text-ink">Up / down volume <span className="ml-1 text-ink-faint">bn</span></span>
                     <Ext href={BC.broad} title={`Open source: ${BC.broad}`} />
                     <input
                       type="number" step="0.01" min={0} placeholder="0.90"
@@ -1648,24 +1307,24 @@ export function MorningBrief({
                       className={`${breadthInputCls} !w-[4.5rem]`}
                       title="NYSE declining volume in billions — same unit as the up box."
                     />
-                    <span className={`w-11 shrink-0 text-right text-[11px] font-semibold ${volDone ? "text-pos" : bo.upVolume != null || bo.downVolume != null ? "text-warn" : "text-ink-faint"}`}>
+                    <span className={`w-11 shrink-0 text-right text-[11px] ${volDone ? "text-pos" : bo.upVolume != null || bo.downVolume != null ? "text-warn" : "text-ink-faint"}`}>
                       {volDone ? "saved" : bo.upVolume != null || bo.downVolume != null ? "partial" : "empty"}
                     </span>
                   </div>
                   {/* Entry date — must equal today to be used by the brief. */}
-                  <div className="flex items-center gap-2 px-4 py-2.5">
-                    <span className="text-sm text-ink-2">Entry date</span>
+                  <div className="flex items-center gap-2 px-3.5 py-2">
+                    <span className="text-[12.5px] text-ink-2">Entry date</span>
                     <input
                       type="date"
                       value={bo.date ?? today}
                       onChange={(e) => onUpdateMarketData({ breadthOverride: { ...marketData.breadthOverride, date: e.target.value } })}
-                      className="ml-auto rounded-lg border border-line bg-surface-2 px-2 py-1 font-mono text-[12px] text-ink-2 outline-none transition-all focus:border-accent-border focus:ring-1 focus:ring-accent-border"
+                      className="ml-auto h-7 rounded-control border border-line bg-surface px-2.5 font-mono text-[12.5px] text-ink-2 outline-none transition-colors focus:border-accent-border"
                       title="Must equal today's UTC date to be used. Earlier dates are treated as 'not entered today'."
                     />
                   </div>
                 </div>
-                <div className="flex flex-wrap items-center gap-x-3 gap-y-1 border-t border-line bg-surface-2/50 px-4 py-2 text-[10px] text-ink-3">
-                  <span className="font-semibold uppercase tracking-wider">Sources (open once):</span>
+                <div className="flex flex-wrap items-center gap-x-3 gap-y-1 border-t border-line-soft px-3.5 py-2 text-[11px] text-ink-3">
+                  <span>Sources (open once)</span>
                   <a href={BC.broad} target="_blank" rel="noopener noreferrer" className="text-accent hover:underline">Barchart Momentum</a>
                   <a href={BC.sp200} target="_blank" rel="noopener noreferrer" className="text-accent hover:underline">$S5TH</a>
                   <a href={BC.sp50} target="_blank" rel="noopener noreferrer" className="text-accent hover:underline">$S5FI</a>
@@ -1674,19 +1333,19 @@ export function MorningBrief({
                 </div>
               </section>
 
-              <div className="flex flex-col gap-4">
+              <div className="flex flex-col gap-3.5">
                 {/* ── CONTRARIAN ── */}
-                <section className="overflow-hidden rounded-card border border-line bg-white shadow-sm">
-                  <div className="flex items-baseline gap-2 border-b border-line bg-surface-2/50 px-4 py-2.5">
-                    <span className="text-[11px] font-bold uppercase tracking-[0.18em] text-ink-3">Contrarian</span>
-                    <SignalPill tone="green">INVERTED</SignalPill>
-                    <span className="ml-auto font-mono text-[10px] text-ink-faint">2 fields</span>
+                <section className="panel">
+                  <div className="panel-h">
+                    <span className="t">Contrarian</span>
+                    <span className="m">inverted — a washed-out read is the bullish one</span>
+                    <span className="ml-auto font-mono text-[11px] text-ink-faint">2 fields</span>
                   </div>
                   <div className="divide-y divide-line-soft">
-                    <div className="flex items-center gap-2 px-4 py-2.5">
-                      <span className="text-sm text-ink">S&amp;P oscillator</span>
-                      <a href="https://app.marketedge.com/#!/markets" target="_blank" rel="noopener noreferrer" className="text-[11px] text-accent hover:underline" title="MarketEdge S&P Oscillator">MarketEdge ↗</a>
-                      <span className="text-[10px] text-ink-faint">{marketData.spOscillator < 0 ? "oversold · bullish" : marketData.spOscillator > 0 ? "overbought · bearish" : "neutral"}</span>
+                    <div className="flex items-center gap-2 px-3.5 py-2">
+                      <span className="text-[12.5px] text-ink">S&amp;P oscillator</span>
+                      <a href="https://app.marketedge.com/#!/markets" target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-[11px] text-accent hover:underline" title="MarketEdge S&P Oscillator">MarketEdge <AppIcon name="external" size={11} /></a>
+                      <span className="text-[11px] text-ink-faint">{marketData.spOscillator < 0 ? "oversold · bullish" : marketData.spOscillator > 0 ? "overbought · bearish" : "neutral"}</span>
                       <SaveableNumericInput
                         savedValue={marketData.spOscillator}
                         onSave={(n) => onUpdateMarketData({ spOscillator: n })}
@@ -1694,9 +1353,9 @@ export function MorningBrief({
                         inputClassName={`ml-auto ${breadthInputCls}`}
                       />
                     </div>
-                    <div className="flex items-center gap-2 px-4 py-2.5">
-                      <span className="text-sm text-ink">Put / call</span>
-                      <a href="https://www.cboe.com/us/options/market_statistics/daily/" target="_blank" rel="noopener noreferrer" className="text-[11px] text-accent hover:underline" title="CBOE Total Put/Call">CBOE ↗</a>
+                    <div className="flex items-center gap-2 px-3.5 py-2">
+                      <span className="text-[12.5px] text-ink">Put / call</span>
+                      <a href="https://www.cboe.com/us/options/market_statistics/daily/" target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-[11px] text-accent hover:underline" title="CBOE Total Put/Call">CBOE <AppIcon name="external" size={11} /></a>
                       <SaveableNumericInput
                         savedValue={marketData.putCall}
                         onSave={(n) => onUpdateMarketData({ putCall: n })}
@@ -1704,7 +1363,7 @@ export function MorningBrief({
                       />
                     </div>
                   </div>
-                  <div className="grid grid-cols-1 gap-3 border-t border-line-soft px-4 py-3 sm:grid-cols-2">
+                  <div className="grid grid-cols-1 gap-3 border-t border-line-soft px-3.5 py-3 sm:grid-cols-2">
                     <div>
                       <ImageUpload
                         section="spOscillator"
@@ -1713,7 +1372,7 @@ export function MorningBrief({
                         onAdd={addAttachment}
                         onRemove={removeAttachment}
                       />
-                      <p className="mt-1 text-[10px] text-ink-3">Oscillator chart (optional) — Claude reads the shape, levels and recent extremes.</p>
+                      <p className="mt-1 text-[11px] text-ink-3">Oscillator chart (optional) — Claude reads the shape, levels and recent extremes.</p>
                     </div>
                     <div>
                       <ImageUpload
@@ -1723,21 +1382,21 @@ export function MorningBrief({
                         onAdd={addAttachment}
                         onRemove={removeAttachment}
                       />
-                      <p className="mt-1 text-[10px] text-ink-3">Newton deck (PDF, optional) — parsed once, cached; relevance decays with age (&lt;14d full weight, 14–45d directional, &gt;45d context only).</p>
+                      <p className="mt-1 text-[11px] text-ink-3">Newton deck (PDF, optional) — parsed once, cached; relevance decays with age (&lt;14d full weight, 14–45d directional, &gt;45d context only).</p>
                     </div>
                   </div>
-                  <p className="border-t border-line-soft px-4 py-2 text-[10px] text-ink-3">
+                  <p className="border-t border-line-soft px-3.5 py-2 text-[11px] text-ink-3">
                     CNN Fear &amp; Greed and AAII are auto-fetched — see Auto-fetched below.
                   </p>
                 </section>
 
                 {/* ── REPORTS DROPBOX ── */}
-                <section className="overflow-hidden rounded-card border border-line bg-white shadow-sm">
-                  <div className="flex items-baseline gap-2 border-b border-line bg-surface-2/50 px-4 py-2.5">
-                    <span className="text-[11px] font-bold uppercase tracking-[0.18em] text-ink-3">Analyst / strategist reports</span>
-                    <span className="text-[11px] text-ink-3">optional</span>
+                <section className="panel">
+                  <div className="panel-h">
+                    <span className="t">Analyst / strategist reports</span>
+                    <span className="m">optional</span>
                   </div>
-                  <div className="px-4 py-3">
+                  <div className="px-3.5 py-3">
                     <ImageUpload
                       section="strategistReports"
                       sectionLabel="Analyst / Strategist Reports"
@@ -1745,38 +1404,38 @@ export function MorningBrief({
                       onAdd={addAttachment}
                       onRemove={removeAttachment}
                     />
-                    <p className="mt-1 text-[10px] text-ink-3">Any sell-side strategy note, economics piece or thematic deck (PDF or screenshot, multiple OK). Parsed once on upload, then cached; same age decay as the Newton deck.</p>
+                    <p className="mt-1 text-[11px] text-ink-3">Any sell-side strategy note, economics piece or thematic deck (PDF or screenshot, multiple OK). Parsed once on upload, then cached; same age decay as the Newton deck.</p>
                   </div>
                 </section>
               </div>
             </div>
 
             {/* ── STRATEGIST NOTES ── */}
-            <section className="mt-4 overflow-hidden rounded-card border border-line bg-white shadow-sm">
-              <div className="flex items-baseline gap-2 border-b border-line bg-surface-2/50 px-4 py-2.5">
-                <span className="text-[11px] font-bold uppercase tracking-[0.18em] text-ink-3">Strategist notes</span>
-                <span className="text-[11px] text-ink-3">copy-paste the daily reports — key takeaways feed the brief</span>
-                <span className="ml-auto font-mono text-[10px] text-ink-faint">{(newtonDone ? 1 : 0) + (leeDone ? 1 : 0)} of 2 today</span>
+            <section className="panel">
+              <div className="panel-h">
+                <span className="t">Strategist notes</span>
+                <span className="m">copy-paste the daily reports — key takeaways feed the brief</span>
+                <span className="ml-auto font-mono text-[11px] text-ink-faint">{(newtonDone ? 1 : 0) + (leeDone ? 1 : 0)} of 2 today</span>
               </div>
-              <div className="grid gap-4 px-4 py-3 md:grid-cols-2">
+              <div className="grid gap-3.5 px-3.5 py-3 md:grid-cols-2">
                 <div>
                   <div className="mb-1 flex flex-wrap items-center gap-1.5">
-                    <label className="text-sm font-semibold text-ink">Mark Newton</label>
-                    <span className="text-[10px] text-ink-3">(Technical Strategy)</span>
+                    <label className="text-[12.5px] font-medium text-ink">Mark Newton</label>
+                    <span className="text-[11px] text-ink-3">(Technical Strategy)</span>
                     <StrategistTimingToggle
                       value={marketData.strategistNotes?.newtonTiming}
                       onChange={(next) =>
                         onUpdateMarketData({ strategistNotes: { ...marketData.strategistNotes, newtonTiming: next } })
                       }
                     />
-                    <span className="ml-auto font-mono text-[10px] text-ink-faint">{words(marketData.strategistNotes?.newton)} words</span>
+                    <span className="ml-auto font-mono text-[11px] text-ink-faint">{words(marketData.strategistNotes?.newton)} words</span>
                     <input
                       type="date"
                       value={marketData.strategistNotes?.newtonDate ?? today}
                       onChange={(e) =>
                         onUpdateMarketData({ strategistNotes: { ...marketData.strategistNotes, newtonDate: e.target.value } })
                       }
-                      className="rounded-lg border border-line bg-surface-2 px-2 py-0.5 text-[11px] text-ink-3 outline-none transition-all focus:border-accent-border focus:ring-1 focus:ring-accent-border"
+                      className="h-7 rounded-control border border-line bg-surface px-2.5 text-[11.5px] text-ink-3 outline-none transition-colors focus:border-accent-border"
                       title="Date this report pertains to"
                     />
                   </div>
@@ -1797,22 +1456,22 @@ export function MorningBrief({
                 </div>
                 <div>
                   <div className="mb-1 flex flex-wrap items-center gap-1.5">
-                    <label className="text-sm font-semibold text-ink">Tom Lee</label>
-                    <span className="text-[10px] text-ink-3">(Head of Research)</span>
+                    <label className="text-[12.5px] font-medium text-ink">Tom Lee</label>
+                    <span className="text-[11px] text-ink-3">(Head of Research)</span>
                     <StrategistTimingToggle
                       value={marketData.strategistNotes?.leeTiming}
                       onChange={(next) =>
                         onUpdateMarketData({ strategistNotes: { ...marketData.strategistNotes, leeTiming: next } })
                       }
                     />
-                    <span className="ml-auto font-mono text-[10px] text-ink-faint">{words(marketData.strategistNotes?.lee)} words</span>
+                    <span className="ml-auto font-mono text-[11px] text-ink-faint">{words(marketData.strategistNotes?.lee)} words</span>
                     <input
                       type="date"
                       value={marketData.strategistNotes?.leeDate ?? today}
                       onChange={(e) =>
                         onUpdateMarketData({ strategistNotes: { ...marketData.strategistNotes, leeDate: e.target.value } })
                       }
-                      className="rounded-lg border border-line bg-surface-2 px-2 py-0.5 text-[11px] text-ink-3 outline-none transition-all focus:border-accent-border focus:ring-1 focus:ring-accent-border"
+                      className="h-7 rounded-control border border-line bg-surface px-2.5 text-[11.5px] text-ink-3 outline-none transition-colors focus:border-accent-border"
                       title="Date this report pertains to"
                     />
                   </div>
@@ -1835,16 +1494,16 @@ export function MorningBrief({
             </section>
 
             {/* ── AUTO-FETCHED ── */}
-            <section className="mt-4 overflow-hidden rounded-card border border-line bg-white shadow-sm">
-              <div className="flex items-baseline gap-2 border-b border-line bg-surface-2/50 px-4 py-2.5">
-                <span className="text-[11px] font-bold uppercase tracking-[0.18em] text-ink-3">Auto-fetched</span>
-                <span className="text-[11px] text-ink-3">nothing to do — shown for confidence</span>
+            <section className="panel">
+              <div className="panel-h">
+                <span className="t">Auto-fetched</span>
+                <span className="m">nothing to do — shown for confidence</span>
               </div>
               <div className="grid grid-cols-2 divide-x divide-line-soft lg:grid-cols-4">
-                <div className="px-4 py-3">
-                  <div className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-ink-3">
+                <div className="px-3.5 py-2.5">
+                  <div className="flex items-center gap-1.5 text-[11px] text-ink-3">
                     VIX term
-                    <a href="http://vixcentral.com" target="_blank" rel="noopener noreferrer" className="text-accent" title="VIX Central">↗</a>
+                    <a href="http://vixcentral.com" target="_blank" rel="noopener noreferrer" className="text-accent" title="VIX Central"><AppIcon name="external" size={11} /></a>
                     <LiveStatusBadge status={liveFields.termStructure} reason={liveErrors.termStructure ?? "Derived from ^VIX3M / ^VIX ratio"} />
                   </div>
                   {/* Manual override select preserved — auto-fetch fills it, the PM can correct it. */}
@@ -1856,42 +1515,42 @@ export function MorningBrief({
                       { value: "Flat", label: "Flat" },
                       { value: "Backwardation", label: "Backwardation" },
                     ]}
-                    selectClassName="mt-1 w-full appearance-none rounded-lg border border-transparent bg-transparent font-mono text-lg font-semibold text-ink outline-none transition-all hover:border-line focus:border-accent-border"
+                    selectClassName="mt-1 h-7 w-full appearance-none rounded-control border border-transparent bg-transparent font-mono text-[13px] font-medium text-ink outline-none transition-colors hover:border-line focus:border-accent-border"
                   />
                 </div>
-                <div className="px-4 py-3">
-                  <div className="text-[10px] font-bold uppercase tracking-wider text-ink-3">Fear &amp; Greed</div>
-                  <div className="mt-1 font-mono text-lg font-semibold text-ink">
+                <div className="px-3.5 py-2.5">
+                  <div className="text-[11px] text-ink-3">Fear &amp; Greed</div>
+                  <div className="mt-1 flex items-baseline gap-1.5 font-mono text-[13px] font-medium text-ink">
                     {activeForward?.fearGreed?.value != null ? Math.round(activeForward.fearGreed.value) : "—"}
-                    <span className="ml-1.5 text-[10px] font-bold text-pos">LIVE</span>
+                    <span className="text-[11px] text-ink-3"><span className="dot bg-pos" aria-hidden /> Live</span>
                   </div>
                 </div>
-                <div className="px-4 py-3">
-                  <div className="text-[10px] font-bold uppercase tracking-wider text-ink-3">AAII</div>
-                  <div className="mt-1 font-mono text-lg font-semibold text-ink">
+                <div className="px-3.5 py-2.5">
+                  <div className="text-[11px] text-ink-3">AAII</div>
+                  <div className="mt-1 flex items-baseline gap-1.5 font-mono text-[13px] font-medium text-ink">
                     {marketData.aaiiBull != null ? `${Math.round(marketData.aaiiBull)}/${Math.round(marketData.aaiiNeutral ?? 0)}/${Math.round(marketData.aaiiBear ?? 0)}` : "—"}
-                    <span className="ml-1.5 text-[10px] font-bold text-pos">LIVE</span>
+                    <span className="text-[11px] text-ink-3"><span className="dot bg-pos" aria-hidden /> Live</span>
                   </div>
                 </div>
-                <div className="px-4 py-3">
-                  <div className="text-[10px] font-bold uppercase tracking-wider text-ink-3">HY / IG OAS</div>
-                  <div className="mt-1 font-mono text-lg font-semibold text-ink">
+                <div className="px-3.5 py-2.5">
+                  <div className="text-[11px] text-ink-3">HY / IG OAS</div>
+                  <div className="mt-1 flex items-baseline gap-1.5 font-mono text-[13px] font-medium text-ink">
                     {activeForward?.hyOasTrend?.value != null ? Math.round(activeForward.hyOasTrend.value) : "—"}
                     {" / "}
                     {activeForward?.igOasTrend?.value != null ? Math.round(activeForward.igOasTrend.value) : "—"}
-                    <span className="ml-1.5 text-[10px] font-bold text-pos">LIVE</span>
+                    <span className="text-[11px] text-ink-3"><span className="dot bg-pos" aria-hidden /> Live</span>
                   </div>
                 </div>
               </div>
             </section>
 
             {/* ── Generate bar ── */}
-            <div className="mt-4 flex flex-wrap items-center gap-3 rounded-card bg-ink px-4 py-3 shadow-card">
+            <div className="flex flex-wrap items-center gap-3 rounded-card bg-ink px-3.5 py-3">
               <div className="min-w-0 text-white">
-                <div className="text-sm font-semibold">
+                <div className="text-[13px] font-semibold">
                   {effectiveMissing.length === 0 ? "Ready to generate" : `${effectiveMissing.length} still missing`}
                 </div>
-                <div className="truncate text-[11px] opacity-70">
+                <div className="truncate text-[11.5px] opacity-70">
                   {effectiveMissing.length === 0
                     ? marked && missing.length > 0
                       ? "marked entered — remaining gaps intentionally skipped"
@@ -1902,7 +1561,7 @@ export function MorningBrief({
               <button
                 onClick={() => generateBrief(true)}
                 disabled={generating}
-                className="ml-auto shrink-0 rounded-control bg-white px-5 py-2.5 text-sm font-semibold text-ink transition-opacity hover:opacity-90 disabled:opacity-50"
+                className="ml-auto inline-flex h-7 shrink-0 items-center rounded-control bg-white px-4 text-[12.5px] font-medium text-ink transition-opacity hover:opacity-90 disabled:opacity-50"
               >
                 {generating ? "Generating…" : "Generate brief"}
               </button>
@@ -1912,18 +1571,20 @@ export function MorningBrief({
       })()}
 
       {error && (
-        <div className="rounded-xl border border-neg-border bg-neg-soft px-4 py-3 text-sm text-neg">
+        <div className="rounded-card border border-neg-border bg-neg-soft px-3.5 py-2.5 text-[12.5px] text-neg">
           {error}
         </div>
       )}
 
       {attachmentsSaveError && (
-        <div className="rounded-xl border border-warn-border bg-warn-soft px-4 py-3 text-sm text-warn">
-          <strong>Screenshots not saved:</strong> {attachmentsSaveError}
+        <div className="rounded-card border border-warn-border bg-warn-soft px-3.5 py-2.5 text-[12.5px] text-warn">
+          <strong className="font-medium">Screenshots not saved:</strong> {attachmentsSaveError}
         </div>
       )}
 
       {briefMode === "brief" && (
+      <>
+      {variant === "full" && (
       <>
       {/* ── Decide: the verdict on the left, four compact decision tiles on the right ── */}
       <div style={{ scrollMarginTop: "var(--brief-scroll-mt, 132px)" }} className="mb-2 mt-2 flex items-baseline gap-2.5" id="s-decide">
@@ -2446,630 +2107,630 @@ export function MorningBrief({
       </section>
         </div>
       </div>
-      {/* ── Board: contrarian gauges + macro tiles ── */}
-      <div style={{ scrollMarginTop: "var(--brief-scroll-mt, 132px)" }} className="mb-2 mt-2 flex items-baseline gap-2.5" id="s-board">
-        <h2 className="text-xs font-bold uppercase tracking-[0.22em] text-ink-3">Board</h2>
-        <span className="text-[11px] text-ink-faint">the macro read, in numbers</span>
-      </div>
-      <div className="space-y-6 ">
-      {/* Macro board: the condensed band/tile grid, now carrying the
-          auditability the old bulky panel had — LIVE/stale status, a verify
-          link to the source, horizon chip and source attribution per tile. */}
-      <MacroBoard
-        fwd={(activeForward ?? null) as never}
-        termStructure={marketData.termStructure}
-        vvix={brief?.hedgeChecklist?.vvix ?? null}
-        asOf={activeForward?.fetchedAt as string | undefined}
-        regime={marketRegime}
-      />
-
-      {/* Sector Rotation — promoted out of the collapsed Narrative accordion to
-          an always-open, full-width tile on the Board, where the rest of the
-          macro read lives. Same content as before (summary, live per-sector
-          heatmap or the leading/lagging fallback, PM implication); it simply no
-          longer needs a click to see. */}
-      {sectorRotation && (
-        <BriefFold prefKey="brief.fold.sectorRotation" title="Sector rotation" meta={brief?.sectorPerformance?.length ? `${brief.sectorPerformance.length} sectors · best → worst` : "best → worst"}>
-        <section className="rounded-card border border-line bg-white shadow-sm">
-          <div className="flex items-center gap-2 border-b border-line px-5 py-3">
-            <span className="text-xs font-bold uppercase tracking-[0.22em] text-ink-3">Sector rotation</span>
-            {brief?.sectorPerformance && brief.sectorPerformance.length > 0 && (
-              <span className="text-[11px] text-ink-3">{brief.sectorPerformance.length} sectors · best → worst</span>
-            )}
-          </div>
-          <div className="px-5 py-4">
-            <ClampText text={sectorRotation.summary} className="mb-4" />
-            {brief?.sectorPerformance && brief.sectorPerformance.length > 0 ? (
-              <div className="grid grid-cols-3 gap-2 sm:grid-cols-6 lg:grid-cols-11">
-                {[...brief.sectorPerformance]
-                  .sort((a, b) => (b.dayPct ?? -Infinity) - (a.dayPct ?? -Infinity))
-                  .map((s) => {
-                    const pos = (s.dayPct ?? 0) >= 0;
-                    return (
-                      <div key={s.etf} className="rounded-lg border border-line-soft bg-surface-2/50 p-2">
-                        <div className="flex items-baseline justify-between gap-1">
-                          <span className="font-mono text-xs font-bold text-ink">{s.etf}</span>
-                          <span className={`font-mono text-xs font-semibold ${s.dayPct == null ? "text-ink-3" : pos ? "text-pos" : "text-neg"}`}>
-                            {s.dayPct == null ? "—" : `${pos ? "+" : ""}${s.dayPct.toFixed(1)}`}
-                          </span>
-                        </div>
-                        <div className="mt-0.5 truncate text-[10px] text-ink-3" title={s.sector}>{s.sector}</div>
-                      </div>
-                    );
-                  })}
-              </div>
-            ) : (
-              <div className="grid gap-4 md:grid-cols-2">
-                <div>
-                  <div className="mb-1.5 text-xs font-bold uppercase tracking-wider text-pos">Leading</div>
-                  {sectorRotation.leading.map((s, i) => (
-                    <div key={i} className="mb-1 flex items-center gap-2 text-sm text-pos"><span>▲</span> <span>{s}</span></div>
-                  ))}
-                </div>
-                <div>
-                  <div className="mb-1.5 text-xs font-bold uppercase tracking-wider text-neg">Lagging</div>
-                  {sectorRotation.lagging.map((s, i) => (
-                    <div key={i} className="mb-1 flex items-center gap-2 text-sm text-neg"><span>▼</span> <span>{s}</span></div>
-                  ))}
-                </div>
-              </div>
-            )}
-            <ClampText text={sectorRotation.pmImplication} className="mt-3" textClassName="text-sm italic leading-6 text-ink-2" />
-          </div>
-        </section>
-        </BriefFold>
+      </>
       )}
-
-      {/* Contrarian sentiment + Catalyst watch side by side, as the mock
-          pairs them: the sentiment read on the left, the dated calendar it
-          has to survive on the right. */}
-      <BriefFold prefKey="brief.fold.sentiment" title="Contrarian sentiment & catalysts" meta="the counter-signal read, and the calendar it has to survive">
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-[1.35fr_1fr] items-start">
-        <div className="min-w-0">
-      {/* Contrarian Sentiment — all 4 indicators + Claude analysis */}
-      <SentimentGauges
-        marketData={marketData}
-        aaiiBull={marketData.aaiiBull ?? 30}
-        aaiiNeutral={marketData.aaiiNeutral ?? 17}
-        aaiiBear={marketData.aaiiBear ?? 52}
-        contrarianAnalysis={contrarianAnalysis}
-        forwardData={activeForward}
-      />
-        </div>
-        <div className="min-w-0">
-      {/* Catalyst watch — the next ~2 weeks (Phase 01). Deterministic dated
-          event strip (earnings for the book + econ + FOMC) plus the model's
-          exposure read. Hidden when there's neither prose nor events (old
-          briefs pre-date this and fall through gracefully). */}
-      {(catalystWatch || catalystEvents.length > 0) && (
-        <section className="rounded-xl border border-line bg-white px-4 py-3.5 shadow-sm">
-          {/* Design header: tracked uppercase label with the window on the
-              right, replacing the internal "Phase 01" build tag — that was
-              scaffolding from the roadmap, not information for the PM. */}
-          <div className="mb-2.5 flex items-center gap-2">
-            <span className="text-xs font-bold uppercase tracking-[0.22em] text-ink-3">Catalyst watch</span>
-            <span className="ml-auto text-[11px] text-ink-faint">next 2 weeks</span>
-          </div>
-          {catalystWatch && (
-            <p className="mb-3 text-sm leading-6 text-ink-2">{catalystWatch}</p>
-          )}
-          {catalystEvents.length > 0 && (
-            <>
-              <ul className="flex flex-col gap-1.5">
-                {visibleCatalystEvents.map((e, i) => (
-                  <li key={`${e.date}-${e.title}-${i}`} className="flex items-center gap-2.5 text-[13px]">
-                    <span className="w-[92px] shrink-0 whitespace-nowrap font-mono text-[11px] tabular-nums text-ink-3">
-                      {fmtCatalystDate(e.date)}
-                    </span>
-                    <span
-                      className={`h-1.5 w-1.5 shrink-0 rounded-full ${e.importance === "high" ? "bg-warn" : "bg-ink-faint"}`}
-                      aria-hidden
-                    />
-                    <span className="min-w-0 flex-1 truncate text-ink">{e.title}</span>
-                    {e.kind === "earnings" && e.bucket === "Portfolio" && (
-                      <span className="rounded-full bg-accent-soft px-1.5 py-px text-[10px] font-semibold text-accent">held</span>
-                    )}
-                  </li>
-                ))}
-              </ul>
-              {(catalystHiddenCount > 0 || catalystExpanded) && catalystEvents.length > CATALYST_COLLAPSED && (
+      {/* ── Board: contrarian gauges + macro tiles ── */}
+      {/* ── The board, as ONE panel with a tab row (canvas step 4): Macro board ·
+          Sector rotation · Sentiment · Horizons · Narrative. These used to be a
+          stack of five separate folds. Nothing inside them changed hands — each
+          tab renders exactly the content its fold did. The active tab persists
+          in pm:ui-prefs ("brief.tabs"); reading an unset pref never writes, so
+          "Macro board" stays a presentational default until the PM picks one.
+          The anchor ids the old section headers carried live on — s-board on
+          the panel, s-horizon / s-narrative on their tab buttons — so existing
+          deep links still land. ── */}
+      {(() => {
+        const TABS: { id: string; label: string; meta: string; anchor?: string }[] = [
+          { id: "board", label: "Macro board", meta: "the macro read, in numbers" },
+          {
+            id: "sector",
+            label: "Sector rotation",
+            meta: brief?.sectorPerformance?.length ? `${brief.sectorPerformance.length} sectors` : "best → worst",
+          },
+          { id: "sentiment", label: "Sentiment", meta: "counter-signal read + catalysts" },
+          { id: "horizons", label: "Horizons", meta: "tactical · cyclical · structural", anchor: "s-horizon" },
+          { id: "narrative", label: "Narrative", meta: "the long-form model prose", anchor: "s-narrative" },
+        ];
+        const stored = uiPrefs["brief.tabs"];
+        const tab = TABS.some((t) => t.id === stored) ? stored : "board";
+        const meta = TABS.find((t) => t.id === tab)?.meta;
+        const anchorStyle = { scrollMarginTop: "var(--brief-scroll-mt, 132px)" };
+        return (
+          <section id="s-board" style={anchorStyle} className="panel">
+            <div className="panel-h flex-wrap">
+              {TABS.map((t) => (
                 <button
-                  onClick={() => setCatalystExpanded((v) => !v)}
-                  className="mt-2 text-[11px] font-semibold text-accent hover:text-accent-ink transition-colors"
+                  key={t.id}
+                  type="button"
+                  id={t.anchor}
+                  style={t.anchor ? anchorStyle : undefined}
+                  onClick={() => setUiPref("brief.tabs", t.id)}
+                  aria-pressed={tab === t.id}
+                  className={`-mb-px shrink-0 border-b-2 py-1 text-[13px] transition-colors ${
+                    tab === t.id ? "border-ink font-semibold text-ink" : "border-transparent text-ink-2 hover:text-ink"
+                  }`}
                 >
-                  {catalystExpanded ? "Show less" : `Show ${catalystHiddenCount} more`}
+                  {t.label}
+                </button>
+              ))}
+              {meta && <span className="m ml-auto hidden min-w-0 truncate lg:inline">{meta}</span>}
+              {tab === "narrative" && (
+                <button
+                  type="button"
+                  onClick={toggleAllNarrative}
+                  className={`inline-flex h-7 shrink-0 items-center gap-1.5 rounded-control border border-line bg-surface px-2.5 text-[12.5px] text-ink-2 transition-colors hover:bg-surface-hover ${meta ? "" : "ml-auto"}`}
+                >
+                  <AppIcon name={allNarrativeOpen ? "chevU" : "chevD"} size={13} />
+                  {allNarrativeOpen ? "Collapse all" : "Expand all"}
                 </button>
               )}
-            </>
-          )}
-        </section>
-      )}
-        </div>
-      </div>
-      </BriefFold>
-      </div>
-      {/* ── Horizons: tactical / cyclical / structural — folded (canvas) ── */}
-      <BriefFold prefKey="brief.fold.horizons" title="Horizons" meta="tactical · cyclical · structural" id="s-horizon">
-      <div className="space-y-6 ">
-      {/* Forward View — Next 2 Weeks */}
-      <section className="rounded-card border border-line bg-white p-4 md:p-5 shadow-sm">
-        <div className="flex flex-wrap items-center justify-between gap-3 mb-3">
-          <div className="flex flex-wrap items-center gap-2">
-            <h2 className="text-[15px] font-bold text-ink">Forward View — Multi-Horizon</h2>
-            {forwardLoading && <span className="text-xs text-accent animate-pulse">Fetching live data...</span>}
-            {activeForward && (
-              <span
-                className={`rounded-full px-2 py-0.5 text-[10px] font-bold uppercase leading-none ${
-                  activeForward.fredEnabled
-                    ? "bg-pos-soft text-pos"
-                    : "bg-surface-2 text-ink-3"
-                }`}
-                title={
-                  activeForward.fredEnabled
-                    ? "FRED API connected — rates and credit use official end-of-day series"
-                    : "FRED API key not configured — rates use Yahoo ^TNX/^IRX. Add FRED_API_KEY to .env.local for DGS10/DGS2/DGS3MO/HY OAS/IG OAS."
-                }
-              >
-                {activeForward.fredEnabled ? "FRED + Yahoo" : "Yahoo only"}
-              </span>
+            </div>
+
+            {/* ── Macro board: the condensed band/tile grid, carrying its own
+                band + horizon filters, LIVE/stale status, verify links and
+                source attribution per tile. ── */}
+            {tab === "board" && (
+              <MacroBoard
+                fwd={(activeForward ?? null) as never}
+                termStructure={marketData.termStructure}
+                vvix={brief?.hedgeChecklist?.vvix ?? null}
+                regime={marketRegime}
+              />
             )}
-          </div>
-          {brief?.marketRegime && (
-            <div className="flex items-center gap-2">
-              <span className="text-[10px] font-bold uppercase tracking-wider text-ink-3">Regime</span>
-              <SignalPill tone={brief.marketRegime === "Risk-Off" ? "red" : brief.marketRegime === "Risk-On" ? "green" : "amber"}>
-                {brief.marketRegime}
-              </SignalPill>
-              {typeof brief.regimeScore === "number" && (
-                <span className="text-xs text-ink-3">
-                  score {brief.regimeScore >= 0 ? "+" : ""}{brief.regimeScore}
-                </span>
-              )}
-            </div>
-          )}
-        </div>
-        {/* Three-horizon outlook cards. Each card pairs the AI text with the
-            deterministic horizon composite from pm:market-regime so the PM
-            sees both qualitative and quantitative reads side-by-side. Stacks
-            vertically on mobile, 3 columns from md upward. The legacy single
-            "forwardView" synthesis sits in a slim row below the cards. */}
-        {(() => {
-          const horizonsData = marketRegime?.horizons;
-          const cards: { id: "tactical" | "cyclical" | "structural"; label: string; weight: string; text: string; invalidator?: string; accent: string }[] = [
-            { id: "tactical", label: "Tactical · 1–3M", weight: "50%", text: tacticalView, invalidator: brief?.tacticalInvalidator, accent: "border-accent-border bg-accent-soft/40" },
-            { id: "cyclical", label: "Cyclical · 3–6M", weight: "30%", text: cyclicalView, invalidator: brief?.cyclicalInvalidator, accent: "border-pos-border bg-pos-soft/40" },
-            { id: "structural", label: "Structural · 6–12M", weight: "20%", text: structuralView, invalidator: brief?.structuralInvalidator, accent: "border-violet-soft bg-violet-soft/40" },
-          ];
-          return (
-            <div className="mb-5 grid gap-3 grid-cols-1 md:grid-cols-3">
-              {cards.map((c) => {
-                const b = horizonsData?.byHorizon[c.id];
-                const empty = !b || b.total === 0;
-                const tone: "green" | "red" | "amber" = empty
-                  ? "amber"
-                  : b!.label_ === "Risk-On"
-                  ? "green"
-                  : b!.label_ === "Risk-Off"
-                  ? "red"
-                  : "amber";
-                // Coloured top rule per horizon, as the mock shows: accent for
-                // tactical, positive-green for cyclical, violet for structural.
-                // Purely a visual key so the three cards are distinguishable at
-                // a glance; it carries no signal of its own.
-                const topRule =
-                  c.id === "tactical" ? "border-t-accent"
-                  : c.id === "cyclical" ? "border-t-pos"
-                  : "border-t-violet";
-                return (
-                  <div key={c.id} className={`rounded-card border border-t-[3px] p-3 ${topRule} ${c.accent}`}>
-                    <div className="flex items-center justify-between gap-2 mb-2">
-                      <div className="flex items-center gap-2">
-                        <span className="text-[10px] font-bold uppercase tracking-wider text-ink-2">{c.label}</span>
-                        <span className="text-[9px] font-semibold text-ink-3">×{c.weight}</span>
-                      </div>
-                      {b && !empty && (
-                        <SignalPill tone={tone}>
-                          <span title={`${b.riskOn} risk-on, ${b.riskOff} risk-off, of ${b.total} signal${b.total === 1 ? "" : "s"} in this horizon`}>
-                            {b.label_}
-                            <span className="mx-1.5 opacity-50">·</span>
-                            <span className="font-mono opacity-80">
-                              {b.riskOn}↑ {b.riskOff}↓ <span className="opacity-60">/ {b.total}</span>
-                            </span>
-                          </span>
-                        </SignalPill>
-                      )}
-                      {(!b || empty) && (
-                        <span className="rounded-full border border-line bg-surface-2 px-2 py-0.5 text-[10px] text-ink-3">
-                          no signals
-                        </span>
-                      )}
+
+            {/* ── Sector rotation: summary, the live per-sector heatmap (or the
+                leading/lagging fallback), then the PM implication. ── */}
+            {tab === "sector" &&
+              (sectorRotation ? (
+                <div className="px-3.5 py-3">
+                  <ClampText text={sectorRotation.summary} className="mb-3.5" />
+                  {brief?.sectorPerformance && brief.sectorPerformance.length > 0 ? (
+                    <div className="grid grid-cols-3 gap-2 sm:grid-cols-6 lg:grid-cols-11">
+                      {[...brief.sectorPerformance]
+                        .sort((a, b) => (b.dayPct ?? -Infinity) - (a.dayPct ?? -Infinity))
+                        .map((s) => {
+                          const pos = (s.dayPct ?? 0) >= 0;
+                          return (
+                            <div key={s.etf} className="rounded-control border border-line-soft bg-surface-2 p-2">
+                              <div className="flex items-baseline justify-between gap-1">
+                                <span className="font-mono text-[11.5px] font-medium text-ink">{s.etf}</span>
+                                <span className={`font-mono text-[12px] ${s.dayPct == null ? "text-ink-3" : pos ? "text-pos" : "text-neg"}`}>
+                                  {s.dayPct == null ? "—" : `${pos ? "+" : ""}${s.dayPct.toFixed(1)}`}
+                                </span>
+                              </div>
+                              <div className="mt-0.5 truncate text-[11px] text-ink-3" title={s.sector}>{s.sector}</div>
+                            </div>
+                          );
+                        })}
                     </div>
-                    <p className="text-sm leading-6 text-ink-2">{c.text}</p>
-                    {c.invalidator && (
-                      <div className="mt-2 pt-2 border-t border-line/70 flex items-start gap-1.5">
-                        {/* Labelled KILL per the design — same field, the name
-                            the PM actually uses for "this thesis is broken". */}
-                        <span className="mt-[1px] flex-none text-[9px] font-bold uppercase tracking-[0.14em] text-ink-3">
-                          Kill
-                        </span>
-                        <span className="text-xs leading-5 text-ink-2">
-                          {c.invalidator}
-                        </span>
+                  ) : (
+                    <div className="grid gap-4 md:grid-cols-2">
+                      <div>
+                        <div className="mb-1.5 text-[11px] text-ink-3">Leading</div>
+                        {sectorRotation.leading.map((s, i) => (
+                          <div key={i} className="mb-1 flex items-center gap-2 text-[12.5px] text-ink">
+                            <span className="dot bg-pos" /> <span>{s}</span>
+                          </div>
+                        ))}
                       </div>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-          );
-        })()}
-
-        {/* Synthesis block retired (2026-07): it was the legacy "forwardView"
-            tie-together paragraph, which overlapped the Bottom Line + the three
-            horizon cards (the redundancy that watered down all three). The
-            weighted-composite readout still lives in the By-Horizon rollup row
-            above; forwardView is still generated for backward-compat but no
-            longer rendered. */}
-
-        {/* Visible banner when the forward-looking fetch fails or returns
-            no tiles at all — so the user knows the panel is unavailable
-            rather than silently blank. */}
-        {(forwardError || (!activeForward && !forwardLoading)) && (
-          <div className="mb-5 rounded-xl border border-warn-border bg-warn-soft px-4 py-3 text-xs text-warn">
-            <strong className="font-semibold">Forward-looking data unavailable:</strong>{" "}
-            {forwardError ??
-              "The /api/forward-looking endpoint returned no data. Tile values will fill in on the next successful refresh."}
-          </div>
-        )}
-
-        {/* Deterministic Market Regime strip — derived from pm:market-regime.
-            Sits above the macro tiles so the PM can anchor on the composite
-            read before scanning individual indicators. */}
-        {marketRegime && <MarketRegimeStrip regime={marketRegime} />}
-
-        {/* The old full-size ForwardTile panel lived here; its metrics now
-            render in the condensed Macro Board at the top of this section,
-            which carries the same status/source/verify affordances. */}
-
-        {activeForward?.fetchedAt && (
-          <p className="text-[10px] text-ink-3 mt-3">
-            Data fetched {new Date(activeForward.fetchedAt).toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit", hour12: true })}
-            {" · "}Click any icon to verify the source.
-          </p>
-        )}
-      </section>
-      </div>
-      </BriefFold>
-      {/* ── Narrative: the long-form model prose ── */}
-      <div style={{ scrollMarginTop: "var(--brief-scroll-mt, 132px)" }} className="mb-2 mt-2 flex items-baseline gap-2.5" id="s-narrative">
-        <h2 className="text-xs font-bold uppercase tracking-[0.22em] text-ink-3">Narrative</h2>
-        <span className="text-[11px] text-ink-faint">the long-form model prose — open what you need</span>
-        <button
-          onClick={toggleAllNarrative}
-          className="ml-auto rounded-control border border-warn-border bg-white px-2.5 py-1 text-xs font-semibold text-warn hover:bg-warn-soft"
-        >
-          {allNarrativeOpen ? "Collapse all" : "Expand all"}
-        </button>
-      </div>
-      <div className="overflow-hidden rounded-card border border-line bg-white shadow-card divide-y divide-line-soft">
-      {/* Composite Signal — the weighted regime read that DETERMINES the regime,
-          surfaced high on the page (right under the at-a-glance actions) rather
-          than buried below the Forward View. */}
-      {/* Hedging data basis — the full ✓/✗ checklist, live premium table,
-          percentile history and regime inputs. Moved out of the Decide
-          tile so that tile stays a 4-line summary; nothing was dropped. */}
-      {/* Regime tells — the early-warning signals behind the Decide regime
-          tile. They live here, not on the tile, so the tile stays a four-line
-          read; the tile's "N tells" link jumps to this row. */}
-      {regimeTransition && regimeTransition.tells.length > 0 && (
-        <CollapsibleSection
-          prefKey="briefNarrativeRegimeTells"
-          flush
-          defaultCollapsed
-          title={
-            <span className="flex items-center gap-2">
-              <span className="h-2 w-2 rounded-full bg-ink-3" aria-hidden />
-              <span className="text-base font-semibold">Regime tells</span>
-            </span>
-          }
-          subtitle={
-            <span className="text-xs text-ink-3">
-              {regimeTransition.tells.filter((t) => t.momentum === "deteriorating").length} deteriorating ·{" "}
-              {regimeTransition.boundaryGap} signal{regimeTransition.boundaryGap === 1 ? "" : "s"} from a flip
-            </span>
-          }
-        >
-          <div className="mt-1.5 space-y-1.5">
-            {regimeTransition.tells.map((t, i) => (
-              <div key={`${t.name}-${i}`} className="flex gap-2 text-[11px] leading-4">
-                <span className={`mt-1 h-1.5 w-1.5 shrink-0 rounded-full ${t.momentum === "deteriorating" ? "bg-neg" : "bg-pos"}`} aria-hidden />
-                <span className="font-semibold text-ink">{t.name}</span>
-                <span className="text-ink-2">{t.detail}</span>
-              </div>
-            ))}
-          </div>
-        </CollapsibleSection>
-      )}
-      {breadthAnalysis && (
-        <CollapsibleSection
-          prefKey="briefNarrativeBreadth"
-          flush
-          defaultCollapsed
-          title={
-            <span className="flex items-center gap-2">
-              <span className="h-2 w-2 rounded-full bg-neg" aria-hidden />
-              <span className="text-base font-semibold">Breadth & internals</span>
-            </span>
-          }
-          subtitle={<span className="text-xs text-ink-3">participation behind the index move</span>}
-        >
-          <ClampText text={breadthAnalysis} />
-        </CollapsibleSection>
-      )}
-      {volatilityAnalysis && (
-        <CollapsibleSection
-          prefKey="briefNarrativeCredit"
-          flush
-          defaultCollapsed
-          title={
-            <span className="flex items-center gap-2">
-              <span className="h-2 w-2 rounded-full bg-pos" aria-hidden />
-              <span className="text-base font-semibold">Credit & volatility</span>
-            </span>
-          }
-          subtitle={<span className="text-xs text-ink-3">where stress shows up before it hits price</span>}
-        >
-          <ClampText text={volatilityAnalysis} />
-          {creditAnalysis && <ClampText text={creditAnalysis} className="mt-3" />}
-        </CollapsibleSection>
-      )}
-      {brief?.hedgeChecklist && (
-        <CollapsibleSection
-          prefKey="briefNarrativeHedgeBasis"
-          flush
-          defaultCollapsed
-          title={
-            <span className="flex items-center gap-2">
-              <span className="h-2 w-2 rounded-full bg-accent" aria-hidden />
-              <span className="text-base font-semibold">Hedging data basis</span>
-            </span>
-          }
-          subtitle={
-            <span className="text-xs text-ink-3">
-              {brief.hedgeChecklist.items.filter((i) => i.ok === true).length}✓ /{" "}
-              {brief.hedgeChecklist.items.filter((i) => i.ok === false).length}✗ · live SPY premiums
-            </span>
-          }
-        >
-          <div className="mt-1.5 space-y-3 text-[11px] leading-4">
-            {/* 1 · Entry checklist */}
-            <div className="space-y-1">
-              {(["risk-off", "cheap"] as const).map((path) => (
-                <div key={path}>
-                  <div className="font-semibold text-ink-2">
-                    {path === "risk-off" ? "Path 1 · Classic Risk-Off" : "Path 2 · Cheap insurance + late-cycle"}
-                  </div>
-                  {brief.hedgeChecklist!.items.filter((i) => i.path === path).map((i, idx) => (
-                    <div key={idx} className="flex gap-1.5 text-ink-2">
-                      <span className={i.ok === true ? "text-pos font-bold" : "text-ink-3"}>
-                        {i.ok == null ? "?" : i.ok ? "✓" : "✗"}
-                      </span>
-                      <span className={i.ok === true ? "text-ink" : "text-ink-3"}>{i.label}</span>
+                      <div>
+                        <div className="mb-1.5 text-[11px] text-ink-3">Lagging</div>
+                        {sectorRotation.lagging.map((s, i) => (
+                          <div key={i} className="mb-1 flex items-center gap-2 text-[12.5px] text-ink">
+                            <span className="dot bg-neg" /> <span>{s}</span>
+                          </div>
+                        ))}
+                      </div>
                     </div>
-                  ))}
+                  )}
+                  <ClampText text={sectorRotation.pmImplication} className="mt-3" textClassName="text-[12.5px] leading-relaxed text-ink-2" />
                 </div>
+              ) : (
+                <p className="px-3.5 py-6 text-center text-[12px] text-ink-3">This brief carries no sector-rotation read.</p>
               ))}
-            </div>
 
-            {/* 2 · Live premiums the call was priced against */}
-            {brief.hedgingDetail && (
-              <div>
-                <div className="font-semibold text-ink-2">
-                  Live SPY put premiums · spot ${brief.hedgingDetail.spotPrice.toFixed(2)} · CBOE {new Date(brief.hedgingDetail.fetchedAt).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })} (15-min delay)
+            {/* ── Sentiment: the four contrarian gauges beside the dated
+                calendar they have to survive. ── */}
+            {tab === "sentiment" && (
+              <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1.35fr)_minmax(0,1fr)] lg:divide-x lg:divide-line-soft">
+                <div className="min-w-0 px-3.5 py-3">
+                  <SentimentGauges
+                    marketData={marketData}
+                    aaiiBull={marketData.aaiiBull ?? 30}
+                    aaiiNeutral={marketData.aaiiNeutral ?? 17}
+                    aaiiBear={marketData.aaiiBear ?? 52}
+                    contrarianAnalysis={contrarianAnalysis}
+                    forwardData={activeForward}
+                  />
                 </div>
-                <div className="mt-1 overflow-x-auto">
-                  <table className="w-full border-collapse font-mono text-[10px]">
-                    <thead>
-                      <tr className="text-left text-ink-3">
-                        <th className="pr-2 font-medium">Expiry</th>
-                        <th className="pr-2 text-right font-medium">ATM</th>
-                        <th className="pr-2 text-right font-medium">5% OTM</th>
-                        <th className="text-right font-medium">10% OTM</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {brief.hedgingDetail.anchors.map((a) => {
-                        const f = (p: number | null, pct: number | null) =>
-                          p != null ? `$${p.toFixed(2)}${pct != null ? ` (${pct.toFixed(2)}%)` : ""}` : "—";
+                <div className="min-w-0 px-3.5 py-3">
+                  {/* Catalyst watch — the next ~2 weeks (Phase 01). Deterministic
+                      dated event strip (earnings for the book + econ + FOMC) plus
+                      the model's exposure read. Hidden when there's neither prose
+                      nor events (old briefs pre-date this). */}
+                  {catalystWatch || catalystEvents.length > 0 ? (
+                    <>
+                      <div className="mb-2.5 flex items-center gap-2">
+                        <span className="text-[13px] font-semibold text-ink">Catalyst watch</span>
+                        <span className="ml-auto text-[11.5px] text-ink-3">next 2 weeks</span>
+                      </div>
+                      {catalystWatch && <p className="mb-3 text-[12.5px] leading-relaxed text-ink-2">{catalystWatch}</p>}
+                      {catalystEvents.length > 0 && (
+                        <>
+                          <ul className="flex flex-col gap-1.5">
+                            {visibleCatalystEvents.map((e, i) => (
+                              <li key={`${e.date}-${e.title}-${i}`} className="flex items-center gap-2.5 text-[12.5px]">
+                                <span className="w-[92px] shrink-0 whitespace-nowrap font-mono text-[11px] tabular-nums text-ink-3">
+                                  {fmtCatalystDate(e.date)}
+                                </span>
+                                <span className={`dot ${e.importance === "high" ? "bg-warn" : "bg-ink-faint"}`} aria-hidden />
+                                <span className="min-w-0 flex-1 truncate text-ink">{e.title}</span>
+                                {e.kind === "earnings" && e.bucket === "Portfolio" && (
+                                  <span className="shrink-0 text-[11px] text-ink-3">held</span>
+                                )}
+                              </li>
+                            ))}
+                          </ul>
+                          {(catalystHiddenCount > 0 || catalystExpanded) && catalystEvents.length > CATALYST_COLLAPSED && (
+                            <button
+                              onClick={toggleCatalyst}
+                              className="mt-2 text-[11.5px] text-accent transition-colors hover:text-accent-ink"
+                            >
+                              {catalystExpanded ? "Show less" : `Show ${catalystHiddenCount} more`}
+                            </button>
+                          )}
+                        </>
+                      )}
+                    </>
+                  ) : (
+                    <p className="py-6 text-center text-[12px] text-ink-3">No dated catalysts in the next two weeks.</p>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* ── Horizons: tactical / cyclical / structural, each with its
+                deterministic composite and its invalidator. ── */}
+            {tab === "horizons" && (
+              <div>
+                <div className="flex flex-wrap items-center gap-2 border-b border-line-soft px-3.5 py-2">
+                  <span className="text-[11px] text-ink-3">Forward view · multi-horizon</span>
+                  {forwardLoading && <span className="animate-pulse text-[11px] text-accent">Fetching live data…</span>}
+                  {activeForward && (
+                    <span
+                      className={`text-[11px] ${activeForward.fredEnabled ? "text-pos" : "text-ink-3"}`}
+                      title={
+                        activeForward.fredEnabled
+                          ? "FRED API connected — rates and credit use official end-of-day series"
+                          : "FRED API key not configured — rates use Yahoo ^TNX/^IRX. Add FRED_API_KEY to .env.local for DGS10/DGS2/DGS3MO/HY OAS/IG OAS."
+                      }
+                    >
+                      {activeForward.fredEnabled ? "FRED + Yahoo" : "Yahoo only"}
+                    </span>
+                  )}
+                  {brief?.marketRegime && (
+                    <span className="ml-auto flex items-center gap-2">
+                      <span className="text-[11px] text-ink-3">Regime</span>
+                      <SignalPill tone={brief.marketRegime === "Risk-Off" ? "red" : brief.marketRegime === "Risk-On" ? "green" : "amber"}>
+                        {brief.marketRegime}
+                      </SignalPill>
+                      {typeof brief.regimeScore === "number" && (
+                        <span className="font-mono text-[11.5px] text-ink-3">
+                          score {brief.regimeScore >= 0 ? "+" : ""}{brief.regimeScore}
+                        </span>
+                      )}
+                    </span>
+                  )}
+                </div>
+
+                {/* Visible banner when the forward-looking fetch fails or returns
+                    no tiles at all — so the user knows the panel is unavailable
+                    rather than silently blank. */}
+                {(forwardError || (!activeForward && !forwardLoading)) && (
+                  <div className="border-b border-line-soft bg-warn-soft px-3.5 py-2 text-[11.5px] text-warn">
+                    <span className="font-medium">Forward-looking data unavailable:</span>{" "}
+                    {forwardError ??
+                      "The /api/forward-looking endpoint returned no data. Tile values will fill in on the next successful refresh."}
+                  </div>
+                )}
+
+                {/* Three-horizon outlook cards. Each pairs the AI text with the
+                    deterministic horizon composite from pm:market-regime so the
+                    PM sees both reads side by side. */}
+                {(() => {
+                  const horizonsData = marketRegime?.horizons;
+                  const cards: { id: "tactical" | "cyclical" | "structural"; label: string; weight: string; text: string; invalidator?: string }[] = [
+                    { id: "tactical", label: "Tactical · 1–3M", weight: "50%", text: tacticalView, invalidator: brief?.tacticalInvalidator },
+                    { id: "cyclical", label: "Cyclical · 3–6M", weight: "30%", text: cyclicalView, invalidator: brief?.cyclicalInvalidator },
+                    { id: "structural", label: "Structural · 6–12M", weight: "20%", text: structuralView, invalidator: brief?.structuralInvalidator },
+                  ];
+                  return (
+                    <div className="grid grid-cols-1 divide-y divide-line-soft md:grid-cols-3 md:divide-x md:divide-y-0">
+                      {cards.map((c) => {
+                        const b = horizonsData?.byHorizon[c.id];
+                        const empty = !b || b.total === 0;
+                        const tone: "green" | "red" | "amber" = empty
+                          ? "amber"
+                          : b!.label_ === "Risk-On"
+                          ? "green"
+                          : b!.label_ === "Risk-Off"
+                          ? "red"
+                          : "amber";
                         return (
-                          <tr key={a.expiryLabel} className="text-ink-2">
-                            <td className="pr-2">{a.expiryLabel} · {a.daysToExpiry}d</td>
-                            <td className="pr-2 text-right">{f(a.atmPremium, a.atmPctOfSpot)}</td>
-                            <td className="pr-2 text-right">{f(a.otm5Premium, a.otm5PctOfSpot)}</td>
-                            <td className="text-right">{f(a.otm10Premium, a.otm10PctOfSpot)}</td>
-                          </tr>
+                          <div key={c.id} className="min-w-0 px-3.5 py-3">
+                            <div className="mb-2 flex items-center justify-between gap-2">
+                              <div className="flex items-center gap-2">
+                                <span className="text-[11px] text-ink-3">{c.label}</span>
+                                <span className="font-mono text-[11px] text-ink-faint">×{c.weight}</span>
+                              </div>
+                              {b && !empty && (
+                                <SignalPill tone={tone}>
+                                  <span title={`${b.riskOn} risk-on, ${b.riskOff} risk-off, of ${b.total} signal${b.total === 1 ? "" : "s"} in this horizon`}>
+                                    {b.label_}
+                                    <span className="mx-1.5 opacity-50">·</span>
+                                    <span className="font-mono opacity-80">
+                                      {b.riskOn}↑ {b.riskOff}↓ <span className="opacity-60">/ {b.total}</span>
+                                    </span>
+                                  </span>
+                                </SignalPill>
+                              )}
+                              {(!b || empty) && <span className="text-[11px] text-ink-3">no signals</span>}
+                            </div>
+                            <p className="text-[12.5px] leading-relaxed text-ink-2">{c.text}</p>
+                            {c.invalidator && (
+                              <div className="mt-2 flex items-start gap-1.5 border-t border-line-soft pt-2">
+                                {/* Labelled KILL per the design — same field, the
+                                    name the PM uses for "this thesis is broken". */}
+                                <span className="mt-px flex-none text-[11px] text-ink-3">Kill</span>
+                                <span className="text-[11.5px] leading-relaxed text-ink-2">{c.invalidator}</span>
+                              </div>
+                            )}
+                          </div>
                         );
                       })}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            )}
+                    </div>
+                  );
+                })()}
 
-            {/* 3 · Premium history: percentile rank + trend */}
-            {brief.hedgingDetail && (
-              <div>
-                <div className="font-semibold text-ink-2">
-                  Premium history · {brief.hedgingDetail.sessions} sessions{brief.hedgingDetail.firstDate ? ` since ${brief.hedgingDetail.firstDate}` : ""} (low percentile = cheap WITHIN this window)
-                </div>
-                {brief.hedgingDetail.buckets.map((b) => (
-                  <div key={b.bucket} className="text-ink-2">
-                    {b.bucket}: 5%OTM {b.otm5Percentile != null ? `${b.otm5Percentile}th pct` : "unranked"} · 10%OTM {b.otm10Percentile != null ? `${b.otm10Percentile}th pct` : "unranked"} · skew {b.skewRatio != null ? b.skewRatio.toFixed(2) : "—"}{b.skewPercentile != null ? ` (${b.skewPercentile}th)` : ""}
-                  </div>
-                ))}
-                {brief.hedgingDetail.volAnchor && (brief.hedgingDetail.volAnchor.vix || brief.hedgingDetail.volAnchor.vix3m) && (
-                  <div className="mt-0.5 text-ink-2">
-                    Long-horizon anchor:{" "}
-                    {brief.hedgingDetail.volAnchor.vix3m && (
-                      <span className={brief.hedgingDetail.volAnchor.vix3m.percentile <= 40 ? "text-pos" : brief.hedgingDetail.volAnchor.vix3m.percentile >= 75 ? "text-neg" : ""}>
-                        VIX3M {brief.hedgingDetail.volAnchor.vix3m.level} = {brief.hedgingDetail.volAnchor.vix3m.percentile}th pct of ~{brief.hedgingDetail.volAnchor.vix3m.years}y
-                      </span>
-                    )}
-                    {brief.hedgingDetail.volAnchor.vix3m && brief.hedgingDetail.volAnchor.vix && " · "}
-                    {brief.hedgingDetail.volAnchor.vix && (
-                      <span>VIX {brief.hedgingDetail.volAnchor.vix.level} = {brief.hedgingDetail.volAnchor.vix.percentile}th of ~{brief.hedgingDetail.volAnchor.vix.years}y</span>
-                    )}
-                    <span className="text-ink-3"> — whether the whole window above is itself a cheap or expensive vol regime</span>
-                  </div>
-                )}
-                {(brief.hedgingDetail.wow || brief.hedgingDetail.mom) && (
-                  <div className="mt-0.5 text-ink-3">
-                    {brief.hedgingDetail.wow && (
-                      <div>
-                        WoW (vs {brief.hedgingDetail.wow.vsDate}): {brief.hedgingDetail.wow.rows.map((r) => `${r.expiryLabel} 5%OTM ${r.otm5DeltaPct != null ? `${r.otm5DeltaPct > 0 ? "+" : ""}${r.otm5DeltaPct}%` : "—"}`).join(" · ")}
-                      </div>
-                    )}
-                    {brief.hedgingDetail.mom && (
-                      <div>
-                        MoM (vs {brief.hedgingDetail.mom.vsDate}): {brief.hedgingDetail.mom.rows.map((r) => `${r.expiryLabel} 5%OTM ${r.otm5DeltaPct != null ? `${r.otm5DeltaPct > 0 ? "+" : ""}${r.otm5DeltaPct}%` : "—"}`).join(" · ")}
-                      </div>
-                    )}
-                  </div>
+                {/* Synthesis block retired (2026-07): it was the legacy
+                    "forwardView" tie-together paragraph, which overlapped the
+                    Bottom Line + the three horizon cards. forwardView is still
+                    generated for backward-compat but no longer rendered. */}
+
+                {activeForward?.fetchedAt && (
+                  <p className="border-t border-line-soft px-3.5 py-2 text-[11.5px] text-ink-3">
+                    Data fetched {new Date(activeForward.fetchedAt).toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit", hour12: true })}
+                    {" · "}Click any icon to verify the source.
+                  </p>
                 )}
               </div>
             )}
 
-            {/* 4 · Regime / vol / sentiment inputs */}
-            {brief.hedgeChecklist.inputs && (
-              <div>
-                <div className="font-semibold text-ink-2">Regime, vol & sentiment inputs</div>
-                <div className="text-ink-2">
-                  Regime {brief.hedgeChecklist.inputs.consolidatedRegime}
-                  {brief.hedgeChecklist.inputs.transitionLeaning ? ` · transition ${brief.hedgeChecklist.inputs.transitionLeaning} (${brief.hedgeChecklist.inputs.transitionLikelihood})` : ""}
-                  {brief.hedgeChecklist.inputs.riskOffSignalCount != null ? ` · ${brief.hedgeChecklist.inputs.riskOffSignalCount} risk-off signals` : ""}
-                </div>
-                <div className="text-ink-2">
-                  {brief.hedgeChecklist.inputs.vix != null ? `VIX ${brief.hedgeChecklist.inputs.vix}` : "VIX —"}
-                  {brief.hedgeChecklist.inputs.termStructure ? ` (${brief.hedgeChecklist.inputs.termStructure})` : ""}
-                  {brief.hedgeChecklist.vvix != null ? ` · VVIX ${brief.hedgeChecklist.vvix}` : ""}
-                  {brief.hedgeChecklist.inputs.fearGreed != null ? ` · F&G ${brief.hedgeChecklist.inputs.fearGreed}` : ""}
-                  {brief.hedgeChecklist.inputs.oscillator != null ? ` · Oscillator ${brief.hedgeChecklist.inputs.oscillator >= 0 ? "+" : ""}${brief.hedgeChecklist.inputs.oscillator}%` : ""}
-                </div>
+            {/* ── Narrative: the long-form model prose, as flush rows. ── */}
+            {tab === "narrative" && (
+              <div className="divide-y divide-line-soft">
+              {/* Composite Signal — the weighted regime read that DETERMINES the regime,
+                  surfaced high on the page (right under the at-a-glance actions) rather
+                  than buried below the Forward View. */}
+              {/* Hedging data basis — the full ✓/✗ checklist, live premium table,
+                  percentile history and regime inputs. Moved out of the Decide
+                  tile so that tile stays a 4-line summary; nothing was dropped. */}
+              {/* Regime tells — the early-warning signals behind the Decide regime
+                  tile. They live here, not on the tile, so the tile stays a four-line
+                  read; the tile's "N tells" link jumps to this row. */}
+              {regimeTransition && regimeTransition.tells.length > 0 && (
+                <CollapsibleSection
+                  prefKey="briefNarrativeRegimeTells"
+                  flush
+                  defaultCollapsed
+                  title={
+                    <span className="flex items-center gap-2">
+                      <span className="dot bg-ink-3" aria-hidden />
+                      <span className="text-[13px] font-semibold">Regime tells</span>
+                    </span>
+                  }
+                  subtitle={
+                    <span className="text-[11.5px] text-ink-3">
+                      {regimeTransition.tells.filter((t) => t.momentum === "deteriorating").length} deteriorating ·{" "}
+                      {regimeTransition.boundaryGap} signal{regimeTransition.boundaryGap === 1 ? "" : "s"} from a flip
+                    </span>
+                  }
+                >
+                  <div className="mt-1.5 space-y-1.5">
+                    {regimeTransition.tells.map((t, i) => (
+                      <div key={`${t.name}-${i}`} className="flex gap-2 text-[11px] leading-4">
+                        <span className={`dot mt-1.5 ${t.momentum === "deteriorating" ? "bg-neg" : "bg-pos"}`} aria-hidden />
+                        <span className="font-semibold text-ink">{t.name}</span>
+                        <span className="text-ink-2">{t.detail}</span>
+                      </div>
+                    ))}
+                  </div>
+                </CollapsibleSection>
+              )}
+              {breadthAnalysis && (
+                <CollapsibleSection
+                  prefKey="briefNarrativeBreadth"
+                  flush
+                  defaultCollapsed
+                  title={
+                    <span className="flex items-center gap-2">
+                      <span className="dot bg-neg" aria-hidden />
+                      <span className="text-[13px] font-semibold">Breadth & internals</span>
+                    </span>
+                  }
+                  subtitle={<span className="text-[11.5px] text-ink-3">participation behind the index move</span>}
+                >
+                  <ClampText text={breadthAnalysis} />
+                </CollapsibleSection>
+              )}
+              {volatilityAnalysis && (
+                <CollapsibleSection
+                  prefKey="briefNarrativeCredit"
+                  flush
+                  defaultCollapsed
+                  title={
+                    <span className="flex items-center gap-2">
+                      <span className="dot bg-pos" aria-hidden />
+                      <span className="text-[13px] font-semibold">Credit & volatility</span>
+                    </span>
+                  }
+                  subtitle={<span className="text-[11.5px] text-ink-3">where stress shows up before it hits price</span>}
+                >
+                  <ClampText text={volatilityAnalysis} />
+                  {creditAnalysis && <ClampText text={creditAnalysis} className="mt-3" />}
+                </CollapsibleSection>
+              )}
+              {brief?.hedgeChecklist && (
+                <CollapsibleSection
+                  prefKey="briefNarrativeHedgeBasis"
+                  flush
+                  defaultCollapsed
+                  title={
+                    <span className="flex items-center gap-2">
+                      <span className="dot bg-accent" aria-hidden />
+                      <span className="text-[13px] font-semibold">Hedging data basis</span>
+                    </span>
+                  }
+                  subtitle={
+                    <span className="text-[11.5px] text-ink-3">
+                      {brief.hedgeChecklist.items.filter((i) => i.ok === true).length} met ·{" "}
+                      {brief.hedgeChecklist.items.filter((i) => i.ok === false).length} not · live SPY premiums
+                    </span>
+                  }
+                >
+                  <div className="mt-1.5 space-y-3 text-[11px] leading-4">
+                    {/* 1 · Entry checklist */}
+                    <div className="space-y-1">
+                      {(["risk-off", "cheap"] as const).map((path) => (
+                        <div key={path}>
+                          <div className="font-semibold text-ink-2">
+                            {path === "risk-off" ? "Path 1 · Classic Risk-Off" : "Path 2 · Cheap insurance + late-cycle"}
+                          </div>
+                          {brief.hedgeChecklist!.items.filter((i) => i.path === path).map((i, idx) => (
+                            <div key={idx} className="flex gap-1.5 text-ink-2">
+                              <span className={`mt-0.5 shrink-0 ${i.ok === true ? "text-pos" : "text-ink-3"}`}>
+                                <AppIcon name={i.ok == null ? "help" : i.ok ? "check" : "x"} size={12} />
+                              </span>
+                              <span className={i.ok === true ? "text-ink" : "text-ink-3"}>{i.label}</span>
+                            </div>
+                          ))}
+                        </div>
+                      ))}
+                    </div>
+
+                    {/* 2 · Live premiums the call was priced against */}
+                    {brief.hedgingDetail && (
+                      <div>
+                        <div className="font-semibold text-ink-2">
+                          Live SPY put premiums · spot ${brief.hedgingDetail.spotPrice.toFixed(2)} · CBOE {new Date(brief.hedgingDetail.fetchedAt).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })} (15-min delay)
+                        </div>
+                        <div className="mt-1.5 overflow-x-auto">
+                          <table className="data-table">
+                            <thead>
+                              <tr>
+                                <th>Expiry</th>
+                                <th className="n">ATM</th>
+                                <th className="n">5% OTM</th>
+                                <th className="n">10% OTM</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {brief.hedgingDetail.anchors.map((a) => {
+                                const f = (p: number | null, pct: number | null) =>
+                                  p != null ? `$${p.toFixed(2)}${pct != null ? ` (${pct.toFixed(2)}%)` : ""}` : "—";
+                                return (
+                                  <tr key={a.expiryLabel}>
+                                    <td>{a.expiryLabel} · {a.daysToExpiry}d</td>
+                                    <td className="n">{f(a.atmPremium, a.atmPctOfSpot)}</td>
+                                    <td className="n">{f(a.otm5Premium, a.otm5PctOfSpot)}</td>
+                                    <td className="n">{f(a.otm10Premium, a.otm10PctOfSpot)}</td>
+                                  </tr>
+                                );
+                              })}
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* 3 · Premium history: percentile rank + trend */}
+                    {brief.hedgingDetail && (
+                      <div>
+                        <div className="font-semibold text-ink-2">
+                          Premium history · {brief.hedgingDetail.sessions} sessions{brief.hedgingDetail.firstDate ? ` since ${brief.hedgingDetail.firstDate}` : ""} (low percentile = cheap WITHIN this window)
+                        </div>
+                        {brief.hedgingDetail.buckets.map((b) => (
+                          <div key={b.bucket} className="text-ink-2">
+                            {b.bucket}: 5%OTM {b.otm5Percentile != null ? `${b.otm5Percentile}th pct` : "unranked"} · 10%OTM {b.otm10Percentile != null ? `${b.otm10Percentile}th pct` : "unranked"} · skew {b.skewRatio != null ? b.skewRatio.toFixed(2) : "—"}{b.skewPercentile != null ? ` (${b.skewPercentile}th)` : ""}
+                          </div>
+                        ))}
+                        {brief.hedgingDetail.volAnchor && (brief.hedgingDetail.volAnchor.vix || brief.hedgingDetail.volAnchor.vix3m) && (
+                          <div className="mt-0.5 text-ink-2">
+                            Long-horizon anchor:{" "}
+                            {brief.hedgingDetail.volAnchor.vix3m && (
+                              <span className={brief.hedgingDetail.volAnchor.vix3m.percentile <= 40 ? "text-pos" : brief.hedgingDetail.volAnchor.vix3m.percentile >= 75 ? "text-neg" : ""}>
+                                VIX3M {brief.hedgingDetail.volAnchor.vix3m.level} = {brief.hedgingDetail.volAnchor.vix3m.percentile}th pct of ~{brief.hedgingDetail.volAnchor.vix3m.years}y
+                              </span>
+                            )}
+                            {brief.hedgingDetail.volAnchor.vix3m && brief.hedgingDetail.volAnchor.vix && " · "}
+                            {brief.hedgingDetail.volAnchor.vix && (
+                              <span>VIX {brief.hedgingDetail.volAnchor.vix.level} = {brief.hedgingDetail.volAnchor.vix.percentile}th of ~{brief.hedgingDetail.volAnchor.vix.years}y</span>
+                            )}
+                            <span className="text-ink-3"> — whether the whole window above is itself a cheap or expensive vol regime</span>
+                          </div>
+                        )}
+                        {(brief.hedgingDetail.wow || brief.hedgingDetail.mom) && (
+                          <div className="mt-0.5 text-ink-3">
+                            {brief.hedgingDetail.wow && (
+                              <div>
+                                WoW (vs {brief.hedgingDetail.wow.vsDate}): {brief.hedgingDetail.wow.rows.map((r) => `${r.expiryLabel} 5%OTM ${r.otm5DeltaPct != null ? `${r.otm5DeltaPct > 0 ? "+" : ""}${r.otm5DeltaPct}%` : "—"}`).join(" · ")}
+                              </div>
+                            )}
+                            {brief.hedgingDetail.mom && (
+                              <div>
+                                MoM (vs {brief.hedgingDetail.mom.vsDate}): {brief.hedgingDetail.mom.rows.map((r) => `${r.expiryLabel} 5%OTM ${r.otm5DeltaPct != null ? `${r.otm5DeltaPct > 0 ? "+" : ""}${r.otm5DeltaPct}%` : "—"}`).join(" · ")}
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {/* 4 · Regime / vol / sentiment inputs */}
+                    {brief.hedgeChecklist.inputs && (
+                      <div>
+                        <div className="font-semibold text-ink-2">Regime, vol & sentiment inputs</div>
+                        <div className="text-ink-2">
+                          Regime {brief.hedgeChecklist.inputs.consolidatedRegime}
+                          {brief.hedgeChecklist.inputs.transitionLeaning ? ` · transition ${brief.hedgeChecklist.inputs.transitionLeaning} (${brief.hedgeChecklist.inputs.transitionLikelihood})` : ""}
+                          {brief.hedgeChecklist.inputs.riskOffSignalCount != null ? ` · ${brief.hedgeChecklist.inputs.riskOffSignalCount} risk-off signals` : ""}
+                        </div>
+                        <div className="text-ink-2">
+                          {brief.hedgeChecklist.inputs.vix != null ? `VIX ${brief.hedgeChecklist.inputs.vix}` : "VIX —"}
+                          {brief.hedgeChecklist.inputs.termStructure ? ` (${brief.hedgeChecklist.inputs.termStructure})` : ""}
+                          {brief.hedgeChecklist.vvix != null ? ` · VVIX ${brief.hedgeChecklist.vvix}` : ""}
+                          {brief.hedgeChecklist.inputs.fearGreed != null ? ` · F&G ${brief.hedgeChecklist.inputs.fearGreed}` : ""}
+                          {brief.hedgeChecklist.inputs.oscillator != null ? ` · Oscillator ${brief.hedgeChecklist.inputs.oscillator >= 0 ? "+" : ""}${brief.hedgeChecklist.inputs.oscillator}%` : ""}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* 5 · Method note — the rules the model operates under */}
+                    <div className="border-t border-line-soft pt-1.5 text-[11px] leading-4 text-ink-3">
+                      Method: protective SPY puts only · strikes 5–10% OTM (ATM only for acute ≤30d tail risk) · tenor 2–9M mapped to whichever horizon is Risk-Off · ADD needs Path 1 (≥2/3) or Path 2 (premium ✓ + ≥1 late-cycle sign) · skip-first philosophy — the model may override any checklist line but must name it. Percentiles rank each tenor against its own trailing ledger.
+                    </div>
+                  </div>
+                </CollapsibleSection>
+              )}
+
+              {/* Cash deployment reasoning — the tile up in Decide shows the call;
+                  the why and the trigger checklist live here. */}
+              {cashDeploymentCall && (
+                <CollapsibleSection
+                  prefKey="briefNarrativeCash"
+                  flush
+                  defaultCollapsed
+                  title={<span className="flex items-center gap-2"><span className="dot bg-warn" aria-hidden /><span className="text-[13px] font-semibold">Cash deployment</span></span>}
+                  subtitle={<span className="text-[11.5px] text-ink-3">{cashDeploymentCall.action}{typeof cashDeploymentCall.score === "number" ? ` · ${cashDeploymentCall.score}/100` : ""}</span>}
+                >
+                {/* Clamped: this tile now sits in the Decide column, and the
+                    full reasoning + Newton note ran long enough to dwarf the
+                    other three tiles. Nothing is lost — ClampText keeps the
+                    whole text one click away. */}
+                <ClampText
+                  text={cashDeploymentCall.reason}
+                  className="mb-2.5"
+                  textClassName="text-[12.5px] leading-relaxed text-ink-2"
+                  lines={4}
+                />
+                {cashDeploymentCall.newtonPersistence && (
+                  <ClampText
+                    text={`Newton: ${cashDeploymentCall.newtonPersistence}`}
+                    className="mb-2.5"
+                    textClassName="text-[11.5px] italic leading-relaxed text-ink-2"
+                    lines={3}
+                  />
+                )}
+                {(cashDeploymentCall.triggersMet?.length || cashDeploymentCall.triggersMissing?.length) ? (
+                  <div className="grid grid-cols-1 gap-y-1 mb-2.5 text-[11px] leading-4">
+                    <div className="space-y-1">
+                      {cashDeploymentCall.triggersMet?.slice(0, 4).map((t, i) => (
+                        <div key={`m${i}`} className="flex items-start gap-1.5 text-pos">
+                          <span className="mt-0.5 flex-none"><AppIcon name="check" size={12} /></span>
+                          <span>{t}</span>
+                        </div>
+                      ))}
+                    </div>
+                    <div className="space-y-1">
+                      {cashDeploymentCall.triggersMissing?.slice(0, 4).map((t, i) => (
+                        <div key={`x${i}`} className="flex items-start gap-1.5 text-ink-3">
+                          <span className="dot mt-1.5 flex-none bg-ink-faint" aria-hidden />
+                          <span>{t}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ) : null}
+                </CollapsibleSection>
+              )}
+
+              {/* Accordion rows (redesign): the long-form prose is reference reading,
+                  so each row collapses to a title + one-line summary and opens on
+                  click. Collapsed by DEFAULT — this is what stops the narrative from
+                  dominating the page. State persists via pm:ui-prefs, so a row the PM
+                  keeps open stays open across reloads. */}
+              <CollapsibleSection
+                prefKey="briefNarrativeComposite"
+                  flush
+                defaultCollapsed
+                title={
+                  <span className="flex flex-wrap items-center gap-2">
+                    <span className="dot bg-warn" aria-hidden />
+                    <span className="text-[13px] font-semibold">Composite Signal</span>
+                  </span>
+                }
+                subtitle={
+                  <span className="flex flex-wrap items-center gap-2 text-[11.5px] text-ink-3">
+                    <SignalPill tone={compositeSignalTone}>{marketData.compositeSignal}</SignalPill>
+                    <span>Conviction: {marketData.conviction}</span>
+                    {brief?.marketRegime && (
+                      <SignalPill tone={brief.marketRegime === "Risk-Off" ? "red" : brief.marketRegime === "Risk-On" ? "green" : "amber"}>
+                        {brief.marketRegime}
+                      </SignalPill>
+                    )}
+                  </span>
+                }
+              >
+                <p className="text-[11.5px] text-ink-3">
+                  The deterministic regime read — what the tape and macro data say the market <strong className="text-ink-2">is</strong> doing, and what to focus on.
+                </p>
+                <ClampText text={compositeAnalysis} className="mt-2" />
+              </CollapsibleSection>
+
+              {/* Non-consensus edge — what the tape may be under-pricing. Distilled
+                  across all integrated sources; hidden when the model returns blank. */}
+              {brief?.underpriced && brief.underpriced.trim() && (
+                <CollapsibleSection
+                  prefKey="briefNarrativeUnderpriced"
+                  flush
+                  defaultCollapsed
+                  className="border-violet-soft bg-violet-soft/40"
+                  title={
+                    <span className="flex flex-wrap items-center gap-2">
+                      <span className="dot bg-violet" aria-hidden />
+                      <span className="text-[13px] font-semibold">What the tape may be under-pricing</span>
+                    </span>
+                  }
+                  subtitle={<span className="text-[11px] text-violet">Non-consensus</span>}
+                >
+                  <p className="text-[12.5px] leading-relaxed text-ink-2">{brief.underpriced}</p>
+                </CollapsibleSection>
+              )}
               </div>
             )}
-
-            {/* 5 · Method note — the rules the model operates under */}
-            <div className="border-t border-line/60 pt-1.5 text-[10px] leading-4 text-ink-3">
-              Method: protective SPY puts only · strikes 5–10% OTM (ATM only for acute ≤30d tail risk) · tenor 2–9M mapped to whichever horizon is Risk-Off · ADD needs Path 1 (≥2/3) or Path 2 (premium ✓ + ≥1 late-cycle sign) · skip-first philosophy — the model may override any checklist line but must name it. Percentiles rank each tenor against its own trailing ledger.
-            </div>
-          </div>
-        </CollapsibleSection>
-      )}
-
-      {/* Cash deployment reasoning — the tile up in Decide shows the call;
-          the why and the trigger checklist live here. */}
-      {cashDeploymentCall && (
-        <CollapsibleSection
-          prefKey="briefNarrativeCash"
-          flush
-          defaultCollapsed
-          title={<span className="flex items-center gap-2"><span className="h-2 w-2 rounded-full bg-warn" aria-hidden /><span className="text-base font-semibold">Cash deployment</span></span>}
-          subtitle={<span className="text-xs text-ink-3">{cashDeploymentCall.action}{typeof cashDeploymentCall.score === "number" ? ` · ${cashDeploymentCall.score}/100` : ""}</span>}
-        >
-        {/* Clamped: this tile now sits in the Decide column, and the
-            full reasoning + Newton note ran long enough to dwarf the
-            other three tiles. Nothing is lost — ClampText keeps the
-            whole text one click away. */}
-        <ClampText
-          text={cashDeploymentCall.reason}
-          className="mb-2.5"
-          textClassName="text-sm leading-5 text-ink-2"
-          lines={4}
-        />
-        {cashDeploymentCall.newtonPersistence && (
-          <ClampText
-            text={`Newton: ${cashDeploymentCall.newtonPersistence}`}
-            className="mb-2.5"
-            textClassName="text-xs leading-5 text-ink-2 italic"
-            lines={3}
-          />
-        )}
-        {(cashDeploymentCall.triggersMet?.length || cashDeploymentCall.triggersMissing?.length) ? (
-          <div className="grid grid-cols-1 gap-y-1 mb-2.5 text-[11px] leading-4">
-            <div className="space-y-1">
-              {cashDeploymentCall.triggersMet?.slice(0, 4).map((t, i) => (
-                <div key={`m${i}`} className="flex items-start gap-1 text-pos">
-                  <span className="flex-none mt-[1px]">✓</span>
-                  <span>{t}</span>
-                </div>
-              ))}
-            </div>
-            <div className="space-y-1">
-              {cashDeploymentCall.triggersMissing?.slice(0, 4).map((t, i) => (
-                <div key={`x${i}`} className="flex items-start gap-1 text-ink-3">
-                  <span className="flex-none mt-[1px]">·</span>
-                  <span>{t}</span>
-                </div>
-              ))}
-            </div>
-          </div>
-        ) : null}
-        </CollapsibleSection>
-      )}
-
-      {/* Accordion rows (redesign): the long-form prose is reference reading,
-          so each row collapses to a title + one-line summary and opens on
-          click. Collapsed by DEFAULT — this is what stops the narrative from
-          dominating the page. State persists via pm:ui-prefs, so a row the PM
-          keeps open stays open across reloads. */}
-      <CollapsibleSection
-        prefKey="briefNarrativeComposite"
-          flush
-        defaultCollapsed
-        title={
-          <span className="flex flex-wrap items-center gap-2">
-            <span className="h-2 w-2 rounded-full bg-warn" aria-hidden />
-            <span className="text-base font-semibold">Composite Signal</span>
-          </span>
-        }
-        subtitle={
-          <span className="flex flex-wrap items-center gap-2 text-xs text-ink-3">
-            <SignalPill tone={compositeSignalTone}>{marketData.compositeSignal}</SignalPill>
-            <span>Conviction: {marketData.conviction}</span>
-            {brief?.marketRegime && (
-              <SignalPill tone={brief.marketRegime === "Risk-Off" ? "red" : brief.marketRegime === "Risk-On" ? "green" : "amber"}>
-                {brief.marketRegime}
-              </SignalPill>
-            )}
-          </span>
-        }
-      >
-        <p className="text-xs text-ink-3">
-          The deterministic regime read — what the tape and macro data say the market <strong className="text-ink-2">is</strong> doing, and what to focus on.
-        </p>
-        <ClampText text={compositeAnalysis} className="mt-2" />
-      </CollapsibleSection>
-
-      {/* Non-consensus edge — what the tape may be under-pricing. Distilled
-          across all integrated sources; hidden when the model returns blank. */}
-      {brief?.underpriced && brief.underpriced.trim() && (
-        <CollapsibleSection
-          prefKey="briefNarrativeUnderpriced"
-          flush
-          defaultCollapsed
-          className="border-violet-soft bg-violet-soft/40"
-          title={
-            <span className="flex flex-wrap items-center gap-2">
-              <span className="h-2 w-2 rounded-full bg-violet" aria-hidden />
-              <span className="text-base font-semibold">What the tape may be under-pricing</span>
-            </span>
-          }
-          subtitle={<span className="text-[10px] font-bold uppercase tracking-wider text-violet">Non-consensus</span>}
-        >
-          <p className="text-sm leading-6 text-ink-2">{brief.underpriced}</p>
-        </CollapsibleSection>
-      )}
-      </div>
+          </section>
+        );
+      })()}
 
       {/* Action Items section retired (2026-07): it duplicated the
           Top Actions Today one-liners near the top of the brief. forwardActions

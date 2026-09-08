@@ -70,6 +70,17 @@ export async function markMailSent(ids: string[]): Promise<number> {
   return list.length - next.length;
 }
 
+/** The whole ticker → ISO-queued-at dedupe map (one read, for list views). */
+export async function readWatchlistNotifiedMap(): Promise<Record<string, string>> {
+  try {
+    const raw = await (await getRedis()).get(NOTIFIED_KEY);
+    const map = raw ? (JSON.parse(raw) as Record<string, string>) : {};
+    return map && typeof map === "object" ? map : {};
+  } catch {
+    return {};
+  }
+}
+
 /** True once we've queued a watchlist email for this ticker (dedupe). */
 export async function wasWatchlistNotified(ticker: string): Promise<boolean> {
   const redis = await getRedis();

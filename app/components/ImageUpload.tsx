@@ -1,6 +1,8 @@
 "use client";
 
+import { usePersistedOpen } from "@/app/lib/useCollapsed";
 import React, { useState, useRef, useCallback, useEffect } from "react";
+import { AppIcon } from "./AppIcon";
 
 export type BriefAttachment = {
   id: string;
@@ -82,18 +84,10 @@ function compressImage(file: File, maxWidth = 1600, quality = 0.8): Promise<stri
   });
 }
 
-export function ImageUpload({ section, sectionLabel, attachments, onAdd, onRemove, collapsibleThumbs }: Props) {
-  const [dragActive, setDragActive] = useState(false);
-  const [previewId, setPreviewId] = useState<string | null>(null);
-  // Default to collapsed only when collapsibleThumbs is on AND there are
-  // already images to hide. A fresh empty section shouldn't render the toggle
-  // at all (handled below), and non-collapsible sections behave as before.
-  const [thumbsExpanded, setThumbsExpanded] = useState(!collapsibleThumbs);
-  const inputRef = useRef<HTMLInputElement>(null);
-
-  const sectionAttachments = attachments.filter((a) => a.section === section);
-
-  const processFile = useCallback(
+/** Shared file → BriefAttachment pipeline (type + size checks, image
+ *  re-compression, PDF pass-through). Used by every drop/browse/paste path. */
+function useProcessFile(section: string, onAdd: (attachment: BriefAttachment) => void) {
+  return useCallback(
     async (file: File) => {
       const isImage = file.type.startsWith("image/");
       const isPdf = file.type === "application/pdf";
@@ -120,7 +114,7 @@ export function ImageUpload({ section, sectionLabel, attachments, onAdd, onRemov
         const dataUrl = isPdf ? await readPdfAsDataUrl(file) : await compressImage(file);
         onAdd({
           id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-          label: file.name.replace(/\.[^.]+$/, ""),
+          label: file.name.replace(/\.[^.]+$/, "") || "pasted-image",
           section,
           dataUrl,
           addedAt: new Date().toISOString(),
@@ -132,116 +126,214 @@ export function ImageUpload({ section, sectionLabel, attachments, onAdd, onRemov
     },
     [onAdd, section]
   );
+}
+
+/**
+ * Compact 28px control: "Paste or drop screenshot". It is a drop target, a
+ * click-to-browse button, and (when `paste` is on) a clipboard listener —
+ * a screenshot copied from anywhere lands in the section on ⌘V. Used in
+ * panel headers where the full dashed drop zone would be too tall.
+ */
+export function ImageDropButton({
+  section,
+  onAdd,
+  label = "Paste or drop screenshot",
+  paste = false,
+  className = "",
+  title,
+}: {
+  section: string;
+  onAdd: (attachment: BriefAttachment) => void;
+  label?: string;
+  /** Listen for document-level paste events while mounted. Turn on for
+   *  exactly ONE section at a time, or a pasted image lands everywhere. */
+  paste?: boolean;
+  className?: string;
+  title?: string;
+}) {
+  const [dragActive, setDragActive] = useState(false);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const processFile = useProcessFile(section, onAdd);
+
+  useEffect(() => {
+    if (!paste) return;
+    const onPaste = (e: ClipboardEvent) => {
+      const files = Array.from(e.clipboardData?.files ?? []).filter(
+        (f) => f.type.startsWith("image/") || f.type === "application/pdf",
+      );
+      if (files.length === 0) return;
+      e.preventDefault();
+      files.forEach((f) => void processFile(f));
+    };
+    document.addEventListener("paste", onPaste);
+    return () => document.removeEventListener("paste", onPaste);
+  }, [paste, processFile]);
+
+  return (
+    <span
+      onDragOver={(e) => { e.preventDefault(); setDragActive(true); }}
+      onDragLeave={() => setDragActive(false)}
+      onDrop={(e) => {
+        e.preventDefault();
+        setDragActive(false);
+        Array.from(e.dataTransfer.files).forEach((f) => void processFile(f));
+      }}
+      className={`inline-flex ${className}`}
+    >
+      <button
+        type="button"
+        onClick={() => inputRef.current?.click()}
+        title={title ?? `${label} (${paste ? "⌘V pastes from the clipboard, or " : ""}drop a file on this button, or click to browse)`}
+        className={`inline-flex h-7 items-center gap-1.5 rounded-control border px-2.5 text-[12.5px] transition-colors ${
+          dragActive
+            ? "border-accent-border bg-accent-soft text-accent"
+            : "border-line bg-surface text-ink-2 hover:bg-surface-hover"
+        }`}
+      >
+        <AppIcon name="upload" size={13} strokeWidth={2} />
+        {dragActive ? "Drop to add" : label}
+      </button>
+      <input
+        ref={inputRef}
+        type="file"
+        accept="image/*,application/pdf"
+        multiple
+        onChange={(e) => {
+          Array.from(e.target.files || []).forEach((f) => void processFile(f));
+          if (inputRef.current) inputRef.current.value = "";
+        }}
+        className="hidden"
+      />
+    </span>
+  );
+}
+
+/**
+ * Thumbnail strip for one section's attachments: click opens the lightbox,
+ * the x removes. Renders nothing when the section has no files. With
+ * `collapsible`, the strip folds behind a persisted "Show N" toggle.
+ */
+export function AttachmentThumbs({
+  section,
+  attachments,
+  onRemove,
+  collapsible = false,
+  size = "sm",
+  className = "",
+}: {
+  section: string;
+  attachments: BriefAttachment[];
+  onRemove: (id: string) => void;
+  collapsible?: boolean;
+  size?: "sm" | "md";
+  className?: string;
+}) {
+  const [previewId, setPreviewId] = useState<string | null>(null);
+  // Default to collapsed only when collapsible is on AND there are already
+  // images to hide. Persisted so the choice survives a refresh.
+  const [thumbsExpanded, toggleThumbs] = usePersistedOpen(`upload.thumbs.${section}`, !collapsible);
+  const sectionAttachments = attachments.filter((a) => a.section === section);
+  if (sectionAttachments.length === 0) return null;
+  const dim = size === "md" ? "h-12 w-12" : "h-7 w-9";
+  return (
+    <div className={`flex flex-wrap items-center gap-1.5 ${className}`}>
+      {collapsible && (
+        <button
+          type="button"
+          onClick={toggleThumbs}
+          className="inline-flex items-center gap-1 text-[11.5px] text-ink-3 hover:text-ink"
+          title={thumbsExpanded ? "Hide thumbnails" : "Show thumbnails"}
+        >
+          {thumbsExpanded ? "Hide" : `Show ${sectionAttachments.length}`}
+          <AppIcon name={thumbsExpanded ? "chevU" : "chevD"} size={12} strokeWidth={2} />
+        </button>
+      )}
+      {thumbsExpanded && sectionAttachments.map((att) => {
+        const isPdf = isPdfDataUrl(att.dataUrl);
+        return (
+          <div key={att.id} className="group relative">
+            <button
+              type="button"
+              onClick={() => setPreviewId(att.id)}
+              className={`block ${dim} overflow-hidden rounded-control border border-line transition-colors hover:border-accent-border focus:border-accent-border focus:outline-none`}
+              title={`View ${att.label}${isPdf ? " (PDF)" : ""}`}
+            >
+              {isPdf ? (
+                <span className="flex h-full w-full items-center justify-center bg-surface-2 font-mono text-[9px] font-medium text-ink-2">PDF</span>
+              ) : (
+                <img src={att.dataUrl} alt={att.label} className="h-full w-full object-cover" />
+              )}
+            </button>
+            <button
+              type="button"
+              onClick={(e) => { e.stopPropagation(); onRemove(att.id); }}
+              className="absolute -right-1.5 -top-1.5 grid h-4 w-4 place-items-center rounded-full border border-line bg-surface text-ink-2 opacity-90 transition-opacity hover:text-neg md:opacity-0 md:group-hover:opacity-100 md:focus:opacity-100"
+              title="Remove"
+              aria-label={`Remove ${att.label}`}
+            >
+              <AppIcon name="x" size={9} strokeWidth={2.5} />
+            </button>
+          </div>
+        );
+      })}
+      {previewId && (
+        <LightboxModal attachments={sectionAttachments} currentId={previewId} onClose={() => setPreviewId(null)} />
+      )}
+    </div>
+  );
+}
+
+export function ImageUpload({ section, sectionLabel, attachments, onAdd, onRemove, collapsibleThumbs }: Props) {
+  const [dragActive, setDragActive] = useState(false);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const processFile = useProcessFile(section, onAdd);
+  const sectionAttachments = attachments.filter((a) => a.section === section);
 
   const handleDrop = useCallback(
     (e: React.DragEvent) => {
       e.preventDefault();
       setDragActive(false);
-      const files = Array.from(e.dataTransfer.files);
-      files.forEach(processFile);
+      Array.from(e.dataTransfer.files).forEach((f) => void processFile(f));
     },
     [processFile]
   );
 
   const handleChange = useCallback(
     (e: React.ChangeEvent<HTMLInputElement>) => {
-      const files = Array.from(e.target.files || []);
-      files.forEach(processFile);
+      Array.from(e.target.files || []).forEach((f) => void processFile(f));
       if (inputRef.current) inputRef.current.value = "";
     },
     [processFile]
   );
 
   return (
-    <div className="mt-3">
-      <div className="flex items-center gap-2 mb-2">
-        <span className="text-xs font-semibold text-ink-3 uppercase tracking-wider">
-          {sectionLabel} Screenshots / PDFs
-        </span>
-        <span className="text-xs text-ink-3">
-          ({sectionAttachments.length} file{sectionAttachments.length !== 1 ? "s" : ""})
-        </span>
-        {/* Toggle only renders when collapsibleThumbs is on AND there are
-            attachments to show/hide. Non-collapsible sections never see this. */}
-        {collapsibleThumbs && sectionAttachments.length > 0 && (
-          <button
-            type="button"
-            onClick={() => setThumbsExpanded((v) => !v)}
-            className="ml-auto text-[11px] font-semibold text-accent hover:text-accent focus:outline-none focus:underline"
-            title={thumbsExpanded ? "Hide thumbnails" : "Show thumbnails"}
-          >
-            {thumbsExpanded ? "Hide ▲" : `Show ${sectionAttachments.length} ▼`}
-          </button>
-        )}
+    <div className="mt-2.5">
+      <div className="mb-1.5 flex items-center gap-2 text-[11px] text-ink-3">
+        <span>{sectionLabel} screenshots / PDFs</span>
+        <span className="font-mono">{sectionAttachments.length} file{sectionAttachments.length !== 1 ? "s" : ""}</span>
       </div>
 
-      {/* Thumbnails — small, but with a generous click target. The X stays
-          visible on touch devices (no hover) so it's always tappable, and
-          appears on hover on desktop. Clicking the image opens a full-size
-          lightbox instead of expanding inline (was eating too much vertical
-          space when many screenshots were attached). When collapsibleThumbs is
-          set, the whole grid is hidden until the user toggles "Show". */}
-      {sectionAttachments.length > 0 && thumbsExpanded && (
-        <div className="flex flex-wrap gap-2 mb-3">
-          {sectionAttachments.map((att) => {
-            const isPdf = isPdfDataUrl(att.dataUrl);
-            return (
-              <div key={att.id} className="group relative">
-                <button
-                  type="button"
-                  onClick={() => setPreviewId(att.id)}
-                  className="block h-12 w-12 rounded-md border border-line overflow-hidden hover:border-accent-border focus:border-accent-border focus:outline-none transition-colors"
-                  title={`View ${att.label}${isPdf ? " (PDF)" : ""}`}
-                >
-                  {isPdf ? (
-                    <span className="flex h-full w-full items-center justify-center bg-neg-soft text-neg text-[10px] font-bold tracking-wider">
-                      PDF
-                    </span>
-                  ) : (
-                    <img src={att.dataUrl} alt={att.label} className="h-full w-full object-cover" />
-                  )}
-                </button>
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onRemove(att.id);
-                  }}
-                  className="absolute -top-1.5 -right-1.5 flex h-5 w-5 items-center justify-center rounded-full bg-neg text-white text-xs font-bold shadow opacity-90 md:opacity-0 md:group-hover:opacity-100 md:focus:opacity-100 transition-opacity"
-                  title="Remove"
-                >
-                  &times;
-                </button>
-              </div>
-            );
-          })}
-        </div>
-      )}
-
-      {/* Full-size lightbox modal. Opens on thumbnail click; closes on X,
-          backdrop click, or Escape. Backdrop greys out the rest of the page. */}
-      {previewId && (
-        <LightboxModal
-          attachments={sectionAttachments}
-          currentId={previewId}
-          onClose={() => setPreviewId(null)}
-        />
-      )}
+      {/* Thumbnails — click opens the lightbox; the x removes. With
+          collapsibleThumbs the strip folds behind a persisted toggle. */}
+      <AttachmentThumbs
+        section={section}
+        attachments={attachments}
+        onRemove={onRemove}
+        collapsible={!!collapsibleThumbs}
+        size="md"
+        className="mb-2.5"
+      />
 
       {/* Drop zone + explicit Browse button. Both the drop zone background
           and the button trigger the same multi-file picker, but the button
           makes it obvious to users that they can cmd/ctrl-click to select
           many files at once from Finder/Explorer. */}
       <div
-        onDragOver={(e) => {
-          e.preventDefault();
-          setDragActive(true);
-        }}
+        onDragOver={(e) => { e.preventDefault(); setDragActive(true); }}
         onDragLeave={() => setDragActive(false)}
         onDrop={handleDrop}
-        className={`flex items-center justify-center gap-3 rounded-card border-2 border-dashed px-4 py-3 text-sm transition-colors ${
-          dragActive
-            ? "border-accent-border bg-accent-soft text-accent"
-            : "border-line bg-surface-2/50 text-ink-3 hover:border-line hover:text-ink-3"
+        className={`flex items-center justify-center gap-3 rounded-card border border-dashed px-3.5 py-2.5 text-[12.5px] transition-colors ${
+          dragActive ? "border-accent-border bg-accent-soft text-accent" : "border-line bg-surface-2 text-ink-3"
         }`}
       >
         <span className="flex-1 text-center">
@@ -249,13 +341,11 @@ export function ImageUpload({ section, sectionLabel, attachments, onAdd, onRemov
         </span>
         <button
           type="button"
-          onClick={(e) => {
-            e.stopPropagation();
-            inputRef.current?.click();
-          }}
-          className="rounded-lg bg-white border border-line px-3 py-1.5 text-xs font-semibold text-ink-2 hover:bg-surface-2 hover:border-line transition-colors shrink-0"
+          onClick={(e) => { e.stopPropagation(); inputRef.current?.click(); }}
+          className="inline-flex h-7 shrink-0 items-center gap-1.5 rounded-control border border-line bg-surface px-2.5 text-[12.5px] text-ink-2 transition-colors hover:bg-surface-hover"
         >
-          Browse files…
+          <AppIcon name="upload" size={13} strokeWidth={2} />
+          Browse files
         </button>
         <input
           ref={inputRef}
@@ -324,9 +414,11 @@ export function LightboxModal({
 
   if (!active) return null;
 
+  const navBtn = "absolute flex h-9 w-9 items-center justify-center rounded-full border border-line bg-surface text-ink-2 shadow-[var(--shadow-pop)] transition-colors hover:text-ink";
+
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm"
       onClick={onClose}
       role="dialog"
       aria-modal="true"
@@ -334,13 +426,11 @@ export function LightboxModal({
       {/* Close button — top-right of viewport so it's always findable */}
       <button
         onClick={(e) => { e.stopPropagation(); onClose(); }}
-        className="absolute top-4 right-4 flex h-10 w-10 items-center justify-center rounded-full bg-white/90 text-ink-2 shadow-lg hover:bg-white hover:text-ink transition-colors"
+        className={`${navBtn} right-4 top-4`}
         title="Close (Esc)"
         aria-label="Close"
       >
-        <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24">
-          <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-        </svg>
+        <AppIcon name="x" size={16} strokeWidth={2} />
       </button>
 
       {/* Prev/next navigation when the section has multiple screenshots */}
@@ -348,23 +438,19 @@ export function LightboxModal({
         <>
           <button
             onClick={(e) => { e.stopPropagation(); prev(); }}
-            className="absolute left-4 top-1/2 -translate-y-1/2 flex h-10 w-10 items-center justify-center rounded-full bg-white/90 text-ink-2 shadow-lg hover:bg-white hover:text-ink transition-colors"
+            className={`${navBtn} left-4 top-1/2 -translate-y-1/2`}
             title="Previous (←)"
             aria-label="Previous image"
           >
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
-            </svg>
+            <AppIcon name="chevL" size={16} strokeWidth={2} />
           </button>
           <button
             onClick={(e) => { e.stopPropagation(); next(); }}
-            className="absolute right-4 top-1/2 -translate-y-1/2 flex h-10 w-10 items-center justify-center rounded-full bg-white/90 text-ink-2 shadow-lg hover:bg-white hover:text-ink transition-colors"
+            className={`${navBtn} right-4 top-1/2 -translate-y-1/2`}
             title="Next (→)"
             aria-label="Next image"
           >
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
-            </svg>
+            <AppIcon name="chevR" size={16} strokeWidth={2} />
           </button>
         </>
       )}
@@ -374,28 +460,28 @@ export function LightboxModal({
           the same container size so navigation between mixed types
           stays smooth. */}
       <div
-        className="max-w-[95vw] max-h-[90vh] flex flex-col items-center gap-3"
+        className="flex max-h-[90vh] max-w-[95vw] flex-col items-center gap-3"
         onClick={(e) => e.stopPropagation()}
       >
         {isPdfDataUrl(active.dataUrl) ? (
           <iframe
             src={active.dataUrl}
             title={active.label}
-            className="w-[90vw] h-[85vh] rounded-lg shadow-2xl bg-white"
+            className="h-[85vh] w-[90vw] rounded-card bg-surface"
           />
         ) : (
           <img
             src={active.dataUrl}
             alt={active.label}
-            className="max-w-full max-h-[85vh] object-contain rounded-lg shadow-2xl"
+            className="max-h-[85vh] max-w-full rounded-card object-contain"
           />
         )}
-        <div className="text-xs text-white/80 text-center">
+        <div className="text-center text-[12px] text-white/80">
           <div className="font-medium">
             {active.label}{isPdfDataUrl(active.dataUrl) ? " (PDF)" : ""}
           </div>
           {attachments.length > 1 && (
-            <div className="text-white/60 mt-0.5">
+            <div className="mt-0.5 text-white/60">
               {idx + 1} of {attachments.length} · arrow keys to navigate · Esc to close
             </div>
           )}

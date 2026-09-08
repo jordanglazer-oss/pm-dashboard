@@ -30,6 +30,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useStocks } from "@/app/lib/StockContext";
+import { AppIcon } from "./AppIcon";
 
 type Entry = {
   id: string;            // stable identifier for recency ordering
@@ -291,30 +292,28 @@ export function CommandPalette({ open, onClose, onTriggerQuickAdd }: Props) {
 
   return (
     <div
-      className="fixed inset-0 z-[110] flex items-start justify-center bg-ink/60 backdrop-blur-sm pt-10 sm:pt-20 px-4"
+      className="fixed inset-0 z-[110] flex items-start justify-center bg-ink/40 px-4 pt-10 backdrop-blur-[2px] sm:pt-20"
       onClick={onClose}
     >
       <div
         onClick={(e) => e.stopPropagation()}
-        className="animate-scale-in w-full max-w-xl rounded-card bg-white shadow-2xl border border-line overflow-hidden"
+        className="animate-scale-in w-full max-w-[560px] overflow-hidden rounded-card border border-line bg-surface shadow-[var(--shadow-pop)]"
       >
-        <div className="flex items-center gap-2 border-b border-line-soft px-4 py-3">
-          <svg className="w-4 h-4 text-ink-3" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" d="m21 21-4.343-4.343m0 0A8 8 0 1 0 5.343 5.343a8 8 0 0 0 11.314 11.314Z" />
-          </svg>
+        <div className="flex h-9 items-center gap-2.5 border-b border-line-soft px-3.5">
+          <AppIcon name="search" size={14} className="text-ink-3" />
           <input
             ref={inputRef}
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="Search pages, stocks, or actions..."
-            className="flex-1 bg-transparent text-ink text-sm outline-none placeholder:text-ink-3"
+            placeholder="Search pages, holdings, or actions"
+            className="h-full flex-1 bg-transparent text-[12.5px] text-ink outline-none placeholder:text-ink-3"
           />
-          <kbd className="text-[10px] text-ink-3 border border-line rounded px-1.5 py-0.5">Esc</kbd>
+          <kbd className="rounded border border-line bg-surface-2 px-1 py-px font-mono text-[10px] text-ink-3">Esc</kbd>
         </div>
 
         <ul ref={listRef} className="max-h-96 overflow-y-auto py-1">
           {filtered.length === 0 ? (
-            <li className="px-4 py-6 text-center text-sm text-ink-3">No matches</li>
+            <li className="px-3.5 py-6 text-center text-[12.5px] text-ink-3">No matches</li>
           ) : (
             filtered.map((e, idx) => {
               const active = idx === highlight;
@@ -323,7 +322,7 @@ export function CommandPalette({ open, onClose, onTriggerQuickAdd }: Props) {
               return (
                 <React.Fragment key={e.id}>
                   {showHeader && (
-                    <li className="px-4 pt-2.5 pb-1 font-mono text-[10px] font-semibold uppercase tracking-wider text-ink-3">
+                    <li className={`px-3.5 pb-1 text-[11px] text-ink-3 ${idx === 0 ? "pt-1.5" : "pt-2.5"}`}>
                       {CATEGORY_LABEL[e.category]}
                     </li>
                   )}
@@ -331,27 +330,27 @@ export function CommandPalette({ open, onClose, onTriggerQuickAdd }: Props) {
                     data-idx={idx}
                     onMouseEnter={() => setHighlight(idx)}
                     onClick={() => activate(e)}
-                    className={`flex items-center gap-3 px-4 py-2 cursor-pointer ${
+                    className={`flex h-8 cursor-pointer items-center gap-2.5 px-3.5 text-[12.5px] ${
                       active ? "bg-accent-soft" : ""
                     }`}
                   >
                     <CategoryGlyph category={e.category} />
-                    <div className="flex-1 min-w-0">
-                      <div className={`truncate text-sm ${e.category === "stock" ? "font-mono font-semibold" : "font-medium"} text-ink`}>
+                    <div className="flex min-w-0 flex-1 items-baseline gap-2">
+                      <span className={`shrink-0 truncate ${e.category === "stock" ? "font-mono font-medium" : "font-medium"} text-ink`}>
                         {e.label}
-                      </div>
+                      </span>
                       {e.subtitle && (
-                        <div className="text-[11px] text-ink-3 truncate">{e.subtitle}</div>
+                        <span className="min-w-0 truncate text-[11.5px] text-ink-3">{e.subtitle}</span>
                       )}
                     </div>
                     {e.price != null && (
-                      <span className="shrink-0 font-mono text-[12px] text-ink-2 tabular-nums">${e.price.toFixed(2)}</span>
+                      <span className="shrink-0 font-mono text-[12px] tabular-nums text-ink-2">{e.price.toFixed(2)}</span>
                     )}
                     {e.score != null && (
-                      <span className="shrink-0 font-mono text-[12px] font-semibold text-ink tabular-nums">{e.score.toFixed(1)}<span className="text-ink-faint">/41</span></span>
+                      <span className="shrink-0 font-mono text-[12px] tabular-nums text-ink">{e.score.toFixed(1)}<span className="text-ink-faint">/41</span></span>
                     )}
                     {active && (
-                      <kbd className="shrink-0 rounded border border-line px-1 py-px text-[10px] text-ink-3">↵</kbd>
+                      <kbd className="shrink-0 rounded border border-line bg-surface px-1 py-px font-mono text-[10px] text-ink-3">Enter</kbd>
                     )}
                   </li>
                 </React.Fragment>
@@ -360,34 +359,18 @@ export function CommandPalette({ open, onClose, onTriggerQuickAdd }: Props) {
           )}
         </ul>
 
-        <div className="border-t border-line-soft px-4 py-2 flex items-center gap-3 text-[10px] text-ink-3">
-          <span><kbd className="border border-line rounded px-1 py-px">↑</kbd> <kbd className="border border-line rounded px-1 py-px">↓</kbd> navigate</span>
-          <span><kbd className="border border-line rounded px-1 py-px">↵</kbd> open</span>
-          <span className="ml-auto"><kbd className="border border-line rounded px-1 py-px">⌘K</kbd> toggle</span>
+        <div className="flex h-8 items-center gap-3 border-t border-line-soft px-3.5 text-[11px] text-ink-3">
+          <span><kbd className="rounded border border-line px-1 py-px font-mono text-[10px]">↑</kbd> <kbd className="rounded border border-line px-1 py-px font-mono text-[10px]">↓</kbd> navigate</span>
+          <span><kbd className="rounded border border-line px-1 py-px font-mono text-[10px]">Enter</kbd> open</span>
+          <span className="ml-auto"><kbd className="rounded border border-line px-1 py-px font-mono text-[10px]">⌘K</kbd> toggle</span>
         </div>
       </div>
     </div>
   );
 }
 
+/** Row glyph — one 14px stroke icon in ink-3, no tinted chip. */
 function CategoryGlyph({ category }: { category: Entry["category"] }) {
-  if (category === "stock") {
-    return (
-      <span className="inline-flex items-center justify-center w-7 h-7 rounded-md bg-pos-soft text-pos shrink-0">
-        <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M2.25 18 9 11.25l4.306 4.307a11.95 11.95 0 0 1 5.814-5.518l2.74-1.22m0 0-5.94-2.281m5.94 2.281-2.28 5.941" /></svg>
-      </span>
-    );
-  }
-  if (category === "action") {
-    return (
-      <span className="inline-flex items-center justify-center w-7 h-7 rounded-md bg-warn-soft text-warn shrink-0">
-        <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M3.75 13.5 10.5 21l-.75-7.5h6L13.5 3l.75 7.5h-6Z" /></svg>
-      </span>
-    );
-  }
-  return (
-    <span className="inline-flex items-center justify-center w-7 h-7 rounded-md bg-surface-2 text-ink-2 shrink-0">
-      <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M3.75 6h16.5M3.75 12h16.5m-16.5 5.25h16.5" /></svg>
-    </span>
-  );
+  const name = category === "stock" ? "trend" : category === "action" ? "spark" : "list";
+  return <AppIcon name={name} size={14} className="shrink-0 text-ink-3" />;
 }

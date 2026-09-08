@@ -5,6 +5,8 @@ import { useStocks } from "@/app/lib/StockContext";
 import Link from "next/link";
 import { displayTicker } from "@/app/lib/ticker";
 import { Skeleton } from "@/app/components/Skeleton";
+import { EmptyState } from "@/app/components/EmptyState";
+import { AppIcon } from "@/app/components/AppIcon";
 import { describeCondition, type KillCheck, type KillStatus } from "@/app/lib/kill-conditions";
 
 /**
@@ -41,11 +43,12 @@ type Payload = {
   coverage?: { portfolioCount: number; underwritten: number; missing: CoverageRow[] };
 };
 
-const STATUS_STYLE: Record<KillStatus, { dot: string; pill: string; label: string }> = {
-  ok: { dot: "bg-pos", pill: "bg-pos-soft text-pos border-pos-border", label: "OK" },
-  tripped: { dot: "bg-neg", pill: "bg-neg-soft text-neg border-neg-border", label: "TRIPPED" },
-  unknown: { dot: "bg-ink-faint", pill: "bg-surface-2 text-ink-3 border-line", label: "NO DATA" },
-  manual: { dot: "bg-ink-faint", pill: "bg-surface-2 text-ink-2 border-line", label: "MANUAL" },
+/** Status = dot + word (no pill): colour carries the meaning, the word names it. */
+const STATUS_STYLE: Record<KillStatus, { dot: string; label: string }> = {
+  ok: { dot: "bg-pos", label: "OK" },
+  tripped: { dot: "bg-neg", label: "Tripped" },
+  unknown: { dot: "bg-ink-faint", label: "No data" },
+  manual: { dot: "bg-ink-faint", label: "Manual" },
 };
 
 const todayIso = () => new Date().toISOString().slice(0, 10);
@@ -172,6 +175,10 @@ export default function ThesisDeskPage() {
   };
 
   const setAll = (open: boolean) => {
+    // MUST write the pref too: isOpen() gives uiPrefs priority over the legacy
+    // blob, so writing only the blob left any previously-toggled name stuck
+    // open — "Collapse all" appeared to work, then came back on refresh.
+    rows.forEach((r) => setUiPref(`thesis.open.${r.ticker}`, open ? "1" : "0"));
     const next = Object.fromEntries(rows.map((r) => [r.ticker, open]));
     setOverrides(next);
     persist(next);
@@ -435,53 +442,49 @@ export default function ThesisDeskPage() {
     setBulk((b) => (b ? { ...b, done: b.total } : b));
   };
 
-  return (
-    <main className="min-h-screen bg-ground px-4 py-6 text-ink md:px-8 md:py-8">
-      {/* Wide container: this is a monitor, not a reading page. At max-w-5xl
-          two expanded cards already pushed the rest below the fold. */}
-      <div className="mx-auto max-w-[1600px]">
-        <div className="mb-6">
-          <h1 className="text-[15px] font-bold text-ink">Thesis Desk</h1>
-          {/* Capped to a readable measure — the GRID uses the full width, prose shouldn't. */}
-          <p className="mt-1 max-w-3xl text-sm text-ink-3">
-            Every underwritten position, its thesis as signed, and the pre-registered conditions
-            that would make you wrong — checked automatically.{" "}
-            <Link href="/methodology" className="text-accent hover:underline">
-              How this works
-            </Link>
-          </p>
-        </div>
+  const btnSecondary =
+    "inline-flex h-7 items-center gap-1.5 rounded-control border border-line bg-surface px-2.5 text-[12.5px] text-ink-2 hover:bg-surface-hover disabled:opacity-50";
 
-        {/* Summary strip */}
-        {!loading && (
-          <div className="mb-5 flex flex-wrap items-center gap-2 text-[12px]">
-            <span className="rounded-full border border-line bg-white px-2.5 py-1 font-semibold text-ink-2">
-              {cov ? `${cov.underwritten} of ${cov.portfolioCount} stocks underwritten` : `${rows.length} underwritten`}
+  return (
+    <main className="flex flex-col gap-3.5 text-ink">
+      {/* Toolbar: summary as dot + word, bulk actions right-aligned. */}
+      {!loading && (
+        <div className="flex flex-wrap items-center gap-x-3.5 gap-y-2 text-[12.5px] text-ink-2">
+          <span className="inline-flex items-center gap-1.5">
+            <span className="dot bg-ink-3" />
+            {cov ? `${cov.underwritten} of ${cov.portfolioCount} stocks underwritten` : `${rows.length} underwritten`}
+          </span>
+          {totals.trippedNames > 0 && (
+            <span className="inline-flex items-center gap-1.5">
+              <span className="dot bg-neg" />
+              {totals.trippedNames} with a tripped condition
             </span>
-            {totals.trippedNames > 0 && (
-              <span className="rounded-full border border-neg-border bg-neg-soft px-2.5 py-1 font-semibold text-neg">
-                {totals.trippedNames} with a tripped condition
-              </span>
-            )}
-            {totals.dueNames > 0 && (
-              <span className="rounded-full border border-warn-border bg-warn-soft px-2.5 py-1 font-semibold text-warn">
-                {totals.dueNames} re-underwrite overdue
-              </span>
-            )}
-            {totals.unreviewed > 0 && (
-              <span
-                className="rounded-full border border-accent-border bg-accent-soft px-2.5 py-1 font-semibold text-accent"
-                title="Written by the AI bulk draft and not edited since. Open a name and save it on its stock page to mark it reviewed."
-              >
-                {totals.unreviewed} AI-drafted, unreviewed
-              </span>
-            )}
+          )}
+          {totals.dueNames > 0 && (
+            <span className="inline-flex items-center gap-1.5">
+              <span className="dot bg-warn" />
+              {totals.dueNames} re-underwrite overdue
+            </span>
+          )}
+          {totals.unreviewed > 0 && (
+            <span
+              className="inline-flex items-center gap-1.5"
+              title="Written by the AI bulk draft and not edited since. Open a name and save it on its stock page to mark it reviewed."
+            >
+              <span className="dot bg-accent" />
+              {totals.unreviewed} AI-drafted, unreviewed
+            </span>
+          )}
+          <Link href="/methodology" className="text-[12px] text-accent hover:underline">
+            How this works
+          </Link>
+          <div className="ml-auto flex flex-wrap items-center gap-2">
             {pendingRewrites.length > 0 && !bulk && (
               <button
                 onClick={applyAllRewrites}
                 disabled={!!bulkRewriting}
                 title={`Applies every proposed rewrite (${pendingRewrites.length}) — only conditions the company does NOT disclose. Each keeps the wording it replaced, and is re-verified immediately.`}
-                className="rounded-control border border-warn-border bg-white px-2.5 py-1 text-[11px] font-semibold text-warn disabled:opacity-50"
+                className={btnSecondary}
               >
                 {bulkRewriting
                   ? `Rewriting ${bulkRewriting.done + 1} of ${bulkRewriting.total}…`
@@ -493,7 +496,7 @@ export default function ThesisDeskPage() {
                 onClick={verifyAll}
                 disabled={!!verifying}
                 title={`Runs the AI web check now on every unverified custom condition across ${unverified.length} name${unverified.length === 1 ? "" : "s"}. They would verify themselves within a few nights anyway — this skips the wait.`}
-                className="rounded-control border border-line bg-white px-2.5 py-1 text-[11px] font-semibold text-accent disabled:opacity-50"
+                className={btnSecondary}
               >
                 {verifying
                   ? `Verifying ${verifying.done + 1} of ${verifying.total}…`
@@ -501,7 +504,7 @@ export default function ThesisDeskPage() {
               </button>
             )}
             {bulk ? (
-              <span className="rounded-control border border-line bg-white px-2.5 py-1 text-[11px] font-semibold text-accent">
+              <span className="inline-flex h-7 items-center text-[12.5px] text-ink-2">
                 {bulk.done < bulk.total
                   ? `Drafting ${bulk.done + 1} of ${bulk.total}…`
                   : `Done — ${bulk.total - bulk.failed.length} drafted`}
@@ -512,193 +515,191 @@ export default function ThesisDeskPage() {
                   <button
                     onClick={() => draftBulk("missing")}
                     title={`Generates and SAVES an AI thesis for the ${cov.missing.length} name${cov.missing.length === 1 ? "" : "s"} with no conditions yet. Existing theses are NOT touched.`}
-                    className="rounded-control border border-line bg-white px-2.5 py-1 text-[11px] font-semibold text-accent"
+                    className={btnSecondary}
                   >
-                    ✦ Draft {cov.missing.length} missing
+                    <AppIcon name="spark" size={13} />
+                    Draft {cov.missing.length} missing
                   </button>
                 )}
                 {rows.length > 0 && (
                   <button
                     onClick={() => draftBulk("all")}
                     title={`Redrafts ALL ${rows.length + (cov?.missing.length ?? 0)}, OVERWRITING the ${rows.length} already saved — including hand edits. Asks for confirmation first.`}
-                    className="rounded-control border border-warn-border bg-white px-2.5 py-1 text-[11px] font-semibold text-warn"
+                    className={btnSecondary}
                   >
-                    ↻ Redraft all {rows.length + (cov?.missing.length ?? 0)}
+                    <AppIcon name="refresh" size={13} />
+                    Redraft all {rows.length + (cov?.missing.length ?? 0)}
                   </button>
                 )}
               </>
             )}
             {rows.length > 0 && (
-              <button
-                onClick={() => setAll(!anyOpen)}
-                className="ml-auto rounded-control border border-line bg-white px-2.5 py-1 text-[11px] font-semibold text-ink-2 hover:text-ink"
-              >
+              <button onClick={() => setAll(!anyOpen)} className={btnSecondary}>
                 {anyOpen ? "Collapse all" : "Expand all"}
               </button>
             )}
           </div>
-        )}
+        </div>
+      )}
 
-        {bulk && bulk.failed.length > 0 && (
-          <p className="mb-4 text-[11px] text-neg">
-            Could not draft: {bulk.failed.join(", ")} — open those names individually.
-          </p>
-        )}
+      {bulk && bulk.failed.length > 0 && (
+        <p className="text-[11.5px] text-neg">
+          Could not draft: {bulk.failed.join(", ")} — open those names individually.
+        </p>
+      )}
 
-        {loading && (
-          <div className="space-y-3">
-            <Skeleton className="h-32 w-full rounded-card" />
-            <Skeleton className="h-32 w-full rounded-card" />
-          </div>
-        )}
+      {loading && (
+        <div className="flex flex-col gap-3.5">
+          <Skeleton className="h-32 w-full rounded-card" />
+          <Skeleton className="h-32 w-full rounded-card" />
+        </div>
+      )}
 
-        {!loading && rows.length === 0 && (
-          <section className="rounded-card border border-line bg-white px-5 py-10 text-center shadow-sm">
-            <p className="text-sm font-semibold text-ink">No positions underwritten yet</p>
-            <p className="mx-auto mt-1.5 max-w-md text-[13px] leading-6 text-ink-3">
-              Open a holding&apos;s stock page and use <span className="font-semibold text-ink-2">✦ Draft with AI</span>{" "}
-              in the Thesis tile — it proposes a thesis and exit conditions from that name&apos;s own
-              research, and you edit and sign it.
-            </p>
-          </section>
-        )}
+      {!loading && rows.length === 0 && (
+        <section className="panel">
+          <EmptyState
+            glyph={<AppIcon name="filecheck" size={18} />}
+            title="No positions underwritten yet"
+            body={
+              <>
+                Open a holding&apos;s stock page and use <span className="font-medium text-ink">Draft with AI</span> in the
+                Thesis tile — it proposes a thesis and exit conditions from that name&apos;s own research, and you edit and sign it.
+              </>
+            }
+          />
+        </section>
+      )}
 
-        {/* One card per underwritten name.
-            Grid rather than a stack so expanding two or three names no longer
-            pushes the others off-screen. ROW-MAJOR on purpose: cards read
-            left-to-right in alphabetical order, so a name is where you expect
-            it. CSS columns would pack denser but scatter that order down each
-            column. items-start keeps a tall expanded card from stretching its
-            neighbours to match. */}
-        <div className="grid items-start gap-4 lg:grid-cols-2 2xl:grid-cols-3">
+      {/* One panel-style collapsible row per underwritten name.
+          Grid rather than a stack so expanding two or three names no longer
+          pushes the others off-screen. ROW-MAJOR on purpose: cards read
+          left-to-right in alphabetical order, so a name is where you expect
+          it. items-start keeps a tall expanded card from stretching its
+          neighbours to match. Open state persists per name in pm:ui-prefs
+          (`thesis.open.<ticker>`, unchanged). */}
+      {rows.length > 0 && (
+        <div className="grid items-start gap-3.5 lg:grid-cols-2 2xl:grid-cols-3">
           {rows.map((r) => {
             const overdue = r.reUnderwriteBy ? r.reUnderwriteBy < todayIso() : false;
             const open = isOpen(r);
             return (
-              <section
-                key={r.ticker}
-                className={`overflow-hidden rounded-card border bg-white shadow-sm ${
-                  r.tripped > 0 ? "border-neg-border" : "border-line"
-                }`}
-              >
-                <div className={`flex flex-wrap items-center gap-2 px-4 py-3 ${open ? "border-b border-line" : ""}`}>
+              <section key={r.ticker} className="panel">
+                <div
+                  className={`flex min-h-[38px] flex-wrap items-center gap-2.5 px-3.5 py-1.5 ${open ? "border-b border-line-soft" : ""}`}
+                >
                   <button
                     onClick={() => toggle(r.ticker)}
                     aria-expanded={open}
                     aria-label={`${open ? "Collapse" : "Expand"} ${displayTicker(r.ticker)}`}
                     title={open ? "Collapse" : "Expand"}
-                    className="shrink-0 text-ink-3 transition-colors hover:text-ink"
+                    className="grid h-5 w-5 shrink-0 place-items-center text-ink-3 transition-colors hover:text-ink"
                   >
-                    <span className={`inline-block text-[11px] transition-transform ${open ? "rotate-90" : ""}`} aria-hidden>
-                      ▶
-                    </span>
+                    <AppIcon name={open ? "chevD" : "chevR"} size={14} strokeWidth={2} />
                   </button>
-                  <Link href={`/stock/${encodeURIComponent(r.ticker)}`} className="font-mono text-sm font-bold text-ink hover:text-accent">
+                  {/* A tripped card takes the neg hue for the whole panel (the
+                      `.panel:has(.t-mark.bg-neg)` rule), so a broken thesis is
+                      findable in a grid of a dozen intact ones. */}
+                  {r.tripped > 0 && <span className="t-mark bg-neg" />}
+                  <Link href={`/stock/${encodeURIComponent(r.ticker)}`} className="font-mono text-[13px] font-semibold text-ink hover:text-accent">
                     {displayTicker(r.ticker)}
                   </Link>
+                  {/* Status: dot + word, one column. Precedence tripped › ok. */}
                   {r.auto > 0 && (
-                    <span
-                      className={`rounded-full border px-2 py-0.5 text-[10px] font-bold uppercase ${
-                        r.tripped > 0 ? STATUS_STYLE.tripped.pill : STATUS_STYLE.ok.pill
-                      }`}
-                    >
+                    <span className={`inline-flex items-center gap-1.5 text-[12px] ${r.tripped > 0 ? "text-neg" : "text-ink-2"}`}>
+                      <span className={`dot ${r.tripped > 0 ? "bg-neg" : "bg-pos"}`} />
                       {r.tripped > 0 ? `${r.tripped} of ${r.auto} tripped` : `${r.auto} conditions OK`}
                     </span>
                   )}
-                  {r.aiDrafted && (
-                    <span className="rounded-full border border-accent-border bg-accent-soft px-2 py-0.5 text-[10px] font-semibold text-accent">
-                      AI draft
-                    </span>
-                  )}
-                  <span className="ml-auto font-mono text-[11px] text-ink-faint">
+                  {r.aiDrafted && <span className="text-[11.5px] text-ink-3">AI draft</span>}
+                  <span className="ml-auto font-mono text-[11px] text-ink-3">
                     {r.underwrittenAt ? `underwritten ${r.underwrittenAt}` : ""}
                     {r.reUnderwriteBy ? (
-                      <span className={overdue ? "font-semibold text-neg" : ""}>
+                      <span className={overdue ? "text-warn" : ""}>
                         {" · re-underwrite "}
-                        {overdue ? "OVERDUE" : "due"} {r.reUnderwriteBy}
+                        {overdue ? "overdue" : "due"} {r.reUnderwriteBy}
                       </span>
                     ) : null}
                   </span>
                 </div>
 
                 {open && r.why && (
-                  <p className="whitespace-pre-line border-b border-line-soft px-4 py-3 text-[13px] leading-6 text-ink-2">
+                  <p className="whitespace-pre-line border-b border-line-soft px-3.5 py-2.5 text-[12.5px] leading-[1.5] text-ink-2">
                     {r.why}
                   </p>
                 )}
 
-                {open && <div className="divide-y divide-line-soft">
-                  {r.checks.map((k, i) => {
-                    const st = STATUS_STYLE[k.status];
-                    return (
-                      <div key={`${r.ticker}-${i}`} className="flex items-start gap-2.5 px-4 py-2">
-                        <span className={`mt-1.5 h-2 w-2 shrink-0 rounded-full ${st.dot}`} aria-hidden />
-                        <div className="min-w-0 flex-1">
-                          {k.condition.theme && (
-                            <div className="text-[10px] font-bold uppercase tracking-[0.14em] text-accent">
-                              {k.condition.theme}
-                            </div>
-                          )}
-                          <div className="text-[13px] font-medium text-ink">{describeCondition(k.condition)}</div>
-                          <div className="text-[11px] text-ink-3">{k.reading}</div>
-                          {k.condition.aiCheck?.undisclosed && k.condition.aiCheck.suggestedNote && (
-                            <div className="mt-1.5 rounded-lg border border-warn-border bg-warn-soft px-2.5 py-1.5">
-                              <div className="text-[10px] font-bold uppercase tracking-[0.14em] text-warn">
-                                Not disclosed — can never verify
+                {open && (
+                  <div className="divide-y divide-line-soft">
+                    {r.checks.map((k, i) => {
+                      const st = STATUS_STYLE[k.status];
+                      const uk = unclearKind(k.condition);
+                      const pending = uk === "pending";
+                      const statusWord =
+                        k.status === "tripped" && k.condition.trippedAt
+                          ? `Tripped ${k.condition.trippedAt.slice(5)}`
+                          : pending
+                            ? "Pending"
+                            : st.label;
+                      const statusTone =
+                        k.status === "tripped" ? "text-neg" : k.status === "ok" ? "text-ink-2" : "text-ink-3";
+                      const dotTone = pending ? "bg-ink-faint" : st.dot;
+                      return (
+                        <div key={`${r.ticker}-${i}`} className="flex items-start gap-2.5 px-3.5 py-2">
+                          <span className={`dot mt-[7px] ${dotTone}`} aria-hidden />
+                          <div className="min-w-0 flex-1">
+                            {k.condition.theme && (
+                              <div className="text-[11px] text-ink-3">{k.condition.theme}</div>
+                            )}
+                            {/* Conditions and readings carry tickers, ratios and
+                                dates with no break opportunities — without
+                                break-words a long one pushes the status word out
+                                of the card, which `.panel` then clips. */}
+                            <div className="break-words text-[12.5px] font-medium text-ink">{describeCondition(k.condition)}</div>
+                            <div className="break-words text-[11.5px] text-ink-3">{k.reading}</div>
+                            {k.condition.aiCheck?.undisclosed && k.condition.aiCheck.suggestedNote && (
+                              <div className="mt-1.5 rounded-control border border-line bg-surface-2 px-2.5 py-1.5">
+                                <div className="text-[11px] text-warn">Not disclosed — can never verify</div>
+                                <div className="mt-0.5 text-[12px] leading-5 text-ink-2">
+                                  Suggested: {k.condition.aiCheck.suggestedNote}
+                                </div>
+                                <button
+                                  onClick={() => applyRewrite(r, k.condition.id, k.condition.aiCheck!.suggestedNote!)}
+                                  disabled={applying === k.condition.id}
+                                  className="mt-1 inline-flex items-center gap-1 text-[11.5px] font-medium text-accent hover:underline disabled:opacity-50"
+                                >
+                                  {applying === k.condition.id ? "Applying…" : "Apply rewrite"}
+                                  <AppIcon name="arrowR" size={12} />
+                                </button>
                               </div>
-                              <div className="mt-0.5 text-[12px] leading-5 text-ink-2">
-                                Suggested: {k.condition.aiCheck.suggestedNote}
+                            )}
+                            {k.condition.rewrittenFrom && (
+                              <div className="mt-0.5 text-[11px] text-ink-faint">
+                                rewritten {k.condition.rewrittenAt} · was: {k.condition.rewrittenFrom}
                               </div>
-                              <button
-                                onClick={() => applyRewrite(r, k.condition.id, k.condition.aiCheck!.suggestedNote!)}
-                                disabled={applying === k.condition.id}
-                                className="mt-1 text-[11px] font-semibold text-accent hover:underline disabled:opacity-50"
-                              >
-                                {applying === k.condition.id ? "Applying…" : "Apply rewrite →"}
-                              </button>
-                            </div>
-                          )}
-                          {k.condition.rewrittenFrom && (
-                            <div className="mt-0.5 text-[10px] text-ink-faint">
-                              rewritten {k.condition.rewrittenAt} · was: {k.condition.rewrittenFrom}
-                            </div>
-                          )}
+                            )}
+                          </div>
+                          <span
+                            className={`shrink-0 text-[11.5px] ${statusTone}`}
+                            title={pending ? "Waiting on the next report — the condition is fine, the figure just isn't out yet." : undefined}
+                          >
+                            {statusWord}
+                          </span>
                         </div>
-                        {(() => {
-                          const uk = unclearKind(k.condition);
-                          const pending = uk === "pending";
-                          const label =
-                            k.status === "tripped" && k.condition.trippedAt
-                              ? `TRIPPED ${k.condition.trippedAt.slice(5)}`
-                              : pending
-                                ? "PENDING"
-                                : st.label;
-                          return (
-                            <span
-                              className={`shrink-0 rounded-full border px-2 py-0.5 text-[10px] font-bold ${
-                                pending ? "border-line bg-surface-2 text-ink-2" : st.pill
-                              }`}
-                              title={pending ? "Waiting on the next report — the condition is fine, the figure just isn't out yet." : undefined}
-                            >
-                              {label}
-                            </span>
-                          );
-                        })()}
-                      </div>
-                    );
-                  })}
-                </div>}
+                      );
+                    })}
+                  </div>
+                )}
 
                 {open && r.tripped > 0 && (
-                  <div className="flex items-center gap-2 border-t border-line bg-neg-soft/40 px-4 py-2.5">
-                    <span className="text-[12px] font-semibold text-neg">
-                      A pre-registered exit condition is tripped.
-                    </span>
+                  <div className="flex flex-wrap items-center gap-2 border-t border-neg-border bg-neg-soft px-3.5 py-2">
+                    <span className="text-[12.5px] font-medium text-neg">Exit condition tripped</span>
+                    <span className="min-w-0 text-[12px] text-ink-2">a rule you pre-registered has fired.</span>
                     <Link
                       href={`/stock/${encodeURIComponent(r.ticker)}`}
-                      className="ml-auto rounded-control border border-line bg-white px-2.5 py-1 text-xs font-semibold text-ink-2 hover:text-ink"
+                      className="ml-auto inline-flex h-7 items-center gap-1 rounded-control border border-line bg-surface px-2.5 text-[12.5px] text-ink-2 hover:bg-surface-hover"
                     >
-                      Respond on {displayTicker(r.ticker)} →
+                      Respond on {displayTicker(r.ticker)}
+                      <AppIcon name="arrowR" size={12} />
                     </Link>
                   </div>
                 )}
@@ -706,61 +707,58 @@ export default function ThesisDeskPage() {
             );
           })}
         </div>
+      )}
 
-        {/* Coverage gap — the actionable part: what you own but haven't underwritten */}
-        {!loading && cov && cov.missing.length > 0 && (
-          <section className="mt-6 rounded-card border border-line bg-white shadow-sm">
-            <div className="flex flex-wrap items-center gap-2 border-b border-line px-4 py-3">
-              <span className="text-xs font-bold uppercase tracking-[0.22em] text-ink-3">Not underwritten</span>
-              <span className="rounded-full border border-line bg-surface-2 px-2 py-0.5 text-[10px] font-bold text-ink-2">
-                {cov.missing.length}
-              </span>
-              <span className="ml-auto text-[11px] text-ink-3">
-                Stocks with no pre-registered exit conditions — nothing is watching these.
-              </span>
-            </div>
-            {/* Multi-column: at 1600px a single list of tickers is mostly dead
-                space, and this is the checklist the PM works down. */}
-            <div className="grid md:grid-cols-2 2xl:grid-cols-3">
-              {cov.missing.map((m) => (
-                <div key={m.ticker} className="flex items-center gap-3 border-b border-line-soft px-4 py-2">
-                  <Link
-                    href={`/stock/${encodeURIComponent(m.ticker)}`}
-                    className="font-mono text-[13px] font-semibold text-ink hover:text-accent"
-                  >
-                    {displayTicker(m.ticker)}
-                  </Link>
-                  <span className="min-w-0 flex-1 truncate text-[12px] text-ink-3">
-                    {m.name}
-                    {m.sector ? ` · ${m.sector}` : ""}
-                  </span>
-                  {m.hasProse && (
-                    <span className="shrink-0 rounded-full border border-warn-border bg-warn-soft px-2 py-0.5 text-[10px] font-semibold text-warn">
-                      note only — no conditions
-                    </span>
-                  )}
-                  <Link
-                    href={`/stock/${encodeURIComponent(m.ticker)}`}
-                    className="shrink-0 text-[11px] font-semibold text-accent hover:underline"
-                  >
-                    Underwrite →
-                  </Link>
-                </div>
-              ))}
-            </div>
-          </section>
-        )}
+      {/* Coverage gap — the actionable part: what you own but haven't underwritten */}
+      {!loading && cov && cov.missing.length > 0 && (
+        <section className="panel">
+          <div className="panel-h">
+            {/* This panel only renders when something is unwatched, so it owns
+                the warn hue outright — the mark carries it to the whole panel. */}
+            <span className="t-mark bg-warn" />
+            <span className="t">Not underwritten</span>
+            <span className="m">
+              <span className="font-mono">{cov.missing.length}</span> · stocks with no pre-registered exit conditions — nothing is watching these
+            </span>
+          </div>
+          {/* Multi-column: at full width a single list of tickers is mostly dead
+              space, and this is the checklist the PM works down. */}
+          <div className="grid md:grid-cols-2 2xl:grid-cols-3">
+            {cov.missing.map((m) => (
+              <div key={m.ticker} className="flex h-[34px] items-center gap-3 border-b border-line-soft px-3.5">
+                <Link
+                  href={`/stock/${encodeURIComponent(m.ticker)}`}
+                  className="font-mono text-[12.5px] font-medium text-ink hover:text-accent"
+                >
+                  {displayTicker(m.ticker)}
+                </Link>
+                <span className="min-w-0 flex-1 truncate text-[12px] text-ink-3">
+                  {m.name}
+                  {m.sector ? ` · ${m.sector}` : ""}
+                </span>
+                {m.hasProse && <span className="shrink-0 text-[11.5px] text-warn">note only — no conditions</span>}
+                <Link
+                  href={`/stock/${encodeURIComponent(m.ticker)}`}
+                  className="inline-flex shrink-0 items-center gap-1 text-[11.5px] font-medium text-accent hover:underline"
+                >
+                  Underwrite
+                  <AppIcon name="arrowR" size={12} />
+                </Link>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
 
-        <p className="mt-6 text-[11px] leading-5 text-ink-faint">
-          Individual stocks you own. Kill conditions are exit criteria, so the coverage count is
-          what you hold; ETFs and funds are excluded (no company thesis to underwrite), and
-          watchlist names are tracked on{" "}
-          <Link href="/conviction" className="text-accent hover:underline">
-            Pipeline
-          </Link>{" "}
-          instead.
-        </p>
-      </div>
+      <p className="text-[11.5px] leading-5 text-ink-3">
+        Individual stocks you own. Kill conditions are exit criteria, so the coverage count is
+        what you hold; ETFs and funds are excluded (no company thesis to underwrite), and
+        watchlist names are tracked on{" "}
+        <Link href="/conviction" className="text-accent hover:underline">
+          Pipeline
+        </Link>{" "}
+        instead.
+      </p>
     </main>
   );
 }

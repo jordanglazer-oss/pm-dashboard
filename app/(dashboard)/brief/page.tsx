@@ -3,31 +3,27 @@
 import React from "react";
 import { useStocks } from "@/app/lib/StockContext";
 import { MorningBrief } from "@/app/components/MorningBrief";
+import { DailySummaryView } from "@/app/components/brief/DailySummaryView";
 
 export default function BriefPage() {
   const { stocks, scoredStocks, marketData, brief, offensiveExposure, setBrief, updateMarketData } = useStocks();
 
   return (
-    // overflow-x-CLIP, not -hidden: `hidden` makes this element a scroll
-    // container, which silently breaks `position: sticky` on every descendant
-    // (the command bar was pinning to this box instead of the viewport).
-    // `clip` contains the same horizontal overflow without that side effect.
-    <main className="min-h-screen bg-[#f4f5f7] px-4 py-6 text-ink md:px-8 md:py-8 overflow-x-clip">
-      {/* Wider than the rest of the app (which is max-w-7xl / 1280px) — the
-          redesign specifies 1560px because the macro board carries 24 metric
-          tiles that wrap badly at 1280. Capped, centered, and still fully
-          responsive: every grid inside collapses at sm/lg breakpoints. */}
-      <div className="mx-auto max-w-[1560px] space-y-6">
-        <MorningBrief
-          marketData={marketData}
-          offensiveExposure={offensiveExposure}
-          brief={brief}
-          stocks={stocks}
-          scoredStocks={scoredStocks}
-          onBriefGenerated={setBrief}
-          onUpdateMarketData={updateMarketData}
-        />
-      </div>
+    // Full-width inside the shell's content column; the page body is the
+    // 14px stack the workspace uses everywhere. The first row is the brief's
+    // own toolbar (date · generated · daily-input meta · actions).
+    <main className="flex flex-col gap-3.5 text-ink">
+      <MorningBrief
+        marketData={marketData}
+        offensiveExposure={offensiveExposure}
+        brief={brief}
+        stocks={stocks}
+        scoredStocks={scoredStocks}
+        onBriefGenerated={setBrief}
+        onUpdateMarketData={updateMarketData}
+        variant="summary"
+        summary={<DailySummaryView />}
+      />
     </main>
   );
 }

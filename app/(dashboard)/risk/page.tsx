@@ -5,6 +5,8 @@ import Link from "next/link";
 import { displayTicker } from "@/app/lib/ticker";
 import { Skeleton, SkeletonTable } from "@/app/components/Skeleton";
 import { EmptyState } from "@/app/components/EmptyState";
+import { StatStrip } from "@/app/components/StatStrip";
+import { AppIcon } from "@/app/components/AppIcon";
 
 /**
  * /risk — the book-level risk lens (read-only). Renders /api/risk-analytics:
@@ -40,18 +42,6 @@ type RiskData = {
 };
 
 const pct = (x: number) => `${(x * 100).toFixed(1)}%`;
-
-function StatTile({ label, value, sub }: { label: string; value: string; sub?: string }) {
-  // A cell in the headline band — hairline dividers, one shared border
-  // (canvas anatomy), instead of five floating cards.
-  return (
-    <div className="-ml-px -mt-px border-l border-t border-line-soft px-4 py-3">
-      <div className="text-[11px] uppercase tracking-wide text-ink-3">{label}</div>
-      <div className="mt-1 text-xl font-semibold tabular-nums text-ink">{value}</div>
-      {sub && <div className="mt-0.5 text-[11px] text-ink-3">{sub}</div>}
-    </div>
-  );
-}
 
 export default function RiskPage() {
   const [data, setData] = useState<RiskData | null>(null);
@@ -92,225 +82,259 @@ export default function RiskPage() {
   }, [data]);
 
   return (
-    <div className="mx-auto max-w-[1200px] px-4 py-6">
-      <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-        <h1 className="text-[15px] font-bold text-ink">Risk <span className="ml-2 rounded bg-surface-2 px-2 py-0.5 text-[11px] font-medium text-ink-3 align-middle">read-only</span></h1>
-        <div className="flex items-center gap-3 text-xs text-ink-3">
-          {data && <span>computed {new Date(data.computedAt).toLocaleString()}</span>}
+    <main className="flex flex-col gap-3.5 text-ink">
+      {/* Toolbar: what this page is (meta), compute time, refresh. */}
+      <div className="flex flex-wrap items-center gap-2.5">
+        <span className="text-[12px] text-ink-3">
+          Read-only · Portfolio bucket · 1y daily · which names drive volatility, which trade as one, sector tilts beta-adjusted, and what documented shocks would do to today&rsquo;s weights
+        </span>
+        <div className="ml-auto flex items-center gap-2">
+          {data && <span className="font-mono text-[11.5px] text-ink-3">computed {new Date(data.computedAt).toLocaleString()}</span>}
           <button
             onClick={() => void load(true)}
             disabled={refreshing}
-            className="rounded-full bg-surface-2 px-3 py-1 text-ink-2 hover:text-ink disabled:opacity-50"
+            className="inline-flex h-7 items-center gap-1.5 rounded-control border border-line bg-surface px-2.5 text-[12.5px] text-ink-2 hover:bg-surface-hover disabled:opacity-50"
           >
+            <AppIcon name="refresh" size={13} className={refreshing ? "animate-spin" : ""} />
             {refreshing ? "Recomputing…" : "Refresh"}
           </button>
         </div>
       </div>
-      <p className="mb-4 max-w-3xl text-sm text-ink-2">
-        The book as ONE portfolio: which names drive volatility (not just weight), which holdings trade as a single
-        position, how sector tilts look beta-adjusted, and what documented historical shocks would do to today&rsquo;s
-        weights. Portfolio bucket only; 1 year of daily data.
-      </p>
 
       {loading ? (
         // The first run fetches a year of history per holding (15-30s), so the
         // shape of what's coming beats a bare "Loading…" string.
-        <div className="space-y-6">
-          <div className="grid grid-cols-2 overflow-hidden rounded-card border border-line bg-white shadow-sm sm:grid-cols-3 lg:grid-cols-5">
+        <div className="flex flex-col gap-3.5">
+          <div className="grid grid-cols-2 overflow-hidden rounded-card border border-line bg-surface sm:grid-cols-5">
             {Array.from({ length: 5 }).map((_, i) => (
-              <div key={i} className="-ml-px -mt-px border-l border-t border-line-soft p-4">
+              <div key={i} className="-ml-px -mt-px border-l border-t border-line-soft px-3.5 py-2">
                 <Skeleton className="h-2.5 w-24 bg-line-soft" />
-                <Skeleton className="mt-2 h-7 w-16" />
-                <Skeleton className="mt-2 h-2.5 w-28 bg-line-soft" />
+                <Skeleton className="mt-2 h-4 w-16" />
               </div>
             ))}
           </div>
-          <div className="rounded-card border border-line bg-white p-4 shadow-sm">
+          <div className="panel p-3.5">
             <Skeleton className="h-3 w-72 bg-line-soft" />
             <div className="mt-4"><SkeletonTable rows={8} cols={8} /></div>
           </div>
-          <p className="text-center text-xs text-ink-3">
+          <p className="text-center text-[11.5px] text-ink-3">
             Computing risk analytics — the first run fetches a year of daily history per holding.
           </p>
         </div>
       ) : error && !data ? (
-        <div className="rounded-card border border-line bg-white shadow-sm">
+        <section className="panel">
           <EmptyState
-            glyph={<span className="text-lg">⚠</span>}
+            glyph={<AppIcon name="warn" size={18} />}
             title="Couldn't compute risk analytics"
             body={error}
             action={
               <button
                 onClick={() => void load(true)}
-                className="rounded-full bg-ink px-3 py-1.5 text-xs font-semibold text-white"
+                className="inline-flex h-7 items-center rounded-control bg-ink px-3 text-[12.5px] font-medium text-white hover:bg-ink-2"
               >
                 Try again
               </button>
             }
           />
-        </div>
+        </section>
       ) : data ? (
         <>
           {staleNote && (
-            <div className="mb-4 rounded-card border border-warn-border bg-warn-soft px-4 py-2 text-xs text-warn">
-              Live recompute failed — showing the last good snapshot.
+            <div className="flex items-start gap-2 rounded-card border border-warn-border bg-warn-soft px-3.5 py-2.5">
+              <AppIcon name="warn" size={14} className="mt-px shrink-0 text-warn" />
+              <span className="min-w-0 text-[12.5px] text-ink-2">
+                <span className="font-medium text-warn">Live recompute failed</span> — showing the last good snapshot.
+              </span>
             </div>
           )}
 
-          {/* ── Header stats ── */}
-          <div className="grid grid-cols-2 overflow-hidden rounded-card border border-line bg-white shadow-sm sm:grid-cols-3 lg:grid-cols-5">
-            <StatTile label="Portfolio ann. vol" value={data.portfolioAnnVol != null ? `${data.portfolioAnnVol}%` : "—"} sub="realized, 1y daily, correlation-aware" />
-            <StatTile label="Weighted beta" value={data.weightedBeta.toFixed(2)} sub={`${data.betaScenario.label}: ${data.betaScenario.portfolioImpact}%`} />
-            <StatTile label="Top-5 weight" value={pct(data.top5Weight)} sub="of the weighted book" />
-            <StatTile label="Concentration (HHI)" value={data.hhi.toFixed(3)} sub={data.hhi > 0.1 ? "concentrated" : data.hhi > 0.06 ? "moderate" : "diversified"} />
-            <StatTile label="Coverage" value={`${data.namesIncluded}`} sub={data.namesSkipped.length ? `no history: ${data.namesSkipped.join(", ")}` : "all names covered"} />
-          </div>
-
-          {/* ── Two-up (canvas): risk contribution left; clusters + stress right ── */}
-          <div className="mt-6 grid items-start gap-5 xl:grid-cols-2">
-            <div>
-          {/* ── Risk contribution ── */}
-          <div className="rounded-card border border-line bg-white p-4 shadow-sm">
-            <h2 className="text-sm font-semibold text-ink">Risk contribution — who actually drives portfolio volatility</h2>
-            <p className="mt-1 text-xs text-ink-2">
-              Covariance-based share of portfolio variance. <span className="font-semibold text-neg">Highlighted</span>:
-              risk share ≥ 1.5× capital share — the positions that are bigger than they look.
-            </p>
-            <div className="mt-3 overflow-x-auto">
-              <table className="w-full border-collapse text-sm">
-                <thead>
-                  <tr className="border-b border-line text-left text-xs text-ink-3">
-                    <th className="py-2 pr-3">Ticker</th>
-                    <th className="py-2 pr-3">Sector</th>
-                    <th className="py-2 pr-3 text-right">Weight</th>
-                    <th className="py-2 pr-3 text-right">Risk share</th>
-                    <th className="py-2 pr-3 text-right">Risk ÷ weight</th>
-                    <th className="py-2 pr-3 text-right">Ann. vol</th>
-                    <th className="py-2 pr-3 text-right">Max DD (1y)</th>
-                    <th className="py-2 text-right">Beta</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {data.names.map((nm) => {
-                    const hog = riskHogs.has(nm.ticker);
-                    const ratio = nm.ctrPct != null && nm.weight > 0 ? nm.ctrPct / (nm.weight * 100) : null;
-                    return (
-                      <tr key={nm.ticker} className={`border-b border-line/60 ${hog ? "bg-neg-soft/60" : ""}`}>
-                        <td className="py-2 pr-3">
-                          <Link href={`/stock/${encodeURIComponent(nm.ticker)}`} className="font-mono font-semibold text-ink hover:text-accent">{displayTicker(nm.ticker)}</Link>
-                        </td>
-                        <td className="py-2 pr-3 text-xs text-ink-3">{nm.sector}</td>
-                        <td className="py-2 pr-3 text-right font-mono text-ink-2">{pct(nm.weight)}</td>
-                        <td className={`py-2 pr-3 text-right font-mono ${hog ? "font-semibold text-neg" : "text-ink"}`}>{nm.ctrPct != null ? `${nm.ctrPct.toFixed(1)}%` : "—"}</td>
-                        <td className="py-2 pr-3 text-right font-mono text-xs text-ink-2">{ratio != null ? `${ratio.toFixed(1)}×` : "—"}</td>
-                        <td className="py-2 pr-3 text-right font-mono text-ink-2">{nm.annVol != null ? `${nm.annVol}%` : "—"}</td>
-                        <td className="py-2 pr-3 text-right font-mono text-neg">{nm.maxDrawdown != null ? `${nm.maxDrawdown}%` : "—"}</td>
-                        <td className="py-2 text-right font-mono text-ink-2">{nm.beta.toFixed(2)}</td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-          </div>
-
-            </div>
-            <div className="space-y-5">
-          {/* ── Correlation clusters ── */}
-          <div className="rounded-card border border-line bg-white p-4 shadow-sm">
-            <h2 className="text-sm font-semibold text-ink">Correlation clusters — holdings that trade as one position</h2>
-            <p className="mt-1 text-xs text-ink-2">Pairwise correlation ≥ 0.70 over the last year. A cluster&rsquo;s weight is your true position size in that trade.</p>
-            {data.clusters.length === 0 ? (
-              <div className="mt-3 text-xs text-ink-3">No clusters at the 0.70 threshold — the book&rsquo;s names are trading independently.</div>
-            ) : (
-              <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2">
-                {/* Fund clusters are the CORE ALLOCATION — broad ETFs correlate
-                    with each other by construction, so their cluster is
-                    expected structure, never flagged as concentration risk.
-                    The ⚠ treatment is reserved for single-name clusters. */}
-                {data.clusters.map((c, i) => {
-                  const isFund = c.kind === "fund";
-                  const hot = !isFund && c.totalWeight >= 0.2;
-                  return (
-                  <div key={i} className={`rounded-card border p-3 ${hot ? "border-neg-border bg-neg-soft" : "border-line bg-surface-2"}`}>
-                    <div className="flex items-center justify-between">
-                      <span className="text-xs font-semibold text-ink">
-                        {hot ? "⚠ " : ""}
-                        {isFund ? "Core funds" : `Cluster ${i + 1}`} · {pct(c.totalWeight)} of book
-                      </span>
-                      <span className="text-[11px] text-ink-3">avg corr {c.avgCorr.toFixed(2)}</span>
-                    </div>
-                    {isFund && (
-                      <p className="mt-1 text-[11px] text-ink-3">
-                        Broad funds — correlated by construction. Expected structure, not a concentration signal.
-                      </p>
-                    )}
-                    <div className="mt-1.5 flex flex-wrap gap-1.5">
-                      {c.members.map((t) => (
-                        <Link key={t} href={`/stock/${encodeURIComponent(t)}`} className="rounded bg-white px-1.5 py-0.5 font-mono text-[11px] font-semibold text-ink border border-line hover:text-accent">
-                          {displayTicker(t)}
-                        </Link>
-                      ))}
-                    </div>
-                  </div>
-                  );
-                })}
-              </div>
-            )}
-          </div>
-
-          {/* ── Stress replays ── */}
-          <div className="rounded-card border border-line bg-white p-4 shadow-sm">
-            <h2 className="text-sm font-semibold text-ink">Stress replays — documented episodes applied to today&rsquo;s weights</h2>
-            <p className="mt-1 text-xs text-ink-2">Sector-level shocks from each episode × current look-through weights. Approximations for orientation, not predictions.</p>
-            <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2">
-              {data.scenarios.map((sc) => (
-                <div key={sc.key} className="rounded-card border border-line bg-surface-2 p-3">
-                  <div className="flex items-baseline justify-between">
-                    <span className="text-xs font-semibold text-ink">{sc.label}</span>
-                    <span className={`font-mono text-lg font-semibold ${sc.portfolioImpact < 0 ? "text-neg" : "text-pos"}`}>
-                      {sc.portfolioImpact > 0 ? "+" : ""}{sc.portfolioImpact}%
+          {/* ── Header stats: one hairline strip ── */}
+          <StatStrip
+            cols={5}
+            items={[
+              { label: "Portfolio ann. vol", value: data.portfolioAnnVol != null ? `${data.portfolioAnnVol}%` : "—", title: "realized, 1y daily, correlation-aware" },
+              { label: "Weighted beta", value: data.weightedBeta.toFixed(2), title: `${data.betaScenario.label}: ${data.betaScenario.portfolioImpact}%` },
+              { label: "Top-5 weight", value: pct(data.top5Weight), title: "of the weighted book" },
+              {
+                label: "Concentration (HHI)",
+                value: (
+                  <>
+                    {data.hhi.toFixed(3)}
+                    <span className="ml-1.5 font-sans font-normal text-ink-3">
+                      {data.hhi > 0.1 ? "concentrated" : data.hhi > 0.06 ? "moderate" : "diversified"}
                     </span>
-                  </div>
-                  <div className="mt-0.5 text-[11px] text-ink-3">{sc.note} Index move: {sc.marketImpact}%.</div>
-                  <div className="mt-2 text-[11px] text-ink-2">
-                    Worst contributors:{" "}
-                    {sc.worst.map((wc, i) => (
-                      <span key={wc.ticker}>{i > 0 && ", "}<span className="font-mono">{displayTicker(wc.ticker)}</span> {wc.impact}pp</span>
-                    ))}
-                  </div>
+                  </>
+                ),
+              },
+              {
+                label: "Coverage",
+                value: `${data.namesIncluded}`,
+                title: data.namesSkipped.length ? `no history: ${data.namesSkipped.join(", ")}` : "all names covered",
+              },
+            ]}
+          />
+          <div className="-mt-2 text-[11.5px] text-ink-3">
+            realized 1y daily, correlation-aware · {data.betaScenario.label}: <span className="font-mono">{data.betaScenario.portfolioImpact}%</span>
+            {data.namesSkipped.length > 0 ? <> · no history: {data.namesSkipped.join(", ")}</> : <> · all names covered</>}
+          </div>
+
+          {/* ── Two-up: risk contribution left; clusters + stress right ── */}
+          <div className="grid grid-cols-1 items-start gap-3.5 lg:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)]">
+            {/* ── Risk contribution ── */}
+            <section className="panel">
+              <div className="panel-h">
+                {/* A name carrying more risk than capital is the finding this
+                    panel exists for — when one shows up the panel goes warn. */}
+                {riskHogs.size > 0 && <span className="t-mark bg-warn" />}
+                <span className="t">Risk contribution</span>
+                <span className="m">covariance share of portfolio variance · <span className="text-warn">warn</span> = risk share ≥ 1.5× capital share</span>
+              </div>
+              <div className="tbl-wrap">
+                <table className="data-table">
+                  <thead>
+                    <tr>
+                      <th className="pl-3.5">Ticker</th>
+                      <th>Sector</th>
+                      <th className="n">Weight</th>
+                      <th className="n">Risk share</th>
+                      <th className="n">Risk ÷ weight</th>
+                      <th className="n">Ann. vol</th>
+                      <th className="n">Max DD (1y)</th>
+                      <th className="n">Beta</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {data.names.map((nm) => {
+                      const hog = riskHogs.has(nm.ticker);
+                      const ratio = nm.ctrPct != null && nm.weight > 0 ? nm.ctrPct / (nm.weight * 100) : null;
+                      return (
+                        <tr key={nm.ticker}>
+                          <td className="pl-3.5">
+                            <Link href={`/stock/${encodeURIComponent(nm.ticker)}`} className="font-mono font-medium text-ink hover:text-accent">{displayTicker(nm.ticker)}</Link>
+                          </td>
+                          <td className="text-ink-2">{nm.sector}</td>
+                          <td className="n text-ink-2">{pct(nm.weight)}</td>
+                          <td className={`n ${hog ? "font-medium text-warn" : ""}`}>{nm.ctrPct != null ? `${nm.ctrPct.toFixed(1)}%` : "—"}</td>
+                          <td className={`n ${hog ? "text-warn" : "text-ink-2"}`}>{ratio != null ? `${ratio.toFixed(1)}×` : "—"}</td>
+                          <td className="n text-ink-2">{nm.annVol != null ? `${nm.annVol}%` : "—"}</td>
+                          <td className="n text-neg">{nm.maxDrawdown != null ? `${nm.maxDrawdown}%` : "—"}</td>
+                          <td className="n text-ink-2">{nm.beta.toFixed(2)}</td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+              <div className="flex min-h-[32px] items-center px-3.5 text-[11.5px] text-ink-3">
+                {data.names.length} names · {riskHogs.size} bigger than they look
+              </div>
+            </section>
+
+            <div className="flex flex-col gap-3.5">
+              {/* ── Correlation clusters ── */}
+              <section className="panel">
+                <div className="panel-h">
+                  {/* Same warn threshold the rows use: a single-name cluster
+                      carrying ≥20% of the book is the concentration signal. */}
+                  {data.clusters.some((c) => c.kind !== "fund" && c.totalWeight >= 0.2) && <span className="t-mark bg-warn" />}
+                  <span className="t">Correlation clusters</span>
+                  <span className="m">pairwise ≥ 0.70 over 1y · a cluster&rsquo;s weight is the true position</span>
                 </div>
-              ))}
+                {data.clusters.length === 0 ? (
+                  <div className="px-3.5 py-3 text-[12.5px] text-ink-3">No clusters at the 0.70 threshold — the book&rsquo;s names are trading independently.</div>
+                ) : (
+                  <div className="divide-y divide-line-soft">
+                    {/* Fund clusters are the CORE ALLOCATION — broad ETFs correlate
+                        with each other by construction, so their cluster is
+                        expected structure, never flagged as concentration risk.
+                        The warn treatment is reserved for single-name clusters. */}
+                    {data.clusters.map((c, i) => {
+                      const isFund = c.kind === "fund";
+                      const hot = !isFund && c.totalWeight >= 0.2;
+                      return (
+                        <div key={i} className="px-3.5 py-2.5">
+                          <div className="flex items-center gap-2 text-[12.5px]">
+                            <span className={`dot ${hot ? "bg-warn" : isFund ? "bg-ink-faint" : "bg-ink-3"}`} />
+                            <span className="font-medium text-ink">{isFund ? "Core funds" : `Cluster ${i + 1}`}</span>
+                            <span className="font-mono text-ink-2">{pct(c.totalWeight)} of book</span>
+                            {hot && <span className="text-warn">concentrated</span>}
+                            <span className="ml-auto font-mono text-[11.5px] text-ink-3">avg corr {c.avgCorr.toFixed(2)}</span>
+                          </div>
+                          {isFund && (
+                            <p className="mt-0.5 text-[11.5px] text-ink-3">
+                              Broad funds — correlated by construction. Expected structure, not a concentration signal.
+                            </p>
+                          )}
+                          <div className="mt-1 flex flex-wrap gap-x-2.5 gap-y-1">
+                            {c.members.map((t) => (
+                              <Link key={t} href={`/stock/${encodeURIComponent(t)}`} className="font-mono text-[12px] font-medium text-ink hover:text-accent">
+                                {displayTicker(t)}
+                              </Link>
+                            ))}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </section>
+
+              {/* ── Stress replays ── */}
+              <section className="panel">
+                <div className="panel-h">
+                  <span className="t">Stress replays</span>
+                  <span className="m">episode sector shocks × current look-through weights · orientation, not prediction</span>
+                </div>
+                <div className="divide-y divide-line-soft">
+                  {data.scenarios.map((sc) => (
+                    <div key={sc.key} className="px-3.5 py-2.5">
+                      <div className="flex items-baseline gap-2">
+                        <span className="text-[12.5px] font-medium text-ink">{sc.label}</span>
+                        <span className={`ml-auto font-mono text-[13px] font-medium ${sc.portfolioImpact < 0 ? "text-neg" : "text-pos"}`}>
+                          {sc.portfolioImpact > 0 ? "+" : ""}{sc.portfolioImpact}%
+                        </span>
+                      </div>
+                      <div className="mt-0.5 text-[11.5px] text-ink-3">{sc.note} Index move: <span className="font-mono">{sc.marketImpact}%</span>.</div>
+                      <div className="mt-1 text-[11.5px] text-ink-2">
+                        Worst:{" "}
+                        {sc.worst.map((wc, i) => (
+                          <span key={wc.ticker}>{i > 0 && ", "}<span className="font-mono">{displayTicker(wc.ticker)}</span> <span className="font-mono">{wc.impact}pp</span></span>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </section>
             </div>
           </div>
 
-            </div>
-          </div>
           {/* ── Beta-weighted sector exposure ── */}
-          <div className="mt-6 rounded-card border border-line bg-white p-4 shadow-sm">
-            <h2 className="text-sm font-semibold text-ink">Sector exposure — capital vs beta-adjusted, vs the S&amp;P</h2>
-            <p className="mt-1 text-xs text-ink-2">Look-through (funds decomposed). Beta-wtd = Σ weight × beta within the sector — high-beta names make a sector bigger than its capital weight.</p>
-            <div className="mt-3 overflow-x-auto">
-              <table className="w-full max-w-2xl border-collapse text-sm">
+          <section className="panel">
+            <div className="panel-h">
+              <span className="t">Sector exposure</span>
+              <span className="m">look-through · beta-wtd = Σ weight × beta within the sector · vs the S&amp;P</span>
+            </div>
+            <div className="tbl-wrap">
+              <table className="data-table max-w-2xl">
                 <thead>
-                  <tr className="border-b border-line text-left text-xs text-ink-3">
-                    <th className="py-2 pr-3">Sector</th>
-                    <th className="py-2 pr-3 text-right">Weight</th>
-                    <th className="py-2 pr-3 text-right">Beta-wtd</th>
-                    <th className="py-2 pr-3 text-right">S&amp;P weight</th>
-                    <th className="py-2 text-right">Active tilt</th>
+                  <tr>
+                    <th className="pl-3.5">Sector</th>
+                    <th className="n">Weight</th>
+                    <th className="n">Beta-wtd</th>
+                    <th className="n">S&amp;P weight</th>
+                    <th className="n">Active tilt</th>
                   </tr>
                 </thead>
                 <tbody>
                   {data.sectors.map((s) => {
                     const tilt = s.spWeight != null ? s.weight - s.spWeight : null;
                     return (
-                      <tr key={s.sector} className="border-b border-line/60">
-                        <td className="py-2 pr-3 text-ink">{s.sector}</td>
-                        <td className="py-2 pr-3 text-right font-mono text-ink-2">{pct(s.weight)}</td>
-                        <td className="py-2 pr-3 text-right font-mono text-ink">{pct(s.betaWeighted)}</td>
-                        <td className="py-2 pr-3 text-right font-mono text-ink-3">{s.spWeight != null ? pct(s.spWeight) : "—"}</td>
-                        <td className="py-2 text-right font-mono text-xs">
+                      <tr key={s.sector}>
+                        <td className="pl-3.5 text-ink-2">{s.sector}</td>
+                        <td className="n text-ink-2">{pct(s.weight)}</td>
+                        <td className="n">{pct(s.betaWeighted)}</td>
+                        <td className="n text-ink-3">{s.spWeight != null ? pct(s.spWeight) : "—"}</td>
+                        <td className="n">
                           {tilt != null ? (
                             <span className={tilt > 0.02 ? "text-pos" : tilt < -0.02 ? "text-neg" : "text-ink-3"}>
                               {tilt > 0 ? "+" : ""}{(tilt * 100).toFixed(1)}pp
@@ -323,9 +347,9 @@ export default function RiskPage() {
                 </tbody>
               </table>
             </div>
-          </div>
+          </section>
         </>
       ) : null}
-    </div>
+    </main>
   );
 }

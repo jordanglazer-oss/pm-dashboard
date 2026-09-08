@@ -1,5 +1,7 @@
 "use client";
 
+import { usePersistedOpen } from "@/app/lib/useCollapsed";
+import { AppIcon } from "@/app/components/AppIcon";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import type { PeriodKey, ReturnDecomposition, ContributionBreakdown } from "@/app/lib/attribution";
@@ -159,8 +161,8 @@ export function Attribution() {
 
   const profileData = data?.profiles[profileIdx] ?? null;
   const contrib = profileData?.contributionsByPeriod?.[period] ?? null;
-  const [showAllHoldings, setShowAllHoldings] = useState(false);
-  const [showAllNames, setShowAllNames] = useState(false);
+  const [showAllHoldings, toggleAllHoldings] = usePersistedOpen("attribution.showAllSectors", false);
+  const [showAllNames, toggleAllNames] = usePersistedOpen("attribution.showAllNames", false);
 
   // Rows for the current selection. Market + Selection follow the chosen
   // benchmark; Currency is benchmark-independent.
@@ -198,69 +200,54 @@ export function Attribution() {
   }, [rows, decomp]);
 
   return (
-    <div className="flex flex-col gap-4 rounded-card border border-line bg-white p-5 shadow-sm">
-      <div className="flex items-center gap-3">
-        <div>
-          <h2 className="text-sm font-bold uppercase tracking-wider text-ink">Return attribution</h2>
-          <p className="text-[12px] text-ink-3">Where your return came from · estimates</p>
-        </div>
-        <div className="ml-auto flex items-center gap-3">
+    <section className="panel">
+      <div className="panel-h flex-wrap gap-y-1 py-1.5">
+        <span className="t">Return attribution</span>
+        <span className="m">Where your return came from · estimates</span>
+        <div className="ml-auto flex flex-wrap items-center gap-2.5">
           {data && data.profiles.length > 1 && (
-            <span className="hidden text-[11px] text-ink-faint sm:inline">← → switch model</span>
+            <span className="hidden text-[11.5px] text-ink-faint sm:inline">← → switch model</span>
           )}
           {loading ? (
-            <span className="text-[11px] text-ink-3">Loading…</span>
+            <span className="text-[11.5px] text-ink-3">Loading…</span>
           ) : data ? (
-            <span className="text-[11px] text-ink-3">
+            <span className="text-[11.5px] text-ink-3">
               as of {new Date(data.builtAt).toLocaleDateString("en-US", { month: "short", day: "numeric" })}
             </span>
           ) : null}
           <button
             onClick={refresh}
             disabled={refreshing || loading}
-            className="flex items-center gap-1 rounded-control border border-line px-2 py-1 text-[11px] font-semibold text-ink-3 transition-colors hover:bg-surface-2 hover:text-ink disabled:opacity-50"
+            className="inline-flex h-7 items-center gap-1.5 rounded-control border border-line bg-surface px-2.5 text-[12.5px] text-ink-2 hover:bg-surface-hover disabled:opacity-50"
             title="Recompute with the latest prices, positions and FX"
           >
-            <svg className={`h-3 w-3 ${refreshing ? "animate-spin" : ""}`} fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0 3.181 3.183a8.25 8.25 0 0 0 13.803-3.7M4.031 9.865a8.25 8.25 0 0 1 13.803-3.7l3.181 3.182" />
-            </svg>
+            <AppIcon name="refresh" size={13} className={refreshing ? "animate-spin" : ""} />
             {refreshing ? "Refreshing…" : "Refresh"}
           </button>
         </div>
       </div>
 
       {error && !loading && (
-        <p className="text-sm text-ink-3 py-2">
-          Attribution needs daily portfolio values and price data — nothing to decompose yet.
-        </p>
+        <div className="m-3.5 rounded-card border border-warn-border bg-warn-soft px-3 py-2.5 text-[12.5px] text-ink-2">
+          <span className="font-medium text-warn">Nothing to decompose yet</span> — attribution needs daily portfolio
+          values and price data.
+        </div>
       )}
 
       {data && decomp && (
-        <div className="flex flex-col gap-4">
-          {/* selectors */}
-          <div className="flex flex-wrap items-center gap-2">
-            <div className="flex flex-wrap gap-1 max-w-full overflow-x-auto">
+        <div className="flex flex-col gap-3.5 p-3.5">
+          {/* selectors — the model switch (also driven by ← / →) and period */}
+          <div className="flex flex-wrap items-center gap-2.5">
+            <div className="seg max-w-full overflow-x-auto">
               {data.profiles.map((p, i) => (
-                <button
-                  key={p.profile}
-                  onClick={() => setProfileIdx(i)}
-                  className={`whitespace-nowrap rounded-full px-2.5 py-0.5 text-[11.5px] font-semibold transition-colors ${
-                    i === profileIdx ? "bg-ink text-white" : "border border-line text-ink-3 hover:bg-surface-2"
-                  }`}
-                >
+                <button key={p.profile} onClick={() => setProfileIdx(i)} className={i === profileIdx ? "on" : ""}>
                   {p.label}
                 </button>
               ))}
             </div>
-            <div className="ml-auto flex gap-1">
+            <div className="seg ml-auto">
               {PERIODS.map((p) => (
-                <button
-                  key={p}
-                  onClick={() => setPeriod(p)}
-                  className={`rounded-full px-2 py-0.5 text-[11px] font-semibold transition-colors ${
-                    p === period ? "bg-surface-2 text-ink" : "text-ink-3 hover:bg-surface-2"
-                  }`}
-                >
+                <button key={p} onClick={() => setPeriod(p)} className={p === period ? "on" : ""}>
                   {p}
                 </button>
               ))}
@@ -269,20 +256,18 @@ export function Attribution() {
 
           {/* total */}
           <div className="flex flex-col gap-1">
-            <div className="flex items-baseline gap-2">
-              <span className="text-[11px] font-semibold uppercase tracking-wider text-ink-3">Total return</span>
-              <span className={`font-mono text-2xl font-bold tabular-nums ${toneClass(decomp.portfolioReturnPct)}`}>
+            <div className="flex flex-wrap items-baseline gap-2">
+              <span className="text-[11px] text-ink-3">Total return</span>
+              <span className={`font-mono text-[22px] font-semibold tabular-nums ${toneClass(decomp.portfolioReturnPct)}`}>
                 {fmtPct(decomp.portfolioReturnPct)}
               </span>
               {decomp.benchmarks.length > 1 && (
-                <div className="ml-auto flex gap-1">
+                <div className="seg ml-auto">
                   {decomp.benchmarks.map((b, i) => (
                     <button
                       key={b.label}
                       onClick={() => setBenchIdx(i)}
-                      className={`rounded-full px-2 py-0.5 text-[10px] font-semibold transition-colors ${
-                        i === benchIdx ? "bg-accent-soft text-accent" : "text-ink-3 hover:bg-surface-2"
-                      }`}
+                      className={i === benchIdx ? "on" : ""}
                       title={`Split your return vs ${b.label}`}
                     >
                       vs {b.label}
@@ -295,13 +280,13 @@ export function Attribution() {
               Your {data.profiles[profileIdx]?.label} model&apos;s actual {period} return (in CAD), split below into the three things that drove it. Toggle the benchmark on the right.
             </p>
             {active && bench && (
-              <div className="mt-1 flex flex-col gap-0.5 rounded-control border border-line-soft bg-surface-2/40 px-3 py-2">
-                <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5 text-[12px]">
-                  <span className="font-semibold text-ink-2">vs {bench.label}</span>
+              <div className="mt-1 flex flex-col gap-0.5 rounded-control border border-line-soft bg-surface-2 px-3 py-2">
+                <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5 text-[12.5px]">
+                  <span className="font-medium text-ink-2">vs {bench.label}</span>
                   <span className="text-ink-3">
                     benchmark {fmtPct(bench.benchmarkReturnPct)} {period}
                   </span>
-                  <span className={`font-mono font-bold tabular-nums ${toneClass(active.activePct)}`}>
+                  <span className={`font-mono font-medium tabular-nums ${toneClass(active.activePct)}`}>
                     {Math.abs(active.activePct) < 0.05
                       ? "in line"
                       : `${active.activePct > 0 ? "ahead" : "behind"} by ${Math.abs(active.activePct).toFixed(2)}pp`}
@@ -318,14 +303,14 @@ export function Attribution() {
           <div className="flex flex-col gap-2.5">
             {rows.map((r) => (
               <div key={r.key} className="flex items-center gap-3">
-                <span className="w-[128px] shrink-0 text-[13px] text-ink-2">{r.key}</span>
-                <div className="flex-1 h-2 rounded-full bg-surface-2 overflow-hidden">
+                <span className="w-[128px] shrink-0 text-[12.5px] text-ink-2">{r.key}</span>
+                <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-surface-2">
                   <div
                     className={`h-full rounded-full ${r.bar}`}
                     style={{ width: `${r.value == null ? 0 : (Math.abs(r.value) / maxAbs) * 100}%` }}
                   />
                 </div>
-                <span className={`w-[64px] shrink-0 text-right font-mono text-[13px] tabular-nums ${toneClass(r.value)}`}>
+                <span className={`w-[64px] shrink-0 text-right font-mono text-[12.5px] tabular-nums ${toneClass(r.value)}`}>
                   {fmtPct(r.value)}
                 </span>
               </div>
@@ -333,12 +318,12 @@ export function Attribution() {
           </div>
 
           {/* per-row explanation — plain-English description + the math */}
-          <div className="flex flex-col gap-2 rounded-control bg-surface-2/60 px-3 py-2.5">
+          <div className="flex flex-col gap-2 rounded-control border border-line-soft bg-surface-2 px-3 py-2.5">
             {rows.map((r) => (
               <div key={r.key} className="flex items-start gap-2 text-[11.5px]">
                 <span className={`mt-1 h-1.5 w-1.5 rounded-full ${r.bar} shrink-0`} aria-hidden />
                 <span>
-                  <span className="font-semibold text-ink">{r.key}</span>
+                  <span className="font-medium text-ink">{r.key}</span>
                   <span className="text-ink-2"> — {r.desc}</span>
                   <span className="text-ink-faint"> ({r.note})</span>
                 </span>
@@ -346,7 +331,7 @@ export function Attribution() {
             ))}
           </div>
 
-          <p className="text-[10.5px] leading-4 text-ink-faint">
+          <p className="text-[11px] leading-4 text-ink-faint">
             Estimates. Market = portfolio beta × benchmark return; Currency = USD-sleeve weight × USD/CAD move;
             Selection = total minus those. Full sector allocation/selection attribution arrives once we store per-holding price history.
           </p>
@@ -356,17 +341,17 @@ export function Attribution() {
             <div className="mt-1 flex flex-col gap-3 border-t border-line-soft pt-4">
               <div className="flex flex-col gap-1">
                 <div className="flex items-baseline gap-2">
-                  <h3 className="text-[11px] font-bold uppercase tracking-wider text-ink-3">Contribution to return</h3>
-                  <span className="text-[11px] text-ink-faint">{period}</span>
+                  <h3 className="text-[13px] font-semibold text-ink">Contribution to return</h3>
+                  <span className="text-[11.5px] text-ink-3">{period}</span>
                   <span className="ml-auto flex items-baseline gap-1.5">
-                    <span className="text-[10.5px] uppercase tracking-wide text-ink-faint">total</span>
-                    <span className={`font-mono text-sm font-bold tabular-nums ${toneClass(contrib.totalContributionPct)}`}>
+                    <span className="text-[11px] text-ink-3">Total</span>
+                    <span className={`font-mono text-[13px] font-medium tabular-nums ${toneClass(contrib.totalContributionPct)}`}>
                       {fmtPct(contrib.totalContributionPct)}
                     </span>
                   </span>
                 </div>
                 <p className="text-[11.5px] text-ink-3">
-                  Percentage points each name added to (or subtracted from) your model&apos;s <span className="font-semibold text-ink-2">{period}</span> return — its weight × its own move (in CAD, incl. distributions) <span className="font-semibold text-ink-2">over the time you owned it</span>. Names bought mid-period are measured from the purchase, not the period start. The sum ({fmtPct(contrib.totalContributionPct)}) approximates the {period} figure up top; cash, fees and intraperiod trades account for the gap.
+                  Percentage points each name added to (or subtracted from) your model&apos;s <span className="font-medium text-ink-2">{period}</span> return — its weight × its own move (in CAD, incl. distributions) <span className="font-medium text-ink-2">over the time you owned it</span>. Names bought mid-period are measured from the purchase, not the period start. The sum ({fmtPct(contrib.totalContributionPct)}) approximates the {period} figure up top; cash, fees and intraperiod trades account for the gap.
                   {(contrib.excludedCount ?? 0) > 0
                     ? ` ${contrib.excludedCount} position${contrib.excludedCount === 1 ? "" : "s"} without usable prices for this period excluded.`
                     : ""}
@@ -393,25 +378,25 @@ export function Attribution() {
                   const colTotal = col.all.reduce((s, h) => s + h.contributionPct, 0);
                   return (
                     <div key={col.title} className="flex flex-col gap-1.5">
-                      <span className="flex items-baseline text-[11px] font-semibold text-ink-3">
+                      <span className="flex items-baseline text-[11px] text-ink-3">
                         {col.title}
-                        <span className="ml-1.5 font-normal text-ink-faint">{col.all.length}</span>
-                        <span className="ml-auto flex gap-2 font-normal text-[9.5px] uppercase tracking-wide text-ink-faint">
+                        <span className="ml-1.5 font-mono text-ink-faint">{col.all.length}</span>
+                        <span className="ml-auto flex gap-2 text-[11px] text-ink-faint">
                           <span className="w-[44px] text-right">{col.shareLabel}</span>
                           <span className="w-[52px] text-right">contrib</span>
                         </span>
                       </span>
                       {rows.length === 0 ? (
-                        <span className="text-[12px] text-ink-faint">—</span>
+                        <span className="text-[12.5px] text-ink-faint">—</span>
                       ) : (
                         rows.map((h) => (
-                          <div key={h.ticker} className="flex items-center gap-2 text-[13px]">
-                            <span className="font-mono font-semibold text-ink w-[64px] shrink-0 truncate">{h.ticker}</span>
-                            <span className="text-[11px] text-ink-faint truncate flex-1">
+                          <div key={h.ticker} className="flex items-center gap-2 text-[12.5px]">
+                            <span className="w-[64px] shrink-0 truncate font-mono font-medium text-ink">{h.ticker}</span>
+                            <span className="flex-1 truncate text-[11px] text-ink-3">
                               {h.sector}
                               {h.ownedSince && (
                                 <span
-                                  className="ml-1.5 rounded-full bg-surface-2 px-1.5 py-[1px] text-[9.5px] font-semibold text-ink-3"
+                                  className="ml-1.5 text-[11px] text-ink-3"
                                   title={`Bought during this period — measured from the purchase on ${h.ownedSince}, not the period start`}
                                 >
                                   since {new Date(`${h.ownedSince}T12:00:00Z`).toLocaleDateString("en-US", { month: "short", day: "numeric" })}
@@ -419,7 +404,7 @@ export function Attribution() {
                               )}
                               {h.soldOn && (
                                 <span
-                                  className="ml-1.5 rounded-full border border-line px-1.5 py-[1px] text-[9.5px] font-semibold text-ink-3"
+                                  className="ml-1.5 text-[11px] text-ink-3"
                                   title={`Fully exited during this period — measured to the sale on ${h.soldOn} at the sale price. Weight estimated from the model weight recorded on the trade.`}
                                 >
                                   sold {new Date(`${h.soldOn}T12:00:00Z`).toLocaleDateString("en-US", { month: "short", day: "numeric" })}
@@ -440,17 +425,17 @@ export function Attribution() {
               {contrib.holdings.filter((h) => h.contributionPct > 0).length > 10 ||
               contrib.holdings.filter((h) => h.contributionPct < 0).length > 10 ? (
                 <button
-                  onClick={() => setShowAllNames((v) => !v)}
-                  className="self-start text-[11px] font-semibold text-accent hover:text-accent-ink transition-colors"
+                  onClick={toggleAllNames}
+                  className="self-start text-[11.5px] text-accent hover:text-accent-ink"
                 >
                   {showAllNames ? "Show top 10" : "Show every name"}
                 </button>
               ) : null}
 
               {/* by currency + by sector */}
-              <div className="grid grid-cols-1 gap-4 rounded-control bg-surface-2/60 px-3 py-2.5 sm:grid-cols-2">
+              <div className="grid grid-cols-1 gap-4 rounded-control border border-line-soft bg-surface-2 px-3 py-2.5 sm:grid-cols-2">
                 <div className="flex flex-col gap-1">
-                  <span className="text-[10.5px] font-semibold uppercase tracking-wider text-ink-faint">By currency</span>
+                  <span className="text-[11px] text-ink-3">By currency</span>
                   {contrib.byCurrency.map((c) => (
                     <div key={c.key} className="flex items-center gap-2 text-[12.5px]">
                       <span className="text-ink-2 w-[40px]">{c.key}</span>
@@ -459,7 +444,7 @@ export function Attribution() {
                   ))}
                 </div>
                 <div className="flex flex-col gap-1">
-                  <span className="text-[10.5px] font-semibold uppercase tracking-wider text-ink-faint">By sector</span>
+                  <span className="text-[11px] text-ink-3">By sector</span>
                   {(showAllHoldings ? contrib.bySector : contrib.bySector.slice(0, 4)).map((s) => (
                     <div key={s.key} className="flex items-center gap-2 text-[12.5px]">
                       <span className="text-ink-2 flex-1 truncate">{s.key}</span>
@@ -468,15 +453,15 @@ export function Attribution() {
                   ))}
                   {contrib.bySector.length > 4 && (
                     <button
-                      onClick={() => setShowAllHoldings((v) => !v)}
-                      className="mt-0.5 self-start text-[11px] font-semibold text-accent hover:text-accent-ink transition-colors"
+                      onClick={toggleAllHoldings}
+                      className="mt-0.5 self-start text-[11.5px] text-accent hover:text-accent-ink"
                     >
                       {showAllHoldings ? "Show less" : `Show ${contrib.bySector.length - 4} more`}
                     </button>
                   )}
                 </div>
               </div>
-              <p className="text-[10.5px] leading-4 text-ink-faint">
+              <p className="text-[11px] leading-4 text-ink-faint">
                 Contribution = each holding&apos;s current weight × its total-return move in CAD (incl. distributions) over the portion of the {period} window it was actually held. Weights include cash. &quot;% of gains / losses&quot; = that name&apos;s share of all positive (resp. negative) contributions; each column sums to 100%. Names sold during the period stay listed (&quot;sold&quot; tag) — measured to the sale, with weight estimated from the model weight on the trade. Estimates.
               </p>
             </div>
@@ -485,7 +470,7 @@ export function Attribution() {
           {/* Empty-state: explain WHY the contribution breakdown is absent. */}
           {(!contrib || contrib.holdings.length === 0) && profileData && (
             <div className="mt-1 flex flex-col gap-1 border-t border-line-soft pt-4">
-              <h3 className="text-[11px] font-bold uppercase tracking-wider text-ink-3">Contribution to return</h3>
+              <h3 className="text-[13px] font-semibold text-ink">Contribution to return</h3>
               <p className="text-[12.5px] text-ink-3">
                 {(profileData.contribDebug?.positions ?? 0) === 0
                   ? `No saved account positions for the ${profileData.label} model — this breakdown reads position cost basis. Try another model with ← / →.`
@@ -501,6 +486,6 @@ export function Attribution() {
           )}
         </div>
       )}
-    </div>
+    </section>
   );
 }

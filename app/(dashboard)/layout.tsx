@@ -19,13 +19,18 @@ export default function DashboardLayout({
     <AuthGate>
       <Providers>
         <Navigation />
-        <PortfolioTabs />
-        <ResearchTabs />
-        <IdeasTabs />
-        <BriefTabs />
-        <NavHistoryTracker />
-        <PageTransition>{children}</PageTransition>
-        <BackCrumb />
+        {/* Workspace shell: the rail is fixed at 200px on md+, so the whole
+            content column (top bar included — it lives inside Navigation and
+            is sticky within this column) shifts right by that width. */}
+        <div className="app-content md:pl-[200px]">
+          <PortfolioTabs />
+          <ResearchTabs />
+          <IdeasTabs />
+          <BriefTabs />
+          <NavHistoryTracker />
+          <BackCrumb />
+          <PageTransition>{children}</PageTransition>
+        </div>
         <ScrollToTop />
         <ToastHost />
       </Providers>

@@ -5,7 +5,7 @@
  *   - EditableNumberCell — partial-typing-safe number input with bounds
  *     and on-blur / Enter commit. Used for FactSet target, analyst count,
  *     BoostedAI rating, and SIA SMAX.
- *   - ConsensusButton — chip that cycles through BoostedAI consensus
+ *   - ConsensusButton — control that cycles through BoostedAI consensus
  *     values on click (Strong Buy → Buy → Hold → Sell → Strong Sell → —).
  *
  * Originally lived inline in the Inbox tab. Lifted to a shared module so
@@ -17,7 +17,6 @@
 import React, { useEffect, useRef, useState } from "react";
 import {
   consensusLabel,
-  consensusToneClass,
   type BoostedAiConsensus,
 } from "@/app/lib/external-scoring";
 
@@ -111,15 +110,22 @@ export function EditableNumberCell({
       }}
       placeholder={placeholder ?? "—"}
       aria-label={ariaLabel}
-      className={`${width} rounded border border-line bg-white text-ink px-1.5 py-0.5 text-xs font-mono text-right outline-none focus:border-accent-border focus:ring-1 focus:ring-accent-border placeholder-ink-faint`}
+      className={`${width} h-7 rounded-control border border-line bg-surface px-2 text-right font-mono text-[12.5px] text-ink outline-none placeholder:text-ink-faint focus:border-accent-border`}
     />
   );
 }
 
+/** Colour by job: the consensus word carries its own sign. */
+function consensusTextTone(c: BoostedAiConsensus | null): string {
+  if (!c) return "text-ink-3";
+  if (c === "strong-buy" || c === "buy") return "text-pos";
+  if (c === "hold") return "text-warn";
+  return "text-neg";
+}
+
 /**
- * Cycle-on-click consensus chip. Left-click advances forward, right-click
- * or shift-click reverses. Color-coded by current value via
- * consensusToneClass(). Width is locked so it doesn't shift the
+ * Cycle-on-click consensus control. Left-click advances forward, right-click
+ * or shift-click reverses. Width is locked so it doesn't shift the
  * surrounding table when the label changes length.
  */
 export function ConsensusButton({
@@ -156,7 +162,7 @@ export function ConsensusButton({
       }}
       aria-label={ariaLabel}
       title="Click to cycle to the next consensus value. Shift-click or right-click to go backwards. Drives aiRating along with the numeric rating."
-      className={`inline-flex w-[82px] items-center justify-center rounded-full border px-2 py-0.5 text-[10px] font-semibold transition-all hover:opacity-90 hover:shadow-sm cursor-pointer whitespace-nowrap ${consensusToneClass(value)}`}
+      className={`inline-flex h-7 w-[92px] cursor-pointer items-center justify-center whitespace-nowrap rounded-control border border-line bg-surface px-2 text-[12.5px] font-medium transition-colors hover:bg-surface-hover ${consensusTextTone(value)}`}
     >
       {consensusLabel(value)}
     </button>

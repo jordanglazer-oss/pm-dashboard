@@ -2,6 +2,9 @@
 
 import React, { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import type { AppendixModelLedger, AppendixProfileType, PimTransaction, PimPortfolioState, PimProfileType, PimModelGroup } from "@/app/lib/pim-types";
+import { AppIcon } from "@/app/components/AppIcon";
+import { StatStrip } from "@/app/components/StatStrip";
+import { EmptyState } from "@/app/components/EmptyState";
 
 type ViewMode = "daily" | "transactions" | "sia-import";
 
@@ -126,6 +129,30 @@ function formatTxDateTime(iso: string) {
   } catch {
     return iso;
   }
+}
+
+const INPUT = "h-7 rounded-control border border-line bg-surface px-2.5 text-[12.5px] text-ink outline-none placeholder:text-ink-3 focus:border-accent-border";
+const SELECT = "h-7 rounded-control border border-line bg-surface px-2 text-[12.5px] text-ink-2 outline-none focus:border-accent-border";
+const BTN = "inline-flex h-7 items-center gap-1.5 rounded-control border border-line bg-surface px-2.5 text-[12.5px] text-ink-2 transition-colors hover:bg-surface-hover disabled:cursor-not-allowed disabled:opacity-50";
+const BTN_PRI = "inline-flex h-7 items-center gap-1.5 rounded-control bg-ink px-2.5 text-[12.5px] font-medium text-white transition-colors hover:bg-ink-2 disabled:cursor-not-allowed disabled:opacity-50";
+const BTN_DANGER = "inline-flex h-7 items-center gap-1.5 rounded-control border border-neg-border bg-surface px-2.5 text-[12.5px] text-neg transition-colors hover:bg-neg-soft disabled:cursor-not-allowed disabled:opacity-50";
+const LABEL = "mb-1 block text-[11px] text-ink-3";
+
+/** Prev / next page control: two 28px icon buttons around "Page x of y". */
+function Pager({ page, total, onChange }: { page: number; total: number; onChange: (p: number) => void }) {
+  if (total <= 1) return null;
+  const icon = "grid h-7 w-7 place-items-center rounded-control border border-line bg-surface text-ink-2 transition-colors hover:bg-surface-hover disabled:cursor-not-allowed disabled:opacity-40";
+  return (
+    <div className="flex items-center gap-1.5 text-[11.5px] text-ink-3">
+      <button onClick={() => onChange(Math.max(0, page - 1))} disabled={page === 0} className={icon} aria-label="Previous page">
+        <AppIcon name="chevL" size={14} />
+      </button>
+      <span className="whitespace-nowrap">Page {page + 1} of {total}</span>
+      <button onClick={() => onChange(Math.min(total - 1, page + 1))} disabled={page >= total - 1} className={icon} aria-label="Next page">
+        <AppIcon name="chevR" size={14} />
+      </button>
+    </div>
+  );
 }
 
 export default function AppendixPage() {
@@ -523,22 +550,33 @@ export default function AppendixPage() {
     }
   }, [viewMode, loadStashes]);
 
+  const activeProfileLabel = PROFILES.find((p) => p.key === activeTab)?.label ?? activeTab;
+
   return (
-    <main className="min-h-screen bg-ground px-4 py-6 text-ink md:px-8 md:py-8 overflow-x-hidden">
-      <div className="mx-auto max-w-7xl">
-        {/* Header */}
-        <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-          <div>
-            <h1 className="text-2xl font-bold text-ink">Appendix</h1>
-            <p className="text-sm text-ink-3 mt-1">
-              {viewMode === "daily"
-                ? "Permanent daily value ledger — immutable historical record for each model"
-                : viewMode === "transactions"
-                ? "Permanent transaction log — every rebalance, buy, sell, and switch"
-                : "Upload SIA Charts CSV exports to replace current-year daily values with third-party-tracker data"}
-            </p>
+    <main className="text-ink">
+      <div className="flex flex-col gap-3.5">
+        {/* Toolbar: view switcher · description · right-aligned actions */}
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="seg" role="group" aria-label="View">
+            <button type="button" className={viewMode === "daily" ? "on" : ""} onClick={() => setViewMode("daily")}>
+              Daily values
+            </button>
+            <button type="button" className={viewMode === "transactions" ? "on" : ""} onClick={() => setViewMode("transactions")}>
+              Transactions
+              {portfolioState && allTransactions.length > 0 && <span className="c">{allTransactions.length.toLocaleString()}</span>}
+            </button>
+            <button type="button" className={viewMode === "sia-import" ? "on" : ""} onClick={() => setViewMode("sia-import")}>
+              SIA import
+            </button>
           </div>
-          <div className="flex items-center gap-2 flex-wrap">
+          <span className="hidden text-[11.5px] text-ink-3 lg:inline">
+            {viewMode === "daily"
+              ? "Permanent daily value ledger — immutable historical record for each model"
+              : viewMode === "transactions"
+              ? "Permanent transaction log — every rebalance, buy, sell, and switch"
+              : "Upload SIA Charts CSV exports to replace current-year daily values with third-party-tracker data"}
+          </span>
+          <div className="ml-auto flex items-center gap-2">
             {viewMode === "daily" && (
               <>
                 <input
@@ -549,211 +587,118 @@ export default function AppendixPage() {
                   className="hidden"
                   id="appendix-import"
                 />
-                <label
-                  htmlFor="appendix-import"
-                  className={`cursor-pointer rounded-lg px-4 py-2 text-sm font-semibold transition-colors ${
-                    importing
-                      ? "bg-line text-ink-3 cursor-not-allowed"
-                      : "bg-accent text-white hover:bg-accent"
-                  }`}
-                >
-                  {importing ? "Importing..." : "Import JSON"}
+                <label htmlFor="appendix-import" className={`${BTN_PRI} cursor-pointer ${importing ? "pointer-events-none opacity-50" : ""}`}>
+                  <AppIcon name="upload" size={13} strokeWidth={2} />
+                  {importing ? "Importing" : "Import JSON"}
                 </label>
               </>
             )}
             {viewMode === "transactions" && allTransactions.length > 0 && (
-              <button
-                onClick={exportTransactionsCSV}
-                className="rounded-lg bg-accent px-4 py-2 text-sm font-semibold text-white hover:bg-accent transition-colors"
-              >
+              <button onClick={exportTransactionsCSV} className={BTN_PRI}>
+                <AppIcon name="download" size={13} strokeWidth={2} />
                 Export CSV
               </button>
             )}
           </div>
         </div>
 
-        {/* View Toggle */}
-        <div className="flex gap-1 mb-5 bg-white rounded-control border border-line p-1 w-fit max-w-full overflow-x-auto">
-          <button
-            onClick={() => setViewMode("daily")}
-            className={`rounded-lg px-4 py-2 text-sm font-semibold transition-colors whitespace-nowrap ${
-              viewMode === "daily" ? "bg-ink text-white" : "text-ink-3 hover:text-ink hover:bg-surface-2"
-            }`}
-          >
-            Daily Values
-          </button>
-          <button
-            onClick={() => setViewMode("transactions")}
-            className={`rounded-lg px-4 py-2 text-sm font-semibold transition-colors whitespace-nowrap ${
-              viewMode === "transactions" ? "bg-ink text-white" : "text-ink-3 hover:text-ink hover:bg-surface-2"
-            }`}
-          >
-            Transactions
-            {portfolioState && allTransactions.length > 0 && (
-              <span className={`ml-1.5 text-[10px] font-bold ${viewMode === "transactions" ? "text-ink-faint" : "text-ink-3"}`}>
-                ({allTransactions.length.toLocaleString()})
-              </span>
-            )}
-          </button>
-          <button
-            onClick={() => setViewMode("sia-import")}
-            className={`rounded-lg px-4 py-2 text-sm font-semibold transition-colors whitespace-nowrap ${
-              viewMode === "sia-import" ? "bg-ink text-white" : "text-ink-3 hover:text-ink hover:bg-surface-2"
-            }`}
-          >
-            SIA Import
-          </button>
-        </div>
-
         {importStatus && viewMode === "daily" && (
-          <div className={`mb-4 rounded-control px-4 py-3 text-sm font-medium ${
-            importStatus.startsWith("Error") ? "bg-neg-soft text-neg" : "bg-pos-soft text-pos"
-          }`}>
-            {importStatus}
-            <button onClick={() => setImportStatus(null)} className="ml-3 text-xs opacity-60 hover:opacity-100">dismiss</button>
+          <div className={`flex items-center gap-2 text-[12.5px] ${importStatus.startsWith("Error") ? "text-neg" : "text-pos"}`}>
+            <span className={`dot ${importStatus.startsWith("Error") ? "bg-neg" : "bg-pos"}`} />
+            <span>{importStatus}</span>
+            <button onClick={() => setImportStatus(null)} className="text-[11.5px] text-ink-3 hover:text-ink">Dismiss</button>
           </div>
         )}
 
         {viewMode === "daily" && (
           <>
-            {/* Profile Tabs */}
-            <div className="flex gap-1 mb-5 bg-white rounded-control border border-line p-1 w-fit max-w-full overflow-x-auto">
+            {/* Profile switcher */}
+            <div className="seg w-fit max-w-full overflow-x-auto" role="group" aria-label="Profile">
               {PROFILES.map((p) => {
                 const ledger = ledgers.find((l) => l.profile === p.key);
                 const count = ledger?.entries.length || 0;
                 return (
-                  <button
-                    key={p.key}
-                    onClick={() => setActiveTab(p.key)}
-                    className={`rounded-lg px-4 py-2 text-sm font-semibold transition-colors whitespace-nowrap ${
-                      activeTab === p.key
-                        ? "bg-accent text-white"
-                        : "text-ink-3 hover:text-ink hover:bg-surface-2"
-                    }`}
-                  >
+                  <button key={p.key} type="button" className={activeTab === p.key ? "on" : ""} onClick={() => setActiveTab(p.key)}>
                     {p.label}
-                    {count > 0 && (
-                      <span className={`ml-1.5 text-[10px] font-bold ${activeTab === p.key ? "text-accent" : "text-ink-3"}`}>
-                        ({count.toLocaleString()})
-                      </span>
-                    )}
+                    {count > 0 && <span className="c">{count.toLocaleString()}</span>}
                   </button>
                 );
               })}
             </div>
 
             {loading ? (
-              <div className="text-center py-12 text-ink-3 text-sm">Loading...</div>
+              <div className="py-8 text-[12.5px] text-ink-3">Loading</div>
             ) : !activeLedger || allEntries.length === 0 ? (
-              <div className="rounded-card border border-line bg-white shadow-sm p-8 text-center">
-                <p className="text-ink-3 text-sm mb-3">No daily values recorded for {PROFILES.find((p) => p.key === activeTab)?.label}</p>
-                <p className="text-xs text-ink-3">
-                  Import a JSON file with an array of <code className="bg-surface-2 px-1 rounded">{"{ date, value, dailyReturn }"}</code> entries
-                </p>
-              </div>
+              <section className="panel">
+                <EmptyState
+                  glyph={<AppIcon name="doc" size={18} />}
+                  title={`No daily values for ${activeProfileLabel}`}
+                  body={<>Import a JSON file with an array of <code className="font-mono">{"{ date, value, dailyReturn }"}</code> entries.</>}
+                />
+              </section>
             ) : (
               <>
-                {/* Summary Stats */}
                 {stats && (
-                  <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-3 mb-5">
-                    {[
-                      { label: "Start Date", value: formatDate(stats.firstDate) },
-                      { label: "End Date", value: formatDate(stats.lastDate) },
-                      { label: "Trading Days", value: stats.totalDays.toLocaleString() },
-                      { label: "Start Value", value: formatValue(stats.startValue) },
-                      { label: "End Value", value: formatValue(stats.endValue) },
-                      { label: "Total Return", value: `${stats.totalReturn >= 0 ? "+" : ""}${stats.totalReturn.toFixed(2)}%`, color: stats.totalReturn >= 0 ? "text-pos" : "text-neg" },
-                      { label: "CAGR", value: `${stats.cagr >= 0 ? "+" : ""}${stats.cagr.toFixed(2)}%`, color: stats.cagr >= 0 ? "text-pos" : "text-neg" },
-                    ].map((s) => (
-                      <div key={s.label} className="rounded-control border border-line bg-white px-3 py-2.5 shadow-sm">
-                        <div className="text-[10px] font-semibold text-ink-3 uppercase tracking-wider">{s.label}</div>
-                        <div className={`text-sm font-bold mt-0.5 ${"color" in s ? s.color : "text-ink"}`}>{s.value}</div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-
-                {/* Best / Worst Day */}
-                {stats && (
-                  <div className="flex gap-3 mb-5">
-                    <div className="rounded-control border border-pos-border bg-pos-soft px-4 py-2 text-xs">
-                      <span className="font-semibold text-pos">Best Day:</span>{" "}
-                      <span className="text-pos">{formatDate(stats.bestDay.date)} {formatPct(stats.bestDay.dailyReturn)}</span>
-                    </div>
-                    <div className="rounded-control border border-neg-border bg-neg-soft px-4 py-2 text-xs">
-                      <span className="font-semibold text-neg">Worst Day:</span>{" "}
-                      <span className="text-neg">{formatDate(stats.worstDay.date)} {formatPct(stats.worstDay.dailyReturn)}</span>
-                    </div>
-                  </div>
-                )}
-
-                {/* Search + Pagination */}
-                <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 mb-3">
-                  <input
-                    type="text"
-                    value={search}
-                    onChange={(e) => { setSearch(e.target.value); setPage(0); }}
-                    placeholder="Search by date (YYYY-MM-DD)..."
-                    className="rounded-lg border border-line bg-white px-3 py-2 text-sm w-full sm:w-64 outline-none focus:border-accent-border focus:ring-2 focus:ring-accent-border"
+                  <StatStrip
+                    cols={7}
+                    items={[
+                      { label: "Start date", value: formatDate(stats.firstDate) },
+                      { label: "End date", value: formatDate(stats.lastDate) },
+                      { label: "Trading days", value: stats.totalDays.toLocaleString() },
+                      { label: "Start value", value: formatValue(stats.startValue) },
+                      { label: "End value", value: formatValue(stats.endValue) },
+                      { label: "Total return", value: <span className={stats.totalReturn >= 0 ? "text-pos" : "text-neg"}>{stats.totalReturn >= 0 ? "+" : ""}{stats.totalReturn.toFixed(2)}%</span> },
+                      { label: "CAGR", value: <span className={stats.cagr >= 0 ? "text-pos" : "text-neg"}>{stats.cagr >= 0 ? "+" : ""}{stats.cagr.toFixed(2)}%</span> },
+                    ]}
                   />
-                  {totalPages > 1 && (
-                    <div className="flex items-center gap-2 text-xs text-ink-3">
-                      <button
-                        onClick={() => setPage(Math.max(0, page - 1))}
-                        disabled={page === 0}
-                        className="rounded px-2 py-1 bg-white border border-line hover:bg-surface-2 disabled:opacity-30"
-                      >
-                        Prev
-                      </button>
-                      <span>Page {page + 1} of {totalPages}</span>
-                      <button
-                        onClick={() => setPage(Math.min(totalPages - 1, page + 1))}
-                        disabled={page >= totalPages - 1}
-                        className="rounded px-2 py-1 bg-white border border-line hover:bg-surface-2 disabled:opacity-30"
-                      >
-                        Next
-                      </button>
-                    </div>
-                  )}
-                </div>
+                )}
 
-                {/* Data Table */}
-                <div className="rounded-card border border-line bg-white shadow-sm overflow-hidden">
+                <section className="panel">
+                  <div className="panel-h flex-wrap py-1.5">
+                    <span className="t">Daily values</span>
+                    {stats && (
+                      <span className="m font-mono">
+                        Best <span className="text-pos">{formatDate(stats.bestDay.date)} {formatPct(stats.bestDay.dailyReturn)}</span>
+                        {" · "}
+                        Worst <span className="text-neg">{formatDate(stats.worstDay.date)} {formatPct(stats.worstDay.dailyReturn)}</span>
+                      </span>
+                    )}
+                    <div className="ml-auto flex flex-wrap items-center gap-2">
+                      <input
+                        type="text"
+                        value={search}
+                        onChange={(e) => { setSearch(e.target.value); setPage(0); }}
+                        placeholder="Search by date (YYYY-MM-DD)"
+                        className={`${INPUT} w-full sm:w-56`}
+                      />
+                      <Pager page={page} total={totalPages} onChange={setPage} />
+                    </div>
+                  </div>
                   <div className="overflow-x-auto">
-                    <table className="w-full text-sm">
+                    <table className="data-table">
                       <thead>
-                        <tr className="border-b border-line-soft bg-surface-2 text-xs text-ink-3">
-                          <th className="text-left py-2.5 pl-5 pr-2 font-semibold">#</th>
-                          <th className="text-left py-2.5 px-2 font-semibold">Date</th>
-                          <th className="text-right py-2.5 px-2 font-semibold">Index Value</th>
-                          <th className="text-right py-2.5 px-2 font-semibold">Daily Return</th>
-                          <th className="text-center py-2.5 px-2 font-semibold">Source</th>
-                          <th className="text-right py-2.5 pr-5 pl-2 font-semibold text-ink-3">Recorded</th>
+                        <tr>
+                          <th className="n pl-3.5">#</th>
+                          <th>Date</th>
+                          <th className="n">Index value</th>
+                          <th className="n">Daily return</th>
+                          <th>Source</th>
+                          <th className="n pr-3.5">Recorded</th>
                         </tr>
                       </thead>
                       <tbody>
                         {pageEntries.map((entry, i) => {
                           const globalIdx = allEntries.length - (page * PAGE_SIZE + i);
                           return (
-                            <tr key={entry.date} className="border-b border-line-soft hover:bg-surface-hover transition-colors">
-                              <td className="py-1.5 pl-5 pr-2 text-xs text-ink-3 font-mono">{globalIdx}</td>
-                              <td className="py-1.5 px-2 font-mono text-xs font-medium text-ink">{entry.date}</td>
-                              <td className="py-1.5 px-2 text-right font-mono text-xs font-semibold">{formatValue(entry.value)}</td>
-                              <td className={`py-1.5 px-2 text-right font-mono text-xs font-semibold ${
-                                entry.dailyReturn > 0 ? "text-pos" : entry.dailyReturn < 0 ? "text-neg" : "text-ink-3"
-                              }`}>
+                            <tr key={entry.date}>
+                              <td className="n pl-3.5 text-ink-3">{globalIdx}</td>
+                              <td className="font-mono">{entry.date}</td>
+                              <td className="n font-medium">{formatValue(entry.value)}</td>
+                              <td className={`n ${entry.dailyReturn > 0 ? "text-pos" : entry.dailyReturn < 0 ? "text-neg" : "text-ink-3"}`}>
                                 {formatPct(entry.dailyReturn)}
                               </td>
-                              <td className="py-1.5 px-2 text-center">
-                                <span className={`rounded px-1.5 py-0.5 text-[9px] font-bold ${
-                                  entry.date < "2026-04-07"
-                                    ? "bg-violet-soft text-violet"
-                                    : "bg-accent-soft text-accent"
-                                }`}>
-                                  {entry.date < "2026-04-07" ? "SIA" : "PIM"}
-                                </span>
-                              </td>
-                              <td className="py-1.5 pr-5 pl-2 text-right text-[10px] text-ink-faint">
+                              <td className="text-ink-2">{entry.date < "2026-04-07" ? "SIA" : "PIM"}</td>
+                              <td className="n pr-3.5 text-[11.5px] text-ink-3">
                                 {entry.addedAt ? new Date(entry.addedAt).toLocaleDateString() : "seed"}
                               </td>
                             </tr>
@@ -762,136 +707,112 @@ export default function AppendixPage() {
                       </tbody>
                     </table>
                   </div>
-                  {totalPages > 1 && (
-                    <div className="px-5 py-3 border-t border-line-soft text-xs text-ink-3 text-center">
-                      Showing {page * PAGE_SIZE + 1}–{Math.min((page + 1) * PAGE_SIZE, sortedEntries.length)} of {sortedEntries.length.toLocaleString()} entries (most recent first)
-                    </div>
-                  )}
-                </div>
+                  <div className="flex h-8 items-center border-t border-line-soft px-3.5 text-[11.5px] text-ink-3">
+                    {sortedEntries.length === 0
+                      ? "No entries match"
+                      : <>{page * PAGE_SIZE + 1}–{Math.min((page + 1) * PAGE_SIZE, sortedEntries.length)} of {sortedEntries.length.toLocaleString()} · most recent first</>}
+                  </div>
+                </section>
               </>
             )}
           </>
         )}
+
         {viewMode === "transactions" && (
           // ── Transactions View ─────────────────────────────────
           <>
             {txLoading ? (
-              <div className="text-center py-12 text-ink-3 text-sm">Loading transactions...</div>
+              <div className="py-8 text-[12.5px] text-ink-3">Loading transactions</div>
             ) : allTransactions.length === 0 ? (
-              <div className="rounded-card border border-line bg-white shadow-sm p-8 text-center">
-                <p className="text-ink-3 text-sm mb-1">No transactions recorded yet</p>
-                <p className="text-xs text-ink-3">Transactions appear here after you rebalance or trade in the PIM portfolio.</p>
-              </div>
+              <section className="panel">
+                <EmptyState
+                  glyph={<AppIcon name="list" size={18} />}
+                  title="No transactions recorded yet"
+                  body="Transactions appear here after you rebalance or trade in the PIM portfolio."
+                />
+              </section>
             ) : (
               <>
-                {/* Summary Stats */}
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-5">
-                  <div className="rounded-control border border-line bg-white px-3 py-2.5 shadow-sm">
-                    <div className="text-[10px] font-semibold text-ink-3 uppercase tracking-wider">Total Transactions</div>
-                    <div className="text-sm font-bold mt-0.5 text-ink">{txStats.total.toLocaleString()}</div>
-                  </div>
-                  <div className="rounded-control border border-line bg-white px-3 py-2.5 shadow-sm">
-                    <div className="text-[10px] font-semibold text-ink-3 uppercase tracking-wider">Rebalances</div>
-                    <div className="text-sm font-bold mt-0.5 text-ink">{txStats.rebalances.toLocaleString()}</div>
-                  </div>
-                  <div className="rounded-control border border-line bg-white px-3 py-2.5 shadow-sm">
-                    <div className="text-[10px] font-semibold text-ink-3 uppercase tracking-wider">Settled</div>
-                    <div className="text-sm font-bold mt-0.5 text-pos">{txStats.settled.toLocaleString()}</div>
-                  </div>
-                  <div className="rounded-control border border-line bg-white px-3 py-2.5 shadow-sm">
-                    <div className="text-[10px] font-semibold text-ink-3 uppercase tracking-wider">Pending</div>
-                    <div className="text-sm font-bold mt-0.5 text-violet">{txStats.pending.toLocaleString()}</div>
-                  </div>
-                </div>
+                <StatStrip
+                  cols={4}
+                  items={[
+                    { label: "Total transactions", value: txStats.total.toLocaleString() },
+                    { label: "Rebalances", value: txStats.rebalances.toLocaleString() },
+                    { label: "Settled", value: txStats.settled.toLocaleString() },
+                    { label: "Pending", value: <span className={txStats.pending > 0 ? "text-warn" : undefined}>{txStats.pending.toLocaleString()}</span> },
+                  ]}
+                />
 
-                {/* Filters */}
-                <div className="flex flex-wrap items-center gap-2 mb-3">
-                  <input
-                    type="text"
-                    value={txSearch}
-                    onChange={(e) => { setTxSearch(e.target.value); setTxPage(0); }}
-                    placeholder="Search symbol, date, notes..."
-                    className="rounded-lg border border-line bg-white px-3 py-2 text-sm w-full sm:w-64 outline-none focus:border-accent-border focus:ring-2 focus:ring-accent-border"
-                  />
-                  <select
-                    value={txProfileFilter}
-                    onChange={(e) => { setTxProfileFilter(e.target.value as PimProfileType | "all"); setTxPage(0); }}
-                    className="rounded-lg border border-line bg-white px-3 py-2 text-sm outline-none focus:border-accent-border"
-                  >
-                    <option value="all">All Profiles</option>
-                    {PROFILES.map((p) => (
-                      <option key={p.key} value={p.key}>{p.label}</option>
-                    ))}
-                  </select>
-                  <select
-                    value={txTypeFilter}
-                    onChange={(e) => { setTxTypeFilter(e.target.value as typeof txTypeFilter); setTxPage(0); }}
-                    className="rounded-lg border border-line bg-white px-3 py-2 text-sm outline-none focus:border-accent-border"
-                  >
-                    <option value="all">All Types</option>
-                    <option value="rebalance">Rebalance</option>
-                    <option value="buy">Buy</option>
-                    <option value="sell">Sell</option>
-                    <option value="switch">Switch</option>
-                  </select>
-                  <select
-                    value={txStatusFilter}
-                    onChange={(e) => { setTxStatusFilter(e.target.value as typeof txStatusFilter); setTxPage(0); }}
-                    className="rounded-lg border border-line bg-white px-3 py-2 text-sm outline-none focus:border-accent-border"
-                  >
-                    <option value="all">All Status</option>
-                    <option value="settled">Settled</option>
-                    <option value="pending">Pending</option>
-                  </select>
-                  {groups.length > 1 && (
-                    <select
-                      value={txGroupFilter}
-                      onChange={(e) => { setTxGroupFilter(e.target.value); setTxPage(0); }}
-                      className="rounded-lg border border-line bg-white px-3 py-2 text-sm outline-none focus:border-accent-border"
-                    >
-                      <option value="all">All Models</option>
-                      {groups.map((g) => (
-                        <option key={g.id} value={g.id}>{g.name}</option>
-                      ))}
-                    </select>
-                  )}
-                  {txTotalPages > 1 && (
-                    <div className="flex items-center gap-2 text-xs text-ink-3 ml-auto">
-                      <button
-                        onClick={() => setTxPage(Math.max(0, txPage - 1))}
-                        disabled={txPage === 0}
-                        className="rounded px-2 py-1 bg-white border border-line hover:bg-surface-2 disabled:opacity-30"
+                <section className="panel">
+                  <div className="panel-h flex-wrap gap-2 py-1.5">
+                    <span className="t">Transactions</span>
+                    <div className="ml-auto flex flex-wrap items-center gap-2">
+                      <input
+                        type="text"
+                        value={txSearch}
+                        onChange={(e) => { setTxSearch(e.target.value); setTxPage(0); }}
+                        placeholder="Search symbol, date, notes"
+                        className={`${INPUT} w-full sm:w-52`}
+                      />
+                      <select
+                        value={txProfileFilter}
+                        onChange={(e) => { setTxProfileFilter(e.target.value as PimProfileType | "all"); setTxPage(0); }}
+                        className={SELECT}
                       >
-                        Prev
-                      </button>
-                      <span>Page {txPage + 1} of {txTotalPages}</span>
-                      <button
-                        onClick={() => setTxPage(Math.min(txTotalPages - 1, txPage + 1))}
-                        disabled={txPage >= txTotalPages - 1}
-                        className="rounded px-2 py-1 bg-white border border-line hover:bg-surface-2 disabled:opacity-30"
+                        <option value="all">All profiles</option>
+                        {PROFILES.map((p) => (
+                          <option key={p.key} value={p.key}>{p.label}</option>
+                        ))}
+                      </select>
+                      <select
+                        value={txTypeFilter}
+                        onChange={(e) => { setTxTypeFilter(e.target.value as typeof txTypeFilter); setTxPage(0); }}
+                        className={SELECT}
                       >
-                        Next
-                      </button>
+                        <option value="all">All types</option>
+                        <option value="rebalance">Rebalance</option>
+                        <option value="buy">Buy</option>
+                        <option value="sell">Sell</option>
+                        <option value="switch">Switch</option>
+                      </select>
+                      <select
+                        value={txStatusFilter}
+                        onChange={(e) => { setTxStatusFilter(e.target.value as typeof txStatusFilter); setTxPage(0); }}
+                        className={SELECT}
+                      >
+                        <option value="all">All status</option>
+                        <option value="settled">Settled</option>
+                        <option value="pending">Pending</option>
+                      </select>
+                      {groups.length > 1 && (
+                        <select
+                          value={txGroupFilter}
+                          onChange={(e) => { setTxGroupFilter(e.target.value); setTxPage(0); }}
+                          className={SELECT}
+                        >
+                          <option value="all">All models</option>
+                          {groups.map((g) => (
+                            <option key={g.id} value={g.id}>{g.name}</option>
+                          ))}
+                        </select>
+                      )}
+                      <Pager page={txPage} total={txTotalPages} onChange={setTxPage} />
                     </div>
-                  )}
-                </div>
-
-                {/* Transactions Table */}
-                <div className="rounded-card border border-line bg-white shadow-sm overflow-hidden">
+                  </div>
                   <div className="overflow-x-auto">
-                    <table className="w-full text-sm">
+                    <table className="data-table">
                       <thead>
-                        <tr className="border-b border-line-soft bg-surface-2 text-xs text-ink-3">
-                          <th className="text-left py-2.5 pl-5 pr-2 font-semibold">Date</th>
-                          <th className="text-left py-2.5 px-2 font-semibold hidden md:table-cell">Model</th>
-                          <th className="text-left py-2.5 px-2 font-semibold hidden sm:table-cell">Profile</th>
-                          <th className="text-left py-2.5 px-2 font-semibold">Type</th>
-                          <th className="text-left py-2.5 px-2 font-semibold">Symbol</th>
-                          <th className="text-center py-2.5 px-2 font-semibold">Dir</th>
-                          <th className="text-right py-2.5 px-2 font-semibold">Price</th>
-                          <th className="text-right py-2.5 px-2 font-semibold hidden md:table-cell">Target %</th>
-                          <th className="text-right py-2.5 px-2 font-semibold hidden lg:table-cell">Amount (CAD)</th>
-                          <th className="text-center py-2.5 pr-5 pl-2 font-semibold">Status</th>
+                        <tr>
+                          <th className="pl-3.5">Date</th>
+                          <th className="hidden md:table-cell">Model</th>
+                          <th className="hidden sm:table-cell">Profile</th>
+                          <th>Type</th>
+                          <th>Symbol</th>
+                          <th>Direction</th>
+                          <th className="n">Price</th>
+                          <th className="n hidden md:table-cell">Target %</th>
+                          <th className="n hidden lg:table-cell">Amount (CAD)</th>
+                          <th className="pr-3.5">Status</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -899,47 +820,31 @@ export default function AppendixPage() {
                           const status = t.status || "settled";
                           const groupName = groupNameById.get(t.groupId) || t.groupId;
                           return (
-                            <tr key={t.id} className="border-b border-line-soft hover:bg-surface-hover transition-colors">
-                              <td className="py-2 pl-5 pr-2 text-xs text-ink whitespace-nowrap">
-                                <div className="font-medium">{formatTxDate(t.date)}</div>
-                                <div className="text-[10px] text-ink-3 hidden sm:block">{new Date(t.date).toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" })}</div>
+                            <tr key={t.id}>
+                              <td className="pl-3.5">
+                                <span className="font-mono">{formatTxDate(t.date)}</span>
+                                <span className="ml-1.5 hidden text-[11px] text-ink-3 sm:inline">{new Date(t.date).toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" })}</span>
                               </td>
-                              <td className="py-2 px-2 text-xs text-ink-2 hidden md:table-cell">{groupName}</td>
-                              <td className="py-2 px-2 text-xs text-ink-2 hidden sm:table-cell">
+                              <td className="hidden text-ink-2 md:table-cell">{groupName}</td>
+                              <td className="hidden text-ink-2 sm:table-cell">
                                 {t.profile ? PROFILE_LABELS[t.profile] : <span className="text-ink-faint">—</span>}
                               </td>
-                              <td className="py-2 px-2">
-                                <span className={`rounded px-1.5 py-0.5 text-[9px] font-bold uppercase ${
-                                  t.type === "rebalance" ? "bg-accent-soft text-accent" :
-                                  t.type === "buy" ? "bg-pos-soft text-pos" :
-                                  t.type === "sell" ? "bg-neg-soft text-neg" :
-                                  "bg-warn-soft text-warn"
-                                }`}>
-                                  {t.type}
-                                </span>
-                              </td>
-                              <td className="py-2 px-2 font-mono text-xs font-semibold text-ink">{t.symbol}</td>
-                              <td className="py-2 px-2 text-center">
-                                <span className={`rounded px-1.5 py-0.5 text-[9px] font-bold ${
-                                  t.direction === "buy" ? "bg-pos-soft text-pos" : "bg-neg-soft text-neg"
-                                }`}>
-                                  {t.direction.toUpperCase()}
-                                </span>
-                              </td>
-                              <td className="py-2 px-2 text-right font-mono text-xs">
+                              <td className="capitalize text-ink-2">{t.type}</td>
+                              <td className="font-mono font-medium">{t.symbol}</td>
+                              <td className={`capitalize ${t.direction === "buy" ? "text-pos" : "text-neg"}`}>{t.direction}</td>
+                              <td className="n">
                                 {t.price > 0 ? t.price.toFixed(4) : <span className="text-ink-faint">—</span>}
                               </td>
-                              <td className="py-2 px-2 text-right font-mono text-xs text-ink-2 hidden md:table-cell">
+                              <td className="n hidden text-ink-2 md:table-cell">
                                 {(t.targetWeight * 100).toFixed(2)}%
                               </td>
-                              <td className="py-2 px-2 text-right font-mono text-xs text-ink-2 hidden lg:table-cell">
+                              <td className="n hidden text-ink-2 lg:table-cell">
                                 {t.targetAmount ? `$${t.targetAmount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : <span className="text-ink-faint">—</span>}
                               </td>
-                              <td className="py-2 pr-5 pl-2 text-center">
-                                <span className={`rounded px-1.5 py-0.5 text-[9px] font-bold uppercase ${
-                                  status === "settled" ? "bg-surface-2 text-ink-2" : "bg-violet-soft text-violet"
-                                }`} title={status === "settled" && t.settledAt ? `Settled ${formatTxDateTime(t.settledAt)}` : ""}>
-                                  {status}
+                              <td className="pr-3.5" title={status === "settled" && t.settledAt ? `Settled ${formatTxDateTime(t.settledAt)}` : ""}>
+                                <span className={`inline-flex items-center gap-2 ${status === "settled" ? "text-ink-2" : "text-warn"}`}>
+                                  <span className={`dot ${status === "settled" ? "bg-ink-faint" : "bg-warn"}`} />
+                                  {status === "settled" ? "Settled" : "Pending"}
                                 </span>
                               </td>
                             </tr>
@@ -948,14 +853,14 @@ export default function AppendixPage() {
                       </tbody>
                     </table>
                   </div>
-                  <div className="px-5 py-3 border-t border-line-soft text-xs text-ink-3 text-center">
+                  <div className="flex h-8 items-center border-t border-line-soft px-3.5 text-[11.5px] text-ink-3">
                     {filteredTransactions.length === 0 ? (
                       "No transactions match your filters"
                     ) : (
-                      <>Showing {txPage * TX_PAGE_SIZE + 1}–{Math.min((txPage + 1) * TX_PAGE_SIZE, filteredTransactions.length)} of {filteredTransactions.length.toLocaleString()} transactions (most recent first)</>
+                      <>{txPage * TX_PAGE_SIZE + 1}–{Math.min((txPage + 1) * TX_PAGE_SIZE, filteredTransactions.length)} of {filteredTransactions.length.toLocaleString()} · most recent first</>
                     )}
                   </div>
-                </div>
+                </section>
               </>
             )}
           </>
@@ -966,257 +871,247 @@ export default function AppendixPage() {
           // Click-through UI for /api/admin/import-third-party-values.
           // Replaces current-year daily values with SIA Charts CSV
           // export. All imported entries anchored on the server.
-          <div className="space-y-6">
-            <div className="rounded-card border border-line bg-white p-6 shadow-sm space-y-4">
-              {/* Profile selector */}
-              <div>
-                <label className="block text-xs font-semibold text-ink-2 uppercase tracking-wider mb-2">
-                  Profile
-                </label>
-                <div className="flex gap-2 flex-wrap">
-                  {PROFILES.map((p) => (
-                    <button
-                      key={p.key}
-                      onClick={() => {
-                        setSiaProfile(p.key as PimProfileType);
-                        setSiaDryRun(null);
-                        setSiaWriteResult(null);
-                      }}
-                      className={`rounded-lg px-3 py-1.5 text-sm font-semibold transition-colors ${
-                        siaProfile === p.key
-                          ? "bg-accent text-white"
-                          : "bg-surface-2 text-ink hover:bg-line"
-                      }`}
-                    >
-                      {p.label}
-                    </button>
-                  ))}
+          <div className="flex flex-col gap-3.5">
+            <section className="panel">
+              <div className="panel-h">
+                <span className="t">Import SIA Charts export</span>
+                <span className="m">replaces current-year daily values · every entry anchored</span>
+              </div>
+              <div className="flex flex-col gap-4 px-3.5 py-3.5 text-[12.5px]">
+                {/* Profile selector */}
+                <div>
+                  <span className={LABEL}>Profile</span>
+                  <div className="seg" role="group" aria-label="Profile">
+                    {PROFILES.map((p) => (
+                      <button
+                        key={p.key}
+                        type="button"
+                        className={siaProfile === p.key ? "on" : ""}
+                        onClick={() => {
+                          setSiaProfile(p.key as PimProfileType);
+                          setSiaDryRun(null);
+                          setSiaWriteResult(null);
+                        }}
+                      >
+                        {p.label}
+                      </button>
+                    ))}
+                  </div>
                 </div>
-              </div>
 
-              {/* File upload */}
-              <div>
-                <label className="block text-xs font-semibold text-ink-2 uppercase tracking-wider mb-2">
-                  CSV file (SIA Charts export)
-                </label>
-                <input
-                  ref={siaFileInputRef}
-                  type="file"
-                  accept=".csv,text/csv"
-                  onChange={handleSiaFile}
-                  className="block w-full text-sm text-ink-2 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-accent-soft file:text-accent hover:file:bg-accent-soft"
-                />
-                {siaFileName && (
-                  <p className="text-xs text-ink-3 mt-2">Loaded: {siaFileName}</p>
-                )}
-              </div>
-
-              {/* Parsed preview */}
-              {siaParsed && (
-                <div className="rounded-lg bg-surface-2 p-4 text-sm space-y-1">
-                  <div className="font-semibold text-ink">Parsed {siaParsed.length} rows</div>
-                  {siaParsed.length > 0 && (
-                    <>
-                      <div className="text-ink-2">
-                        First: <span className="font-mono">{siaParsed[0].date}</span> → <span className="font-mono">${siaParsed[0].value.toLocaleString()}</span>
-                      </div>
-                      <div className="text-ink-2">
-                        Last: <span className="font-mono">{siaParsed[siaParsed.length - 1].date}</span> → <span className="font-mono">${siaParsed[siaParsed.length - 1].value.toLocaleString()}</span>
-                      </div>
-                    </>
+                {/* File upload */}
+                <div>
+                  <label className={LABEL}>CSV file (SIA Charts export)</label>
+                  <input
+                    ref={siaFileInputRef}
+                    type="file"
+                    accept=".csv,text/csv"
+                    onChange={handleSiaFile}
+                    className="block w-full text-[12.5px] text-ink-2 file:mr-3 file:h-7 file:cursor-pointer file:rounded-control file:border file:border-line file:bg-surface file:px-2.5 file:text-[12.5px] file:text-ink-2 hover:file:bg-surface-hover"
+                  />
+                  {siaFileName && (
+                    <p className="mt-1.5 text-[11.5px] text-ink-3">Loaded {siaFileName}</p>
                   )}
-                  {siaParseWarnings.map((w, i) => (
-                    <div key={i} className="text-warn text-xs">⚠ {w}</div>
-                  ))}
                 </div>
-              )}
 
-              {/* Action buttons */}
-              <div className="flex gap-2 pt-2">
-                <button
-                  onClick={handleSiaDryRun}
-                  disabled={!siaParsed || siaLoading}
-                  className="rounded-lg bg-ink px-4 py-2 text-sm font-semibold text-white hover:bg-ink disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                >
-                  {siaLoading ? "Running…" : "Dry Run (preview)"}
-                </button>
-                <button
-                  onClick={handleSiaApply}
-                  disabled={!siaDryRun || siaLoading}
-                  className="rounded-lg bg-neg px-4 py-2 text-sm font-semibold text-white hover:bg-neg disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                >
-                  {siaLoading ? "Writing…" : "Apply (Write to Redis)"}
-                </button>
-              </div>
-
-              {siaError && (
-                <div className="rounded-lg bg-neg-soft border border-neg-border p-3 text-sm text-neg">
-                  <strong>Error:</strong> {siaError}
-                </div>
-              )}
-            </div>
-
-            {/* Dry-run result */}
-            {siaDryRun && (
-              <div className="rounded-card border border-warn-border bg-warn-soft p-6 shadow-sm space-y-3">
-                <h2 className="text-lg font-bold text-warn">Dry-run preview — NOT written yet</h2>
-                <div className="grid grid-cols-2 gap-3 text-sm">
-                  <div>
-                    <div className="text-xs uppercase tracking-wider text-warn font-semibold">Profile</div>
-                    <div className="font-semibold text-ink">{siaDryRun.summary.profile}</div>
-                  </div>
-                  <div>
-                    <div className="text-xs uppercase tracking-wider text-warn font-semibold">From date</div>
-                    <div className="font-mono text-ink">{siaDryRun.summary.fromDate}</div>
-                  </div>
-                  <div>
-                    <div className="text-xs uppercase tracking-wider text-warn font-semibold">New YTD</div>
-                    <div className="font-semibold text-ink">{siaDryRun.summary.newYtdPct}%</div>
-                  </div>
-                  <div>
-                    <div className="text-xs uppercase tracking-wider text-warn font-semibold">Existing YTD (replaced)</div>
-                    <div className="font-semibold text-ink">{siaDryRun.summary.existingYtdPct ?? "n/a"}%</div>
-                  </div>
-                  <div>
-                    <div className="text-xs uppercase tracking-wider text-warn font-semibold">Entries imported</div>
-                    <div className="font-semibold text-ink">{siaDryRun.summary.importedValueCount}</div>
-                  </div>
-                  <div>
-                    <div className="text-xs uppercase tracking-wider text-warn font-semibold">Range</div>
-                    <div className="font-mono text-ink text-xs">{siaDryRun.summary.firstImportedDate} → {siaDryRun.summary.lastImportedDate}</div>
-                  </div>
-                  <div>
-                    <div className="text-xs uppercase tracking-wider text-warn font-semibold">Anchor (pre-fromDate)</div>
-                    <div className="font-mono text-ink text-xs">
-                      {siaDryRun.summary.anchorPreValue
-                        ? `${siaDryRun.summary.anchorPreValue.date} · $${siaDryRun.summary.anchorPreValue.value.toLocaleString()}`
-                        : "none — first day return collapses to 0"}
-                    </div>
-                  </div>
-                  <div>
-                    <div className="text-xs uppercase tracking-wider text-warn font-semibold">Pre-fromDate preserved</div>
-                    <div className="font-semibold text-ink">{siaDryRun.summary.preFromDateEntriesPreserved.appendix} appendix · {siaDryRun.summary.preFromDateEntriesPreserved.perf} perf</div>
-                  </div>
-                </div>
-                {siaDryRun.summary.warnings && siaDryRun.summary.warnings.length > 0 && (
-                  <div className="rounded-lg border border-neg-border bg-neg-soft p-3 space-y-1.5">
-                    <div className="text-xs uppercase tracking-wider text-neg font-semibold">
-                      Data checks ({siaDryRun.summary.warnings.length})
-                    </div>
-                    {siaDryRun.summary.warnings.map((w, i) => (
-                      <div key={i} className="text-xs text-neg leading-relaxed">⚠ {w}</div>
+                {/* Parsed preview */}
+                {siaParsed && (
+                  <div className="flex flex-col gap-1 rounded-control border border-line-soft bg-surface-2 px-3 py-2">
+                    <div className="font-medium text-ink">Parsed {siaParsed.length} rows</div>
+                    {siaParsed.length > 0 && (
+                      <>
+                        <div className="text-ink-2">
+                          First <span className="font-mono">{siaParsed[0].date}</span> · <span className="font-mono">${siaParsed[0].value.toLocaleString()}</span>
+                        </div>
+                        <div className="text-ink-2">
+                          Last <span className="font-mono">{siaParsed[siaParsed.length - 1].date}</span> · <span className="font-mono">${siaParsed[siaParsed.length - 1].value.toLocaleString()}</span>
+                        </div>
+                      </>
+                    )}
+                    {siaParseWarnings.map((w, i) => (
+                      <div key={i} className="flex items-start gap-2 text-[12px] text-warn"><span className="dot mt-[6px] bg-warn" />{w}</div>
                     ))}
                   </div>
                 )}
-                <p className="text-xs text-warn pt-1">
-                  Review these numbers. If correct, click <strong>Apply</strong> to write. If anything looks off, change profile / file and re-run Dry Run.
-                </p>
+
+                {/* Action buttons */}
+                <div className="flex flex-wrap gap-2">
+                  <button onClick={handleSiaDryRun} disabled={!siaParsed || siaLoading} className={BTN_PRI}>
+                    {siaLoading ? "Running" : "Dry run (preview)"}
+                  </button>
+                  <button onClick={handleSiaApply} disabled={!siaDryRun || siaLoading} className={BTN_DANGER}>
+                    {siaLoading ? "Writing" : "Apply (write to Redis)"}
+                  </button>
+                </div>
+
+                {siaError && (
+                  <div className="flex items-start gap-2 text-neg">
+                    <span className="dot mt-[6px] bg-neg" />
+                    <span><span className="font-medium">Error</span> · {siaError}</span>
+                  </div>
+                )}
               </div>
+            </section>
+
+            {/* Dry-run result */}
+            {siaDryRun && (
+              <section className="panel">
+                <div className="panel-h">
+                  <span className="dot bg-warn" />
+                  <span className="t">Dry-run preview</span>
+                  <span className="m">not written yet</span>
+                </div>
+                <div className="grid grid-cols-2 gap-x-6 gap-y-3 px-3.5 py-3.5 text-[12.5px] sm:grid-cols-4">
+                  {([
+                    ["Profile", siaDryRun.summary.profile],
+                    ["From date", siaDryRun.summary.fromDate],
+                    ["New YTD", `${siaDryRun.summary.newYtdPct}%`],
+                    ["Existing YTD (replaced)", `${siaDryRun.summary.existingYtdPct ?? "n/a"}%`],
+                    ["Entries imported", String(siaDryRun.summary.importedValueCount)],
+                    ["Range", `${siaDryRun.summary.firstImportedDate} to ${siaDryRun.summary.lastImportedDate}`],
+                    ["Anchor (pre-fromDate)", siaDryRun.summary.anchorPreValue
+                      ? `${siaDryRun.summary.anchorPreValue.date} · $${siaDryRun.summary.anchorPreValue.value.toLocaleString()}`
+                      : "none — first day return collapses to 0"],
+                    ["Pre-fromDate preserved", `${siaDryRun.summary.preFromDateEntriesPreserved.appendix} appendix · ${siaDryRun.summary.preFromDateEntriesPreserved.perf} perf`],
+                  ] as [string, string][]).map(([label, value]) => (
+                    <div key={label}>
+                      <div className="text-[11px] text-ink-3">{label}</div>
+                      <div className="mt-0.5 font-mono text-[12.5px] text-ink">{value}</div>
+                    </div>
+                  ))}
+                </div>
+                {siaDryRun.summary.warnings && siaDryRun.summary.warnings.length > 0 && (
+                  <div className="flex flex-col gap-1.5 border-t border-line-soft px-3.5 py-3">
+                    <div className="text-[11px] text-ink-3">Data checks ({siaDryRun.summary.warnings.length})</div>
+                    {siaDryRun.summary.warnings.map((w, i) => (
+                      <div key={i} className="flex items-start gap-2 text-[12.5px] leading-[1.45] text-neg"><span className="dot mt-[6px] bg-neg" />{w}</div>
+                    ))}
+                  </div>
+                )}
+                <div className="border-t border-line-soft px-3.5 py-2.5 text-[11.5px] text-ink-3">
+                  Review these numbers. If correct, click <span className="font-medium text-ink-2">Apply</span> to write. If anything looks off, change profile / file and re-run the dry run.
+                </div>
+              </section>
             )}
 
             {/* Write result */}
             {siaWriteResult && (
-              <div className="rounded-card border border-pos-border bg-pos-soft p-6 shadow-sm space-y-3">
-                <h2 className="text-lg font-bold text-pos">✓ Imported successfully</h2>
-                <div className="text-sm text-ink">
-                  <strong>{siaWriteResult.summary.importedValueCount}</strong> daily values written for{" "}
-                  <strong>{siaWriteResult.summary.profile}</strong> covering{" "}
-                  <span className="font-mono">{siaWriteResult.summary.firstImportedDate}</span> →{" "}
-                  <span className="font-mono">{siaWriteResult.summary.lastImportedDate}</span>.
+              <section className="panel">
+                <div className="panel-h">
+                  <span className="dot bg-pos" />
+                  <span className="t">Imported</span>
+                  <span className="m">written to Redis</span>
                 </div>
-                <div className="text-sm text-ink">
-                  New YTD: <strong>{siaWriteResult.summary.newYtdPct}%</strong>
-                </div>
-                {siaWriteResult.stashKeys && (
-                  <div className="text-xs text-ink-2 pt-2">
-                    Rollback stash keys (if ever needed):
-                    <ul className="list-disc list-inside pt-1 font-mono">
-                      <li>{siaWriteResult.stashKeys.perf}</li>
-                      <li>{siaWriteResult.stashKeys.appendix}</li>
-                    </ul>
+                <div className="flex flex-col gap-2 px-3.5 py-3.5 text-[12.5px] text-ink-2">
+                  <div>
+                    <span className="font-medium text-ink">{siaWriteResult.summary.importedValueCount}</span> daily values written for{" "}
+                    <span className="font-medium text-ink">{siaWriteResult.summary.profile}</span> covering{" "}
+                    <span className="font-mono">{siaWriteResult.summary.firstImportedDate}</span> to{" "}
+                    <span className="font-mono">{siaWriteResult.summary.lastImportedDate}</span>.
                   </div>
-                )}
-                <p className="text-xs text-pos pt-1">
-                  Refresh the PIM Model / PIM Performance pages to see the updated chart.
-                </p>
-              </div>
+                  <div>New YTD <span className="font-mono font-medium text-ink">{siaWriteResult.summary.newYtdPct}%</span></div>
+                  {siaWriteResult.stashKeys && (
+                    <div className="text-[11.5px] text-ink-3">
+                      Rollback stash keys (if ever needed)
+                      <ul className="mt-1 list-disc pl-5 font-mono">
+                        <li>{siaWriteResult.stashKeys.perf}</li>
+                        <li>{siaWriteResult.stashKeys.appendix}</li>
+                      </ul>
+                    </div>
+                  )}
+                  <p className="text-[11.5px] text-ink-3">Refresh the PIM Model / PIM Performance pages to see the updated chart.</p>
+                </div>
+              </section>
             )}
 
             {/* Rollback section — list of available stashes from prior
                 imports, each with a Rollback button. Useful when an
                 import produced unexpected numbers. */}
-            <div className="rounded-card border border-line bg-white p-6 shadow-sm space-y-3">
-              <div className="flex items-center justify-between">
-                <h3 className="text-base font-bold text-ink">Rollback previous imports</h3>
-                <button
-                  onClick={() => void loadStashes()}
-                  className="text-xs rounded-md bg-surface-2 px-2 py-1 font-medium text-ink-2 hover:bg-line transition-colors"
-                >
-                  {stashesLoading ? "Loading…" : "Refresh"}
+            <section className="panel">
+              <div className="panel-h">
+                <span className="t">Rollback previous imports</span>
+                <span className="m">every import and rollback stashes the prior state</span>
+                <button onClick={() => void loadStashes()} className={`${BTN} ml-auto`}>
+                  <AppIcon name="refresh" size={13} className={stashesLoading ? "animate-spin" : ""} />
+                  {stashesLoading ? "Loading" : "Refresh"}
                 </button>
               </div>
-              <p className="text-xs text-ink-3">
-                Every import (and every rollback) writes a stash of the prior state.
-                Use this list to undo a recent import if the numbers look wrong.
-                Stashes are kept indefinitely in Redis — no auto-pruning yet.
+              <p className="px-3.5 py-2.5 text-[11.5px] text-ink-3">
+                Use this list to undo a recent import if the numbers look wrong. Stashes are kept indefinitely in Redis — no auto-pruning yet.
               </p>
               {stashes.length === 0 && !stashesLoading && (
-                <div className="rounded-lg bg-surface-2 p-4 text-sm text-ink-3">
-                  No import stashes found.
-                </div>
+                <div className="border-t border-line-soft px-3.5 py-3 text-[12.5px] text-ink-3">No import stashes found.</div>
               )}
               {stashes.length > 0 && (
-                <div className="space-y-2">
-                  {stashes.map((s, idx) => (
-                    <div key={s.timestamp} className="flex items-center justify-between rounded-lg border border-line bg-surface-2 px-3 py-2">
-                      <div className="text-xs">
-                        <div className="font-mono text-ink">{s.date.replace("T", " ").slice(0, 19)} UTC</div>
-                        <div className="text-ink-3 mt-0.5">
-                          {idx === 0 && <span className="inline-block rounded-full bg-accent-soft text-accent px-1.5 py-0.5 mr-2 font-semibold uppercase text-[9px]">Most Recent</span>}
-                          perf: {s.perfSizeBytes ? (s.perfSizeBytes / 1024).toFixed(1) : "?"} KB · appendix: {s.appendixSizeBytes ? (s.appendixSizeBytes / 1024).toFixed(1) : "?"} KB
-                          {!s.complete && <span className="text-warn ml-2">⚠ incomplete</span>}
-                        </div>
-                      </div>
-                      <button
-                        onClick={() => void handleRollback(s.timestamp)}
-                        disabled={!s.complete}
-                        className="text-xs rounded-lg bg-warn px-3 py-1.5 font-semibold text-white hover:bg-warn disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                      >
-                        Rollback to this
-                      </button>
-                    </div>
-                  ))}
+                <div className="overflow-x-auto border-t border-line-soft">
+                  <table className="data-table">
+                    <thead>
+                      <tr>
+                        <th className="pl-3.5">Stash</th>
+                        <th className="n">Perf</th>
+                        <th className="n">Appendix</th>
+                        <th>Status</th>
+                        <th className="pr-3.5" />
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {stashes.map((s, idx) => (
+                        <tr key={s.timestamp}>
+                          <td className="pl-3.5 font-mono">{s.date.replace("T", " ").slice(0, 19)} UTC</td>
+                          <td className="n text-ink-2">{s.perfSizeBytes ? `${(s.perfSizeBytes / 1024).toFixed(1)} KB` : "?"}</td>
+                          <td className="n text-ink-2">{s.appendixSizeBytes ? `${(s.appendixSizeBytes / 1024).toFixed(1)} KB` : "?"}</td>
+                          <td>
+                            <span className={`inline-flex items-center gap-2 ${!s.complete ? "text-warn" : idx === 0 ? "text-accent-ink" : "text-ink-3"}`}>
+                              <span className={`dot ${!s.complete ? "bg-warn" : idx === 0 ? "bg-accent" : "bg-ink-faint"}`} />
+                              {!s.complete ? "Incomplete" : idx === 0 ? "Most recent" : "Complete"}
+                            </span>
+                          </td>
+                          <td className="pr-3.5 text-right">
+                            <button onClick={() => void handleRollback(s.timestamp)} disabled={!s.complete} className={BTN}>
+                              Roll back to this
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
                 </div>
               )}
               {rollbackError && (
-                <div className="rounded-lg bg-neg-soft border border-neg-border p-3 text-sm text-neg">
-                  <strong>Error:</strong> {rollbackError}
+                <div className="flex items-start gap-2 border-t border-line-soft px-3.5 py-3 text-[12.5px] text-neg">
+                  <span className="dot mt-[6px] bg-neg" />
+                  <span><span className="font-medium">Error</span> · {rollbackError}</span>
                 </div>
               )}
               {rollbackResult?.ok && rollbackResult.wrote && (
-                <div className="rounded-lg bg-pos-soft border border-pos-border p-3 text-sm text-pos space-y-1">
-                  <div className="font-semibold">✓ Restored to {rollbackResult.restoredFrom?.date.replace("T", " ").slice(0, 19)} UTC</div>
-                  <div className="text-xs">
-                    Pre-rollback state stashed for re-rollback:
-                    <ul className="list-disc list-inside pt-1 font-mono">
+                <div className="flex flex-col gap-1 border-t border-line-soft px-3.5 py-3 text-[12.5px]">
+                  <div className="flex items-center gap-2 font-medium text-pos">
+                    <span className="dot bg-pos" />
+                    Restored to {rollbackResult.restoredFrom?.date.replace("T", " ").slice(0, 19)} UTC
+                  </div>
+                  <div className="text-[11.5px] text-ink-3">
+                    Pre-rollback state stashed for re-rollback
+                    <ul className="mt-1 list-disc pl-5 font-mono">
                       <li>{rollbackResult.preRollbackStashKeys?.perf}</li>
                       <li>{rollbackResult.preRollbackStashKeys?.appendix}</li>
                     </ul>
                   </div>
                 </div>
               )}
-            </div>
+            </section>
 
             {/* Quick reference */}
-            <div className="rounded-card border border-line bg-white p-6 text-xs text-ink-3 space-y-1">
-              <div className="font-semibold text-ink mb-2 text-sm">Tips</div>
-              <div>• Bi-weekly / monthly cadence works well. Each import overwrites the current year&apos;s entries with the freshly exported SIA data.</div>
-              <div>• Pre-current-year history is permanently locked. Only this year&apos;s entries get replaced.</div>
-              <div>• Include Dec 31 of the prior year in the export so the Jan 2 boundary return is preserved.</div>
-              <div>• All imported entries are marked anchored — future <code>update-daily-value</code> runs and PUT writes cannot modify them.</div>
-              <div>• Today&apos;s entry is computed live by the daily-update path. Don&apos;t worry about it being in the CSV.</div>
-              <div>• Every import creates a rollback stash. If an import produced wrong numbers, scroll up to the rollback section and click <strong>Rollback to this</strong> on the relevant entry.</div>
-            </div>
+            <section className="panel">
+              <div className="panel-h"><span className="t">Tips</span></div>
+              <ul className="flex max-w-[76ch] list-disc flex-col gap-1 py-3 pl-8 pr-3.5 text-[12.5px] leading-[1.5] text-ink-2">
+                <li>Bi-weekly / monthly cadence works well. Each import overwrites the current year&apos;s entries with the freshly exported SIA data.</li>
+                <li>Pre-current-year history is permanently locked. Only this year&apos;s entries get replaced.</li>
+                <li>Include Dec 31 of the prior year in the export so the Jan 2 boundary return is preserved.</li>
+                <li>All imported entries are marked anchored — future <code className="font-mono">update-daily-value</code> runs and PUT writes cannot modify them.</li>
+                <li>Today&apos;s entry is computed live by the daily-update path. Don&apos;t worry about it being in the CSV.</li>
+                <li>Every import creates a rollback stash. If an import produced wrong numbers, use <span className="font-medium text-ink">Roll back to this</span> on the relevant entry above.</li>
+              </ul>
+            </section>
           </div>
         )}
       </div>

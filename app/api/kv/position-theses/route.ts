@@ -40,7 +40,23 @@ type PositionThesis = {
    *  rewritten away. Fed back into the draft prompt as a do-not-propose list
    *  so a redraft cannot reintroduce the same dead end. Append-only, capped. */
   unverifiableNotes?: string[];
+  /** The 2-4 things the case rests on (app/lib/kill-conditions ThesisPillar). */
+  pillars?: unknown[];
+  /** Prior signed versions, newest last, capped — so the desk can show how
+   *  the case evolved and whether a review changed it. Written server-side
+   *  whenever the prose, pillars or conditions change on a save that carries
+   *  `versionReason`. */
+  history?: ThesisVersion[];
 };
+type ThesisVersion = {
+  savedAt: string;
+  reason: string;
+  why: string;
+  pillars?: unknown[];
+  killConditions?: unknown[];
+  underwrittenAt?: string;
+};
+const MAX_HISTORY = 12;
 type PositionTheses = Record<string, PositionThesis>;
 
 export async function GET() {
@@ -78,6 +94,27 @@ export async function POST(req: NextRequest) {
       updatedAt: new Date().toISOString(),
     };
     if (hasConditions) next.killConditions = body.killConditions as unknown[];
+    if (Array.isArray(body?.pillars)) next.pillars = body.pillars as unknown[];
+    // Version the PREVIOUS signed state when a substantive save says why
+    // (underwrite / review applied / edit). Trip-stamp saves (conditions only,
+    // no reason) never create versions.
+    if (prev && typeof body?.versionReason === "string" && body.versionReason.trim()) {
+      const changed =
+        (body?.why !== undefined && why !== (prev.why ?? "")) ||
+        (hasConditions && JSON.stringify(body.killConditions) !== JSON.stringify(prev.killConditions ?? [])) ||
+        (Array.isArray(body?.pillars) && JSON.stringify(body.pillars) !== JSON.stringify(prev.pillars ?? []));
+      if (changed) {
+        const version: ThesisVersion = {
+          savedAt: prev.updatedAt,
+          reason: body.versionReason.trim().slice(0, 80),
+          why: prev.why ?? "",
+          pillars: prev.pillars,
+          killConditions: prev.killConditions,
+          underwrittenAt: prev.underwrittenAt,
+        };
+        next.history = [...(prev.history ?? []), version].slice(-MAX_HISTORY);
+      }
+    }
     if (typeof body?.underwrittenAt === "string") next.underwrittenAt = body.underwrittenAt;
     if (typeof body?.underwritePrice === "number") next.underwritePrice = body.underwritePrice;
     if (typeof body?.reUnderwriteBy === "string") next.reUnderwriteBy = body.reUnderwriteBy;

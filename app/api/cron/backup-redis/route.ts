@@ -7,8 +7,12 @@ import { pruneStashes } from "@/app/lib/stash-prune";
 import { captureLiveHedgingSnapshot } from "@/app/lib/hedging";
 import { refreshFactsetEstimates } from "@/app/lib/estimates-refresh";
 import { refreshMarketRegime } from "@/app/lib/market-regime-refresh";
+import { getMarketDrivers } from "@/app/lib/market-drivers";
 import { refreshTechnicals } from "@/app/lib/technicals-refresh";
 import { rebuildThesisHealth } from "@/app/lib/thesis-health-refresh";
+import { runThesisReviews } from "@/app/lib/thesis-review";
+import { buildEntryScan } from "@/app/lib/entry-scan";
+import { readSuggestedAi, buildSuggestedAi, isSuggestedAiStale } from "@/app/lib/suggested-ai";
 import { runCustomConditionChecks } from "@/app/lib/custom-condition-check";
 import { computeBookFactorScores } from "@/app/lib/factor-scores";
 import { computeDataHealth, type DataHealthReport } from "@/app/lib/data-health";
@@ -301,6 +305,20 @@ export async function GET(req: NextRequest) {
       regimeRefresh = { ran: false, error: msg };
     }
 
+    // ── 4e. Market drivers (index / sector / industry contributors) for
+    //        the Brief summary — one batched FactSet pull over the S&P 500 +
+    //        TSX 60 lists. Pure regenerable cache (pm:market-drivers).
+    //        Best-effort: never fails the backup. ──
+    let driversRefresh: { ran: true; namesPriced: number; error?: string } | { ran: false; error: string };
+    try {
+      const d = await getMarketDrivers({ refresh: true });
+      driversRefresh = { ran: true, namesPriced: d?.indexes.reduce((n, i) => n + i.namesPriced, 0) ?? 0, error: d?.error };
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      console.error("[backup-redis] market-drivers refresh failed (summary will use the cached snapshot):", msg);
+      driversRefresh = { ran: false, error: msg };
+    }
+
     // Technicals + riskAlert from fresh price history. Must run BEFORE
     // thesis-health (which consumes riskAlert) and before the digest (whose
     // TECHNICAL alerts key off riskAlert). This is the only step that writes
@@ -315,6 +333,19 @@ export async function GET(req: NextRequest) {
       const msg = e instanceof Error ? e.message : String(e);
       console.error("[backup-redis] technicals refresh failed (digest will use the cached riskAlerts):", msg);
       technicalsRefresh = { ran: false, considered: 0, updated: 0, failed: 0, error: msg };
+    }
+
+    // Entry scorecard for Watchlist + Suggested names (funnel stage 4 push).
+    // Redis-only, so cheap; runs after technicals so the 200-day / risk reads
+    // are tonight's. The digest below raises "Ready to buy" for new flips.
+    let entryScan: { ran: true; rows: number; ready: number } | { ran: false; error: string };
+    try {
+      const es = await buildEntryScan();
+      entryScan = { ran: true, rows: es.rows.length, ready: es.rows.filter((r) => r.ready).length };
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      console.error("[backup-redis] entry scan failed (digest will use the cached scan):", msg);
+      entryScan = { ran: false, error: msg };
     }
 
     let thesisRefresh:
@@ -395,6 +426,44 @@ export async function GET(req: NextRequest) {
       customChecks = { ran: false, error: msg };
     }
 
+    // ── 4b. Post-earnings thesis reviews ─────────────────────────────
+    // One hash-gated call per underwritten name whose evidence or synthesis is
+    // newer than its last review (max 5/night). Proposes a diff the PM accepts
+    // in the ThesisTile; never rewrites a signed thesis. Same wall-clock budget
+    // as the custom checks so the digest still runs.
+    let thesisReviews: { reviewed: number; skipped: number; errors: number } | { ran: false; error: string };
+    try {
+      const r = await runThesisReviews({ deadlineAt: startedAt + CUSTOM_CHECK_DEADLINE_MS });
+      thesisReviews = { reviewed: r.reviewed.length, skipped: r.skipped, errors: r.errors };
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      console.error("[backup-redis] thesis reviews failed:", msg);
+      thesisReviews = { ran: false, error: msg };
+    }
+
+    // ── 4c. AI-positioned Suggested — weekly, or when the regime label flips ──
+    // ≈ one call per sector group. Gated on staleness so a normal night spends
+    // nothing; the Suggested tab button forces it any time.
+    let suggestedAi: { ran: true; calls: number; positioned: number } | { ran: false; reason: string };
+    try {
+      const cur = await readSuggestedAi();
+      let label: string | null = null;
+      try {
+        const raw = await redis.get("pm:market-regime");
+        label = raw ? ((JSON.parse(raw) as { composite?: { label?: string } }).composite?.label ?? null) : null;
+      } catch { label = null; }
+      if (isSuggestedAiStale(cur, label) && Date.now() < startedAt + CUSTOM_CHECK_DEADLINE_MS) {
+        const v = await buildSuggestedAi();
+        suggestedAi = { ran: true, calls: v.calls, positioned: Object.values(v.names).filter((n) => n.tier === "positioned").length };
+      } else {
+        suggestedAi = { ran: false, reason: "fresh" };
+      }
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      console.error("[backup-redis] suggested-ai refresh failed:", msg);
+      suggestedAi = { ran: false, reason: msg };
+    }
+
     // ── 5. Run invariant check inline ────────────────────────────────
     // Best-effort: a thrown invariant check must not turn a successful
     // backup into a failed response. We log + carry on if it errors.
@@ -432,9 +501,13 @@ export async function GET(req: NextRequest) {
       hedgingSnapshot,
       estimatesRefresh,
       regimeRefresh,
+      driversRefresh,
       technicalsRefresh,
       thesisRefresh,
       customChecks,
+      thesisReviews,
+      entryScan,
+      suggestedAi,
       factorScores,
       dataHealth: dataHealth ? { ok: dataHealth.ok, problems: dataHealth.problemCount } : null,
       alertDigest,

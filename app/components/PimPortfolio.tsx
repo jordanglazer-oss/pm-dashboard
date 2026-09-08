@@ -30,6 +30,10 @@ const ZERO_SCORES: Record<ScoreKey, number> = {
 import { useStocks } from "@/app/lib/StockContext";
 import { CollapsibleSection } from "@/app/components/CollapsibleSection";
 import { SkeletonTable } from "@/app/components/Skeleton";
+import { AppIcon } from "@/app/components/AppIcon";
+import { EmptyState } from "@/app/components/EmptyState";
+import { StatStrip } from "@/app/components/StatStrip";
+import { usePersistedOpen } from "@/app/lib/useCollapsed";
 import { isMarketOpenOrAfterET } from "@/app/lib/market-hours";
 import { apportionColumn, fmtPct2, sameAtDisplay } from "@/app/lib/display-weights";
 import { planTrade } from "@/app/lib/trade-plan";
@@ -303,135 +307,256 @@ const PROFILE_LABELS: Record<PimProfileType, string> = {
   core: "Core",
 };
 
-// Asset-allocation pie for the active model profile. Driven directly by the
-// profile's PimProfileWeights (equity / fixedIncome / alternatives / cash),
-// so it updates live as the profile tab changes. Same SVG geometry as the
-// client-report AllocationPie (200×200 viewBox, r=80, rotated -90° so the
-// first slice starts at 12 o'clock).
-const ALLOC_COLORS: Record<"equity" | "fixedIncome" | "alternatives" | "cash", string> = {
-  equity: "#2563eb",       // blue
-  fixedIncome: "#0d9488",  // teal
-  alternatives: "#d97706", // amber
-  cash: "#94a3b8",         // slate
+// ── Workspace control vocabulary (see design-pro/BUILD-BRIEF.md) ──
+const BTN_SECONDARY = "inline-flex h-7 items-center gap-1.5 rounded-control border border-line bg-surface px-2.5 text-[12.5px] text-ink-2 hover:bg-surface-hover disabled:opacity-50";
+const BTN_PRIMARY = "inline-flex h-7 items-center gap-1.5 rounded-control bg-ink px-2.5 text-[12.5px] font-medium !text-white hover:bg-ink-2 disabled:opacity-50";
+const BTN_ICON = "grid h-7 w-7 place-items-center rounded-control border border-line bg-surface text-ink-2 hover:bg-surface-hover";
+const INPUT = "h-7 rounded-control border border-line bg-surface px-2.5 text-[12.5px] text-ink outline-none focus:border-accent-border";
+const MENU_ITEM = "flex w-full items-center gap-2 px-3 py-1.5 text-left text-[12.5px] text-ink-2 hover:bg-surface-hover hover:text-ink disabled:opacity-50";
+
+/** Positions table views (persisted in pm:ui-prefs as `positioning.view`). */
+type PosView = "drift" | "value" | "gain";
+const POS_VIEWS: { id: PosView; label: string }[] = [
+  { id: "drift", label: "Drift" },
+  { id: "value", label: "Value" },
+  { id: "gain", label: "Gain" },
+];
+
+/** Display threshold for "outside tolerance" (0.5pp of portfolio weight):
+ *  colours the drift bar/figure warn and feeds the footer count. Render-only —
+ *  no rebalance or trade path reads it. */
+const DRIFT_TOLERANCE = 0.005;
+
+/** One row of the rebalance preview (previous-close basis). */
+type RebalanceRow = {
+  symbol: string;
+  currency: "CAD" | "USD";
+  isMF: boolean;
+  action: "BUY" | "SELL" | "HOLD";
+  modelPct: number;
+  pcCurrentPct: number;
+  pcDrift: number;
+  units: number;
+  targetUnits: number;
+  deltaUnits: number;
+  deltaValueCad: number;
+  pcPrice: number;
+  costCad: number;
 };
+
+/** "C$1,284,410" — whole dollars for meta text. */
+function fmtCad0(v: number): string {
+  return `${v < 0 ? "−" : ""}C$${Math.abs(Math.round(v)).toLocaleString("en-CA")}`;
+}
+/** "1,284,410" — whole dollars for table cells (currency lives in the header). */
+function fmtN0(v: number): string {
+  return Math.round(v).toLocaleString("en-CA");
+}
+
+/** Centre-ticked drift bar: fill grows right for overweight, left for under.
+ *  `drift` is in percentage points; `scalePp` fills half the track. */
+function DriftBar({ drift, scalePp, warn }: { drift: number | null; scalePp: number; warn: boolean }) {
+  const w = drift == null ? 0 : Math.min(50, (Math.abs(drift) / scalePp) * 50);
+  return (
+    // Fluid rather than a hard 120px: a fixed width set the column's minimum
+    // and pushed the whole table sideways in the narrow two-up column.
+    <div className="relative h-1.5 w-full min-w-[64px] max-w-[120px] rounded-[3px] bg-surface-2">
+      <span className="absolute -top-0.5 left-1/2 h-2.5 w-px bg-ink-faint" aria-hidden />
+      {drift != null && w > 0 && (
+        <i
+          className={`absolute top-0 block h-1.5 rounded-[3px] ${warn ? "bg-warn" : "bg-ink-3"}`}
+          style={drift > 0 ? { left: "50%", width: `${w}%` } : { right: "50%", width: `${w}%` }}
+        />
+      )}
+    </div>
+  );
+}
 
 type ClassWeights = { equity: number; fixedIncome: number; alternatives: number; cash: number };
 
-function AssetAllocationPie({ live, target, profileLabel }: { live: ClassWeights; target: ClassWeights; profileLabel: string }) {
-  // Each row carries the LIVE (drifted) weight and the TARGET weight, both as
-  // percentages. The pie renders from live weights; the legend shows
-  // live vs target vs drift so the PM can see where the book has drifted.
+/** Categorical palette for the asset-class donut. Deliberately NOT the
+ *  semantic pos/neg/warn tokens (those mean sign and tolerance elsewhere on
+ *  this page) — these are muted hues drawn from the same family as
+ *  `sectorColors.ts`, which covers GICS sectors and so has no asset-class
+ *  entries to reuse. Applied inline as hex so the SVG stays independent of
+ *  the Tailwind token layer, exactly as the sector palette does. */
+const CLASS_HEX: Record<"equity" | "fixedIncome" | "alternatives" | "cash", string> = {
+  equity: "#5a8fd0",       // muted blue
+  fixedIncome: "#55aaaa",  // muted teal
+  alternatives: "#a578c4", // muted purple
+  cash: "#9aa3b0",         // neutral slate
+};
+
+/** Allocation panel — a live asset-class donut beside the target-vs-live rows.
+ *  Both halves read the SAME apportioned figures (2dp contract shared with the
+ *  holdings tables), so the slice labels, the Live column and the per-holding
+ *  columns can never disagree by a rounding step. Pure render: the weights are
+ *  handed in, nothing here computes or persists allocation. */
+function AllocationPanel({ live, target }: { live: ClassWeights; target: ClassWeights }) {
   const rows = ([
-    { key: "equity", label: "Equity", color: ALLOC_COLORS.equity },
-    { key: "fixedIncome", label: "Fixed Income", color: ALLOC_COLORS.fixedIncome },
-    { key: "alternatives", label: "Alternatives", color: ALLOC_COLORS.alternatives },
-    { key: "cash", label: "Cash", color: ALLOC_COLORS.cash },
-  ] as const).map((c) => ({
-    ...c,
-    liveW: (live[c.key] ?? 0) * 100,
-    targetW: (target[c.key] ?? 0) * 100,
-  })).filter((s) => s.liveW > 0.01 || s.targetW > 0.01);
-
+    { key: "equity", label: "Equity" },
+    { key: "fixedIncome", label: "Fixed income" },
+    { key: "alternatives", label: "Alternatives" },
+    { key: "cash", label: "Cash" },
+  ] as const)
+    .map((c) => ({ ...c, liveW: live[c.key] ?? 0, targetW: target[c.key] ?? 0 }))
+    .filter((s) => s.liveW > 0.0001 || s.targetW > 0.0001);
   const liveTotal = rows.reduce((acc, s) => acc + s.liveW, 0);
-  const targetTotal = rows.reduce((acc, s) => acc + s.targetW, 0);
-  // Render the pie from live weights once they've loaded; before prices come
-  // back (live all 0) fall back to target so the chart isn't blank.
-  const usingLive = liveTotal > 0.01;
-  const pieField: "liveW" | "targetW" = usingLive ? "liveW" : "targetW";
-  const pieTotal = usingLive ? liveTotal : targetTotal;
+  // Render live weights once prices are in; before that fall back to target
+  // so the panel isn't blank.
+  const usingLive = liveTotal > 0.0001;
 
-  if (!rows.length || pieTotal <= 0) {
+  if (rows.length === 0) {
     return (
-      <div className="rounded-card border border-line bg-white p-5 shadow-sm">
-        <h3 className="text-sm font-bold text-ink">Asset Allocation <span className="ml-2 text-[11px] font-normal text-ink-3">({profileLabel})</span></h3>
-        <div className="mt-2 text-xs text-ink-3 italic">No allocation data for this model.</div>
-      </div>
+      <section className="panel animate-panel-in">
+        <div className="panel-h">
+          <span className="t-mark bg-hub-portfolio" aria-hidden />
+          <span className="t">Allocation</span>
+        </div>
+        <div className="px-3.5 py-3 text-[12px] text-ink-3">No allocation data for this model.</div>
+      </section>
     );
   }
 
-  const cx = 100, cy = 100, r = 80;
-  const fractions = rows.map((s) => s[pieField] / pieTotal);
-  const cumulative: number[] = [];
-  fractions.reduce((sum, f) => { const next = sum + f; cumulative.push(next); return next; }, 0);
+  const dLive = apportionColumn(rows.map((r) => r.liveW), 1);
+  const dTgt = apportionColumn(rows.map((r) => r.targetW), 1);
+  // The donut shows what is actually held once prices are in; before that it
+  // shows the target, and the caption says which.
+  const slices = rows
+    .map((s, i) => ({
+      key: s.key,
+      label: s.label,
+      hex: CLASS_HEX[s.key],
+      value: (usingLive ? dLive.values[i] : dTgt.values[i]) ?? 0,
+    }))
+    .filter((s) => s.value > 0.00005);
+  const sliceTotal = slices.reduce((acc, s) => acc + s.value, 0);
+  // Largest slice, for the donut's centre label. `slices` is non-empty whenever
+  // `rows` is (apportionColumn sums to 1), but stay defensive rather than
+  // indexing blind.
+  const dominant = slices.length > 0
+    ? slices.reduce((best, s) => (s.value > best.value ? s : best), slices[0])
+    : null;
 
-  const paths = rows.map((slice, idx) => {
-    const frac = fractions[idx];
-    const startAngle = (idx === 0 ? 0 : cumulative[idx - 1]) * 2 * Math.PI;
-    const endAngle = cumulative[idx] * 2 * Math.PI;
-    const large = endAngle - startAngle > Math.PI ? 1 : 0;
-    const x1 = cx + r * Math.cos(startAngle);
-    const y1 = cy + r * Math.sin(startAngle);
-    const x2 = cx + r * Math.cos(endAngle);
-    const y2 = cy + r * Math.sin(endAngle);
-    const d = frac >= 0.9999
-      ? `M ${cx - r} ${cy} A ${r} ${r} 0 1 1 ${cx + r} ${cy} A ${r} ${r} 0 1 1 ${cx - r} ${cy} Z`
-      : `M ${cx} ${cy} L ${x1} ${y1} A ${r} ${r} 0 ${large} 1 ${x2} ${y2} Z`;
-    return { slice, d };
+  // Donut geometry. Stroke-dasharray on concentric circles rather than path
+  // arcs: no trigonometry, no seams, and a single slice at 100% draws as a
+  // clean ring instead of a degenerate arc.
+  const R = 54;
+  const CIRC = 2 * Math.PI * R;
+  const GAP = slices.length > 1 ? 2 : 0; // user units of hairline between slices
+  let offset = 0;
+  const arcs = slices.map((s) => {
+    const frac = sliceTotal > 0 ? s.value / sliceTotal : 0;
+    const full = frac * CIRC;
+    // Only trim for the separator when the slice is comfortably longer than it,
+    // so a 0.4% sleeve still draws instead of vanishing into the gap.
+    const len = full > GAP * 2 ? full - GAP : full;
+    const arc = { ...s, len, dashOffset: -offset };
+    offset += full;
+    return arc;
   });
 
   return (
-    <div className="rounded-card border border-line bg-white px-5 py-3 shadow-sm">
-      <div className="flex items-center gap-x-5 gap-y-3 flex-wrap">
-        {/* Donut + title */}
-        <div className="flex items-center gap-3 shrink-0">
-          <svg
-            viewBox="0 0 200 200"
-            width="76"
-            height="76"
-            style={{ transform: "rotate(-90deg)" }}
-            aria-label={`${profileLabel} live asset allocation donut chart`}
-            className="shrink-0"
-          >
-            {paths.map(({ slice, d }) => (
-              <path key={slice.key} d={d} fill={slice.color} stroke="#fff" strokeWidth={1.5} />
-            ))}
-            {/* punch a hole → donut, matching the condensed Precision Light look */}
-            <circle cx={100} cy={100} r={46} fill="#fff" />
-          </svg>
-          <div className="leading-tight">
-            <div className="text-[10px] font-semibold uppercase tracking-wide text-ink-3">Asset Allocation</div>
-            <div className="text-[13px] font-bold text-ink">{profileLabel}</div>
-            <div className="text-[10px] text-ink-3">{usingLive ? "Live weights" : "Target (awaiting prices)"}</div>
-          </div>
-        </div>
-
-        {/* Inline per-class stats (Live · Drift · Target) — one compact block each */}
-        {/* Class live/target weights carry the same 2dp contract as the tables
-            and are apportioned to 100.00%, so the four class figures here agree
-            with the per-holding columns below instead of being rounded apart
-            from them. liveW/targetW arrive as PERCENT here, not fractions. */}
-        {(() => {
-          const dLive = apportionColumn(rows.map((r) => r.liveW / 100), 1);
-          const dTgt = apportionColumn(rows.map((r) => r.targetW / 100), 1);
-          return (
-            <div className="flex-1 grid grid-cols-2 sm:grid-cols-4 gap-x-5 gap-y-2 min-w-[220px]">
-              {rows.map((s, i) => {
-                const live = dLive.values[i] ?? 0;
-                const tgt = dTgt.values[i] ?? 0;
-                const drift = live - tgt;
-                const flat = sameAtDisplay(live, tgt);
-                const driftColor = flat ? "text-ink-3" : drift > 0 ? "text-pos" : "text-neg";
-                return (
-                  <div key={s.key} className="min-w-0">
-                    <div className="flex items-center gap-1.5">
-                      <span className="inline-block w-2.5 h-2.5 rounded-sm shrink-0" style={{ backgroundColor: s.color }} />
-                      <span className="text-[11px] text-ink-2 truncate">{s.label}</span>
-                    </div>
-                    <div className="mt-0.5 flex items-baseline gap-1.5">
-                      <span className="text-[15px] font-bold text-ink tabular-nums">{fmtPct2(live)}</span>
-                      <span className={`text-[11px] font-medium tabular-nums ${driftColor}`}>
-                        {flat ? "—" : `${drift > 0 ? "+" : ""}${fmtPct2(drift)}`}
-                      </span>
-                    </div>
-                    <div className="text-[10px] text-ink-3 tabular-nums">tgt {fmtPct2(tgt)}</div>
-                  </div>
-                );
-              })}
-            </div>
-          );
-        })()}
+    <section className="panel animate-panel-in">
+      <div className="panel-h flex-wrap gap-y-1.5 py-1.5">
+        <span className="t-mark bg-hub-portfolio" aria-hidden />
+        <span className="t">Allocation</span>
+        <span className="m min-w-0 break-words">{usingLive ? "live mix · target vs live" : "target · awaiting prices"}</span>
       </div>
-    </div>
+      {/* Chart + legend on the left, the target/live/drift rows on the right.
+          Both columns are min-w-0 so a long class name wraps rather than
+          pushing its neighbour; nothing here can scroll sideways. */}
+      <div className="grid grid-cols-1 items-start gap-x-6 gap-y-4 px-3.5 pb-3.5 pt-3 lg:grid-cols-[minmax(0,auto)_minmax(0,1fr)]">
+        <div className="flex min-w-0 flex-wrap items-center gap-x-5 gap-y-3">
+          <svg
+            viewBox="0 0 140 140"
+            className="h-[140px] w-[140px] shrink-0"
+            role="img"
+            aria-label={`Asset allocation: ${slices.map((s) => `${s.label} ${fmtPct2(s.value)}`).join(", ")}`}
+          >
+            <circle cx="70" cy="70" r={R} fill="none" stroke="var(--color-surface-2)" strokeWidth="20" />
+            <g transform="rotate(-90 70 70)">
+              {arcs.map((a) => (
+                <circle
+                  key={a.key}
+                  cx="70"
+                  cy="70"
+                  r={R}
+                  fill="none"
+                  stroke={a.hex}
+                  strokeWidth="20"
+                  strokeDasharray={`${a.len} ${Math.max(0, CIRC - a.len)}`}
+                  strokeDashoffset={a.dashOffset}
+                />
+              ))}
+            </g>
+            {/* Centre = the class the book is actually in, so the headline
+                answer is readable without tracing a slice to the legend. */}
+            {dominant && (
+              <>
+                <text x="70" y="66" textAnchor="middle" className="fill-[var(--color-ink-3)] text-[10px]">
+                  {dominant.label}
+                </text>
+                <text x="70" y="82" textAnchor="middle" className="fill-[var(--color-ink)] font-mono text-[13px] font-medium">
+                  {fmtPct2(dominant.value)}
+                </text>
+              </>
+            )}
+          </svg>
+          {/* Legend = the slice labels. Every slice carries its class name and
+              percentage with the matching swatch. */}
+          <ul className="stagger flex min-w-0 flex-col gap-1.5">
+            {slices.map((s, i) => (
+              <li
+                key={s.key}
+                style={{ "--i": Math.min(i + 1, 8) } as React.CSSProperties}
+                className="flex min-w-0 items-baseline gap-2 text-[12.5px]"
+              >
+                <span
+                  aria-hidden
+                  className="mt-[3px] h-2.5 w-2.5 shrink-0 self-start rounded-[2px]"
+                  style={{ background: s.hex }}
+                />
+                <span className="min-w-0 break-words text-ink-2">{s.label}</span>
+                <span className="ml-auto shrink-0 pl-2 font-mono font-medium text-ink">{fmtPct2(s.value)}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+        <div className="stagger grid min-w-0 grid-cols-[minmax(0,1fr)_minmax(0,64px)_minmax(0,64px)_minmax(0,68px)] items-center gap-x-3 gap-y-2 text-[12.5px]">
+          <span className="text-[11px] text-ink-3">Asset class</span>
+          <span className="text-right text-[11px] text-ink-3">Target</span>
+          <span className="text-right text-[11px] text-ink-3">Live</span>
+          <span className="text-right text-[11px] text-ink-3">Drift</span>
+          {rows.map((s, i) => {
+            const liveV = dLive.values[i] ?? 0;
+            const tgtV = dTgt.values[i] ?? 0;
+            const drift = liveV - tgtV;
+            const flat = sameAtDisplay(liveV, tgtV);
+            const barW = (usingLive ? liveV : tgtV) * 100;
+            const st = { "--i": Math.min(i + 1, 8) } as React.CSSProperties;
+            return (
+              <React.Fragment key={s.key}>
+                <span style={st} className="flex min-w-0 flex-col gap-1">
+                  <span className="flex min-w-0 items-baseline gap-2">
+                    <span aria-hidden className="mt-[3px] h-2.5 w-2.5 shrink-0 self-start rounded-[2px]" style={{ background: CLASS_HEX[s.key] }} />
+                    <span className="min-w-0 break-words text-ink-2">{s.label}</span>
+                  </span>
+                  <span className="h-1 min-w-0 overflow-hidden rounded-[2px] bg-surface-2">
+                    <i className="block h-full" style={{ width: `${Math.max(0, Math.min(100, barW))}%`, background: CLASS_HEX[s.key] }} />
+                  </span>
+                </span>
+                <span style={st} className="text-right font-mono text-ink-3">{fmtPct2(tgtV)}</span>
+                <span style={st} className="text-right font-mono text-ink">{usingLive ? fmtPct2(liveV) : "—"}</span>
+                <span style={st} className={`text-right font-mono ${!usingLive || flat ? "text-ink-3" : drift > 0 ? "text-pos" : "text-neg"}`}>
+                  {!usingLive || flat ? "—" : `${drift > 0 ? "+" : ""}${fmtPct2(drift)}`}
+                </span>
+              </React.Fragment>
+            );
+          })}
+        </div>
+      </div>
+    </section>
   );
 }
 
@@ -459,8 +584,8 @@ type SortDir = "asc" | "desc";
  *  scope (not inside the component) so it isn't re-created every render —
  *  takes the active sortField/sortDir as props. */
 function SortIcon({ field, sortField, sortDir }: { field: SortField; sortField: SortField; sortDir: SortDir }) {
-  if (sortField !== field) return <span className="ml-0.5 text-ink-faint">↕</span>;
-  return <span className="ml-0.5 text-ink-2">{sortDir === "asc" ? "↑" : "↓"}</span>;
+  if (sortField !== field) return <AppIcon name="sortAsc" size={11} className="text-ink-faint" />;
+  return <AppIcon name={sortDir === "asc" ? "sortAsc" : "sortDesc"} size={11} className="text-ink-2" />;
 }
 
 const POS_CLASS_LABELS: Record<PimAssetClass, string> = {
@@ -553,6 +678,10 @@ export function PimPortfolio({ groups }: Props) {
   const [showSwitch, setShowSwitch] = useState(false);
   // Rebalance prices are shared across profiles (cross-model price sharing)
   const [rebalancePrices, setRebalancePrices] = useState<Record<string, string>>({});
+  /** Tickers bought in the last executed batch that still owe a thesis
+   *  (cleared when dismissed; the Dashboard banner keeps following them). */
+  const [thesisOwed, setThesisOwed] = useState<string[]>([]);
+
   // ── Buy / Sell trade queue ───────────────────────────────────────
   // The Buy / Sell panel supports queueing multiple (sell, buy) pairs
   // and executing them together. Each row is an independent trade:
@@ -1378,7 +1507,6 @@ export function PimPortfolio({ groups }: Props) {
   };
 
   const hasPositions = holdingRows.some((r) => r.units > 0);
-  const thClass = "py-2 px-2 cursor-pointer hover:bg-surface-2 transition-colors text-[10px] font-bold uppercase tracking-wider text-ink-3 select-none whitespace-nowrap";
 
   // ── Rebalance & Buy/Sell logic ──
   const groupState = getGroupState(selectedGroupId);
@@ -2914,6 +3042,13 @@ export function PimPortfolio({ groups }: Props) {
     setTradeExecProgress(
       `${executed} of ${trades.length} executed${skipped > 0 ? ` · ${skipped} skipped (empty)` : ""}${errors.length > 0 ? ` · ${errors.length} failed` : ""}`
     );
+    // Funnel stage 4→5: every bought name owes a thesis. Non-blocking — the
+    // reminder lists the buys with a link to each stock page, where the
+    // Thesis tile (write, or Draft with AI) closes the gap.
+    if (executed > 0) {
+      const bought = trades.filter((t) => t.buyTicker).map((t) => t.buyTicker.trim().toUpperCase());
+      if (bought.length > 0) setThesisOwed(Array.from(new Set(bought)));
+    }
     if (warnings.length > 0) {
       alert("Warnings:\n\n" + warnings.join("\n\n"));
     }
@@ -2929,628 +3064,791 @@ export function PimPortfolio({ groups }: Props) {
     setExecutingTrades(false);
   }, [trades, executingTrades, executeTrade, fetchPrices]);
 
-  // Display-only aggregate for the Sleeve Drift stat tile: total overweight vs
-  // target (= sum of positive per-holding drifts). Read-only; touches no
+  // Display-only aggregate for the toolbar meta: total overweight vs target
+  // (= sum of positive per-holding drifts). Read-only; touches no
   // rebalance/trade logic.
   const sleeveDrift = holdingRows.reduce((sum, r) => sum + Math.max(0, r.driftPct), 0) * 100;
 
-  return (
-    <div className="space-y-6">
-      {/* Header bar */}
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <h2 className="text-[15px] font-bold text-ink">PIM</h2>
+  // ── Render-side view state (UI only; persisted through pm:ui-prefs) ──
+  const posView: PosView = (uiPrefs["positioning.view"] as PosView) || "drift";
+  const [rebalanceDetail, toggleRebalanceDetail] = usePersistedOpen("positioning.rebalance.detail", false);
+  const [settleOpen, toggleSettleOpen] = usePersistedOpen("positioning.settleFold", true);
+  // Overflow menu (Refresh prices · Client report) — transient, exempt from
+  // the persistence rule like every other menu.
+  const [moreOpen, setMoreOpen] = useState(false);
+  const moreRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!moreOpen) return;
+    const onDown = (e: MouseEvent) => {
+      if (moreRef.current && !moreRef.current.contains(e.target as Node)) setMoreOpen(false);
+    };
+    document.addEventListener("mousedown", onDown);
+    return () => document.removeEventListener("mousedown", onDown);
+  }, [moreOpen]);
 
-        {/* Profile tabs — horizontally scrollable so the 5-6 profiles
-            (Conservative … Core) don't overflow on mobile. */}
-        <div className="flex gap-1 rounded-control bg-surface-2 p-1 overflow-x-auto max-w-full">
+  // Rebalance preview rows. Identical math to the old inline table body
+  // (previous close to match the trading desk; MF rows carry a dollar amount
+  // and settle later), lifted out so the panel header can count trades and
+  // gross value before anything is queued.
+  const rebalanceRows = useMemo<RebalanceRow[]>(() => {
+    return sortedRows.filter((r) => r.modelPct > 0).map((r) => {
+      const pcPrice = prevCloses[r.symbol] || r.price;
+      const pcFx = r.currency === "USD" ? prevCloseUsdCad : 1;
+      const pcPriceCad = pcPrice * pcFx;
+      const pcValueCad = r.units * pcPriceCad;
+      const targetValueCad = prevCloseTotalCad * r.modelPct;
+      const targetUnits = pcPriceCad > 0 ? targetValueCad / pcPriceCad : 0;
+      const deltaUnits = targetUnits - r.units;
+      const absDelta = Math.abs(deltaUnits);
+      const isMF = isFundservCode(r.symbol);
+      const deltaValueCad = targetValueCad - pcValueCad;
+      const action: "BUY" | "SELL" | "HOLD" = isMF
+        ? (Math.abs(deltaValueCad) < 0.01 ? "HOLD" : deltaValueCad > 0 ? "BUY" : "SELL")
+        : (absDelta < 0.001 ? "HOLD" : deltaUnits > 0 ? "BUY" : "SELL");
+      const execPrice = parseFloat(rebalancePrices[r.symbol] || "0");
+      const fxRate = r.currency === "USD" ? usdCadRate : 1;
+      const costCad = isMF
+        ? Math.abs(deltaValueCad)
+        : (execPrice > 0 ? absDelta * execPrice * fxRate : 0);
+      const pcCurrentPct = prevCloseTotalCad > 0 ? pcValueCad / prevCloseTotalCad : r.currentPct;
+      const pcDrift = prevCloseTotalCad > 0 ? (pcValueCad / prevCloseTotalCad) - r.modelPct : r.driftPct;
+      return {
+        symbol: r.symbol, currency: r.currency, isMF, action,
+        modelPct: r.modelPct, pcCurrentPct, pcDrift,
+        units: r.units, targetUnits, deltaUnits, deltaValueCad,
+        pcPrice, costCad,
+      };
+    });
+  }, [sortedRows, prevCloses, prevCloseUsdCad, prevCloseTotalCad, rebalancePrices, usdCadRate]);
+  const rebalanceTrades = rebalanceRows.filter((r) => r.action !== "HOLD");
+  const rebalanceGross = rebalanceTrades.reduce((s, r) => s + Math.abs(r.deltaValueCad), 0);
+  // Display-only counts for the slimmed rebalance summary (the per-trade list
+  // it replaces lived only in the render).
+  const rebalanceBuyCount = rebalanceTrades.filter((r) => r.action === "BUY").length;
+  const rebalanceSellCount = rebalanceTrades.filter((r) => r.action === "SELL").length;
+  const rebalanceVisible = rebalanceDetail ? rebalanceRows : rebalanceTrades;
+  const rebalanceHasMF = rebalanceRows.some((r) => r.isMF);
+
+  // Column plan for the positions table (which extra columns the view shows).
+  const showAcb = editMode || posView !== "drift";
+  const showGain = hasPositions && (editMode || posView !== "drift");
+  const showGainCad = hasPositions && posView === "gain";
+  const showBar = hasPositions && posView === "drift";
+  // The positions table now owns the FULL content width in every view, so there
+  // is no narrow/wide variant to switch on — Drift is reachable without any
+  // sideways scrolling regardless of which money columns are showing.
+  const posColCount = 4 + (showAcb ? 1 : 0) + (showGain ? 1 : 0) + (showGainCad ? 1 : 0) + 1 + (hasPositions ? (showBar ? 3 : 2) : 0);
+  // Drift bar scale: the largest live drift fills half the bar, floor 1pp so a
+  // tidy book reads as tidy rather than every 0.05pp filling the track.
+  const driftScalePp = Math.max(1, ...holdingRows.filter((r) => r.units > 0).map((r) => Math.abs(r.driftPct * 100)));
+  const heldCount = holdingRows.filter((r) => r.units > 0).length;
+  const outsideTolerance = holdingRows.filter((r) => r.units > 0 && Math.abs(r.driftPct) >= DRIFT_TOLERANCE).length;
+  const cashBalanceCad = currentPositions?.cashBalance || 0;
+  const cashTargetPct = profileWeights?.cash ?? 0;
+  const cashDriftPct = hasPositions ? cashPct - cashTargetPct : null;
+  const totalGainCad = totalValueCadSummary - totalCostCad;
+  const totalGainPct = totalCostCad > 0 ? (totalGainCad / totalCostCad) * 100 : null;
+  const lastRebalancedLabel = groupState.lastRebalance
+    ? new Date(groupState.lastRebalance.date).toLocaleDateString(undefined, { month: "short", day: "numeric" })
+    : "never";
+  // Settled (non-pending) log entries — drives both the Recent trades panel and
+  // whether the band under the positions table is one column or two.
+  const settledTransactions = groupState.transactions.filter((t) => t.status !== "pending");
+  // "Equity 66% · Fixed income 30% · Cash 4%" — live when priced, else target.
+  const allocMeta = (() => {
+    if (!allocationBreakdown) return "";
+    const liveTotal = allocationBreakdown.live.equity + allocationBreakdown.live.fixedIncome + allocationBreakdown.live.alternatives + allocationBreakdown.live.cash;
+    const src = liveTotal > 0.01 ? allocationBreakdown.live : allocationBreakdown.target;
+    const parts: string[] = [];
+    if (src.equity > 0.0005) parts.push(`Equity ${(src.equity * 100).toFixed(0)}%`);
+    if (src.fixedIncome > 0.0005) parts.push(`Fixed income ${(src.fixedIncome * 100).toFixed(0)}%`);
+    if (src.alternatives > 0.0005) parts.push(`Alternatives ${(src.alternatives * 100).toFixed(0)}%`);
+    if (src.cash > 0.0005) parts.push(`Cash ${(src.cash * 100).toFixed(0)}%`);
+    return parts.join(" · ") + (liveTotal > 0.01 ? "" : " · target");
+  })();
+  const isFullProfile = activeProfile !== "alpha" && activeProfile !== "core";
+
+  const sortTh = (field: SortField, label: string, numeric = true, extra = "") => (
+    <th
+      className={`${numeric ? "n " : ""}cursor-pointer select-none hover:text-ink ${extra}`}
+      onClick={() => handleSort(field)}
+    >
+      <span className="inline-flex items-center gap-1">{label}<SortIcon field={field} sortField={sortField} sortDir={sortDir} /></span>
+    </th>
+  );
+
+  return (
+    <div className="flex flex-col gap-3.5">
+      {/* ── Row 1 · toolbar: profile seg · meta · actions ── */}
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-2.5">
+        <div className="seg max-w-full">
           {availableProfiles.map((p) => (
-            <button
-              key={p}
-              onClick={() => setSelectedProfile(p)}
-              className={`shrink-0 rounded-lg px-3 sm:px-4 py-2 text-sm font-semibold transition-colors whitespace-nowrap ${
-                activeProfile === p ? "bg-white text-ink shadow-sm" : "text-ink-3 hover:text-ink"
-              }`}
-            >
+            <button key={p} onClick={() => setSelectedProfile(p)} className={activeProfile === p ? "on" : ""}>
               {PROFILE_LABELS[p]}
             </button>
           ))}
         </div>
-
-        {/* Actions */}
-        <div className="flex flex-wrap items-center gap-2">
-          <button
-            onClick={fetchPrices}
-            disabled={pricesLoading}
-            className="flex items-center gap-1.5 rounded-lg bg-surface-2 px-3 py-1.5 text-xs font-semibold text-ink-2 hover:bg-line transition-colors disabled:opacity-50"
-          >
-            <svg className={`w-3.5 h-3.5 ${pricesLoading ? "animate-spin" : ""}`} fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0 3.181 3.183a8.25 8.25 0 0 0 13.803-3.7M4.031 9.865a8.25 8.25 0 0 1 13.803-3.7l3.181 3.182" />
-            </svg>
-            Refresh Prices
-          </button>
-          <button
-            onClick={editMode ? savePositions : startEdit}
-            disabled={saving}
-            className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors disabled:opacity-50 ${
-              editMode ? "bg-pos text-white hover:bg-pos" : "bg-accent text-white hover:bg-accent"
-            }`}
-          >
-            {editMode ? (saving ? "Saving..." : "Save Positions") : "Edit Positions"}
-          </button>
-          {editMode && (
-            <button
-              onClick={() => setEditMode(false)}
-              className="rounded-lg bg-line px-3 py-1.5 text-xs font-semibold text-ink-2 hover:bg-line transition-colors"
-            >
-              Cancel
-            </button>
-          )}
-          {!editMode && (
-            <button onClick={() => setShowSwitch(!showSwitch)}
-              className="rounded-lg bg-warn px-3 py-1.5 text-xs font-semibold text-white hover:bg-warn transition-colors">
-              Buy / Sell
-            </button>
-          )}
-          {/* Client Report — opens the one-pager preview in a new tab,
-              seeded with the currently-selected profile. Hidden for
-              Alpha and Core because the one-pager is only built for
-              the three full-model profiles (Balanced / Growth /
-              All-Equity); the server-side route ALSO validates and
-              falls back to Balanced if those profiles are passed. */}
-          {!editMode && activeProfile !== "alpha" && activeProfile !== "core" && (
-            <Link
-              href={`/client-report?group=${encodeURIComponent(selectedGroupId)}&profile=${encodeURIComponent(activeProfile)}`}
-              target="_blank"
-              rel="noopener"
-              className="inline-flex items-center leading-5 rounded-lg bg-[#002855] px-3 py-1.5 text-xs font-semibold !text-white hover:bg-[#003b7a] transition-colors"
-            >
-              Client Report
-            </Link>
-          )}
-          {!editMode && pendingTrades.length > 0 && (
-            <button onClick={handleOpenSettlement}
-              className="rounded-lg bg-violet px-3 py-1.5 text-xs font-semibold text-white hover:bg-violet transition-colors relative">
-              Settle Pending
-              <span className="absolute -top-1.5 -right-1.5 flex h-4 w-4 items-center justify-center rounded-full bg-neg text-[9px] font-bold text-white">
-                {pendingTrades.length}
-              </span>
-            </button>
-          )}
-        </div>
-      </div>
-
-      {/* PIM-only positioning note — kept as a quiet one-liner, not a loud banner. */}
-      <div className="flex items-center gap-2 rounded-lg border border-line bg-surface-2 px-3 py-1.5 text-[12px] text-ink-3">
-        <span className="shrink-0 rounded bg-accent px-1.5 py-0.5 text-[10px] font-bold text-white">PIM</span>
-        <span>Positioning tracks the <strong className="text-ink-2">PIM</strong> model only — other groups aren&apos;t position-tracked.</span>
-      </div>
-
-      {/* Status band: Active Model · Sleeve Drift · Last Rebalanced · Rebalance
-          CTA — one bordered strip with hairline cells (canvas anatomy) instead
-          of four separate tiles. */}
-      <div className="grid grid-cols-2 overflow-hidden rounded-card border border-line bg-white shadow-sm md:grid-cols-4">
-        <div className="-ml-px -mt-px border-l border-t border-line-soft px-4 py-3">
-          <div className="text-[10px] font-semibold uppercase tracking-wide text-ink-3">Active Model</div>
-          <div className="mt-1 text-lg font-bold text-ink">{PROFILE_LABELS[activeProfile]}</div>
-          <div className="text-[11px] text-ink-3">target sleeve</div>
-        </div>
-        <div className="-ml-px -mt-px border-l border-t border-line-soft px-4 py-3">
-          <div className="text-[10px] font-semibold uppercase tracking-wide text-ink-3">Sleeve Drift</div>
-          <div className={`mt-1 text-lg font-bold tabular-nums ${sleeveDrift >= 2 ? "text-warn" : "text-ink"}`}>{sleeveDrift >= 0 ? "+" : ""}{sleeveDrift.toFixed(2)}%</div>
-          <div className="text-[11px] text-ink-3">overweight vs target</div>
-        </div>
-        <div className="-ml-px -mt-px border-l border-t border-line-soft px-4 py-3">
-          <div className="text-[10px] font-semibold uppercase tracking-wide text-ink-3">Last Rebalanced</div>
-          <div className="mt-1 text-lg font-bold text-ink">{groupState.lastRebalance ? new Date(groupState.lastRebalance.date).toLocaleDateString(undefined, { month: "short", day: "numeric" }) : "—"}</div>
-          <div className="text-[11px] text-ink-3">{groupState.lastRebalance ? " " : "no rebalance yet"}</div>
-        </div>
-        <button
-          onClick={() => setShowRebalance(!showRebalance)}
-          className="-ml-px -mt-px grid place-items-center border-l border-t border-line-soft bg-accent px-4 py-3 text-left transition-colors hover:bg-accent-ink"
-        >
-          <div>
-            <div className="text-sm font-bold text-white">Rebalance to {PROFILE_LABELS[activeProfile]} →</div>
-            <div className="mt-0.5 text-[11px] text-white/80">{showRebalance ? "hide preview" : "show suggested trades"}</div>
-          </div>
-        </button>
-      </div>
-
-      {/* Portfolio summary (all CAD) */}
-      {pricesFetchedAt && (
-        <div className="flex justify-end text-[11px] text-ink-3">
-          <span title="When live prices and FX were last fetched from Yahoo. Refreshes when the page mounts or the group changes.">
-            Prices updated {formatRelTimeShort(pricesFetchedAt)}
+        {/* Labelled values rather than one inline run — the sentence used to
+            bunch up against the profile picker and the action buttons. */}
+        <div className="flex min-w-0 flex-wrap items-baseline gap-x-4 gap-y-1 text-[12px]">
+          <span className="inline-flex items-baseline gap-1.5">
+            <span className="text-ink-3">Last rebalanced</span>
+            <span className="font-mono text-ink-2">{lastRebalancedLabel}</span>
           </span>
+          <span className="inline-flex items-baseline gap-1.5">
+            <span className="text-ink-3">Sleeve drift</span>
+            <span className={`font-mono ${sleeveDrift >= 2 ? "text-warn" : "text-ink-2"}`}>{sleeveDrift.toFixed(2)}%</span>
+          </span>
+          <span className="hidden text-ink-faint sm:inline" title="Positioning tracks the PIM model only — other groups aren't position-tracked.">PIM model only</span>
         </div>
-      )}
-      <div className="grid grid-cols-2 overflow-hidden rounded-card border border-line bg-white shadow-sm sm:grid-cols-3 lg:grid-cols-6">
-        <div className="-ml-px -mt-px border-l border-t border-line-soft px-4 py-3 text-center">
-          <div className="text-[10px] font-semibold text-ink-3 uppercase">Total Value (CAD)</div>
-          <div className="text-lg font-bold text-ink">{fmtCurrency(totalValueCadSummary)}</div>
-        </div>
-        <div className="-ml-px -mt-px border-l border-t border-line-soft px-4 py-3 text-center">
-          <div className="text-[10px] font-semibold text-ink-3 uppercase">Total ACB (CAD)</div>
-          <div className="text-lg font-bold text-ink">{fmtCurrency(totalCostCad)}</div>
-        </div>
-        <div className="-ml-px -mt-px border-l border-t border-line-soft px-4 py-3 text-center">
-          <div className="text-[10px] font-semibold text-ink-3 uppercase">Gain/Loss</div>
-          <div className={`text-lg font-bold ${totalValueCadSummary - totalCostCad >= 0 ? "text-pos" : "text-neg"}`}>
-            {fmtCurrency(totalValueCadSummary - totalCostCad)}
-          </div>
-        </div>
-        <div className="-ml-px -mt-px border-l border-t border-line-soft px-4 py-3 text-center">
-          <div className="text-[10px] font-semibold text-ink-3 uppercase">Return</div>
-          <div className={`text-lg font-bold ${totalCostCad > 0 && totalValueCadSummary - totalCostCad >= 0 ? "text-pos" : "text-neg"}`}>
-            {totalCostCad > 0 ? fmtGainLoss(((totalValueCadSummary - totalCostCad) / totalCostCad) * 100) : "--"}
-          </div>
-        </div>
-        <div className="-ml-px -mt-px border-l border-t border-line-soft px-4 py-3 text-center">
-          <div className="text-[10px] font-semibold text-ink-3 uppercase">Today</div>
-          <div className={`text-lg font-bold ${todayReturn != null && todayReturn >= 0 ? "text-pos" : "text-neg"}`}>
-            {todayReturn != null ? fmtGainLoss(todayReturn) : "--"}
-          </div>
-        </div>
-        <div
-          className="-ml-px -mt-px border-l border-t border-line-soft px-4 py-3 text-center"
-          title="Weighted-average management expense ratio across the current positions. Updates live as weights drift. Cash and direct equities contribute 0%. Funds without an MER on the Dashboard are excluded from the denominator — check the coverage % if the number looks low."
-        >
-          <div className="text-[10px] font-semibold text-ink-3 uppercase">Blended MER</div>
-          <div className="text-lg font-bold text-ink">
-            {blendedMerTile.blended != null
-              ? `${blendedMerTile.blended.toFixed(2)}%`
-              : "--"}
-          </div>
-          <div className="text-[9px] text-ink-3">
-            {blendedMerTile.coveragePct >= 99.5
-              ? `Cash ${pct(cashPct)}`
-              : `${blendedMerTile.coveragePct.toFixed(0)}% covered · Cash ${pct(cashPct)}`}
+        <div className="ml-auto flex flex-wrap items-center gap-2">
+          {editMode ? (
+            <>
+              <button onClick={() => setEditMode(false)} className={BTN_SECONDARY}>Cancel</button>
+              <button onClick={savePositions} disabled={saving} className={BTN_PRIMARY}>
+                {saving ? "Saving…" : "Save positions"}
+              </button>
+            </>
+          ) : (
+            <>
+              <button onClick={startEdit} className={BTN_SECONDARY}>Edit positions</button>
+              <button onClick={() => setShowSwitch(!showSwitch)} className={`${BTN_SECONDARY} ${showSwitch ? "bg-surface-hover text-ink" : ""}`}>Buy / Sell</button>
+              {pendingTrades.length > 0 && (
+                <button onClick={handleOpenSettlement} className={BTN_SECONDARY}>
+                  Settle MF trades <span className="font-mono text-[11.5px] text-ink-3">{pendingTrades.length}</span>
+                </button>
+              )}
+              <button onClick={() => setShowRebalance(!showRebalance)} className={BTN_PRIMARY}>
+                {showRebalance ? "Close rebalance" : "Rebalance"}
+              </button>
+            </>
+          )}
+          <div className="relative" ref={moreRef}>
+            <button onClick={() => setMoreOpen((v) => !v)} aria-label="More actions" title="More" className={BTN_ICON}>
+              <AppIcon name="more" size={14} />
+            </button>
+            {moreOpen && (
+              <div className="absolute right-0 top-8 z-30 min-w-[190px] rounded-card border border-line bg-surface py-1 shadow-[var(--shadow-pop)]">
+                <button
+                  onClick={() => { setMoreOpen(false); void fetchPrices(); }}
+                  disabled={pricesLoading}
+                  className={MENU_ITEM}
+                >
+                  <AppIcon name="refresh" size={13} className={pricesLoading ? "animate-spin" : ""} />
+                  {pricesLoading ? "Refreshing prices…" : "Refresh prices"}
+                </button>
+                {/* Client Report — opens the one-pager preview in a new tab,
+                    seeded with the currently-selected profile. Hidden for
+                    Alpha and Core because the one-pager is only built for
+                    the three full-model profiles (Balanced / Growth /
+                    All-Equity); the server-side route ALSO validates and
+                    falls back to Balanced if those profiles are passed. */}
+                {!editMode && isFullProfile && (
+                  <Link
+                    href={`/client-report?group=${encodeURIComponent(selectedGroupId)}&profile=${encodeURIComponent(activeProfile)}`}
+                    target="_blank"
+                    rel="noopener"
+                    onClick={() => setMoreOpen(false)}
+                    className={MENU_ITEM}
+                  >
+                    <AppIcon name="doc" size={13} />
+                    Client report
+                    <AppIcon name="external" size={12} className="ml-auto text-ink-faint" />
+                  </Link>
+                )}
+              </div>
+            )}
           </div>
         </div>
       </div>
 
+      {/* ── Row 2 · one hairline strip (all CAD) ── */}
+      {/* Cash is deliberately NOT a cell here — the book never holds a
+          meaningful cash weight, and the sixth cell squeezed the others hard
+          enough to truncate the Gain figure mid-number. The cash balance is
+          still shown in full on its own row in the Positions table below. */}
+      <StatStrip
+        cols={5}
+        items={[
+          { label: "Total value", value: fmtCurrency(totalValueCadSummary) },
+          { label: "ACB", value: fmtCurrency(totalCostCad) },
+          {
+            label: "Gain",
+            value: (
+              // block + whitespace-normal defeats StatStrip's `truncate`, so a
+              // long gain wraps onto a second line instead of ellipsing.
+              <span className={`block whitespace-normal break-words ${totalGainCad >= 0 ? "text-pos" : "text-neg"}`}>
+                {totalGainCad >= 0 ? "+" : ""}{fmtCurrency(totalGainCad)}
+                {totalGainPct != null && <> · {fmtGainLoss(totalGainPct)}</>}
+              </span>
+            ),
+          },
+          {
+            label: "Today",
+            value: todayReturn != null
+              ? <span className={todayReturn >= 0 ? "text-pos" : "text-neg"}>{fmtGainLoss(todayReturn)}</span>
+              : <span className="text-ink-faint">—</span>,
+          },
+          {
+            label: "Blended MER",
+            title: "Weighted-average management expense ratio across the current positions. Updates live as weights drift. Cash and direct equities contribute 0%. Funds without an MER on the Dashboard are excluded from the denominator — check the coverage % if the number looks low.",
+            value: (
+              <span className="block whitespace-normal break-words">
+                {blendedMerTile.blended != null ? `${blendedMerTile.blended.toFixed(2)}%` : <span className="text-ink-faint">—</span>}
+                {blendedMerTile.coveragePct < 99.5 && (
+                  <span className="ml-1.5 font-sans text-[11px] font-normal text-ink-3">{blendedMerTile.coveragePct.toFixed(0)}% covered</span>
+                )}
+              </span>
+            ),
+          },
+        ]}
+      />
 
-      {/* Live (drifted) asset-allocation pie for the active profile, with
-          target + drift in the legend. Re-renders whenever prices refresh
-          or the profile tab changes. */}
+      {/* ── Row 3 · Allocation — donut + target/live/drift, full width, top of
+          the page so the current asset-class mix is the first thing read. ── */}
       {allocationBreakdown && (
-        <AssetAllocationPie
-          live={allocationBreakdown.live}
-          target={allocationBreakdown.target}
-          profileLabel={PROFILE_LABELS[activeProfile]}
-        />
+        <AllocationPanel live={allocationBreakdown.live} target={allocationBreakdown.target} />
       )}
 
-
-
-      {/* Holdings table */}
-      <div className="rounded-card border border-line bg-white shadow-sm overflow-hidden">
-        {/* Positions header (mockup): title + inline summary */}
-        <div className="flex items-center justify-between gap-3 flex-wrap border-b border-line-soft px-4 py-3">
-          <h3 className="text-sm font-bold text-ink">Positions</h3>
-          <div className="flex items-center gap-x-2.5 gap-y-1 flex-wrap text-[11px] text-ink-3">
-            <span>Total <span className="font-semibold text-ink">{fmtCurrency(totalValueCadSummary)}</span></span>
-            <span className="text-ink-faint">·</span>
-            <span>Cost <span className="font-semibold text-ink">{fmtCurrency(totalCostCad)}</span></span>
-            <span className="text-ink-faint">·</span>
-            <span className={`font-semibold ${totalValueCadSummary - totalCostCad >= 0 ? "text-pos" : "text-neg"}`}>
-              {totalCostCad > 0 ? fmtGainLoss(((totalValueCadSummary - totalCostCad) / totalCostCad) * 100) : "--"}
-            </span>
-            <span className="text-ink-faint">·</span>
-            <span>Target = <span className="font-semibold text-accent">{PROFILE_LABELS[activeProfile]}</span></span>
-          </div>
-        </div>
-        {loading && holdingRows.length === 0 ? (
-          <div className="p-4"><SkeletonTable rows={8} cols={6} /></div>
-        ) : (
-        <div className="flex flex-col gap-4 p-4">
-        {(["fixedIncome", "equity", "alternative"] as PimAssetClass[]).map((ac) => {
-          const classRows = positionsByClass[ac];
-          if (!classRows.length) return null;
-          const colors = POS_CLASS_COLORS[ac];
-          const classValue = classRows.reduce((t, r) => t + r.valueCad, 0);
-          const classPct = totalValueCadSummary > 0 ? classValue / totalValueCadSummary : 0;
-          const classTarget = classRows.reduce((t, r) => t + r.modelPct, 0);
-          return (
-          <div key={ac} className="overflow-hidden rounded-card border border-line bg-white shadow-sm">
-            <div className={`${colors.header} flex items-center justify-between px-5 py-3`}>
-              <h3 className="text-sm font-bold">
-                {POS_CLASS_LABELS[ac]}
-                <span className="ml-2 text-xs font-normal opacity-70">
-                  ({classRows.length} holding{classRows.length === 1 ? "" : "s"})
+      {/* ── Row 4 · Positions — the FULL content width in every view. It used
+          to share a two-up band with the rebalance/allocation stack, which cut
+          the Drift column off inside `.panel { overflow: hidden }` with no way
+          to reach it. Everything that shared the band now sits below. ── */}
+      <div className="flex flex-col gap-3.5">
+        {/* Positions panel */}
+        <section className="panel animate-panel-in flex min-w-0 flex-col">
+          <div className="panel-h flex-wrap gap-y-1.5 py-1.5">
+            <span className="t-mark bg-hub-portfolio" aria-hidden />
+            <span className="t">Positions</span>
+            {allocMeta && <span className="m min-w-0 break-words">{allocMeta}</span>}
+            <div className="ml-auto flex flex-wrap items-center gap-2.5">
+              {pricesFetchedAt && (
+                <span className="m" title="When live prices and FX were last fetched from Yahoo. Refreshes when the page mounts or the group changes.">
+                  prices {formatRelTimeShort(pricesFetchedAt)}
                 </span>
-              </h3>
-              <span className="flex items-center gap-3 text-xs">
-                <span className="font-semibold">{fmtCurrency(classValue)}</span>
-                <span>
-                  <span className="font-semibold">{fmtPct2(classPct)}</span>
-                  <span className="opacity-70"> vs {fmtPct2(classTarget)} tgt</span>
-                </span>
-              </span>
+              )}
+              <div className="seg">
+                {POS_VIEWS.map((v) => (
+                  <button key={v.id} onClick={() => setUiPref("positioning.view", v.id)} className={posView === v.id ? "on" : ""}>
+                    {v.label}
+                  </button>
+                ))}
+              </div>
             </div>
-        <div className="max-w-full overflow-x-auto">
-          <table className="w-full min-w-[760px] text-xs">
-            <thead className="sticky top-0 z-10 bg-surface-2 shadow-[0_1px_0_0_rgb(226_232_240)]">
-              <tr className="border-b border-line-soft bg-surface-2">
-                <th className={`text-left ${thClass}`} onClick={() => handleSort("symbol")}>
-                  Ticker<SortIcon field="symbol" sortField={sortField} sortDir={sortDir} />
-                </th>
-                <th className={`text-right ${thClass}`} onClick={() => handleSort("units")}>
-                  Shares<SortIcon field="units" sortField={sortField} sortDir={sortDir} />
-                </th>
-                <th className={`text-right ${thClass}`} onClick={() => handleSort("price")}>
-                  Price<SortIcon field="price" sortField={sortField} sortDir={sortDir} />
-                </th>
-                {hasPositions && (
-                  <th className={`text-right ${thClass}`} onClick={() => handleSort("gainLoss")}>
-                    Gain<SortIcon field="gainLoss" sortField={sortField} sortDir={sortDir} />
-                  </th>
-                )}
-                <th className={`text-right ${thClass}`} onClick={() => handleSort("value")}>
-                  Market Value<SortIcon field="value" sortField={sortField} sortDir={sortDir} />
-                </th>
-                {editMode && (
-                  <th className={`text-right ${thClass}`} onClick={() => handleSort("acb")}>
-                    ACB (CAD)<SortIcon field="acb" sortField={sortField} sortDir={sortDir} />
-                  </th>
-                )}
-                <th className={`text-right ${thClass}`} onClick={() => handleSort("modelPct")}>
-                  Target<SortIcon field="modelPct" sortField={sortField} sortDir={sortDir} />
-                </th>
-                {hasPositions && (
-                  <>
-                    <th className={`text-right ${thClass}`} onClick={() => handleSort("currentPct")}>
-                      Current<SortIcon field="currentPct" sortField={sortField} sortDir={sortDir} />
-                    </th>
-                    <th className={`text-right ${thClass}`} onClick={() => handleSort("drift")}>
-                      Drift<SortIcon field="drift" sortField={sortField} sortDir={sortDir} />
-                    </th>
-                  </>
-                )}
-              </tr>
-            </thead>
-            <tbody>
-              {/* Cash row removed from UI — cashBalance is still tracked in
-                  pm:pim-positions and feeds total value + MER coverage. To
-                  expose an edit affordance for cash again, re-add this row
-                  or surface an inline input elsewhere. */}
-
-              {classRows.map((row) => {
-                const dTargetV = dPos[row.assetClass]?.target.get(row.symbol) ?? null;
-                const dCurrentV = dPos[row.assetClass]?.current.get(row.symbol) ?? null;
-                // Drift is the difference between the two numbers ON SCREEN,
-                // not a separately-rounded float — otherwise the row can show
-                // 1.82% / 1.85% next to a drift of +0.02%.
-                const dDriftV =
-                  row.units > 0 && dCurrentV != null && dTargetV != null ? dCurrentV - dTargetV : null;
-                const currBadge = row.currency === "USD" ? (
-                  <span className="ml-1 inline-block rounded bg-accent-soft px-1 py-0 text-[8px] font-bold text-accent align-middle">USD</span>
-                ) : null;
-
-                return (
-                  <tr key={row.symbol} className={`border-b border-line-soft hover:bg-surface-2 transition-colors ${row.isOrphan ? "bg-warn-soft/40" : ""}`}>
-                    {/* Ticker with company name folded in as a subtitle */}
-                    <td className="py-2.5 px-2">
-                      <div className="font-semibold text-ink">
-                        {displayTicker(row.symbol)}{currBadge}
-                        {row.isOrphan && (
-                          <span
-                            title="Held in the book but NOT a holding in this model. It has no target weight, and until it is added to the model it will not be rebalanced or attributed. Add it via Buy / Sell or the Models tab."
-                            className="ml-1 inline-block rounded bg-warn px-1 py-0 text-[8px] font-bold uppercase tracking-wider text-white align-middle"
-                          >
-                            Not in model
-                          </span>
-                        )}
-                      </div>
-                      {row.name && <div className="text-[10px] text-ink-3 max-w-[220px] truncate">{row.name}</div>}
-                    </td>
-                    {/* Shares */}
-                    <td className="py-2.5 px-2 text-right font-mono text-ink">
-                      {editMode ? (
-                        <input
-                          type="number"
-                          value={editPositions.find((p) => p.symbol === row.symbol)?.units || ""}
-                          onChange={(e) => {
-                            const val = parseFloat(e.target.value) || 0;
-                            setEditPositions((prev) =>
-                              prev.map((p) => p.symbol === row.symbol ? { ...p, units: val } : p)
-                            );
-                          }}
-                          className="w-24 rounded border border-line px-2 py-1 text-right text-xs font-mono"
-                          step="0.0001"
-                        />
-                      ) : (
-                        row.units > 0 ? fmtUnits(row.units) : "-"
-                      )}
-                    </td>
-                    {/* Price in instrument currency */}
-                    <td className="py-2.5 px-2 text-right font-mono text-ink">
-                      {row.price > 0 ? (
-                        <span>${row.price.toFixed(2)}</span>
-                      ) : "-"}
-                    </td>
-                    {/* Gain */}
-                    {hasPositions && (
-                      <td className={`py-2.5 px-2 text-right font-mono font-semibold ${row.gainLoss >= 0 ? "text-pos" : "text-neg"}`}>
-                        {row.units > 0 ? fmtGainLoss(row.gainLoss) : "-"}
-                      </td>
-                    )}
-                    {/* Market Value in CAD */}
-                    <td className="py-2.5 px-2 text-right font-mono font-semibold text-ink">
-                      {row.valueCad > 0 ? fmtCurrency(row.valueCad) : "-"}
-                    </td>
-                    {/* ACB (Book Cost) in CAD — edit mode only (cost-basis input) */}
-                    {editMode && (
-                      <td className="py-2.5 px-2 text-right font-mono text-ink-2">
-                        <div className="mb-1">
-                          <input
-                            type="number"
-                            value={editPositions.find((p) => p.symbol === row.symbol)?.costBasis || ""}
-                            onChange={(e) => {
-                              const val = parseFloat(e.target.value) || 0;
-                              setEditPositions((prev) =>
-                                prev.map((p) => p.symbol === row.symbol ? { ...p, costBasis: val } : p)
-                              );
-                            }}
-                            className="w-20 rounded border border-line px-2 py-1 text-right text-xs font-mono"
-                            step="0.01"
-                            placeholder={`Cost (${row.currency})`}
-                          />
-                        </div>
-                        {row.costValueCad > 0 ? fmtCurrency(row.costValueCad) : "-"}
-                      </td>
-                    )}
-                    {/* Target */}
-                    <td className="py-2.5 px-2 text-right font-mono text-ink-2">{fmtPct2(dTargetV)}</td>
-                    {/* Current + Drift */}
+          </div>
+          {loading && holdingRows.length === 0 ? (
+            <div className="p-3.5"><SkeletonTable rows={8} cols={6} /></div>
+          ) : (
+            <div className="tbl-wrap min-w-0">
+              <table className="data-table">
+                <thead>
+                  <tr>
+                    {sortTh("symbol", "Symbol", false, "pl-3.5")}
+                    {sortTh("units", "Units")}
+                    {sortTh("price", "Price")}
+                    {sortTh("value", "Value C$")}
+                    {showAcb && sortTh("acb", "ACB C$")}
+                    {showGainCad && <th className="n">Gain C$</th>}
+                    {showGain && sortTh("gainLoss", "Gain")}
+                    {sortTh("modelPct", "Model")}
                     {hasPositions && (
                       <>
-                        <td className="py-2.5 px-2 text-right font-mono text-ink">
-                          {row.units > 0 ? fmtPct2(dCurrentV) : "-"}
-                        </td>
-                        <td
-                          className={`py-2.5 px-2 text-right font-mono font-semibold ${
-                            dDriftV == null || sameAtDisplay(dCurrentV, dTargetV)
-                              ? "text-ink-3"
-                              : dDriftV > 0
-                                ? "text-pos"
-                                : "text-neg"
-                          }`}
-                        >
-                          {dDriftV == null ? "-" : `${dDriftV > 0 ? "+" : ""}${fmtPct2(dDriftV)}`}
-                        </td>
+                        {sortTh("currentPct", "Current")}
+                        {/* Drift reads as figure-then-bar: the labelled,
+                            sortable number comes first so the column header
+                            sits over the value it names, and the bar is the
+                            unlabelled graphic beside it. */}
+                        {sortTh("drift", "Drift")}
+                        {showBar && (
+                          <th style={{ width: 128 }}>
+                            <span className="sr-only">Drift bar</span>
+                          </th>
+                        )}
                       </>
                     )}
                   </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-          </div>
-          );
-        })}
-        </div>
-        )}
-      </div>
-
-
-      {/* Rebalance Panel */}
-      {showRebalance && (
-        <div className="rounded-card border border-pos-border bg-pos-soft/50 p-5 shadow-sm">
-          <h3 className="text-sm font-bold text-ink mb-3">
-            Rebalance Preview
-            <span className="ml-2 text-[10px] font-normal text-ink-3">({PROFILE_LABELS[activeProfile]})</span>
-          </h3>
-          <p className="text-xs text-ink-3 mb-3">
-            Target units are calculated from <strong>previous close</strong> prices to match the trading desk.
-            Enter the actual execution price for ACB tracking. Mutual funds are recorded as pending and settled when NAV is available.
-            Prices are shared across profiles.
-          </p>
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-pos-border text-xs text-ink-3">
-                  <th className="text-left py-2 font-semibold">Symbol</th>
-                  <th className="text-right py-2 font-semibold">Target %</th>
-                  <th className="text-right py-2 font-semibold">Current %</th>
-                  <th className="text-right py-2 font-semibold">Drift</th>
-                  <th className="text-center py-2 font-semibold">Action</th>
-                  <th className="text-right py-2 font-semibold">Current Units</th>
-                  <th className="text-right py-2 font-semibold">Target Units</th>
-                  <th className="text-right py-2 font-semibold">Δ Units</th>
-                  <th className="text-right py-2 font-semibold">Prev Close</th>
-                  <th className="text-right py-2 font-semibold">Exec Price</th>
-                  <th className="text-right py-2 font-semibold">Cost (CAD)</th>
-                </tr>
-              </thead>
-              <tbody>
-                {sortedRows.filter((r) => r.modelPct > 0).map((r) => {
-                  // Rebalance math uses PREVIOUS CLOSE to match trading desk
-                  const pcPrice = prevCloses[r.symbol] || r.price;
-                  const pcFx = r.currency === "USD" ? prevCloseUsdCad : 1;
-                  const pcPriceCad = pcPrice * pcFx;
-                  const pcValueCad = r.units * pcPriceCad;
-                  const targetValueCad = prevCloseTotalCad * r.modelPct;
-                  const targetUnits = pcPriceCad > 0 ? targetValueCad / pcPriceCad : 0;
-                  const deltaUnits = targetUnits - r.units;
-                  const absDelta = Math.abs(deltaUnits);
-                  const isMF = isFundservCode(r.symbol);
-                  const deltaValueCad = targetValueCad - pcValueCad;
-                  const action = isMF
-                    ? (Math.abs(deltaValueCad) < 0.01 ? "HOLD" : deltaValueCad > 0 ? "BUY" : "SELL")
-                    : (absDelta < 0.001 ? "HOLD" : deltaUnits > 0 ? "BUY" : "SELL");
-                  const execPrice = parseFloat(rebalancePrices[r.symbol] || "0");
-                  const fxRate = r.currency === "USD" ? usdCadRate : 1;
-                  const costCad = isMF
-                    ? Math.abs(deltaValueCad)
-                    : (execPrice > 0 ? absDelta * execPrice * fxRate : 0);
-
-                  return (
-                    <tr key={r.symbol} className={`border-b border-pos-border ${isMF ? "bg-violet-soft/30" : ""}`}>
-                      <td className="py-2 font-mono text-xs font-semibold">
-                        <Link href={`/stock/${symbolToTicker(r.symbol).toLowerCase()}?from=positioning`} className="hover:underline hover:text-accent transition-colors">
-                          {displayTicker(r.symbol)}
-                        </Link>
-                        {isMF && (
-                          <span className="ml-1 rounded bg-violet-soft px-1 py-0.5 text-[8px] font-bold text-violet">FUND</span>
-                        )}
-                        {fundMissingMer(r.symbol) && (
-                          <Link
-                            href={`/stock/${symbolToTicker(r.symbol).toLowerCase()}?from=positioning`}
-                            title="No MER on file for this fund/ETF — click to add a manual override. Missing MERs are treated as 0% in the blended-fee calc, understating total fees."
-                            className="ml-1 inline-block rounded bg-warn-soft px-1 py-0.5 text-[8px] font-bold uppercase tracking-wider text-warn hover:bg-warn transition-colors"
-                          >
-                            ⚠ No MER
-                          </Link>
-                        )}
-                      </td>
-                      <td className="py-2 text-right font-mono text-xs">{pct(r.modelPct)}</td>
-                      <td className="py-2 text-right font-mono text-xs" title="Based on previous close">
-                        {prevCloseTotalCad > 0 ? pct(pcValueCad / prevCloseTotalCad) : pct(r.currentPct)}
-                      </td>
-                      {(() => {
-                        const pcDrift = prevCloseTotalCad > 0 ? (pcValueCad / prevCloseTotalCad) - r.modelPct : r.driftPct;
-                        return (
-                          <td className={`py-2 text-right font-mono text-xs font-semibold ${pcDrift > 0 ? "text-pos" : pcDrift < 0 ? "text-neg" : "text-ink-3"}`}>
-                            {pcDrift > 0 ? "+" : ""}{(pcDrift * 10000).toFixed(0)}bp
+                </thead>
+                <tbody>
+                  {(["fixedIncome", "equity", "alternative"] as PimAssetClass[]).map((ac) => {
+                    const classRows = positionsByClass[ac];
+                    if (!classRows.length) return null;
+                    const classValue = classRows.reduce((t, r) => t + r.valueCad, 0);
+                    const classPct = totalValueCadSummary > 0 ? classValue / totalValueCadSummary : 0;
+                    const classTarget = classRows.reduce((t, r) => t + r.modelPct, 0);
+                    return (
+                      <React.Fragment key={ac}>
+                        {/* Sleeve divider row: name · count · value · live vs target */}
+                        <tr className="bg-surface-2">
+                          <td colSpan={posColCount} className="!h-auto py-1 pl-3.5 text-[11px] text-ink-3">
+                            <span className="flex flex-wrap items-baseline gap-x-3 gap-y-0.5">
+                              <span className="font-medium text-ink-2">{POS_CLASS_LABELS[ac]}</span>
+                              <span>{classRows.length} holding{classRows.length === 1 ? "" : "s"}</span>
+                              <span className="font-mono">{fmtCad0(classValue)}</span>
+                              {hasPositions && (
+                                <span><span className="font-mono">{fmtPct2(classPct)}</span> vs <span className="font-mono">{fmtPct2(classTarget)}</span> target</span>
+                              )}
+                            </span>
                           </td>
-                        );
-                      })()}
-                      <td className="py-2 text-center">
-                        {action !== "HOLD" && (
-                          <span className={`rounded px-1.5 py-0.5 text-[10px] font-bold ${action === "SELL" ? "bg-neg-soft text-neg" : "bg-pos-soft text-pos"}`}>
-                            {action}
-                          </span>
-                        )}
-                        {action === "HOLD" && <span className="text-[10px] text-ink-3">{"\u2014"}</span>}
+                        </tr>
+                        {classRows.map((row) => {
+                          const dTargetV = dPos[row.assetClass]?.target.get(row.symbol) ?? null;
+                          const dCurrentV = dPos[row.assetClass]?.current.get(row.symbol) ?? null;
+                          // Drift is the difference between the two numbers ON SCREEN,
+                          // not a separately-rounded float — otherwise the row can show
+                          // 1.82% / 1.85% next to a drift of +0.02%.
+                          const dDriftV =
+                            row.units > 0 && dCurrentV != null && dTargetV != null ? dCurrentV - dTargetV : null;
+                          const flat = dDriftV == null || sameAtDisplay(dCurrentV, dTargetV);
+                          const overTolerance = row.units > 0 && Math.abs(row.driftPct) >= DRIFT_TOLERANCE;
+                          const editPos = editMode ? editPositions.find((p) => p.symbol === row.symbol) : undefined;
+                          const gainCad = row.valueCad - row.costValueCad;
+                          return (
+                            <tr key={row.symbol}>
+                              <td className="pl-3.5">
+                                <span className="font-mono font-medium text-ink">{displayTicker(row.symbol)}</span>
+                                {row.currency === "USD" && <span className="ml-1.5 text-[11px] text-ink-3">USD</span>}
+                                {row.name && (
+                                  // Wraps rather than truncates: a 220px
+                                  // no-break name set the column's minimum
+                                  // width and pushed the table sideways.
+                                  <span className="ml-2 break-words text-[12px] text-ink-3" title={row.name}>{row.name}</span>
+                                )}
+                                {row.isOrphan && (
+                                  <span
+                                    className="ml-2 text-[11px] text-warn"
+                                    title="Held in the book but NOT a holding in this model. It has no target weight, and until it is added to the model it will not be rebalanced or attributed. Add it via Buy / Sell or the Models tab."
+                                  >
+                                    not in model
+                                  </span>
+                                )}
+                              </td>
+                              <td className="n text-ink-3">
+                                {editMode ? (
+                                  <input
+                                    type="number"
+                                    value={editPos?.units || ""}
+                                    onChange={(e) => {
+                                      const val = parseFloat(e.target.value) || 0;
+                                      setEditPositions((prev) =>
+                                        prev.map((p) => p.symbol === row.symbol ? { ...p, units: val } : p)
+                                      );
+                                    }}
+                                    className={`${INPUT} w-24 text-right font-mono`}
+                                    step="0.0001"
+                                  />
+                                ) : (
+                                  row.units > 0 ? fmtUnits(row.units) : <span className="text-ink-faint">—</span>
+                                )}
+                              </td>
+                              <td className="n">{row.price > 0 ? row.price.toFixed(2) : <span className="text-ink-faint">—</span>}</td>
+                              <td className="n">{row.valueCad > 0 ? fmtN0(row.valueCad) : <span className="text-ink-faint">—</span>}</td>
+                              {showAcb && (
+                                <td className="n text-ink-2">
+                                  {editMode ? (
+                                    <span className="inline-flex flex-col items-end gap-0.5 py-1">
+                                      <input
+                                        type="number"
+                                        value={editPos?.costBasis || ""}
+                                        onChange={(e) => {
+                                          const val = parseFloat(e.target.value) || 0;
+                                          setEditPositions((prev) =>
+                                            prev.map((p) => p.symbol === row.symbol ? { ...p, costBasis: val } : p)
+                                          );
+                                        }}
+                                        className={`${INPUT} w-24 text-right font-mono`}
+                                        step="0.01"
+                                        placeholder={`Cost (${row.currency})`}
+                                      />
+                                      <span className="text-[11px] text-ink-3">{row.costValueCad > 0 ? fmtN0(row.costValueCad) : "—"}</span>
+                                    </span>
+                                  ) : (
+                                    row.costValueCad > 0 ? fmtN0(row.costValueCad) : <span className="text-ink-faint">—</span>
+                                  )}
+                                </td>
+                              )}
+                              {showGainCad && (
+                                <td className={`n ${row.units > 0 ? (gainCad >= 0 ? "text-pos" : "text-neg") : ""}`}>
+                                  {row.units > 0 ? `${gainCad >= 0 ? "+" : "−"}${fmtN0(Math.abs(gainCad))}` : <span className="text-ink-faint">—</span>}
+                                </td>
+                              )}
+                              {showGain && (
+                                <td className={`n ${row.units > 0 ? (row.gainLoss >= 0 ? "text-pos" : "text-neg") : ""}`}>
+                                  {row.units > 0 ? fmtGainLoss(row.gainLoss) : <span className="text-ink-faint">—</span>}
+                                </td>
+                              )}
+                              <td className="n text-ink-3">{fmtPct2(dTargetV)}</td>
+                              {hasPositions && (
+                                <>
+                                  <td className="n">{row.units > 0 ? fmtPct2(dCurrentV) : <span className="text-ink-faint">—</span>}</td>
+                                  <td className={`n ${flat ? "text-ink-3" : overTolerance ? "text-warn" : "text-ink-2"}`}>
+                                    {dDriftV == null ? <span className="text-ink-faint">—</span> : `${dDriftV > 0 ? "+" : ""}${fmtPct2(dDriftV)}`}
+                                  </td>
+                                  {showBar && (
+                                    <td>
+                                      <DriftBar drift={dDriftV} scalePp={driftScalePp} warn={overTolerance} />
+                                    </td>
+                                  )}
+                                </>
+                              )}
+                            </tr>
+                          );
+                        })}
+                      </React.Fragment>
+                    );
+                  })}
+                  {/* Cash — display only. cashBalance is tracked in
+                      pm:pim-positions and feeds total value + MER coverage;
+                      this row surfaces it beside the holdings without adding an
+                      edit affordance. */}
+                  {hasPositions && (
+                    <tr>
+                      <td className="pl-3.5">
+                        <span className="font-mono font-medium text-ink">Cash</span>
+                        <span className="ml-2 text-[12px] text-ink-3">CAD</span>
                       </td>
-                      <td className="py-2 text-right font-mono text-xs">{r.units > 0 ? r.units.toFixed(2) : "\u2014"}</td>
-                      <td className="py-2 text-right font-mono text-xs">
-                        {isMF ? (
-                          <span className="text-violet" title="Units calculated at settlement">{"\u2014"}</span>
-                        ) : targetUnits.toFixed(2)}
+                      <td className="n" />
+                      <td className="n" />
+                      <td className="n">{fmtN0(cashBalanceCad)}</td>
+                      {showAcb && <td className="n" />}
+                      {showGainCad && <td className="n" />}
+                      {showGain && <td className="n" />}
+                      <td className="n text-ink-3">{fmtPct2(cashTargetPct)}</td>
+                      <td className="n">{fmtPct2(cashPct)}</td>
+                      <td className={`n ${cashDriftPct != null && Math.abs(cashDriftPct) >= DRIFT_TOLERANCE ? "text-warn" : "text-ink-3"}`}>
+                        {cashDriftPct == null ? "—" : `${cashDriftPct > 0 ? "+" : ""}${fmtPct2(cashDriftPct)}`}
                       </td>
-                      <td className={`py-2 text-right font-mono text-xs font-semibold ${action === "BUY" ? "text-pos" : action === "SELL" ? "text-neg" : "text-ink-3"}`}>
-                        {action === "HOLD" ? "\u2014" : isMF ? (
-                          <span title="Dollar amount — units determined at settlement">${Math.abs(deltaValueCad).toFixed(0)}</span>
-                        ) : `${deltaUnits > 0 ? "+" : ""}${deltaUnits.toFixed(2)}`}
-                      </td>
-                      <td className="py-2 text-right font-mono text-xs text-ink-3">{pcPrice > 0 ? `$${pcPrice.toFixed(2)}` : "\u2014"}</td>
-                      <td className="py-2 text-right">
-                        {isMF ? (
-                          <span className="text-[10px] text-violet italic">Pending</span>
-                        ) : action !== "HOLD" ? (
-                          <input type="number" step="0.01" placeholder="Price"
-                            value={rebalancePrices[r.symbol] || ""}
-                            onChange={(e) => setRebalancePrices((p) => ({ ...p, [r.symbol]: e.target.value }))}
-                            className="w-20 rounded border border-line px-2 py-1 text-xs text-right outline-none focus:border-pos-border" />
-                        ) : <span className="text-xs text-ink-3">{"\u2014"}</span>}
-                      </td>
-                      <td className="py-2 text-right font-mono text-xs text-ink-2">
-                        {costCad > 0 ? `$${costCad.toFixed(2)}` : "\u2014"}
-                      </td>
+                      {showBar && (
+                        <td>
+                          <DriftBar drift={cashDriftPct == null ? null : cashDriftPct * 100} scalePp={driftScalePp} warn={cashDriftPct != null && Math.abs(cashDriftPct) >= DRIFT_TOLERANCE} />
+                        </td>
+                      )}
                     </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-          <div className="flex flex-wrap items-center gap-2 mt-3">
-            <button onClick={handleExecuteRebalance}
-              className="rounded-lg bg-pos px-4 py-2 text-xs font-semibold text-white hover:bg-pos transition-colors">
-              Execute ({PROFILE_LABELS[activeProfile]})
-            </button>
-            {availableProfiles.length > 1 && (
-              <button onClick={handleExecuteAllProfiles}
-                className="rounded-lg bg-accent px-4 py-2 text-xs font-semibold text-white hover:bg-accent transition-colors">
-                Execute All Profiles
-              </button>
-            )}
-            <button onClick={() => { setShowRebalance(false); setRebalancePrices({}); }}
-              className="rounded-lg bg-line px-4 py-2 text-xs font-semibold text-ink-2 hover:bg-line transition-colors">
-              Cancel
-            </button>
-            {sortedRows.some((r) => r.modelPct > 0 && isFundservCode(r.symbol)) && (
-              <span className="text-[10px] text-violet ml-2">
-                Mutual fund trades will be recorded as pending — settle tomorrow when NAV is available.
+                  )}
+                </tbody>
+              </table>
+            </div>
+          )}
+          <div className="flex min-h-[32px] flex-wrap items-center gap-x-2 border-t border-line-soft px-3.5 py-1 text-[11.5px] text-ink-3">
+            <span>{heldCount} of {holdingRows.length} held{hasPositions && <> · {outsideTolerance} outside tolerance ({(DRIFT_TOLERANCE * 100).toFixed(1)}pp)</>}</span>
+            {usdCadRate > 1 && (
+              <span className="ml-auto font-mono">
+                USD/CAD {usdCadRate.toFixed(4)}
+                {prevCloseUsdCad > 1 && prevCloseUsdCad !== usdCadRate && <> · {prevCloseUsdCad.toFixed(4)} prev close</>}
               </span>
             )}
           </div>
-        </div>
-      )}
+        </section>
 
-      {/* Settle Pending Trades Panel */}
-      {showSettlement && pendingTrades.length > 0 && (
-        <div className="rounded-card border border-violet bg-violet-soft/50 p-5 shadow-sm">
-          <h3 className="text-sm font-bold text-ink mb-1">Settle Pending Mutual Fund Trades</h3>
-          <p className="text-xs text-ink-3 mb-3">
-            Enter the settlement NAV for each mutual fund. NAV is auto-fetched from Barchart — verify and adjust if needed.
-          </p>
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-violet text-xs text-ink-3">
-                  <th className="text-left py-2 font-semibold">Symbol</th>
-                  <th className="text-left py-2 font-semibold hidden sm:table-cell">Profile</th>
-                  <th className="text-center py-2 font-semibold">Direction</th>
-                  <th className="text-right py-2 font-semibold">Amount (CAD)</th>
-                  <th className="text-right py-2 font-semibold">NAV Price</th>
-                  <th className="text-right py-2 font-semibold">Units</th>
-                  <th className="text-left py-2 font-semibold hidden md:table-cell">Trade Date</th>
-                </tr>
-              </thead>
-              <tbody>
-                {pendingTrades.map((t) => {
-                  const nav = parseFloat(settlementPrices[t.symbol] || "0");
-                  const units = nav > 0 && t.targetAmount ? t.targetAmount / nav : 0;
-                  return (
-                    <tr key={t.id} className="border-b border-violet-100">
-                      <td className="py-2 font-mono text-xs font-semibold text-violet">{displayTicker(t.symbol)}</td>
-                      <td className="py-2 text-xs text-ink-2 hidden sm:table-cell">{PROFILE_LABELS[(t.profile || activeProfile) as PimProfileType]}</td>
-                      <td className="py-2 text-center">
-                        <span className={`rounded px-1.5 py-0.5 text-[10px] font-bold ${t.direction === "sell" ? "bg-neg-soft text-neg" : "bg-pos-soft text-pos"}`}>
-                          {t.direction.toUpperCase()}
-                        </span>
-                      </td>
-                      <td className="py-2 text-right font-mono text-xs">${(t.targetAmount || 0).toFixed(2)}</td>
-                      <td className="py-2 text-right">
-                        <input type="number" step="0.0001" placeholder="NAV"
-                          value={settlementPrices[t.symbol] || ""}
-                          onChange={(e) => setSettlementPrices((p) => ({ ...p, [t.symbol]: e.target.value }))}
-                          className="w-24 rounded border border-line px-2 py-1 text-xs text-right outline-none focus:border-violet" />
-                      </td>
-                      <td className="py-2 text-right font-mono text-xs font-semibold text-violet">
-                        {units > 0 ? units.toFixed(4) : "\u2014"}
-                      </td>
-                      <td className="py-2 text-xs text-ink-3 hidden md:table-cell">
-                        {new Date(t.date).toLocaleDateString()}
-                      </td>
+        {/* ── Band under the positions table: the rebalance action (left) and
+            the recent-trade log (right). Collapses to one column below lg, and
+            the rebalance panel takes the whole band when there is no trade
+            history to sit beside it. ── */}
+        <div className={`grid grid-cols-1 items-start gap-3.5 ${settledTransactions.length > 0 ? "lg:grid-cols-[minmax(0,1.5fr)_minmax(0,1fr)]" : ""}`}>
+          {/* Rebalance — the ACTION and its summary. The per-trade PREVIEW
+              table is deliberately gone: per-name drift is read off the
+              Positions table above, and listing the same names again here only
+              stole width from it. The trade rows still appear once "Queue
+              trades" opens the execution form, because that is where the
+              execution price per name is entered for ACB tracking — every
+              confirmation step, both Execute paths and all of the underlying
+              math are untouched. */}
+          <section className="panel animate-panel-in min-w-0">
+            <div className="panel-h flex-wrap gap-y-1.5 py-1.5">
+              <span className="t-mark bg-hub-portfolio" aria-hidden />
+              <span className="t">Rebalance to {PROFILE_LABELS[activeProfile]}</span>
+              <span className="m min-w-0 break-words">
+                {showRebalance ? "execute" : "summary"} · {rebalanceTrades.length} trade{rebalanceTrades.length === 1 ? "" : "s"} · {fmtCad0(rebalanceGross)} gross
+              </span>
+              <div className="ml-auto flex flex-wrap items-center gap-2">
+                {showRebalance && (
+                  <div className="seg">
+                    <button onClick={() => { if (rebalanceDetail) toggleRebalanceDetail(); }} className={rebalanceDetail ? "" : "on"}>Trades</button>
+                    <button onClick={() => { if (!rebalanceDetail) toggleRebalanceDetail(); }} className={rebalanceDetail ? "on" : ""}>Detail</button>
+                  </div>
+                )}
+                {showRebalance ? (
+                  <button onClick={() => { setShowRebalance(false); setRebalancePrices({}); }} className={BTN_SECONDARY}>Cancel</button>
+                ) : (
+                  <button onClick={() => setShowRebalance(true)} className={BTN_PRIMARY}>Queue trades</button>
+                )}
+              </div>
+            </div>
+            {/* Resting state: the size of the job, not the list of names. */}
+            {!showRebalance && (
+              rebalanceRows.length === 0 ? (
+                <div className="px-3.5 py-3 text-[12px] text-ink-3">No model targets to rebalance against.</div>
+              ) : rebalanceTrades.length === 0 ? (
+                <div className="px-3.5 py-3 text-[12px] text-ink-3">Every position is on target at previous close.</div>
+              ) : (
+                <div className="grid grid-cols-2 gap-x-5 gap-y-2.5 px-3.5 pb-3.5 pt-3 sm:grid-cols-4">
+                  {[
+                    { label: "Buys", value: `${rebalanceBuyCount}`, cls: "text-pos" },
+                    { label: "Sells", value: `${rebalanceSellCount}`, cls: "text-neg" },
+                    { label: "Gross value", value: fmtCad0(rebalanceGross), cls: "text-ink" },
+                    { label: "On target", value: `${rebalanceRows.length - rebalanceTrades.length} of ${rebalanceRows.length}`, cls: "text-ink-2" },
+                  ].map((d) => (
+                    <span key={d.label} className="flex min-w-0 flex-col gap-0.5">
+                      <span className="text-[11px] text-ink-3">{d.label}</span>
+                      <span className={`break-words font-mono text-[13px] font-medium ${d.cls}`}>{d.value}</span>
+                    </span>
+                  ))}
+                  <p className="col-span-full text-[11.5px] leading-[1.5] text-ink-3">
+                    Sized from <span className="text-ink-2">previous close</span> to match the trading desk. Queue the
+                    trades to review each name and enter execution prices. Per-name drift is in the Positions table above.
+                  </p>
+                </div>
+              )
+            )}
+            {showRebalance && (
+              <p className="border-b border-line-soft px-3.5 py-2 text-[11.5px] leading-[1.5] text-ink-3">
+                Target units are calculated from <span className="text-ink-2">previous close</span> prices to match the trading desk.
+                Enter the actual execution price for ACB tracking. Mutual funds are recorded as pending and settled when NAV is available.
+                Prices are shared across profiles.
+              </p>
+            )}
+            {showRebalance && (rebalanceVisible.length === 0 ? (
+              <div className="px-3.5 py-3 text-[12px] text-ink-3">
+                {rebalanceRows.length === 0 ? "No model targets to rebalance against." : "Every position is on target at previous close."}
+              </div>
+            ) : (
+              <div className="tbl-wrap min-w-0">
+                <table className="data-table">
+                  <thead>
+                    <tr>
+                      <th className="pl-3.5">Symbol</th>
+                      <th>Action</th>
+                      <th className="n">Δ Units</th>
+                      <th className="n">Exec</th>
+                      <th className="n">Cost</th>
                     </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+                  </thead>
+                  <tbody>
+                    {rebalanceVisible.map((r) => (
+                      <React.Fragment key={r.symbol}>
+                      <tr className="row-link">
+                        <td className="pl-3.5">
+                          <Link href={`/stock/${symbolToTicker(r.symbol).toLowerCase()}?from=positioning`} className="font-mono font-medium text-ink hover:text-accent">
+                            {displayTicker(r.symbol)}
+                          </Link>
+                          {r.isMF && <span className="ml-1.5 text-[11px] text-ink-3">fund</span>}
+                          {fundMissingMer(r.symbol) && (
+                            <Link
+                              href={`/stock/${symbolToTicker(r.symbol).toLowerCase()}?from=positioning`}
+                              title="No MER on file for this fund/ETF — click to add a manual override. Missing MERs are treated as 0% in the blended-fee calc, understating total fees."
+                              className="ml-1.5 inline-flex items-center gap-0.5 text-[11px] text-warn hover:underline"
+                            >
+                              <AppIcon name="warn" size={11} /> no MER
+                            </Link>
+                          )}
+                        </td>
+                        <td className={`text-[12px] font-medium ${r.action === "SELL" ? "text-neg" : r.action === "BUY" ? "text-pos" : "text-ink-3"}`}>
+                          {r.action === "SELL" ? "Sell" : r.action === "BUY" ? "Buy" : "—"}
+                        </td>
+                        <td className={`n ${r.action === "BUY" ? "text-pos" : r.action === "SELL" ? "text-neg" : "text-ink-3"}`}>
+                          {r.action === "HOLD" ? "—" : r.isMF ? (
+                            <span title="Dollar amount — units determined at settlement">${Math.abs(r.deltaValueCad).toFixed(0)}</span>
+                          ) : `${r.deltaUnits > 0 ? "+" : ""}${r.deltaUnits.toFixed(2)}`}
+                        </td>
+                        <td className="n text-ink-3">
+                          {r.isMF ? (
+                            <span className="text-[11px]">pending</span>
+                          ) : showRebalance && r.action !== "HOLD" ? (
+                            <input type="number" step="0.01" placeholder={r.pcPrice > 0 ? r.pcPrice.toFixed(2) : "Price"}
+                              value={rebalancePrices[r.symbol] || ""}
+                              onChange={(e) => setRebalancePrices((p) => ({ ...p, [r.symbol]: e.target.value }))}
+                              className={`${INPUT} w-[72px] text-right font-mono`} />
+                          ) : r.pcPrice > 0 ? r.pcPrice.toFixed(2) : "—"}
+                        </td>
+                        <td className="n text-ink-2">{r.costCad > 0 ? fmtN0(r.costCad) : "—"}</td>
+                      </tr>
+                      {/* Detail view keeps every figure it always showed, but
+                          as a labelled grid under the row instead of five more
+                          columns — the panel sits in a ~390px column, where
+                          ten columns could only scroll sideways. */}
+                      {rebalanceDetail && (
+                        <tr className="bg-surface-2">
+                          <td colSpan={5} className="!h-auto py-1.5 pl-3.5 pr-2.5">
+                            <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-[11.5px] sm:grid-cols-3">
+                              {[
+                                { label: "Target", value: pct(r.modelPct), cls: "text-ink-2" },
+                                { label: "Current", value: pct(r.pcCurrentPct), cls: "text-ink-2", title: "Based on previous close" },
+                                {
+                                  label: "Drift",
+                                  value: `${r.pcDrift > 0 ? "+" : ""}${(r.pcDrift * 10000).toFixed(0)}bp`,
+                                  cls: r.pcDrift > 0 ? "text-pos" : r.pcDrift < 0 ? "text-neg" : "text-ink-3",
+                                },
+                                { label: "Units", value: r.units > 0 ? r.units.toFixed(2) : "—", cls: "text-ink-2" },
+                                {
+                                  label: "Target units",
+                                  value: r.isMF ? "—" : r.targetUnits.toFixed(2),
+                                  cls: "text-ink-2",
+                                  title: r.isMF ? "Units calculated at settlement" : undefined,
+                                },
+                                { label: "Prev close", value: r.pcPrice > 0 ? r.pcPrice.toFixed(2) : "—", cls: "text-ink-2" },
+                              ].map((d) => (
+                                <span key={d.label} className="min-w-0" title={d.title}>
+                                  <span className="block text-[11px] text-ink-3">{d.label}</span>
+                                  <span className={`block break-words font-mono ${d.cls}`}>{d.value}</span>
+                                </span>
+                              ))}
+                            </div>
+                          </td>
+                        </tr>
+                      )}
+                      </React.Fragment>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ))}
+            {showRebalance && (
+              <div className="flex min-h-[32px] flex-wrap items-center gap-2 border-t border-line-soft px-3.5 py-1.5 text-[11.5px] text-ink-3">
+                <button onClick={handleExecuteRebalance} className={BTN_PRIMARY}>
+                  Execute ({PROFILE_LABELS[activeProfile]})
+                </button>
+                {availableProfiles.length > 1 && (
+                  <button onClick={handleExecuteAllProfiles} className={BTN_SECONDARY}>Execute all profiles</button>
+                )}
+                {rebalanceHasMF && (
+                  <span className="min-w-0 break-words">Mutual fund trades are recorded as pending — settle tomorrow when NAV is available.</span>
+                )}
+                {!rebalanceDetail && rebalanceRows.length > rebalanceTrades.length && (
+                  <span className="ml-auto shrink-0">{rebalanceRows.length - rebalanceTrades.length} on target hidden</span>
+                )}
+              </div>
+            )}
+          </section>
+
+          {/* Recent trades: last settled transactions from the group's
+              persisted log. Read-only — we don't store per-trade share counts,
+              so execution price is shown instead of "+N sh". */}
+          {settledTransactions.length > 0 && (() => {
+            const recent = [...settledTransactions]
+              .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
+              .slice(0, 6);
+            const lastRebDate = groupState.lastRebalance?.date;
+            return (
+              <CollapsibleSection
+                prefKey="positioning.recentTrades"
+                title="Recent trades"
+                subtitle={lastRebDate
+                  ? `since last rebalance · ${new Date(lastRebDate).toLocaleDateString(undefined, { month: "short", day: "numeric" })}`
+                  : undefined}
+              >
+                <div className="stagger -mx-3.5 -my-2">
+                  {recent.map((t, i) => (
+                    <div
+                      key={t.id}
+                      style={{ "--i": Math.min(i, 8) } as React.CSSProperties}
+                      className="flex flex-wrap items-baseline gap-x-2.5 gap-y-0.5 border-b border-line-soft px-3.5 py-2 text-[12.5px] last:border-b-0"
+                    >
+                      <span className="w-12 shrink-0 font-mono text-[11.5px] text-ink-3">
+                        {new Date(t.date).toLocaleDateString(undefined, { month: "short", day: "numeric" })}
+                      </span>
+                      <span className={`w-9 shrink-0 font-medium ${t.direction === "sell" ? "text-neg" : "text-pos"}`}>
+                        {t.direction === "sell" ? "Sell" : "Buy"}
+                      </span>
+                      <span className="min-w-0 break-words font-mono font-medium text-ink">{displayTicker(t.symbol)}</span>
+                      {(t.type === "switch" || t.type === "rebalance") && (
+                        <span className="min-w-0 break-words text-[11.5px] text-ink-3">{t.type}{t.pairedWith ? ` · ${displayTicker(t.pairedWith)}` : ""}</span>
+                      )}
+                      <span className="ml-auto shrink-0 font-mono text-ink-2">{t.price > 0 ? `@ ${t.price.toFixed(2)}` : "—"}</span>
+                    </div>
+                  ))}
+                </div>
+              </CollapsibleSection>
+            );
+          })()}
+        </div>
+      </div>
+
+      {/* Settle pending mutual-fund trades — a full-width task panel (it was
+          in the ~390px right stack, where seven columns could only scroll
+          sideways). Every column, control and the persisted fold are kept. */}
+      {showSettlement && pendingTrades.length > 0 && (
+        <section className="panel animate-panel-in">
+          <div className="panel-h flex-wrap gap-y-1.5 py-1.5">
+            <span className="t-mark bg-warn" aria-hidden />
+            <button onClick={toggleSettleOpen} aria-expanded={settleOpen} className="inline-flex items-center gap-1.5 text-ink hover:text-ink-2">
+              <AppIcon name={settleOpen ? "chevD" : "chevR"} size={13} className="text-ink-3" />
+              <span className="t">Settle pending MF trades</span>
+            </button>
+            <span className="m min-w-0 break-words">{pendingTrades.length} pending · NAV auto-fetched from Barchart — verify and adjust</span>
+            <div className="ml-auto flex flex-wrap items-center gap-2">
+              <button onClick={handleFetchSettlementPrices} disabled={settlementLoading} className={BTN_SECONDARY}>
+                <AppIcon name="refresh" size={13} className={settlementLoading ? "animate-spin" : ""} />
+                {settlementLoading ? "Fetching…" : "Refresh NAV"}
+              </button>
+              <button
+                onClick={handleSettlePending}
+                disabled={settling || !pendingTrades.some((t) => parseFloat(settlementPrices[t.symbol] || "0") > 0)}
+                className={BTN_PRIMARY}
+              >
+                {settling ? "Settling…" : "Settle all"}
+              </button>
+              <button onClick={() => { setShowSettlement(false); setSettlementPrices({}); }} className={BTN_SECONDARY}>Cancel</button>
+            </div>
           </div>
-          <div className="flex flex-wrap items-center gap-2 mt-3">
-            <button onClick={handleSettlePending}
-              disabled={settling || !pendingTrades.some((t) => parseFloat(settlementPrices[t.symbol] || "0") > 0)}
-              className="rounded-lg bg-violet px-4 py-2 text-xs font-semibold text-white hover:bg-violet transition-colors disabled:opacity-50">
-              {settling ? "Settling..." : "Settle All"}
-            </button>
-            <button onClick={handleFetchSettlementPrices}
-              disabled={settlementLoading}
-              className="rounded-lg bg-surface-2 px-4 py-2 text-xs font-semibold text-ink-2 hover:bg-line transition-colors disabled:opacity-50">
-              {settlementLoading ? "Fetching..." : "Refresh NAV"}
-            </button>
-            <button onClick={() => { setShowSettlement(false); setSettlementPrices({}); }}
-              className="rounded-lg bg-line px-4 py-2 text-xs font-semibold text-ink-2 hover:bg-line transition-colors">
-              Cancel
-            </button>
-          </div>
+          {settleOpen && (
+            <div className="tbl-wrap min-w-0">
+              <table className="data-table">
+                <thead>
+                  <tr>
+                    <th className="pl-3.5">Symbol</th>
+                    <th>Profile</th>
+                    <th>Direction</th>
+                    <th className="n">Amount C$</th>
+                    <th className="n">NAV</th>
+                    <th className="n">Units</th>
+                    <th>Trade date</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {pendingTrades.map((t) => {
+                    const nav = parseFloat(settlementPrices[t.symbol] || "0");
+                    const units = nav > 0 && t.targetAmount ? t.targetAmount / nav : 0;
+                    return (
+                      <tr key={t.id}>
+                        <td className="pl-3.5 font-mono font-medium">{displayTicker(t.symbol)}</td>
+                        <td className="text-ink-2">{PROFILE_LABELS[(t.profile || activeProfile) as PimProfileType]}</td>
+                        <td className={`text-[12px] font-medium ${t.direction === "sell" ? "text-neg" : "text-pos"}`}>{t.direction === "sell" ? "Sell" : "Buy"}</td>
+                        <td className="n">{(t.targetAmount || 0).toFixed(2)}</td>
+                        <td className="n">
+                          <input type="number" step="0.0001" placeholder="NAV"
+                            value={settlementPrices[t.symbol] || ""}
+                            onChange={(e) => setSettlementPrices((p) => ({ ...p, [t.symbol]: e.target.value }))}
+                            className={`${INPUT} w-24 text-right font-mono`} />
+                        </td>
+                        <td className="n font-medium">{units > 0 ? units.toFixed(4) : "—"}</td>
+                        <td className="nw font-mono text-ink-3">{new Date(t.date).toLocaleDateString()}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </section>
+      )}
+
+      {/* Thesis owed — bought names still without a signed thesis. */}
+      {thesisOwed.length > 0 && (
+        <div className="animate-panel-in flex flex-wrap items-center gap-x-2 gap-y-1 rounded-card border border-warn-border bg-warn-soft px-3.5 py-2 text-[12px]">
+          <AppIcon name="warn" size={14} className="shrink-0 text-warn" />
+          <span className="shrink-0 font-medium text-warn">Thesis required</span>
+          <span className="min-w-0 break-words text-ink-2">Bought — write the thesis or draft it with AI, then sign, so monitoring starts:</span>
+          <span className="flex flex-wrap items-center gap-2">
+            {thesisOwed.map((t) => (
+              <Link key={t} href={`/stock/${encodeURIComponent(t)}#thesis-tile`} className="font-mono font-medium text-accent hover:underline">
+                {displayTicker(t)}
+              </Link>
+            ))}
+          </span>
+          <button onClick={() => setThesisOwed([])} className="ml-auto text-[11.5px] text-ink-3 hover:text-ink" title="Hide this reminder (the Dashboard banner keeps tracking the gap)">Dismiss</button>
         </div>
       )}
 
-      {/* Buy/Sell Panel \u2014 supports a queue of trades, each independently
+      {/* Buy/Sell panel — supports a queue of trades, each independently
           configurable as buy-only / sell-only / switch. Sell % defaults
           to 100; lower values run a partial-sell, which trims the model
           target by the fraction sold AND adds the bought name to each
@@ -3579,40 +3877,41 @@ export function PimPortfolio({ groups }: Props) {
           return true;
         });
         return (
-        <div className="rounded-card border border-warn-border bg-warn-soft/50 p-5 shadow-sm">
-          <div className="flex items-baseline justify-between gap-3 mb-3 flex-wrap">
-            <div>
-              <h3 className="text-sm font-bold text-ink">Buy / Sell</h3>
-              <p className="text-xs text-ink-3 mt-0.5">
-                Queue one or more trades. Sell % defaults to 100 (full position); lower it for a partial sell — the model target is trimmed by the same fraction and the bought name is added to each eligible model. Sell-only credits proceeds to cash; buy-only sizes the position from its model target and debits cash.
-              </p>
+        <section className="panel animate-panel-in">
+          <div className="panel-h flex-wrap gap-y-1.5 py-1.5">
+            <span className="t-mark bg-hub-portfolio" aria-hidden />
+            <span className="t">Buy / Sell</span>
+            <span className="m min-w-0 break-words">{trades.length} queued · sell % under 100 trims the model target by the same fraction</span>
+            <div className="ml-auto flex flex-wrap items-center gap-2">
+              <button onClick={addTrade} className={BTN_SECONDARY}>
+                <AppIcon name="plus" size={13} /> Add another trade
+              </button>
             </div>
-            <button onClick={addTrade}
-              className="rounded-lg bg-white border border-warn-border text-warn hover:bg-warn-soft px-3 py-1.5 text-xs font-semibold transition-colors">
-              + Add another trade
-            </button>
           </div>
-          <div className="space-y-3">
+          <p className="border-b border-line-soft px-3.5 py-2 text-[11.5px] leading-[1.5] text-ink-3">
+            Queue one or more trades. Sell % defaults to 100 (full position); lower it for a partial sell — the model target is trimmed by the same fraction and the bought name is added to each eligible model. Sell-only credits proceeds to cash; buy-only sizes the position from its model target and debits cash.
+          </p>
+          <div className="flex flex-col gap-3 p-3.5">
             {trades.map((t, idx) => {
               const sellPctParsed = parseFloat(t.sellPercent);
               const isPartial = !!t.sellSymbol && Number.isFinite(sellPctParsed) && sellPctParsed > 0 && sellPctParsed < 100;
               return (
-                <div key={t.id} className="rounded-control border border-line bg-white p-3">
-                  <div className="flex items-center justify-between mb-2">
-                    <span className="text-[10px] uppercase tracking-wider font-semibold text-ink-3">
-                      Trade {idx + 1}{isPartial ? " \u00b7 partial" : t.sellSymbol && t.buyTicker ? " \u00b7 switch" : t.sellSymbol ? " \u00b7 sell" : t.buyTicker ? " \u00b7 buy" : ""}
+                <div key={t.id} className="rounded-card border border-line-soft bg-surface-2 p-3">
+                  <div className="mb-2 flex items-center justify-between">
+                    <span className="text-[11px] text-ink-3">
+                      Trade {idx + 1}{isPartial ? " · partial" : t.sellSymbol && t.buyTicker ? " · switch" : t.sellSymbol ? " · sell" : t.buyTicker ? " · buy" : ""}
                     </span>
                     {trades.length > 1 && (
                       <button onClick={() => removeTrade(t.id)}
-                        className="text-ink-3 hover:text-neg text-xs"
+                        className="inline-flex items-center gap-1 text-[11.5px] text-ink-3 hover:text-neg"
                         title="Remove this trade from the queue">
-                        \u00d7 Remove
+                        <AppIcon name="x" size={12} /> Remove
                       </button>
                     )}
                   </div>
                   <div className="grid gap-3 sm:grid-cols-2">
-                    <div className="space-y-1.5">
-                      <label className="text-[10px] font-semibold text-neg uppercase">Sell (optional)</label>
+                    <div className="flex min-w-0 flex-col gap-1.5">
+                      <label className="text-[11px] text-neg">Sell (optional)</label>
                       <select value={t.sellSymbol}
                         onChange={(e) => {
                           // The buy inherits the sold name's sleeve by default —
@@ -3625,7 +3924,7 @@ export function PimPortfolio({ groups }: Props) {
                             ...(soldClass ? { buyAssetClass: soldClass } : {}),
                           });
                         }}
-                        className="w-full rounded-lg border border-line bg-white text-ink px-3 py-2 text-sm outline-none focus:border-warn-border">
+                        className={`${INPUT} w-full min-w-0`}>
                         <option value="">None — buy only</option>
                 {sellCandidates.map((h) => (
                           <option key={h.symbol} value={h.symbol}>
@@ -3640,19 +3939,19 @@ export function PimPortfolio({ groups }: Props) {
                             <input type="number" step="0.01" placeholder="Sell price"
                               value={t.sellPrice}
                               onChange={(e) => updateTrade(t.id, { sellPrice: e.target.value })}
-                              className="w-full rounded-lg border border-line bg-white text-ink px-3 py-2 text-sm outline-none focus:border-neg-border" />
+                              className={`${INPUT} w-full font-mono`} />
                             <div className="relative">
                               <input type="number" step="1" min="1" max="100"
                                 value={t.sellPercent}
                                 onChange={(e) => updateTrade(t.id, { sellPercent: e.target.value })}
                                 aria-label="Percent of position to sell"
                                 title="Percent of the position to sell. 100 = full liquidation (the name is replaced in every model that holds it); <100 = partial sell (the model target is trimmed by the same fraction, and any bought name is added)."
-                                className="w-full rounded-lg border border-line bg-white text-ink px-3 pr-6 py-2 text-sm outline-none focus:border-neg-border" />
-                              <span className="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-ink-3 pointer-events-none">%</span>
+                                className={`${INPUT} w-full pr-6 font-mono`} />
+                              <span className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-[11px] text-ink-3">%</span>
                             </div>
                           </div>
                           {livePrices[t.sellSymbol] && (
-                            <p className="text-[10px] text-ink-3">Market: ${livePrices[t.sellSymbol].toFixed(2)}</p>
+                            <p className="text-[11px] text-ink-3">Market: <span className="font-mono">${livePrices[t.sellSymbol].toFixed(2)}</span></p>
                           )}
                           {isPartial && (() => {
                             // A trim to an individual stock cannot be expressed
@@ -3667,7 +3966,7 @@ export function PimPortfolio({ groups }: Props) {
                             const soldCand = sellCandidates.find((c) => symbolEq(c.symbol, t.sellSymbol));
                             const soldNonEquity = soldCand && soldCand.assetClass !== "equity";
                             return (
-                              <p className="text-[10px] text-warn">
+                              <p className="text-[11px] leading-[1.5] text-warn">
                                 Partial sell — the model target is trimmed by the same {sellPctParsed || 0}%
                                 {t.buyTicker ? `, and ${t.buyTicker.toUpperCase()} is added to each eligible model.` : "."}
                                 {soldIsEqualWeightStock && (
@@ -3682,11 +3981,11 @@ export function PimPortfolio({ groups }: Props) {
                         </>
                       )}
                     </div>
-                    <div className="space-y-1.5">
-                      <label className="text-[10px] font-semibold text-pos uppercase">Buy (from Watchlist)</label>
+                    <div className="flex min-w-0 flex-col gap-1.5">
+                      <label className="text-[11px] text-pos">Buy (from Watchlist)</label>
                       {watchlistStocks.length === 0 ? (
-                        <div className="rounded-lg border border-dashed border-line bg-surface-2 p-2.5 text-[11px] text-ink-3">
-                          Watchlist is empty. Press <kbd className="rounded border border-line bg-white px-1 py-px text-[10px] font-mono">Shift + A</kbd> to add a research candidate first.
+                        <div className="rounded-control border border-dashed border-line bg-surface px-2.5 py-2 text-[11.5px] text-ink-3">
+                          Watchlist is empty. Press <kbd className="rounded border border-line bg-surface-2 px-1 py-px font-mono text-[10.5px]">Shift + A</kbd> to add a research candidate first.
                         </div>
                       ) : (
                         <select value={t.buyTicker}
@@ -3715,7 +4014,7 @@ export function PimPortfolio({ groups }: Props) {
                                 ?? guessAssetClass(picked?.name || "", e.target.value),
                             });
                           }}
-                          className="w-full rounded-lg border border-line bg-white text-ink px-3 py-2 text-sm outline-none focus:border-pos-border font-mono">
+                          className={`${INPUT} w-full min-w-0 font-mono`}>
                           <option value="">— None — sell only —</option>
                           {watchlistStocks.map((s) => (
                             <option key={s.ticker} value={s.ticker}>
@@ -3729,12 +4028,12 @@ export function PimPortfolio({ groups }: Props) {
                           <input type="number" step="0.01" placeholder="Buy price"
                             value={t.buyPrice}
                             onChange={(e) => updateTrade(t.id, { buyPrice: e.target.value })}
-                            className="w-full rounded-lg border border-line bg-white text-ink px-3 py-2 text-sm outline-none focus:border-pos-border" />
-                          <div className="flex items-center gap-2">
-                            <span className="text-[10px] font-semibold text-ink-3 uppercase whitespace-nowrap">Bucket</span>
+                            className={`${INPUT} w-full font-mono`} />
+                          <div className="flex min-w-0 items-center gap-2">
+                            <span className="whitespace-nowrap text-[11px] text-ink-3">Sleeve</span>
                             <select value={t.buyAssetClass}
                               onChange={(e) => updateTrade(t.id, { buyAssetClass: e.target.value as PimAssetClass })}
-                              className="w-full rounded-lg border border-line bg-white text-ink px-2 py-1.5 text-xs outline-none focus:border-pos-border"
+                              className={`${INPUT} w-full min-w-0`}
                               title="Which model sleeve the bought security belongs to. A switch must stay within one sleeve — changing the equity/fixed-income mix is a profile-allocation decision, not a trade.">
                               <option value="equity">Equity</option>
                               <option value="fixedIncome">Fixed income</option>
@@ -3746,23 +4045,19 @@ export function PimPortfolio({ groups }: Props) {
                     </div>
                   </div>
                   {t.buyTicker && (
-                    <div className="mt-3 rounded-lg border border-line bg-surface-2 p-2.5">
-                      <div className="flex items-center justify-between gap-2 mb-1.5">
-                        <span className="text-[10px] uppercase tracking-wider font-semibold text-ink-3">
-                          Models this trade applies to
-                        </span>
+                    <div className="mt-3 rounded-card border border-line-soft bg-surface p-2.5">
+                      <div className="mb-1.5 flex items-center justify-between gap-2">
+                        <span className="text-[11px] text-ink-3">Models this trade applies to</span>
                         {t.excludedGroupIds.includes(NO_US_SITUS_GROUP_ID) &&
                           isUsSitusTicker(t.buyTicker) && (
-                          <span className="text-[10px] text-warn">
-                            No US Situs auto-excluded (US-listed)
-                          </span>
+                          <span className="text-[11px] text-warn">No US Situs auto-excluded (US-listed)</span>
                         )}
                       </div>
                       <div className="flex flex-wrap gap-x-4 gap-y-1.5">
                         {pimModels.groups.map((g) => {
                           const eligible = !t.excludedGroupIds.includes(g.id);
                           return (
-                            <label key={g.id} className="inline-flex items-center gap-1.5 text-xs text-ink cursor-pointer">
+                            <label key={g.id} className="inline-flex cursor-pointer items-center gap-1.5 text-[12.5px] text-ink">
                               <input
                                 type="checkbox"
                                 checked={eligible}
@@ -3772,14 +4067,14 @@ export function PimPortfolio({ groups }: Props) {
                                   else next.add(g.id);
                                   updateTrade(t.id, { excludedGroupIds: [...next] });
                                 }}
-                                className="h-3.5 w-3.5 rounded border-line"
+                                className="h-3.5 w-3.5 rounded border-line accent-accent"
                               />
                               {g.name}
                             </label>
                           );
                         })}
                       </div>
-                      <p className="mt-1.5 text-[10px] text-ink-3">
+                      <p className="mt-1.5 text-[11px] text-ink-3">
                         Unticked models are left completely untouched — neither the sell nor the buy executes there.
                       </p>
                     </div>
@@ -3809,58 +4104,52 @@ export function PimPortfolio({ groups }: Props) {
                     });
                     const active = plan.rows.filter((r) => r.heldUnits > 0 || r.unitsToBuy > 0);
                     return (
-                      <div className="mt-3 rounded-lg border border-line bg-white p-3">
-                        <div className="mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-ink-3">
-                          Units this trade will book
-                        </div>
+                      <div className="mt-3 overflow-hidden rounded-card border border-line-soft bg-surface">
+                        <div className="flex min-h-[30px] items-center px-3 text-[11px] text-ink-3">Units this trade will book</div>
                         {active.length === 0 ? (
-                          <p className="text-[11px] font-semibold text-neg">
+                          <p className="border-t border-line-soft px-3 py-2 text-[11.5px] font-medium text-neg">
                             No units will be recorded anywhere — the model would change but the book
                             would not.
                           </p>
                         ) : (
-                          <div className="max-w-full overflow-x-auto">
-                            <table className="w-full min-w-[420px] text-[11px]">
+                          <div className="tbl-wrap min-w-0">
+                            <table className="data-table">
                               <thead>
-                                <tr className="border-b border-line-soft text-ink-3">
-                                  <th className="py-1 pr-2 text-left font-semibold">Model · Profile</th>
-                                  <th className="py-1 px-2 text-right font-semibold">Sell units</th>
-                                  <th className="py-1 px-2 text-right font-semibold">Proceeds</th>
-                                  <th className="py-1 pl-2 text-right font-semibold">Buy units</th>
+                                <tr>
+                                  <th className="pl-3">Model · Profile</th>
+                                  <th className="n">Sell units</th>
+                                  <th className="n">Proceeds</th>
+                                  <th className="n">Buy units</th>
                                 </tr>
                               </thead>
                               <tbody>
                                 {active.map((r) => (
-                                  <tr key={`${r.groupId}-${r.profile}`} className="border-b border-line-soft">
-                                    <td className="py-1 pr-2 text-ink">
+                                  <tr key={`${r.groupId}-${r.profile}`}>
+                                    <td className="pl-3 text-ink">
                                       {r.groupName} · {r.profile}
-                                      {r.note && (
-                                        <span className="ml-1 text-neg">{r.note}</span>
-                                      )}
+                                      {r.note && <span className="ml-1.5 text-neg">{r.note}</span>}
                                     </td>
-                                    <td className="py-1 px-2 text-right font-mono text-ink-2">
-                                      {r.unitsToSell > 0 ? fmtUnits(+r.unitsToSell.toFixed(4)) : "—"}
-                                    </td>
-                                    <td className="py-1 px-2 text-right font-mono text-ink-2">
-                                      {r.proceedsCad > 0 ? fmtCurrency(r.proceedsCad) : "—"}
-                                    </td>
-                                    <td className="py-1 pl-2 text-right font-mono font-semibold text-ink">
-                                      {r.unitsToBuy > 0 ? fmtUnits(+r.unitsToBuy.toFixed(4)) : "—"}
-                                    </td>
+                                    <td className="n text-ink-2">{r.unitsToSell > 0 ? fmtUnits(+r.unitsToSell.toFixed(4)) : "—"}</td>
+                                    <td className="n text-ink-2">{r.proceedsCad > 0 ? fmtCurrency(r.proceedsCad) : "—"}</td>
+                                    <td className="n font-medium text-ink">{r.unitsToBuy > 0 ? fmtUnits(+r.unitsToBuy.toFixed(4)) : "—"}</td>
                                   </tr>
                                 ))}
                               </tbody>
                             </table>
                           </div>
                         )}
-                        {plan.modelOnlyGroups.length > 0 && (
-                          <p className="mt-1.5 text-[10px] text-ink-3">
-                            Model-only (no position record, so no units): {plan.modelOnlyGroups.join(", ")}.
-                          </p>
+                        {(plan.modelOnlyGroups.length > 0 || plan.warnings.length > 0) && (
+                          <div className="border-t border-line-soft px-3 py-1.5">
+                            {plan.modelOnlyGroups.length > 0 && (
+                              <p className="text-[11px] text-ink-3">
+                                Model-only (no position record, so no units): {plan.modelOnlyGroups.join(", ")}.
+                              </p>
+                            )}
+                            {plan.warnings.map((w, i) => (
+                              <p key={i} className="mt-1 text-[11px] font-medium text-neg">{w}</p>
+                            ))}
+                          </div>
                         )}
-                        {plan.warnings.map((w, i) => (
-                          <p key={i} className="mt-1.5 text-[10px] font-semibold text-neg">{w}</p>
-                        ))}
                       </div>
                     );
                   })()}
@@ -3868,38 +4157,21 @@ export function PimPortfolio({ groups }: Props) {
               );
             })}
           </div>
-          {tradeExecProgress && (
-            <p className="mt-3 text-xs text-warn">{tradeExecProgress}</p>
-          )}
-          <div className="flex flex-wrap gap-2 mt-3">
+          <div className="flex min-h-[32px] flex-wrap items-center gap-2 border-t border-line-soft px-3.5 py-1.5">
             <button onClick={() => void executeAllTrades()}
               disabled={!anyValid || executingTrades}
-              className="rounded-lg bg-warn px-4 py-2 text-xs font-semibold text-white hover:bg-warn transition-colors disabled:opacity-50">
-              {executingTrades ? "Executing..." : `Execute All (${trades.length})`}
+              className={BTN_PRIMARY}>
+              {executingTrades ? "Executing…" : `Execute all (${trades.length})`}
             </button>
-            <button onClick={closeAndReset}
-              disabled={executingTrades}
-              className="rounded-lg bg-line px-4 py-2 text-xs font-semibold text-ink-2 hover:bg-line transition-colors disabled:opacity-50">
-              Cancel
-            </button>
+            <button onClick={closeAndReset} disabled={executingTrades} className={BTN_SECONDARY}>Cancel</button>
+            {tradeExecProgress && <span className="text-[11.5px] text-warn">{tradeExecProgress}</span>}
           </div>
-        </div>
+        </section>
         );
       })()}
 
-      {/* USD/CAD rate indicator */}
-      {usdCadRate > 1 && (
-        <div className="flex items-center gap-2 text-[10px] text-ink-3">
-          <span className="inline-block w-2 h-2 rounded-full bg-accent" />
-          USD/CAD: {usdCadRate.toFixed(4)} (live)
-          {prevCloseUsdCad > 1 && prevCloseUsdCad !== usdCadRate && (
-            <span className="ml-1">| {prevCloseUsdCad.toFixed(4)} (prev close)</span>
-          )}
-        </div>
-      )}
-
-      {/* Suggested Trades (mockup): compact chip row derived from live drift.
-          "Review & execute all" opens the full Rebalance Preview above — no
+      {/* Suggested trades: compact row derived from live drift. "Review &
+          execute all" opens the Rebalance panel's execution mode — no
           rebalance math or execution path is changed, this is a shortcut. */}
       {hasPositions && !editMode && (() => {
         const suggestions = sortedRows
@@ -3910,91 +4182,42 @@ export function PimPortfolio({ groups }: Props) {
           .slice(0, 6);
         if (suggestions.length === 0) return null;
         return (
-          <div className="rounded-card border border-line bg-white shadow-sm">
-            <div className="flex items-center justify-between gap-3 flex-wrap border-b border-line-soft px-4 py-3">
-              <h3 className="text-sm font-bold text-ink">Suggested Trades</h3>
-              <span className="text-[11px] text-ink-3">to reach {PROFILE_LABELS[activeProfile]} target</span>
+          <section className="panel animate-panel-in">
+            <div className="panel-h flex-wrap gap-y-1.5 py-1.5">
+              <span className="t-mark bg-warn" aria-hidden />
+              <span className="t">Suggested trades</span>
+              <span className="m min-w-0 break-words">to reach the {PROFILE_LABELS[activeProfile]} target</span>
+              <button onClick={() => setShowRebalance(true)} className={`${BTN_SECONDARY} ml-auto`}>
+                Review &amp; execute all <AppIcon name="arrowR" size={13} />
+              </button>
             </div>
-            <div className="flex items-center gap-2 flex-wrap px-4 py-3">
-              {suggestions.map((s) => {
+            <div className="stagger flex flex-wrap items-center gap-2 px-3.5 py-2.5">
+              {suggestions.map((s, i) => {
                 const isTrim = s.adj < 0;
                 return (
-                  <div key={s.symbol} className="inline-flex items-center gap-2 rounded-control border border-line bg-surface px-2.5 py-1.5">
-                    <span className={`rounded px-1.5 py-0.5 text-[10px] font-bold ${isTrim ? "bg-ink-2 text-white" : "bg-pos text-white"}`}>
-                      {isTrim ? "Trim" : "Add"}
-                    </span>
-                    <span className="font-semibold text-ink text-[13px]">{displayTicker(s.symbol)}</span>
-                    <span className={`font-mono text-[12px] font-semibold ${isTrim ? "text-warn" : "text-pos"}`}>
+                  <div key={s.symbol} style={{ "--i": Math.min(i, 8) } as React.CSSProperties} className="inline-flex h-7 items-center gap-2 rounded-control border border-line bg-surface px-2.5 text-[12.5px]">
+                    <span className={`font-medium ${isTrim ? "text-warn" : "text-pos"}`}>{isTrim ? "Trim" : "Add"}</span>
+                    <span className="font-mono font-medium text-ink">{displayTicker(s.symbol)}</span>
+                    <span className={`font-mono ${isTrim ? "text-warn" : "text-pos"}`}>
                       {s.adj > 0 ? "+" : ""}{(s.adj * 100).toFixed(1)}%
                     </span>
                   </div>
                 );
               })}
-              <button
-                onClick={() => setShowRebalance(true)}
-                className="ml-auto inline-flex items-center gap-1 rounded-control border border-pos-border bg-pos-soft/40 px-3 py-1.5 text-[12px] font-semibold text-pos hover:bg-pos-soft transition-colors"
-              >
-                Review &amp; execute all →
-              </button>
             </div>
-          </div>
-        );
-      })()}
-
-      {/* Recent Trades (mockup): last settled transactions from the group's
-          persisted log. Read-only — we don't store per-trade share counts,
-          so execution price is shown instead of "+N sh". */}
-      {groupState.transactions.filter((t) => t.status !== "pending").length > 0 && (() => {
-        const recent = [...groupState.transactions]
-          .filter((t) => t.status !== "pending")
-          .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
-          .slice(0, 6);
-        const lastRebDate = groupState.lastRebalance?.date;
-        return (
-          <CollapsibleSection
-            prefKey="positioning.recentTrades"
-            defaultCollapsed
-            className="border-line"
-            titleClass="text-sm font-bold text-ink"
-            title="Recent Trades"
-            right={lastRebDate ? (
-              <span className="text-[11px] text-ink-3">since last rebalance · {new Date(lastRebDate).toLocaleDateString(undefined, { month: "short", day: "numeric" })}</span>
-            ) : undefined}
-          >
-            <div className="-mx-6 -mb-6 border-t border-line-soft">
-              {recent.map((t) => (
-                <div key={t.id} className="flex items-center gap-3 border-b border-line-soft px-6 py-2.5 last:border-b-0">
-                  <span className={`w-12 shrink-0 rounded px-1.5 py-0.5 text-center text-[10px] font-bold ${t.direction === "sell" ? "bg-neg text-white" : "bg-pos text-white"}`}>
-                    {t.direction.toUpperCase()}
-                  </span>
-                  <span className="w-16 font-semibold text-ink text-[13px]">{displayTicker(t.symbol)}</span>
-                  {(t.type === "switch" || t.type === "rebalance") && (
-                    <span className="hidden sm:inline text-[11px] text-ink-3">{t.type}</span>
-                  )}
-                  <span className="ml-auto font-mono text-[12px] text-ink">{t.price > 0 ? `$${t.price.toFixed(2)}` : "—"}</span>
-                  <span className="w-16 text-right text-[11px] text-ink-3">{new Date(t.date).toLocaleDateString(undefined, { month: "short", day: "numeric" })}</span>
-                </div>
-              ))}
-            </div>
-          </CollapsibleSection>
+          </section>
         );
       })()}
 
       {/* No positions prompt */}
       {!hasPositions && !editMode && (
-        <div className="rounded-control border border-dashed border-line bg-surface-2 p-6">
-          <p className="text-sm text-ink-3 mb-2 text-center">No position data entered yet.</p>
-          <p className="text-xs text-ink-3 mb-4 text-center">
-            Enter your current holdings (units and cost basis) to see current weights, drift, and rebalance actions.
-          </p>
-          <div className="mb-5 text-center">
-            <button
-              onClick={startEdit}
-              className="rounded-lg bg-accent px-4 py-2 text-xs font-semibold text-white hover:bg-accent transition-colors"
-            >
-              Enter Positions
-            </button>
-          </div>
+        <section className="panel animate-panel-in">
+          <EmptyState
+            glyph={<AppIcon name="pie" size={18} />}
+            title="No position data entered yet"
+            body="Enter your current holdings (units and cost basis) to see current weights, drift, and rebalance actions."
+            action={<button onClick={startEdit} className={BTN_PRIMARY}>Enter positions</button>}
+          />
 
           {/* ── Build from a sibling profile ────────────────────────────────
               A profile with target weights but no units books no return at
@@ -4003,13 +4226,14 @@ export function PimPortfolio({ groups }: Props) {
               the right size to build it at. Shown as a plan first — this
               writes real positions. */}
           {seedPlan.rows.length > 0 && (
-            <div className="rounded-lg border border-line bg-white p-4">
-              <div className="mb-2 flex flex-wrap items-center gap-2 text-xs">
-                <span className="font-semibold text-ink">Build {PROFILE_LABELS[activeProfile]} from</span>
+            <div className="border-t border-line-soft">
+              <div className="panel-h flex-wrap gap-y-1.5 py-1.5">
+                <span className="t-mark bg-hub-portfolio" aria-hidden />
+                <span className="t">Build {PROFILE_LABELS[activeProfile]} from</span>
                 <select
                   value={seedFrom}
                   onChange={(e) => setSeedFrom(e.target.value as PimProfileType)}
-                  className="rounded border border-line bg-surface-2 px-2 py-1 text-ink"
+                  className={`${INPUT} min-w-0 max-w-full`}
                 >
                   {(["balanced", "growth", "allEquity"] as PimProfileType[])
                     .filter((p) => p !== activeProfile && profileMarketValue(p) > 0)
@@ -4019,38 +4243,43 @@ export function PimPortfolio({ groups }: Props) {
                       </option>
                     ))}
                 </select>
-                <span className="text-ink-3">
-                  at this profile&apos;s own target weights
-                </span>
+                <span className="m min-w-0 break-words">at this profile&apos;s own target weights</span>
+                <button
+                  onClick={applySeed}
+                  disabled={seeding}
+                  className={`${BTN_PRIMARY} ml-auto`}
+                >
+                  {seeding ? "Creating…" : `Create ${seedPlan.rows.length} positions`}
+                </button>
               </div>
 
-              <div className="max-w-full overflow-x-auto">
-                <table className="w-full min-w-[520px] text-[11px]">
+              <div className="tbl-wrap min-w-0">
+                <table className="data-table">
                   <thead>
-                    <tr className="border-b border-line-soft text-ink-3">
-                      <th className="py-1 pr-2 text-left font-semibold">Holding</th>
-                      <th className="py-1 px-2 text-right font-semibold">Target wt</th>
-                      <th className="py-1 px-2 text-right font-semibold">Value</th>
-                      <th className="py-1 px-2 text-right font-semibold">Price</th>
-                      <th className="py-1 pl-2 text-right font-semibold">Units</th>
+                    <tr>
+                      <th className="pl-3.5">Holding</th>
+                      <th className="n">Target wt</th>
+                      <th className="n">Value</th>
+                      <th className="n">Price</th>
+                      <th className="n">Units</th>
                     </tr>
                   </thead>
                   <tbody>
                     {seedPlan.rows.map((r) => (
-                      <tr key={r.symbol} className="border-b border-line-soft">
-                        <td className="py-1 pr-2 text-ink">{displayTicker(r.symbol)}</td>
-                        <td className="py-1 px-2 text-right font-mono text-ink-2">{fmtPct2(r.targetWeight)}</td>
-                        <td className="py-1 px-2 text-right font-mono text-ink-2">{fmtCurrency(r.targetValueCad)}</td>
-                        <td className="py-1 px-2 text-right font-mono text-ink-2">{fmtCurrency(r.priceCad)}</td>
-                        <td className="py-1 pl-2 text-right font-mono font-semibold text-ink">{fmtUnits(+r.units.toFixed(4))}</td>
+                      <tr key={r.symbol}>
+                        <td className="pl-3.5 font-mono font-medium text-ink">{displayTicker(r.symbol)}</td>
+                        <td className="n text-ink-2">{fmtPct2(r.targetWeight)}</td>
+                        <td className="n text-ink-2">{fmtCurrency(r.targetValueCad)}</td>
+                        <td className="n text-ink-2">{fmtCurrency(r.priceCad)}</td>
+                        <td className="n font-medium text-ink">{fmtUnits(+r.units.toFixed(4))}</td>
                       </tr>
                     ))}
-                    <tr className="bg-surface-2 font-semibold">
-                      <td className="py-1 pr-2 text-ink-3" colSpan={2}>TOTAL invested</td>
-                      <td className="py-1 px-2 text-right font-mono">
+                    <tr className="bg-surface-2">
+                      <td className="pl-3.5 text-[11.5px] text-ink-3" colSpan={2}>Total invested</td>
+                      <td className="n font-medium">
                         {fmtCurrency(seedPlan.rows.reduce((t, r) => t + r.targetValueCad, 0))}
                       </td>
-                      <td colSpan={2} className="py-1 pl-2 text-right font-normal text-ink-3">
+                      <td colSpan={2} className="n font-sans text-[11.5px] text-ink-3">
                         + {fmtCurrency(seedPlan.cash)} cash = {fmtCurrency(seedPlan.totalValue)}
                       </td>
                     </tr>
@@ -4058,26 +4287,21 @@ export function PimPortfolio({ groups }: Props) {
                 </table>
               </div>
 
-              {seedPlan.missingPrices.length > 0 && (
-                <p className="mt-2 text-[10px] font-semibold text-warn">
-                  No live price for {seedPlan.missingPrices.join(", ")} — these are left out. Refresh
-                  Prices first, or enter them by hand afterwards.
+              <div className="flex flex-col gap-1 border-t border-line-soft px-3.5 py-2 text-[11.5px] text-ink-3">
+                {seedPlan.missingPrices.length > 0 && (
+                  <p className="font-medium text-warn">
+                    No live price for {seedPlan.missingPrices.join(", ")} — these are left out. Refresh
+                    prices first, or enter them by hand afterwards.
+                  </p>
+                )}
+                <p>
+                  Cost basis is set to today&apos;s price, so the profile starts flat rather than
+                  inheriting a gain it never earned.
                 </p>
-              )}
-              <p className="mt-2 text-[10px] text-ink-3">
-                Cost basis is set to today&apos;s price, so the profile starts flat rather than
-                inheriting a gain it never earned.
-              </p>
-              <button
-                onClick={applySeed}
-                disabled={seeding}
-                className="mt-3 rounded-lg bg-accent px-4 py-2 text-xs font-semibold !text-white disabled:opacity-50"
-              >
-                {seeding ? "Creating…" : `Create ${seedPlan.rows.length} positions`}
-              </button>
+              </div>
             </div>
           )}
-        </div>
+        </section>
       )}
     </div>
   );

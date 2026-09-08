@@ -3,6 +3,8 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import type { PimPerformanceData, PimModelPerformance, PimProfileType, AppendixModelLedger } from "@/app/lib/pim-types";
 import { useStocks } from "@/app/lib/StockContext";
+import { usePersistedOpen } from "@/app/lib/useCollapsed";
+import { AppIcon } from "@/app/components/AppIcon";
 import { Skeleton, SkeletonTable } from "@/app/components/Skeleton";
 import { getTodayET } from "@/app/lib/market-hours";
 import { useLiveTodayReturn } from "@/app/lib/useLiveTodayReturn";
@@ -96,6 +98,10 @@ export function PimPerformance({ groupId, groupName, selectedProfile, onPerfData
   const svgRef = useRef<SVGSVGElement | null>(null);
   const [autoUpdating, setAutoUpdating] = useState(false);
   const [seeded, setSeeded] = useState(false);
+  // Both tables below used to be bare <details>. Site rule: every fold
+  // persists — these live in pm:ui-prefs and default closed.
+  const [dailyOpen, toggleDaily] = usePersistedOpen("models.perf.dailyReturns.open", false);
+  const [valueOpen, toggleValue] = usePersistedOpen("models.perf.valueHistory.open", false);
 
   // Live today's return — extracted into a shared hook so the AA & Perf
   // page uses identical logic and the two screens always agree.
@@ -568,121 +574,100 @@ export function PimPerformance({ groupId, groupName, selectedProfile, onPerfData
 
   if (!trackingStart && (!perfData || groupModels.length === 0)) {
     return (
-      <div className="rounded-card border border-line bg-white p-6 shadow-sm">
-        <h2 className="text-sm font-bold text-ink mb-2">Performance Tracker</h2>
-        <p className="text-xs text-ink-3">
+      <section className="panel">
+        <div className="panel-h"><span className="t">Performance tracker</span></div>
+        <p className="px-3.5 py-3 text-[12.5px] text-ink-3">
           Performance tracking has not been started for this model. Import historical data or set an initial rebalance to begin.
         </p>
-      </div>
+      </section>
     );
   }
 
   if (loading) {
     return (
-      <div className="rounded-card border border-line bg-white p-5 shadow-sm space-y-4">
-        <div className="flex items-center justify-between">
-          <Skeleton className="h-4 w-40" />
-          <Skeleton className="h-3 w-24 bg-line-soft" />
+      <section className="panel">
+        <div className="panel-h">
+          <Skeleton className="h-3 w-40" />
+          <Skeleton className="ml-auto h-2.5 w-24 bg-line-soft" />
         </div>
-        <SkeletonTable rows={7} cols={7} />
-      </div>
+        <div className="p-3.5"><SkeletonTable rows={7} cols={7} /></div>
+      </section>
     );
   }
 
   return (
-    <div className="rounded-card border border-line bg-white p-5 shadow-sm space-y-4">
-      {/* Header */}
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <h2 className="text-sm font-bold text-ink">Performance Tracker</h2>
-          <p className="text-xs text-ink-3 mt-0.5">
-            {groupName} model
-            {trackingStartLabel && <> &middot; tracking since {trackingStartLabel}</>}
-            {itdStats && (
-              <> &middot; <span className={itdStats.totalReturn >= 0 ? "text-pos" : "text-neg"}>
-                {fmtPct(itdStats.totalReturn)} ITD
-                {itdStats.annualized != null && <> ({fmtPct(itdStats.annualized)} ann.)</>}
-              </span></>
-            )}
-          </p>
-        </div>
-        <div className="flex items-center gap-2">
+    <section className="panel">
+      {/* Header: title · meta · period seg · refresh */}
+      <div className="panel-h flex-wrap gap-y-1 py-1.5">
+        <span className="t">Performance tracker</span>
+        <span className="m">
+          {groupName} model
+          {trackingStartLabel && <> &middot; tracking since {trackingStartLabel}</>}
+          {itdStats && (
+            <> &middot; <span className={itdStats.totalReturn >= 0 ? "text-pos" : "text-neg"}>
+              {fmtPct(itdStats.totalReturn)} ITD
+              {itdStats.annualized != null && <> ({fmtPct(itdStats.annualized)} annualized)</>}
+            </span></>
+          )}
+        </span>
+        <div className="ml-auto flex flex-wrap items-center gap-2">
           {autoUpdating && (
-            <span className="flex items-center gap-1 text-[10px] text-accent font-medium">
-              <div className="h-3 w-3 animate-spin rounded-full border border-accent-border border-t-accent" />
-              Updating...
+            <span className="flex items-center gap-1.5 text-[11.5px] text-ink-3">
+              <AppIcon name="refresh" size={12} className="animate-spin" />
+              Updating…
             </span>
           )}
+          {/* Period selector — SLR ("Since Last Rebalance") is only shown
+              for the Alpha / Core firm-wide models, since those are what
+              the Sleeve drift panel anchors to. */}
+          <div className="seg max-w-full overflow-x-auto">
+            {PERIOD_OPTIONS.filter((p) =>
+              p.label !== "SLR" || selectedProfile === "alpha" || selectedProfile === "core"
+            ).map((p) => (
+              <button
+                key={p.label}
+                onClick={() => { setPeriod(p.label); setHoverIdx(null); }}
+                className={period === p.label ? "on" : ""}
+                title={p.label === "SLR" ? "Since Last Rebalance" : undefined}
+              >
+                {p.label}
+              </button>
+            ))}
+          </div>
           <button
             onClick={refreshPerformance}
             disabled={refreshing}
-            className="flex items-center gap-1.5 rounded-lg bg-surface-2 px-3 py-1.5 text-xs font-semibold text-ink-2 hover:bg-line transition-colors disabled:opacity-50"
+            className="inline-flex h-7 items-center gap-1.5 rounded-control border border-line bg-surface px-2.5 text-[12.5px] text-ink-2 hover:bg-surface-hover disabled:opacity-50"
           >
-            <svg className={`w-3.5 h-3.5 ${refreshing ? "animate-spin" : ""}`} fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0 3.181 3.183a8.25 8.25 0 0 0 13.803-3.7M4.031 9.865a8.25 8.25 0 0 1 13.803-3.7l3.181 3.182" />
-            </svg>
-            {refreshing ? "Refreshing..." : "Refresh"}
+            <AppIcon name="refresh" size={13} className={refreshing ? "animate-spin" : ""} />
+            {refreshing ? "Refreshing…" : "Refresh"}
           </button>
         </div>
       </div>
 
-      {/* Period selector — SLR ("Since Last Rebalance") is only shown
-          for the Alpha / Core firm-wide models, since those are what
-          the Sleeve Drift card anchors to. */}
-      <div className="flex justify-end">
-        <div className="flex gap-1">
-          {PERIOD_OPTIONS.filter((p) =>
-            p.label !== "SLR" || selectedProfile === "alpha" || selectedProfile === "core"
-          ).map((p) => (
-            <button
-              key={p.label}
-              onClick={() => { setPeriod(p.label); setHoverIdx(null); }}
-              className={`rounded-lg px-2.5 py-1 text-[10px] font-bold transition-colors ${
-                period === p.label ? "bg-ink text-white" : "bg-surface-2 text-ink-3 hover:bg-line"
-              }`}
-              title={p.label === "SLR" ? "Since Last Rebalance" : undefined}
-            >
-              {p.label}
-              </button>
-            ))}
-          </div>
-        </div>
-
-      {/* Stats row */}
+      {/* Stats — ONE hairline strip, never a grid of tiles. */}
       {stats && (
-        <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-7 gap-2">
-          <div className="hover-lift rounded-lg bg-surface-2 p-2.5 text-center">
-            <div className="text-[9px] font-semibold text-ink-3 uppercase">Period Return</div>
-            <div className={`text-base font-bold ${stats.totalReturn >= 0 ? "text-pos" : "text-neg"}`}>{fmtPct(stats.totalReturn)}</div>
-          </div>
-          {stats.annualizedReturn != null && (
-            <div className="hover-lift rounded-lg bg-surface-2 p-2.5 text-center">
-              <div className="text-[9px] font-semibold text-ink-3 uppercase">Annualized</div>
-              <div className={`text-base font-bold ${stats.annualizedReturn >= 0 ? "text-pos" : "text-neg"}`}>{fmtPct(stats.annualizedReturn)}</div>
+        <div className="grid grid-cols-2 divide-x divide-y divide-line-soft border-b border-line-soft sm:grid-cols-4 md:grid-cols-7 md:divide-y-0">
+          {[
+            { label: "Period return", node: <span className={stats.totalReturn >= 0 ? "text-pos" : "text-neg"}>{fmtPct(stats.totalReturn)}</span> },
+            ...(stats.annualizedReturn != null
+              ? [{ label: "Annualized", node: <span className={stats.annualizedReturn >= 0 ? "text-pos" : "text-neg"}>{fmtPct(stats.annualizedReturn)}</span> }]
+              : []),
+            { label: "Today", node: <span className={stats.lastDailyReturn >= 0 ? "text-pos" : "text-neg"}>{fmtPct(stats.lastDailyReturn)}</span> },
+            { label: "Index", node: <span className="text-ink">{stats.lastValue.toFixed(2)}</span> },
+            { label: "Best day", node: <span className="text-pos">{fmtPct(stats.maxDay)}</span> },
+            { label: "Worst day", node: <span className="text-neg">{fmtPct(stats.minDay)}</span> },
+            { label: "Ann. vol", node: <span className="text-ink">{stats.annualizedVol.toFixed(1)}%</span> },
+          ].map((s) => (
+            <div key={s.label} className="px-3.5 py-2">
+              <div className="text-[11px] text-ink-3">{s.label}</div>
+              <div className="mt-0.5 font-mono text-[13px] font-medium">{s.node}</div>
             </div>
-          )}
-          <div className="hover-lift rounded-lg bg-surface-2 p-2.5 text-center">
-            <div className="text-[9px] font-semibold text-ink-3 uppercase">Today</div>
-            <div className={`text-base font-bold ${stats.lastDailyReturn >= 0 ? "text-pos" : "text-neg"}`}>{fmtPct(stats.lastDailyReturn)}</div>
-          </div>
-          <div className="hover-lift rounded-lg bg-surface-2 p-2.5 text-center">
-            <div className="text-[9px] font-semibold text-ink-3 uppercase">Index</div>
-            <div className="text-base font-bold text-ink">{stats.lastValue.toFixed(2)}</div>
-          </div>
-          <div className="hover-lift rounded-lg bg-surface-2 p-2.5 text-center">
-            <div className="text-[9px] font-semibold text-ink-3 uppercase">Best Day</div>
-            <div className="text-base font-bold text-pos">{fmtPct(stats.maxDay)}</div>
-          </div>
-          <div className="hover-lift rounded-lg bg-surface-2 p-2.5 text-center">
-            <div className="text-[9px] font-semibold text-ink-3 uppercase">Worst Day</div>
-            <div className="text-base font-bold text-neg">{fmtPct(stats.minDay)}</div>
-          </div>
-          <div className="hover-lift rounded-lg bg-surface-2 p-2.5 text-center">
-            <div className="text-[9px] font-semibold text-ink-3 uppercase">Ann. Vol</div>
-            <div className="text-base font-bold text-ink">{stats.annualizedVol.toFixed(1)}%</div>
-          </div>
+          ))}
         </div>
       )}
+
+      <div className="flex flex-col gap-3.5 p-3.5">
 
       {/* Chart */}
       {chartData ? (
@@ -786,7 +771,7 @@ export function PimPerformance({ groupId, groupName, selectedProfile, onPerfData
             const alignRight = xPct > 60;
             return (
               <div
-                className="pointer-events-none absolute top-2 z-10 rounded-lg border border-line bg-white/95 px-3 py-2 shadow-lg backdrop-blur-sm text-xs"
+                className="pointer-events-none absolute top-2 z-10 rounded-card border border-line bg-surface/95 px-3 py-2 text-[11.5px] shadow-[var(--shadow-pop)] backdrop-blur-sm"
                 style={{
                   left: alignRight ? undefined : `calc(${xPct}% + 12px)`,
                   right: alignRight ? `calc(${100 - xPct}% + 12px)` : undefined,
@@ -815,7 +800,7 @@ export function PimPerformance({ groupId, groupName, selectedProfile, onPerfData
           })()}
         </div>
       ) : (
-        <div className="flex items-center justify-center h-40 text-sm text-ink-3">
+        <div className="flex h-40 items-center justify-center text-[12.5px] text-ink-3">
           {groupModels.length === 0
             ? "No performance data yet. Click Refresh to compute returns since tracking started."
             : "Not enough data for this period."}
@@ -825,82 +810,89 @@ export function PimPerformance({ groupId, groupName, selectedProfile, onPerfData
       {/* Calendar year returns */}
       {calendarYearReturns.length > 1 && (
         <div>
-          <h3 className="text-[10px] font-bold text-ink-3 uppercase tracking-wider mb-2">Calendar Year Returns</h3>
-          <div className="flex flex-wrap gap-1.5">
+          <div className="text-[11px] text-ink-3">Calendar year returns</div>
+          <div className="mt-1.5 flex flex-wrap gap-x-4 gap-y-1.5">
             {calendarYearReturns.map((yr) => (
-              <div key={yr.year} className="rounded-lg bg-surface-2 px-3 py-1.5 text-center min-w-[70px]">
-                <div className="text-[9px] font-semibold text-ink-3">{yr.year}</div>
-                <div className={`text-xs font-bold ${yr.return >= 0 ? "text-pos" : "text-neg"}`}>{fmtPct(yr.return)}</div>
+              <div key={yr.year} className="flex items-baseline gap-1.5">
+                <span className="text-[11px] text-ink-3">{yr.year}</span>
+                <span className={`font-mono text-[12.5px] ${yr.return >= 0 ? "text-pos" : "text-neg"}`}>{fmtPct(yr.return)}</span>
               </div>
             ))}
           </div>
         </div>
       )}
 
-      {/* Daily returns table (last 10 days) */}
+      {/* Daily returns table (last 10 days) — fold persisted in pm:ui-prefs */}
       {filteredHistory.length > 1 && (
-        <details className="text-xs">
-          <summary className="cursor-pointer text-ink-3 hover:text-ink-2 font-semibold py-1">
-            Daily Returns (last 10 trading days)
-          </summary>
-          <div className="mt-2 overflow-x-auto">
-            <table className="w-full text-xs">
-              <thead>
-                <tr className="border-b border-line-soft text-ink-3">
-                  <th className="text-left py-1 font-semibold">Date</th>
-                  <th className="text-right py-1 font-semibold">Daily</th>
-                  <th className="text-right py-1 font-semibold">Cumulative</th>
-                </tr>
-              </thead>
-              <tbody>
-                {filteredHistory.slice(1).slice(-10).reverse().map((h) => (
-                  <tr key={h.date} className="border-b border-line-soft">
-                    <td className="py-1 text-ink-2">{fmtDateFull(h.date)}</td>
-                    <td className={`py-1 text-right font-semibold ${h.dailyReturn >= 0 ? "text-pos" : "text-neg"}`}>{fmtPct(h.dailyReturn)}</td>
-                    <td className={`py-1 text-right font-mono ${h.value >= 100 ? "text-pos" : "text-neg"}`}>{h.value.toFixed(2)}</td>
+        <div className="border-t border-line-soft pt-2.5">
+          <button onClick={toggleDaily} aria-expanded={dailyOpen} className="flex items-center gap-1.5 text-[12.5px] text-ink-2 hover:text-ink">
+            <AppIcon name={dailyOpen ? "chevD" : "chevR"} size={13} className="text-ink-3" />
+            Daily returns (last 10 trading days)
+          </button>
+          {dailyOpen && (
+            <div className="mt-1.5 max-w-full tbl-wrap">
+              <table className="data-table">
+                <thead>
+                  <tr>
+                    <th>Date</th>
+                    <th className="n">Daily</th>
+                    <th className="n">Cumulative</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </details>
+                </thead>
+                <tbody>
+                  {filteredHistory.slice(1).slice(-10).reverse().map((h) => (
+                    <tr key={h.date}>
+                      <td className="text-ink-2">{fmtDateFull(h.date)}</td>
+                      <td className={`n ${h.dailyReturn >= 0 ? "text-pos" : "text-neg"}`}>{fmtPct(h.dailyReturn)}</td>
+                      <td className={`n ${h.value >= 100 ? "text-pos" : "text-neg"}`}>{h.value.toFixed(2)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
       )}
 
-      {/* Portfolio daily value table (collapsible) */}
+      {/* Portfolio daily value table — fold persisted in pm:ui-prefs */}
       {selectedModel && effectiveHistory.length > 1 && (
-        <details className="text-xs">
-          <summary className="cursor-pointer text-ink-3 hover:text-ink-2 font-semibold py-1">
-            Portfolio Value History (last 20 trading days)
-          </summary>
-          <div className="mt-2 overflow-x-auto">
-            <table className="w-full text-xs">
-              <thead>
-                <tr className="border-b border-line-soft text-ink-3">
-                  <th className="text-left py-1 font-semibold">Date</th>
-                  <th className="text-right py-1 font-semibold">Index Value</th>
-                  <th className="text-right py-1 font-semibold">Daily Change</th>
-                  <th className="text-right py-1 font-semibold">ITD Return</th>
-                </tr>
-              </thead>
-              <tbody>
-                {effectiveHistory.slice(-20).reverse().map((h) => {
-                  const itdReturn = ((h.value - 100) / 100) * 100;
-                  return (
-                    <tr key={h.date} className="border-b border-line-soft">
-                      <td className="py-1 text-ink-2">{fmtDateFull(h.date)}</td>
-                      <td className="py-1 text-right font-mono text-ink">{h.value.toFixed(2)}</td>
-                      <td className={`py-1 text-right font-semibold ${h.dailyReturn >= 0 ? "text-pos" : "text-neg"}`}>
-                        {h.dailyReturn !== 0 ? fmtPct(h.dailyReturn) : "--"}
-                      </td>
-                      <td className={`py-1 text-right font-mono ${itdReturn >= 0 ? "text-pos" : "text-neg"}`}>{fmtPct(itdReturn)}</td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        </details>
+        <div className="border-t border-line-soft pt-2.5">
+          <button onClick={toggleValue} aria-expanded={valueOpen} className="flex items-center gap-1.5 text-[12.5px] text-ink-2 hover:text-ink">
+            <AppIcon name={valueOpen ? "chevD" : "chevR"} size={13} className="text-ink-3" />
+            Portfolio value history (last 20 trading days)
+          </button>
+          {valueOpen && (
+            <div className="mt-1.5 max-w-full tbl-wrap">
+              <table className="data-table">
+                <thead>
+                  <tr>
+                    <th>Date</th>
+                    <th className="n">Index value</th>
+                    <th className="n">Daily change</th>
+                    <th className="n">ITD return</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {effectiveHistory.slice(-20).reverse().map((h) => {
+                    const itdReturn = ((h.value - 100) / 100) * 100;
+                    return (
+                      <tr key={h.date}>
+                        <td className="text-ink-2">{fmtDateFull(h.date)}</td>
+                        <td className="n text-ink">{h.value.toFixed(2)}</td>
+                        <td className={`n ${h.dailyReturn >= 0 ? "text-pos" : "text-neg"}`}>
+                          {h.dailyReturn !== 0 ? fmtPct(h.dailyReturn) : "—"}
+                        </td>
+                        <td className={`n ${itdReturn >= 0 ? "text-pos" : "text-neg"}`}>{fmtPct(itdReturn)}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
       )}
-    </div>
+      </div>
+    </section>
   );
 }

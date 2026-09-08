@@ -1,6 +1,7 @@
 import { getRedis } from "@/app/lib/redis";
 import { createLogger } from "@/app/lib/logger";
-import { computeAlerts, alertCounts, type Alert } from "@/app/lib/alerts";
+import { computeAlerts, alertCounts, entryAlerts, type Alert } from "@/app/lib/alerts";
+import { getEntryScan, newlyReady } from "@/app/lib/entry-scan";
 import { loadAlertInputs } from "@/app/lib/alert-inputs";
 import { enqueueMail } from "@/app/lib/mail-outbox";
 import { isTradingWeekdayET } from "@/app/lib/market-calendar";
@@ -23,7 +24,7 @@ const LOG_KEY = "pm:alert-log";
 
 type LoggedDigest = { generatedAt: string; counts: ReturnType<typeof alertCounts>; alerts: Alert[] };
 
-const CAT_LABEL: Record<string, string> = { thesis: "THESIS", regime: "REGIME", technical: "TECHNICAL" };
+const CAT_LABEL: Record<string, string> = { thesis: "THESIS", regime: "REGIME", technical: "TECHNICAL", entry: "READY TO BUY" };
 
 /**
  * Plain-text digest — the Gmail outbox sends text bodies via GmailApp.sendEmail.
@@ -106,7 +107,15 @@ export async function runAlertDigest(opts?: {
     const redis = await getRedis();
     const { thesis, transition, risk, context, killWatch } = await loadAlertInputs();
 
-    const alerts = computeAlerts({ thesis, transition, risk, context, killWatch });
+    // Entry scorecard flips (Watchlist / Suggested names newly reading ready)
+    // ride along as HIGH so the email carries the push. Scan is rebuilt by
+    // the cron just before this runs; cached read here.
+    let entry: Alert[] = [];
+    try {
+      const scan = await getEntryScan();
+      entry = entryAlerts(newlyReady(scan));
+    } catch { /* no entry push tonight */ }
+    const alerts = [...computeAlerts({ thesis, transition, risk, context, killWatch }), ...entry];
     const counts = alertCounts(alerts);
     const today = new Date().toISOString().slice(0, 10);
 

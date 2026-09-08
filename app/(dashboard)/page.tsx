@@ -4,6 +4,9 @@ import React, { useEffect, useState } from "react";
 import Link from "next/link";
 import { useStocks } from "@/app/lib/StockContext";
 import { PortfolioOverview } from "@/app/components/PortfolioOverview";
+import { HoldingInspector } from "@/app/components/HoldingInspector";
+import { AppIcon } from "@/app/components/AppIcon";
+import { usePersistedOpen } from "@/app/lib/useCollapsed";
 import { CockpitBand } from "@/app/components/CockpitBand";
 import { AttentionPanel } from "@/app/components/AttentionPanel";
 import { ChangeMonitor } from "@/app/components/ChangeMonitor";
@@ -22,7 +25,14 @@ export default function DashboardPage() {
       if (next.has(k)) next.delete(k); else next.add(k);
       return next;
     });
-  const { scoredStocks, marketData, updateMarketData, uiPrefs, setUiPref } = useStocks();
+  const { scoredStocks, marketData, updateMarketData, uiPrefs, setUiPref, livePreviousCloses } = useStocks();
+  // Docked inspector (canvas): the selected holding. Row selection is
+  // transient by design (site rule exemption) — it is a working cursor.
+  const [selectedTicker, setSelectedTicker] = useState<string | null>(null);
+  // The cockpit (model day-returns + the regime strip + scoring posture) is
+  // folded one click away: the regime is in the top bar and the model
+  // returns sit in the Brief's decision strip, so here it is reference.
+  const [cockpitOpen, toggleCockpit] = usePersistedOpen("holdings.cockpit", false);
 
   // Thesis-health verdicts (Phase 03) keyed by ticker — surfaced on the score
   // row so a name scoring well whose THESIS is eroding/broken reads differently.
@@ -73,47 +83,72 @@ export default function DashboardPage() {
   // context rather than in the market regime card.
 
   return (
-    <main className="min-h-screen bg-ground px-4 py-6 text-ink md:px-8 md:py-8 overflow-x-hidden">
-      <div className="mx-auto max-w-7xl space-y-5">
+    <main className="min-h-screen bg-ground text-ink overflow-x-hidden">
+      <div className="flex flex-col gap-3.5">
 
-        {/* Cockpit band (#11): the per-PIM-model day returns + the full
-            deterministic market-regime read, merged into one at-a-glance card.
-            Every regime signal/horizon is preserved (RegimeStrip renders bare
-            inside it); reads /api/market-regime (cached in pm:market-regime) and
-            silently hides the regime row on fetch failure. */}
-        <CockpitBand
-          posture={regime}
-          consolidatedRegime={consolidatedRegime}
-          onApplyPosture={() => consolidatedRegime && updateMarketData({ riskRegime: consolidatedRegime })}
-        />
-
-        {/* Proactive "needs your attention" digest (Phase 07) — sits right
-            under the cockpit; renders only when there's something actionable,
-            so calm days stay clean. */}
+        {/* Proactive "needs your attention" digest (Phase 07) — renders only
+            when there's something actionable, so calm days stay clean. */}
         <AttentionPanel />
 
-        {/* Change monitor moved into the Rankings cockpit's right sidebar
-            (passed to PortfolioOverview below) alongside Sector Exposure. */}
+        {/* Holdings + docked inspector (canvas Main.dc.html). The inspector
+            docks at lg+ beside the table AND the two-up band; below lg it
+            renders above the table. */}
+        <div className="flex flex-col gap-3.5 lg:flex-row lg:items-start">
+          <div className="min-w-0 flex-1">
+            <PortfolioOverview
+              sidebar={<ChangeMonitor />}
+              selectedTicker={selectedTicker}
+              onSelectTicker={(t) => setSelectedTicker((cur) => (cur && cur.toUpperCase() === t.toUpperCase() ? null : t))}
+            />
+          </div>
+          {selectedTicker && (
+            <HoldingInspector
+              ticker={selectedTicker}
+              previousClose={livePreviousCloses[selectedTicker] ?? null}
+              onClose={() => setSelectedTicker(null)}
+            />
+          )}
+        </div>
 
-        {/* ── Portfolio Overview ── */}
-        <PortfolioOverview sidebar={<ChangeMonitor />} />
+        {/* Cockpit (#11): the per-PIM-model day returns + the full regime read
+            + the scoring-posture control. Folded (persisted) — the regime is
+            in the top bar and the model returns are in the Brief. */}
+        <section className="panel">
+          <button onClick={toggleCockpit} className="flex h-9 w-full items-center gap-2 px-3.5 text-left" aria-expanded={cockpitOpen}>
+            <span className={`text-ink-3 transition-transform ${cockpitOpen ? "" : "-rotate-90"}`}><AppIcon name="chevD" size={14} strokeWidth={2} /></span>
+            <span className="text-[13px] font-semibold text-ink">Models today &amp; regime</span>
+            <span className="text-[11.5px] text-ink-3">
+              scoring posture <span className="font-medium text-ink-2">{regime}</span>
+              {consolidatedRegime && consolidatedRegime !== regime ? <span className="text-warn"> · engine suggests {consolidatedRegime}</span> : ""}
+            </span>
+          </button>
+          {cockpitOpen && (
+            <div className="border-t border-line-soft">
+              <CockpitBand
+                posture={regime}
+                consolidatedRegime={consolidatedRegime}
+                onApplyPosture={() => consolidatedRegime && updateMarketData({ riskRegime: consolidatedRegime })}
+              />
+            </div>
+          )}
+        </section>
 
         {/* ── Reference row (canvas): links reveal the reference analyses. ── */}
-        <div className="flex flex-wrap items-center gap-x-2 gap-y-1 px-1 text-xs">
+        <div className="flex flex-wrap items-center gap-x-2 gap-y-1 px-1 text-[12px]">
           <span className="text-ink-3">Reference:</span>
           {([["regime", "Regime multiplier detail"], ["calibration", "Score calibration"], ["forward", "Forward-regime score"]] as const).map(([k, label], idx) => (
             <React.Fragment key={k}>
               {idx > 0 && <span className="text-ink-faint">·</span>}
               <button
                 onClick={() => toggleRef(k)}
-                className={`font-semibold transition-colors ${openRefs.has(k) ? "text-accent" : "text-ink-2 hover:text-ink"}`}
+                className={`font-medium transition-colors ${openRefs.has(k) ? "text-accent-ink" : "text-ink-2 hover:text-ink"}`}
               >
                 {label}
               </button>
             </React.Fragment>
           ))}
           <span className="text-ink-faint">·</span>
-          <Link href="/methodology" className="font-semibold !text-ink-2 hover:!text-ink transition-colors">Methodology</Link>
+          <Link href="/methodology" className="font-medium !text-ink-2 hover:!text-ink transition-colors">Methodology</Link>
         </div>
 
         {openRefs.has("forward") && <ForwardScorePanel />}
@@ -124,27 +159,21 @@ export default function DashboardPage() {
           const toggleRegimeCollapsed = () => setUiPref("dashboard.regimeMultiplier.collapsed", regimeCollapsed ? "0" : "1");
           return (
         <div id="regime-detail" className="scroll-mt-6">
-          <section className="rounded-card border border-line bg-surface p-6 shadow-sm">
-            <div className={`flex items-center gap-3 ${regimeCollapsed ? "" : "mb-4"}`}>
+          <section className="panel">
+            <div className={`panel-h ${regimeCollapsed ? "border-b-0" : ""}`}>
               <button
                 onClick={toggleRegimeCollapsed}
-                className="flex items-center gap-2 cursor-pointer hover:opacity-80 transition-opacity"
+                className="flex items-center gap-2 text-left"
                 aria-expanded={!regimeCollapsed}
                 aria-label={regimeCollapsed ? "Expand Regime Multiplier Detail" : "Collapse Regime Multiplier Detail"}
               >
-                <svg className={`w-4 h-4 text-ink-3 transition-transform ${regimeCollapsed ? "-rotate-90" : ""}`} fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
-                </svg>
-                <h2 className="text-[15px] font-bold text-ink">Regime Multiplier Detail</h2>
+                <span className={`text-ink-3 transition-transform ${regimeCollapsed ? "-rotate-90" : ""}`}><AppIcon name="chevD" size={14} strokeWidth={2} /></span>
+                <span className="t">Regime multiplier detail</span>
               </button>
-              <span className={`rounded-full px-2.5 py-0.5 text-xs font-bold ${
-                regime === "Risk-Off" ? "bg-neg-soft text-neg"
-                : regime === "Neutral" ? "bg-warn-soft text-warn"
-                : "bg-pos-soft text-pos"
-              }`}>{regime}</span>
+              <span className="m inline-flex items-center gap-1.5"><span className={`dot ${regime === "Risk-Off" ? "bg-neg" : regime === "Neutral" ? "bg-warn" : "bg-pos"}`} />{regime}</span>
             </div>
-            {!regimeCollapsed && (<>
-            <p className="text-xs text-ink-3 mb-4">
+            {!regimeCollapsed && (<div className="px-3.5 py-3">
+            <p className="text-[12px] text-ink-3 mb-3">
               Each stock&apos;s regime multiplier is determined by its sector tier (Growth / Cyclical / Defensive) and dampened by its quality score (growth + leverage + cash flow quality + moat, max 8). Higher quality → softer regime effect.
             </p>
             <div className="overflow-x-auto">
@@ -194,8 +223,8 @@ export default function DashboardPage() {
                               {displayTicker(s.ticker)}
                               {thesisVerdicts[s.ticker.toUpperCase()] && (
                                 <span
-                                  className={`rounded px-1 py-0.5 text-[9px] font-bold uppercase tracking-wide ${
-                                    thesisVerdicts[s.ticker.toUpperCase()] === "broken" ? "bg-neg-soft text-neg" : "bg-warn-soft text-warn"
+                                  className={`inline-flex items-center gap-1 text-[11px] font-medium ${
+                                    thesisVerdicts[s.ticker.toUpperCase()] === "broken" ? "text-neg" : "text-warn"
                                   }`}
                                   title={`Thesis ${thesisVerdicts[s.ticker.toUpperCase()]} — see Thesis Watch`}
                                 >
@@ -220,7 +249,7 @@ export default function DashboardPage() {
                 </tbody>
               </table>
             </div>
-            </>)}
+            </div>)}
           </section>
         </div>
           );

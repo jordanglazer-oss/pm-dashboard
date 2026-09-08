@@ -5,6 +5,8 @@ import Link from "next/link";
 import { displayTicker } from "@/app/lib/ticker";
 import { Skeleton } from "@/app/components/Skeleton";
 import { EmptyState } from "@/app/components/EmptyState";
+import { StatStrip } from "@/app/components/StatStrip";
+import { AppIcon } from "@/app/components/AppIcon";
 
 /**
  * /journal — decision attribution (phase ③ of the thesis-discipline build,
@@ -42,20 +44,22 @@ type Attribution = {
   };
 };
 
+/** Decision word colour — sign carries the meaning (add/buy pos, trim warn,
+ *  sell/exit neg); no pill, per the vocabulary. */
 const ACTION_TONE: Record<string, string> = {
-  add: "bg-pos-soft text-pos border-pos-border",
-  buy: "bg-pos-soft text-pos border-pos-border",
-  trim: "bg-warn-soft text-warn border-warn-border",
-  sell: "bg-neg-soft text-neg border-neg-border",
-  exit: "bg-neg-soft text-neg border-neg-border",
+  add: "text-pos",
+  buy: "text-pos",
+  trim: "text-warn",
+  sell: "text-neg",
+  exit: "text-neg",
 };
 
 function Rel({ v, partial }: { v: number | null; partial: boolean }) {
   if (v == null) return <span className="text-ink-faint">—</span>;
   return (
-    <span className={`font-mono ${v > 0 ? "text-pos" : v < 0 ? "text-neg" : "text-ink-2"}`}>
+    <span className={v > 0 ? "text-pos" : v < 0 ? "text-neg" : "text-ink-2"}>
       {v > 0 ? "+" : ""}
-      {v.toFixed(1)}%{partial && <span className="ml-1 text-[10px] text-ink-3">so far</span>}
+      {v.toFixed(1)}%{partial && <span className="ml-1 font-sans text-[11px] text-ink-3">so far</span>}
     </span>
   );
 }
@@ -84,136 +88,135 @@ export default function JournalPage() {
   const pctStr = (hits: number, n: number) => (n > 0 ? `${Math.round((hits / n) * 100)}%` : "—");
 
   return (
-    <main className="min-h-screen bg-[#f4f5f7] px-4 py-6 text-ink md:px-8 md:py-8">
-      <div className="mx-auto max-w-7xl">
-        <div className="mb-5 flex flex-wrap items-center gap-3">
-          <div>
-            <h1 className="text-[17px] font-semibold tracking-[-0.02em]">Decision Journal — Attribution</h1>
-            <p className="text-xs text-ink-3">
-              every logged decision vs its sector · hit rates count completed windows only ·{" "}
-              <Link href="/methodology" className="text-accent hover:underline">how this works</Link>
-            </p>
-          </div>
-          <div className="ml-auto flex items-center gap-2">
-            {data && (
-              <span className="font-mono text-[11px] text-ink-faint">
-                computed {new Date(data.computedAt).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })}
-              </span>
-            )}
-            <button
-              onClick={() => load(true)}
-              disabled={refreshing}
-              className="rounded-control border border-line bg-white px-2.5 py-1 text-xs font-semibold text-ink-2 hover:text-ink disabled:opacity-50"
-            >
-              {refreshing ? "Recomputing…" : "↻ Refresh"}
-            </button>
-          </div>
+    <main className="flex flex-col gap-3.5 text-ink">
+      {/* Toolbar: meta on the left, recompute on the right. */}
+      <div className="flex flex-wrap items-center gap-2.5">
+        <span className="text-[12px] text-ink-3">
+          Every logged decision vs its sector · hit rates count completed windows only ·{" "}
+          <Link href="/methodology" className="text-accent hover:underline">how this works</Link>
+        </span>
+        <div className="ml-auto flex items-center gap-2">
+          {data && (
+            <span className="font-mono text-[11.5px] text-ink-3">
+              computed {new Date(data.computedAt).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })}
+            </span>
+          )}
+          <button
+            onClick={() => load(true)}
+            disabled={refreshing}
+            className="inline-flex h-7 items-center gap-1.5 rounded-control border border-line bg-surface px-2.5 text-[12.5px] text-ink-2 hover:bg-surface-hover disabled:opacity-50"
+          >
+            <AppIcon name="refresh" size={13} className={refreshing ? "animate-spin" : ""} />
+            {refreshing ? "Recomputing…" : "Refresh"}
+          </button>
         </div>
+      </div>
 
-        {loading && <Skeleton className="h-40 w-full" />}
+      {loading && <Skeleton className="h-40 w-full" />}
 
-        {!loading && (!data || data.rows.length + data.skipped.length === 0) && (
+      {!loading && (!data || data.rows.length + data.skipped.length === 0) && (
+        <section className="panel">
           <EmptyState
-            glyph="📓"
+            glyph={<AppIcon name="book" size={18} />}
             title="No decisions logged yet"
             body="Log decisions from the Portfolio page's Decision Journal, or respond to a kill-condition trip on a stock page — every entry lands here with its forward return."
           />
-        )}
+        </section>
+      )}
 
-        {data && data.rows.length + data.skipped.length > 0 && (
-          <>
-            {/* ── Hit-rate stats ── */}
-            <div className="mb-4 grid grid-cols-1 overflow-hidden rounded-card border border-line bg-white shadow-sm sm:grid-cols-2">
-              <div className="-ml-px -mt-px border-l border-t border-line-soft p-4">
-                <div className="text-[10px] font-bold uppercase tracking-[0.08em] text-ink-3">
-                  Buys / adds — right vs sector
-                </div>
-                <div className="mt-1 text-2xl font-semibold tracking-tight">
-                  {pctStr(data.stats.buys.hits, data.stats.buys.n)}
-                  <span className="ml-2 text-sm font-normal text-ink-3">
-                    {data.stats.buys.n > 0 ? `${data.stats.buys.hits} of ${data.stats.buys.n}` : "no completed windows yet"}
-                  </span>
-                </div>
-                {data.stats.buys.avgRel3m != null && (
-                  <div className="mt-0.5 text-xs text-ink-3">
-                    avg 3M sector-relative {data.stats.buys.avgRel3m > 0 ? "+" : ""}
-                    {data.stats.buys.avgRel3m}%
-                  </div>
-                )}
-                {data.stats.buys.n > 0 && data.stats.buys.n < 10 && (
-                  <div className="mt-1 text-[11px] text-warn">small sample — read direction, not precision</div>
-                )}
-              </div>
-              <div className="-ml-px -mt-px border-l border-t border-line-soft p-4">
-                <div className="text-[10px] font-bold uppercase tracking-[0.08em] text-ink-3">
-                  Trims / sells — right to reduce
-                </div>
-                <div className="mt-1 text-2xl font-semibold tracking-tight">
-                  {pctStr(data.stats.trims.hits, data.stats.trims.n)}
-                  <span className="ml-2 text-sm font-normal text-ink-3">
-                    {data.stats.trims.n > 0 ? `${data.stats.trims.hits} of ${data.stats.trims.n}` : "no completed windows yet"}
-                  </span>
-                </div>
-                {data.stats.trims.avgRel3m != null && (
-                  <div className="mt-0.5 text-xs text-ink-3">
-                    names averaged {data.stats.trims.avgRel3m > 0 ? "+" : ""}
-                    {data.stats.trims.avgRel3m}% vs sector after the trim
-                    {data.stats.trims.avgRel3m > 0 ? " — trimmed winners early" : ""}
-                  </div>
-                )}
-                {data.stats.trims.n > 0 && data.stats.trims.n < 10 && (
-                  <div className="mt-1 text-[11px] text-warn">small sample — read direction, not precision</div>
-                )}
-              </div>
+      {data && data.rows.length + data.skipped.length > 0 && (
+        <>
+          {/* ── Hit-rate stats: one hairline strip ── */}
+          <StatStrip
+            cols={2}
+            items={[
+              {
+                label: "Buys / adds — right vs sector",
+                value: (
+                  <>
+                    {pctStr(data.stats.buys.hits, data.stats.buys.n)}
+                    <span className="ml-2 font-sans text-[11.5px] font-normal text-ink-3">
+                      {data.stats.buys.n > 0 ? `${data.stats.buys.hits} of ${data.stats.buys.n}` : "no completed windows yet"}
+                      {data.stats.buys.avgRel3m != null && (
+                        <> · avg 3M sector-relative {data.stats.buys.avgRel3m > 0 ? "+" : ""}{data.stats.buys.avgRel3m}%</>
+                      )}
+                      {data.stats.buys.n > 0 && data.stats.buys.n < 10 && (
+                        <span className="text-warn"> · small sample — read direction, not precision</span>
+                      )}
+                    </span>
+                  </>
+                ),
+              },
+              {
+                label: "Trims / sells — right to reduce",
+                value: (
+                  <>
+                    {pctStr(data.stats.trims.hits, data.stats.trims.n)}
+                    <span className="ml-2 font-sans text-[11.5px] font-normal text-ink-3">
+                      {data.stats.trims.n > 0 ? `${data.stats.trims.hits} of ${data.stats.trims.n}` : "no completed windows yet"}
+                      {data.stats.trims.avgRel3m != null && (
+                        <>
+                          {" · "}names averaged {data.stats.trims.avgRel3m > 0 ? "+" : ""}
+                          {data.stats.trims.avgRel3m}% vs sector after the trim
+                          {data.stats.trims.avgRel3m > 0 ? " — trimmed winners early" : ""}
+                        </>
+                      )}
+                      {data.stats.trims.n > 0 && data.stats.trims.n < 10 && (
+                        <span className="text-warn"> · small sample — read direction, not precision</span>
+                      )}
+                    </span>
+                  </>
+                ),
+              },
+            ]}
+          />
+
+          {/* ── Decision log ── */}
+          <section className="panel">
+            <div className="panel-h">
+              <span className="t">Decision log</span>
+              <span className="m">{data.rows.length} measured</span>
             </div>
-
-            {/* ── Decision log ── */}
-            <div className="overflow-x-auto rounded-card border border-line bg-white shadow-sm">
-              <table className="w-full text-[13px]">
+            <div className="tbl-wrap">
+              <table className="data-table">
                 <thead>
-                  <tr className="border-b border-line text-left">
-                    <th className="px-3 py-2 text-[10px] font-bold uppercase tracking-[0.08em] text-ink-3">Date</th>
-                    <th className="px-3 py-2 text-[10px] font-bold uppercase tracking-[0.08em] text-ink-3">Name</th>
-                    <th className="px-3 py-2 text-[10px] font-bold uppercase tracking-[0.08em] text-ink-3">Decision</th>
-                    <th className="px-3 py-2 text-[10px] font-bold uppercase tracking-[0.08em] text-ink-3">Rationale at the time</th>
-                    <th className="px-3 py-2 text-right text-[10px] font-bold uppercase tracking-[0.08em] text-ink-3">1M rel</th>
-                    <th className="px-3 py-2 text-right text-[10px] font-bold uppercase tracking-[0.08em] text-ink-3">3M rel</th>
-                    <th className="px-3 py-2 text-right text-[10px] font-bold uppercase tracking-[0.08em] text-ink-3">Call</th>
+                  <tr>
+                    <th className="pl-3.5">Date</th>
+                    <th>Name</th>
+                    <th>Decision</th>
+                    <th>Rationale at the time</th>
+                    <th className="n">1M rel</th>
+                    <th className="n">3M rel</th>
+                    <th className="n">Call</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-line-soft">
+                <tbody>
                   {data.rows.map((r) => (
-                    <tr key={r.id} className="align-top">
-                      <td className="whitespace-nowrap px-3 py-2 font-mono text-[11px] text-ink-3">{r.date}</td>
-                      <td className="px-3 py-2">
-                        <Link href={`/stock/${encodeURIComponent(r.ticker)}`} className="font-mono font-bold text-ink hover:text-accent">
+                    <tr key={r.id}>
+                      <td className="pl-3.5 font-mono text-ink-3">{r.date}</td>
+                      <td>
+                        <Link href={`/stock/${encodeURIComponent(r.ticker)}`} className="font-mono font-medium text-ink hover:text-accent">
                           {displayTicker(r.ticker)}
                         </Link>
-                        <div className="text-[10px] text-ink-faint">vs {r.benchmark}</div>
+                        <span className="ml-2 text-[11.5px] text-ink-3">vs {r.benchmark}</span>
                       </td>
-                      <td className="px-3 py-2">
-                        <span className={`inline-block rounded-full border px-2 py-0.5 text-[10px] font-bold uppercase ${ACTION_TONE[r.action.toLowerCase()] || "border-line bg-surface-2 text-ink-2"}`}>
-                          {r.action}
-                        </span>
+                      <td className={`font-medium ${ACTION_TONE[r.action.toLowerCase()] || "text-ink-2"}`}>
+                        {r.action}
                       </td>
-                      <td className="max-w-[420px] px-3 py-2 text-ink-2">
+                      <td className="max-w-[420px] !whitespace-normal py-2 text-ink-2">
                         <span className="line-clamp-2" title={r.rationale}>
                           {r.rationale}
                         </span>
                       </td>
-                      <td className="px-3 py-2 text-right">
-                        <Rel v={r.rel1m} partial={r.partial1m} />
-                      </td>
-                      <td className="px-3 py-2 text-right">
-                        <Rel v={r.rel3m} partial={r.partial3m} />
-                      </td>
-                      <td className="px-3 py-2 text-right">
+                      <td className="n"><Rel v={r.rel1m} partial={r.partial1m} /></td>
+                      <td className="n"><Rel v={r.rel3m} partial={r.partial3m} /></td>
+                      <td className="n">
                         {r.hit == null ? (
-                          <span className="text-[11px] text-ink-faint">{r.partial3m || r.partial1m ? "pending" : "n/a"}</span>
+                          <span className="font-sans text-ink-faint">{r.partial3m || r.partial1m ? "pending" : "n/a"}</span>
                         ) : r.hit ? (
-                          <span className="text-[11px] font-bold text-pos">RIGHT</span>
+                          <span className="font-sans font-medium text-pos">Right</span>
                         ) : (
-                          <span className="text-[11px] font-bold text-neg">WRONG</span>
+                          <span className="font-sans font-medium text-neg">Wrong</span>
                         )}
                       </td>
                     </tr>
@@ -221,16 +224,15 @@ export default function JournalPage() {
                 </tbody>
               </table>
             </div>
-
             {data.skipped.length > 0 && (
-              <p className="mt-3 text-[11px] text-ink-3">
+              <div className="flex min-h-[32px] items-center border-t border-line-soft px-3.5 py-1.5 text-[11.5px] text-ink-3">
                 Not measured ({data.skipped.length}):{" "}
                 {data.skipped.map((s) => `${s.ticker ?? "—"} (${s.reason})`).join(" · ")}
-              </p>
+              </div>
             )}
-          </>
-        )}
-      </div>
+          </section>
+        </>
+      )}
     </main>
   );
 }

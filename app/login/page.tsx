@@ -3,8 +3,8 @@
 import { useState, FormEvent } from "react";
 import { useRouter } from "next/navigation";
 
-/** Precision Light login — the last screen still wearing the old dark theme.
- *  Same auth flow (POST /api/auth → cookie); styling only. */
+/** Workspace login — a centred 360px panel on the ground colour with the ink
+ *  "P" mark. Same auth flow (POST /api/auth → cookie); styling only. */
 export default function LoginPage() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
@@ -38,18 +38,17 @@ export default function LoginPage() {
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-ground px-4">
-      <div className="w-full max-w-sm">
-        <div className="mb-6 flex items-center justify-center gap-2.5">
-          <span className="grid h-9 w-9 place-items-center rounded-[9px] bg-accent text-[17px] font-bold text-white">P</span>
-          <span className="text-xl font-bold tracking-tight text-ink">PIM Dashboard</span>
-        </div>
-        <div className="rounded-card border border-line bg-surface p-7 shadow-card">
-          <h1 className="text-[15px] font-bold text-ink">Team access</h1>
-          <p className="mt-1 text-xs text-ink-3">Enter the team password to continue</p>
+      <div className="w-full max-w-[360px]">
+        <div className="panel">
+          <div className="panel-h">
+            <span className="grid h-[22px] w-[22px] place-items-center rounded-[5px] bg-ink text-[12px] font-semibold text-white">P</span>
+            <span className="t">PIM Workspace</span>
+            <span className="m ml-auto">Team access</span>
+          </div>
 
-          <form onSubmit={handleSubmit} className="mt-5 space-y-4">
+          <form onSubmit={handleSubmit} className="flex flex-col gap-3 px-3.5 py-3.5">
             <div>
-              <label htmlFor="password" className="mb-1.5 block text-[11px] font-semibold text-ink-2">
+              <label htmlFor="password" className="mb-1 block text-[11px] text-ink-3">
                 Password
               </label>
               <input
@@ -57,24 +56,29 @@ export default function LoginPage() {
                 type="password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                placeholder="••••••••"
+                placeholder="Team password"
                 autoFocus
-                className="w-full rounded-control border border-line bg-surface px-3.5 py-2.5 text-sm text-ink outline-none placeholder:text-ink-faint focus:border-accent focus:ring-1 focus:ring-accent-soft"
+                className="h-7 w-full rounded-control border border-line bg-surface px-2.5 text-[12.5px] text-ink outline-none placeholder:text-ink-3 focus:border-accent-border"
               />
             </div>
 
-            {error && <p className="text-sm text-neg">{error}</p>}
+            {error && (
+              <p className="flex items-center gap-2 text-[12.5px] text-neg">
+                <span className="dot bg-neg" />
+                {error}
+              </p>
+            )}
 
             <button
               type="submit"
               disabled={loading || !password}
-              className="w-full rounded-control bg-accent py-2.5 text-sm font-semibold text-white transition-colors hover:bg-accent-ink disabled:cursor-not-allowed disabled:opacity-50"
+              className="h-7 w-full rounded-control bg-ink text-[12.5px] font-medium text-white transition-colors hover:bg-ink-2 disabled:cursor-not-allowed disabled:opacity-50"
             >
-              {loading ? "Checking…" : "Enter"}
+              {loading ? "Checking" : "Enter"}
             </button>
           </form>
         </div>
-        <p className="mt-4 text-center text-[11px] text-ink-3">Private team tool · sessions persist on this device</p>
+        <p className="mt-3 text-center text-[11px] text-ink-3">Private team tool · sessions persist on this device</p>
       </div>
     </div>
   );

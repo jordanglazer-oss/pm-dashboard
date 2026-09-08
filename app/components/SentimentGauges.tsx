@@ -9,6 +9,7 @@ import type {
 import { SignalPill } from "./SignalPill";
 import { Sparkline } from "./Sparkline";
 import { ClampText } from "./ClampText";
+import { AppIcon } from "./AppIcon";
 
 // Render the multi-horizon delta line shown under each sentiment sparkline.
 // Uses whichever deltas are available in the bundle so a fresh oscillator
@@ -33,6 +34,68 @@ function trendCaption(t: TrendStatsBundle | undefined): string | null {
   // multi-decade range is much wider. Trajectory + multi-horizon deltas
   // are kept because those are genuinely self-referential.
   return `${t.trajectory} · ${parts.join(" · ")}`;
+}
+
+/**
+ * One gauge, laid out VERTICALLY as a cell: label row, big read, fluid
+ * sparkline, caption. Nothing here has a fixed width, so all four stay
+ * legible at any column width and read as one set. Rendered as a cell of a
+ * hairline grid — the panel and the header belong to the tab that holds it.
+ */
+function GaugeCard({
+  label,
+  href,
+  badge,
+  value,
+  unit,
+  read,
+  readTone,
+  spark,
+  caption,
+  detail,
+  children,
+}: {
+  label: string;
+  href: string;
+  badge?: "live" | "logged" | null;
+  value: string;
+  unit?: string;
+  read: string;
+  readTone: string;
+  spark?: React.ReactNode;
+  caption?: string | null;
+  detail: string;
+  children?: React.ReactNode;
+}) {
+  return (
+    <div className="flex min-w-0 flex-col px-3.5 py-3">
+      <div className="mb-1 flex items-center gap-1.5 text-[11px] text-ink-3">
+        <a href={href} target="_blank" rel="noopener noreferrer" className="inline-flex min-w-0 items-center gap-1 truncate hover:text-accent" title={`${label} source`}>
+          <span className="truncate">{label}</span>
+          <AppIcon name="external" size={11} />
+        </a>
+        {badge && (
+          <span className="ml-auto inline-flex shrink-0 items-center gap-1.5">
+            <span className={`dot ${badge === "live" ? "bg-pos" : "bg-accent"}`} />
+            {badge === "live" ? "Live" : "Logged"}
+          </span>
+        )}
+      </div>
+      <div className="flex items-baseline gap-1.5">
+        <span className="font-mono text-[20px] font-semibold leading-none text-ink">{value}</span>
+        {unit && <span className="text-[11px] text-ink-3">{unit}</span>}
+        <span className={`ml-auto truncate text-[12.5px] font-medium ${readTone}`}>{read}</span>
+      </div>
+      {children}
+      {spark && <div className="mt-1.5">{spark}</div>}
+      {caption && <div className="mt-0.5 font-mono text-[10.5px] leading-tight text-ink-3">{caption}</div>}
+      {/* Bounded to two lines — the full sentence is on hover, and the
+          Contrarian take below carries the joined-up read. */}
+      <p className="mt-1.5 line-clamp-2 text-[11.5px] leading-snug text-ink-3" title={detail}>
+        {detail}
+      </p>
+    </div>
+  );
 }
 
 type Props = {
@@ -188,296 +251,131 @@ export function SentimentGauges({ marketData, aaiiBull = 30, aaiiNeutral = 17, a
   const overall = overallContrarianRating(fgValue, aaiiBullBearValue, oscValue, marketData.putCall);
   const fgLabel = fearGreedLabel(fgValue);
 
-  // Color for the donut gauge
-  const fgColor =
-    fgValue <= 25 ? "#ef4444" : fgValue <= 50 ? "#f59e0b" : "#22c55e";
+  // Colour by job: fear reads neg, the middle warn, greed pos — the same
+  // token drives the read and the sparkline stroke.
+  const fgToken = fgValue <= 25 ? "neg" : fgValue <= 50 ? "warn" : "pos";
+  const fgColor = `var(--color-${fgToken})`;
+  const fgReadTone = fgToken === "neg" ? "text-neg" : fgToken === "warn" ? "text-warn" : "text-pos";
 
   // SVG donut for F&G
-  const radius = 40;
-  const circumference = 2 * Math.PI * radius;
-  const pct = fgValue / 100;
-  const dashOffset = circumference * (1 - pct);
+  const oscRead =
+    oscValue <= -4
+      ? { label: "Deeply Oversold", tone: "text-pos", detail: "Extreme oversold conditions have historically preceded sharp mean-reversion rallies. High-conviction contrarian buy signal." }
+      : oscValue <= -2
+      ? { label: "Oversold", tone: "text-pos", detail: "Market is stretched to the downside. Incrementally bullish on a contrarian basis." }
+      : oscValue >= 4
+      ? { label: "Deeply Overbought", tone: "text-neg", detail: "Extreme overbought conditions. Risk of a pullback is elevated — consider trimming or hedging." }
+      : oscValue >= 2
+      ? { label: "Overbought", tone: "text-neg", detail: "Market is getting stretched. Reduce marginal risk and tighten stops." }
+      : { label: "Neutral", tone: "text-ink-2", detail: "No strong directional signal from the oscillator at current levels." };
+  const pcRead =
+    pcValue >= 1.2
+      ? { label: "Extreme Fear", tone: "text-pos", detail: "Heavy put buying signals panic. Historically a strong contrarian buy signal — protection is expensive and the crowd is hedged." }
+      : pcValue >= 1.0
+      ? { label: "Elevated Fear", tone: "text-pos", detail: "Put buying is elevated, suggesting caution in the market. Incrementally bullish on a contrarian basis." }
+      : pcValue <= 0.5
+      ? { label: "Extreme Complacency", tone: "text-neg", detail: "Extreme complacency — virtually no hedging activity. This is a strong contrarian warning sign." }
+      : pcValue <= 0.7
+      ? { label: "Complacent", tone: "text-neg", detail: "Low put demand suggests complacency. Protection is cheap, which is when disciplined PMs should be hedging." }
+      : { label: "Neutral", tone: "text-ink-2", detail: "Put/Call ratio is in a neutral range. No strong contrarian signal." };
+
 
   return (
-    <section className="rounded-card border border-line bg-white p-4 shadow-sm">
-      {/* Design header: tracked uppercase label + the overall read as a pill,
-          with the inverse-reading explainer demoted to the right rather than
-          taking its own full-width line. */}
-      <div className="mb-3 flex flex-wrap items-center gap-2">
-        <h3 className="text-xs font-bold uppercase tracking-[0.22em] text-ink-3">Contrarian sentiment</h3>
+    <div>
+      {/* The overall read, and the reminder that these are read inversely. */}
+      <div className="flex flex-wrap items-center gap-2 border-b border-line-soft px-3.5 py-2 text-[11.5px] text-ink-3">
         <SignalPill tone={overall.tone}>{overall.label}</SignalPill>
-        <span className="ml-auto text-[11px] text-ink-faint">counter-signal · read extremes inversely</span>
+        <span>counter-signal · read extremes inversely</span>
       </div>
       <p className="sr-only">
         Sentiment extremes read <strong className="text-ink-2">inversely</strong> — crowd fear = opportunity, crowd greed = warning. A counterweight to the regime read above, not another summary of it.
       </p>
 
-      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-        {/* CNN Fear & Greed */}
-        <div className="rounded-xl border border-line-soft bg-surface-2 p-3">
-          <div className="flex items-center justify-between mb-2">
-            <div className="text-xs font-semibold text-ink-3 flex items-center gap-2">
-              CNN Fear &amp; Greed
-              <a href="https://www.cnn.com/markets/fear-and-greed" target="_blank" rel="noopener noreferrer" className="text-accent hover:text-accent" title="CNN Fear & Greed source">
-                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
-              </a>
-            </div>
-            {fgIsAuto && (
-              <span className="rounded-full bg-pos-soft px-2 py-0.5 text-[9px] font-bold uppercase text-pos">live</span>
-            )}
-          </div>
-          <div className="flex items-center gap-4">
-            <svg width="80" height="80" viewBox="0 0 100 100" className="shrink-0">
-              <circle cx="50" cy="50" r={radius} fill="none" stroke="#e2e8f0" strokeWidth="8" />
-              <circle
-                cx="50"
-                cy="50"
-                r={radius}
-                fill="none"
-                stroke={fgColor}
-                strokeWidth="8"
-                strokeLinecap="round"
-                strokeDasharray={circumference}
-                strokeDashoffset={dashOffset}
-                transform="rotate(-90 50 50)"
-              />
-              <text x="50" y="46" textAnchor="middle" className="font-bold" fill="#1e293b" fontSize="22">
-                {Math.round(fgValue)}
-              </text>
-              <text x="50" y="62" textAnchor="middle" fill="#94a3b8" fontSize="10">
-                /100
-              </text>
-            </svg>
-            <div className="flex-1 min-w-0">
-              <div className="text-base font-semibold" style={{ color: fgColor }}>{fgLabel}</div>
-              {fgHistory.length >= 2 && (
-                <div className="mt-1.5">
-                  <Sparkline
-                    points={fgHistory}
-                    width={180}
-                    height={32}
-                    stroke={fgColor}
-                    fill={`${fgColor}22`}
-                    yMin={0}
-                    yMax={100}
-                    referenceY={50}
-                  />
-                  <div className="text-[10px] text-ink-3 mt-0.5">trailing 1Y daily</div>
-                  {trendCaption(forwardData?.fearGreed?.trend) && (
-                    <div className="text-[10px] font-medium text-ink-3 mt-0.5">
-                      {trendCaption(forwardData?.fearGreed?.trend)}
-                    </div>
-                  )}
-                </div>
-              )}
-              <p className="mt-1.5 text-xs text-ink-3 leading-relaxed">{fgData.detail}</p>
-            </div>
-          </div>
-        </div>
+      {/* Two across, never four: inside the Brief's sentiment column four
+          columns left ~96px per card. Two keeps every card readable. */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 sm:[&>*:nth-child(odd)]:border-r [&>*:not(:last-child)]:border-b sm:[&>*:nth-last-child(-n+2)]:border-b-0 [&>*]:border-line-soft">
+        <GaugeCard
+          label="CNN Fear & Greed"
+          href="https://www.cnn.com/markets/fear-and-greed"
+          badge={fgIsAuto ? "live" : null}
+          value={String(Math.round(fgValue))}
+          unit="/100"
+          read={fgLabel}
+          readTone={fgReadTone}
+          spark={fgHistory.length >= 2 ? (
+            <Sparkline points={fgHistory} width={420} height={26} stroke={fgColor} yMin={0} yMax={100} referenceY={50} />
+          ) : null}
+          caption={[fgHistory.length >= 2 ? "trailing 1Y" : null, trendCaption(forwardData?.fearGreed?.trend)].filter(Boolean).join(" · ") || null}
+          detail={fgData.detail}
+        />
 
-        {/* AAII Sentiment */}
-        <div className="rounded-xl border border-line-soft bg-surface-2 p-3">
-          <div className="flex items-center justify-between mb-2">
-            <div className="text-xs font-semibold text-ink-3 flex items-center gap-2">
-              AAII Sentiment Survey
-              <a href="https://www.aaii.com/sentimentsurvey" target="_blank" rel="noopener noreferrer" className="text-accent hover:text-accent" title="AAII source">
-                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
-              </a>
-            </div>
-            {aaiiIsAuto && (
-              <span className="rounded-full bg-pos-soft px-2 py-0.5 text-[9px] font-bold uppercase text-pos">live</span>
-            )}
+        <GaugeCard
+          label="AAII Sentiment Survey"
+          href="https://www.aaii.com/sentimentsurvey"
+          badge={aaiiIsAuto ? "live" : null}
+          value={`${aaiiBullBearValue > 0 ? "+" : ""}${aaiiBullBearValue.toFixed(1)}%`}
+          unit="bull−bear"
+          read={aaiiData.signal}
+          readTone={aaiiData.tone === "green" ? "text-pos" : aaiiData.tone === "red" ? "text-neg" : "text-warn"}
+          spark={aaiiBullBearHistory.length >= 2 ? (
+            <Sparkline points={aaiiBullBearHistory} width={420} height={26} referenceY={0} />
+          ) : null}
+          caption={[aaiiBullBearHistory.length >= 2 ? "spread, trailing 52wk" : null, trendCaption(forwardData?.aaiiBullBear?.trend)].filter(Boolean).join(" · ") || null}
+          detail={aaiiData.detail}
+        >
+          <div className="mt-1.5 space-y-[3px]">
+            {([
+              ["Bull", effAaiiBull, "bg-pos"],
+              ["Neut", effAaiiNeutral, "bg-warn"],
+              ["Bear", effAaiiBear, "bg-neg"],
+            ] as const).map(([name, pctVal, bar]) => (
+              <div key={name} className="flex items-center gap-1.5">
+                <span className="w-7 shrink-0 text-[11px] text-ink-3">{name}</span>
+                <span className="h-1 min-w-0 flex-1 overflow-hidden rounded-[2px] bg-line-soft">
+                  <span className={`block h-full ${bar}`} style={{ width: `${pctVal}%` }} />
+                </span>
+                <span className="w-9 shrink-0 text-right font-mono text-[11px] text-ink-2">{pctVal.toFixed(1)}</span>
+              </div>
+            ))}
           </div>
-          <div className="space-y-2">
-            <div className="flex items-center gap-2">
-              <span className="w-14 text-xs text-ink-3">Bullish</span>
-              <div className="flex-1 h-3 rounded-full bg-line overflow-hidden">
-                <div className="h-full rounded-full bg-pos" style={{ width: `${effAaiiBull}%` }} />
-              </div>
-              <span className="w-12 text-right font-mono text-xs font-semibold">{effAaiiBull.toFixed(1)}%</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <span className="w-14 text-xs text-ink-3">Neutral</span>
-              <div className="flex-1 h-3 rounded-full bg-line overflow-hidden">
-                <div className="h-full rounded-full bg-warn" style={{ width: `${effAaiiNeutral}%` }} />
-              </div>
-              <span className="w-12 text-right font-mono text-xs font-semibold">{effAaiiNeutral.toFixed(1)}%</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <span className="w-14 text-xs text-ink-3">Bearish</span>
-              <div className="flex-1 h-3 rounded-full bg-line overflow-hidden">
-                <div className="h-full rounded-full bg-neg" style={{ width: `${effAaiiBear}%` }} />
-              </div>
-              <span className="w-12 text-right font-mono text-xs font-semibold">{effAaiiBear.toFixed(1)}%</span>
-            </div>
-            <div className="text-right text-xs text-ink-3">
-              Bull-Bear Spread: <strong className="text-ink-2">{aaiiBullBearValue > 0 ? "+" : ""}{aaiiBullBearValue.toFixed(1)}%</strong>
-            </div>
-          </div>
-          {aaiiBullBearHistory.length >= 2 && (
-            <div className="mt-2">
-              <Sparkline
-                points={aaiiBullBearHistory}
-                width={260}
-                height={32}
-                stroke="#6366f1"
-                fill="rgba(99, 102, 241, 0.12)"
-                referenceY={0}
-              />
-              <div className="text-[10px] text-ink-3 mt-0.5">bull-bear spread, trailing 52 weeks</div>
-              {trendCaption(forwardData?.aaiiBullBear?.trend) && (
-                <div className="text-[10px] font-medium text-ink-3 mt-0.5">
-                  {trendCaption(forwardData?.aaiiBullBear?.trend)}
-                </div>
-              )}
-            </div>
-          )}
-          <p className="mt-2 text-xs text-ink-3 leading-relaxed">{aaiiData.detail}</p>
-        </div>
+        </GaugeCard>
 
-        {/* S&P Oscillator */}
-        <div className="rounded-xl border border-line-soft bg-surface-2 p-3">
-          <div className="flex items-center justify-between mb-2">
-            <div className="text-xs font-semibold text-ink-3 flex items-center gap-2">
-              S&amp;P Oscillator
-              <a href="https://app.marketedge.com/#!/markets" target="_blank" rel="noopener noreferrer" className="text-accent hover:text-accent" title="MarketEdge S&P Oscillator">
-                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
-              </a>
-            </div>
-            {oscHistory.length > 0 && (
-              <span className="rounded-full bg-accent-soft px-2 py-0.5 text-[9px] font-bold uppercase text-accent" title="Sparkline shows your saved entries from Redis (pm:oscillator-history)">logged</span>
-            )}
-          </div>
-          <div className="flex items-center gap-4">
-            <div className={`flex h-16 w-16 shrink-0 items-center justify-center rounded-xl text-xl font-bold ${
-              oscValue <= -4 ? "bg-pos-soft text-pos"
-              : oscValue <= -2 ? "bg-pos-soft text-pos"
-              : oscValue >= 4 ? "bg-neg-soft text-neg"
-              : oscValue >= 2 ? "bg-neg-soft text-neg"
-              : "bg-surface-2 text-ink-2"
-            }`}>
-              {oscValue > 0 ? "+" : ""}{oscValue}
-            </div>
-            <div className="flex-1 min-w-0">
-              <div className={`text-base font-semibold ${
-                oscValue <= -4 ? "text-pos"
-                : oscValue <= -2 ? "text-pos"
-                : oscValue >= 4 ? "text-neg"
-                : oscValue >= 2 ? "text-neg"
-                : "text-ink-2"
-              }`}>
-                {oscValue <= -4 ? "Deeply Oversold" : oscValue <= -2 ? "Oversold" : oscValue >= 4 ? "Deeply Overbought" : oscValue >= 2 ? "Overbought" : "Neutral"}
-              </div>
-              {oscHistory.length >= 2 && (
-                <div className="mt-1.5">
-                  <Sparkline
-                    points={oscHistory}
-                    width={180}
-                    height={32}
-                    stroke="#0ea5e9"
-                    fill="rgba(14, 165, 233, 0.12)"
-                    referenceY={0}
-                  />
-                  <div className="text-[10px] text-ink-3 mt-0.5">your saved entries (last 6mo)</div>
-                  {trendCaption(forwardData?.spOscillator?.trend) && (
-                    <div className="text-[10px] font-medium text-ink-3 mt-0.5">
-                      {trendCaption(forwardData?.spOscillator?.trend)}
-                    </div>
-                  )}
-                </div>
-              )}
-              <p className="mt-1.5 text-xs text-ink-3 leading-relaxed">
-                {oscValue <= -4
-                  ? "Extreme oversold conditions have historically preceded sharp mean-reversion rallies. High-conviction contrarian buy signal."
-                  : oscValue <= -2
-                  ? "Market is stretched to the downside. Incrementally bullish on a contrarian basis."
-                  : oscValue >= 4
-                  ? "Extreme overbought conditions. Risk of a pullback is elevated — consider trimming or hedging."
-                  : oscValue >= 2
-                  ? "Market is getting stretched. Reduce marginal risk and tighten stops."
-                  : "No strong directional signal from the oscillator at current levels."}
-              </p>
-            </div>
-          </div>
-        </div>
+        <GaugeCard
+          label="S&P Oscillator"
+          href="https://app.marketedge.com/#!/markets"
+          badge={oscHistory.length > 0 ? "logged" : null}
+          value={`${oscValue > 0 ? "+" : ""}${oscValue}`}
+          read={oscRead.label}
+          readTone={oscRead.tone}
+          spark={oscHistory.length >= 2 ? (
+            <Sparkline points={oscHistory} width={420} height={26} referenceY={0} />
+          ) : null}
+          caption={[oscHistory.length >= 2 ? "logged entries, 6mo" : null, trendCaption(forwardData?.spOscillator?.trend)].filter(Boolean).join(" · ") || null}
+          detail={oscRead.detail}
+        />
 
-        {/* Put/Call Ratio */}
-        <div className="rounded-xl border border-line-soft bg-surface-2 p-3">
-          <div className="flex items-center justify-between mb-2">
-            <div className="text-xs font-semibold text-ink-3 flex items-center gap-2">
-              Total Put/Call Ratio
-              <a href="https://www.cboe.com/us/options/market_statistics/daily/" target="_blank" rel="noopener noreferrer" className="text-accent hover:text-accent" title="CBOE Total Put/Call">
-                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
-              </a>
-            </div>
-            {pcHistory.length > 0 && (
-              <span className="rounded-full bg-accent-soft px-2 py-0.5 text-[9px] font-bold uppercase text-accent" title="Sparkline shows your saved entries from Redis (pm:putcall-history)">logged</span>
-            )}
-          </div>
-          <div className="flex items-center gap-4">
-            <div className={`flex h-16 w-16 shrink-0 items-center justify-center rounded-xl text-xl font-bold ${
-              pcValue >= 1.2 ? "bg-pos-soft text-pos"
-              : pcValue >= 1.0 ? "bg-pos-soft text-pos"
-              : pcValue <= 0.5 ? "bg-neg-soft text-neg"
-              : pcValue <= 0.7 ? "bg-neg-soft text-neg"
-              : "bg-surface-2 text-ink-2"
-            }`}>
-              {pcValue.toFixed(2)}
-            </div>
-            <div className="flex-1 min-w-0">
-              <div className={`text-base font-semibold ${
-                pcValue >= 1.2 ? "text-pos"
-                : pcValue >= 1.0 ? "text-pos"
-                : pcValue <= 0.5 ? "text-neg"
-                : pcValue <= 0.7 ? "text-neg"
-                : "text-ink-2"
-              }`}>
-                {pcValue >= 1.2 ? "Extreme Fear" : pcValue >= 1.0 ? "Elevated Fear" : pcValue <= 0.5 ? "Extreme Complacency" : pcValue <= 0.7 ? "Complacent" : "Neutral"}
-              </div>
-              {pcHistory.length >= 2 && (
-                <div className="mt-1.5">
-                  <Sparkline
-                    points={pcHistory}
-                    width={180}
-                    height={32}
-                    stroke="#8b5cf6"
-                    fill="rgba(139, 92, 246, 0.12)"
-                    referenceY={0.85}
-                  />
-                  <div className="text-[10px] text-ink-3 mt-0.5">your saved entries (last 6mo)</div>
-                  {trendCaption(forwardData?.putCallRatio?.trend) && (
-                    <div className="text-[10px] font-medium text-ink-3 mt-0.5">
-                      {trendCaption(forwardData?.putCallRatio?.trend)}
-                    </div>
-                  )}
-                </div>
-              )}
-              <p className="mt-1.5 text-xs text-ink-3 leading-relaxed">
-                {pcValue >= 1.2
-                  ? "Heavy put buying signals panic. Historically a strong contrarian buy signal — protection is expensive and the crowd is hedged."
-                  : pcValue >= 1.0
-                  ? "Put buying is elevated, suggesting caution in the market. Incrementally bullish on a contrarian basis."
-                  : pcValue <= 0.5
-                  ? "Extreme complacency — virtually no hedging activity. This is a strong contrarian warning sign."
-                  : pcValue <= 0.7
-                  ? "Low put demand suggests complacency. Protection is cheap, which is when disciplined PMs should be hedging."
-                  : "Put/Call ratio is in a neutral range. No strong contrarian signal."}
-              </p>
-            </div>
-          </div>
-        </div>
+        <GaugeCard
+          label="Total Put/Call Ratio"
+          href="https://www.cboe.com/us/options/market_statistics/daily/"
+          badge={pcHistory.length > 0 ? "logged" : null}
+          value={pcValue.toFixed(2)}
+          read={pcRead.label}
+          readTone={pcRead.tone}
+          spark={pcHistory.length >= 2 ? (
+            <Sparkline points={pcHistory} width={420} height={26} referenceY={0.85} />
+          ) : null}
+          caption={[pcHistory.length >= 2 ? "logged entries, 6mo" : null, trendCaption(forwardData?.putCallRatio?.trend)].filter(Boolean).join(" · ") || null}
+          detail={pcRead.detail}
+        />
       </div>
 
       {/* Claude's contrarian analysis */}
       {contrarianAnalysis && (
-        <div className="mt-3 border-t border-line-soft pt-3">
-          <div className="flex items-center gap-2 mb-1.5">
-            <span className="text-xs font-bold uppercase tracking-wider text-ink-3">Contrarian Take</span>
-            <SignalPill tone={overall.tone}>{overall.label}</SignalPill>
-          </div>
-          <ClampText text={contrarianAnalysis} />
+        <div className="border-t border-line-soft px-3.5 py-3">
+          <div className="mb-1 text-[11px] text-ink-3">Contrarian take</div>
+          <ClampText text={contrarianAnalysis} textClassName="text-[12.5px] leading-[1.5] text-ink-2" />
         </div>
       )}
-    </section>
+    </div>
   );
 }

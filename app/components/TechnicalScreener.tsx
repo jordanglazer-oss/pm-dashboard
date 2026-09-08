@@ -1,8 +1,9 @@
 "use client";
 
-import React, { useState, useMemo, useEffect } from "react";
+import React, { useState, useMemo, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { EmptyState } from "@/app/components/EmptyState";
+import { AppIcon } from "@/app/components/AppIcon";
 import { useStocks } from "@/app/lib/StockContext";
 import type { ScoredStock, Stock, ScoreKey } from "@/app/lib/types";
 import type { TechnicalIndicators, ImprovingScore } from "@/app/lib/technicals";
@@ -180,14 +181,24 @@ function compositeTechnicalScore(t: TechnicalIndicators): { bullish: number; bea
 
 // ── Shared UI components ──
 
-function TechPill({ signal }: { signal: "bullish" | "bearish" | "neutral" }) {
-  const styles =
-    signal === "bullish" ? "bg-pos-soft text-pos"
-    : signal === "bearish" ? "bg-neg-soft text-neg"
-    : "bg-surface-2 text-ink-3";
+const BTN = "inline-flex h-7 items-center gap-1.5 rounded-control border border-line bg-surface px-2.5 text-[12.5px] text-ink-2 hover:bg-surface-hover disabled:opacity-40";
+const BTN_PRI = "inline-flex h-7 items-center gap-1.5 rounded-control bg-ink px-2.5 text-[12.5px] font-medium text-white hover:bg-ink-2 disabled:opacity-40";
+const BTN22 = "inline-flex h-[22px] items-center gap-1 rounded-control border border-line bg-surface px-1.5 text-[11.5px] text-ink-2 hover:bg-surface-hover hover:text-ink";
+const INPUT = "h-7 rounded-control border border-line bg-surface px-2.5 text-[12.5px] outline-none placeholder:text-ink-3 focus:border-accent-border";
+const SELECT = "h-7 rounded-control border border-line bg-surface px-2 text-[12.5px] text-ink-2 outline-none";
+
+const SIGNAL_DOT: Record<"bullish" | "bearish" | "neutral", string> = {
+  bullish: "bg-pos",
+  bearish: "bg-neg",
+  neutral: "bg-ink-faint",
+};
+
+/** Signal read = dot + the reading beside it (one column, never a pill). */
+function Sig({ signal, children }: { signal: "bullish" | "bearish" | "neutral"; children: React.ReactNode }) {
   return (
-    <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-semibold ${styles}`}>
-      {signal === "bullish" ? "+" : signal === "bearish" ? "-" : "~"}
+    <span className="inline-flex items-center gap-1.5" title={signal}>
+      <span className={`dot ${SIGNAL_DOT[signal]}`} />
+      <span className="text-[12px] text-ink-2">{children}</span>
     </span>
   );
 }
@@ -195,20 +206,92 @@ function TechPill({ signal }: { signal: "bullish" | "bearish" | "neutral" }) {
 function CompositeBar({ bullish, bearish, neutral }: { bullish: number; bearish: number; neutral: number }) {
   const total = COMPOSITE_TOTAL;
   return (
-    <div className="flex h-2.5 rounded-full overflow-hidden bg-surface-2 w-24">
-      {bullish > 0 && <div className="bg-pos transition-all" style={{ width: `${(bullish / total) * 100}%` }} />}
-      {neutral > 0 && <div className="bg-line transition-all" style={{ width: `${(neutral / total) * 100}%` }} />}
-      {bearish > 0 && <div className="bg-neg transition-all" style={{ width: `${(bearish / total) * 100}%` }} />}
-    </div>
+    <span className="inline-flex h-1.5 w-16 overflow-hidden rounded-full bg-surface-2 align-middle">
+      {bullish > 0 && <span className="bg-pos" style={{ width: `${(bullish / total) * 100}%` }} />}
+      {neutral > 0 && <span className="bg-line" style={{ width: `${(neutral / total) * 100}%` }} />}
+      {bearish > 0 && <span className="bg-neg" style={{ width: `${(bearish / total) * 100}%` }} />}
+    </span>
   );
 }
 
 function ImprovingBar({ score }: { score: number }) {
   return (
-    <div className="flex h-2 rounded-full overflow-hidden bg-surface-2 w-16">
+    <span className="inline-flex h-1.5 w-14 overflow-hidden rounded-full bg-surface-2 align-middle">
       {Array.from({ length: 6 }, (_, i) => (
-        <div key={i} className={`flex-1 ${i < score ? "bg-accent" : ""} ${i > 0 ? "ml-px" : ""}`} />
+        <span key={i} className={`flex-1 ${i < score ? "bg-accent" : ""} ${i > 0 ? "ml-px" : ""}`} />
       ))}
+    </span>
+  );
+}
+
+const compositeCls = (net: number) => (net >= 1 ? "text-pos" : net <= -1 ? "text-neg" : "text-ink-3");
+
+/**
+ * The eleven signal filters, folded into one `filter` menu so the toolbar
+ * stays one row. A menu is deliberately transient (not persisted) — the
+ * filter VALUES live in the caller's state exactly as before.
+ */
+function SignalFilterMenu({
+  filters,
+  onChange,
+  onClear,
+}: {
+  filters: Record<FilterKey, FilterOption>;
+  onChange: (key: FilterKey, value: FilterOption) => void;
+  onClear: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  const active = Object.values(filters).filter((v) => v !== "all").length;
+
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") setOpen(false); };
+    document.addEventListener("mousedown", onDown);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onDown);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [open]);
+
+  return (
+    <div ref={ref} className="relative">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        aria-expanded={open}
+        className={`${BTN} ${active > 0 ? "!border-accent-border !bg-accent-soft !text-accent" : ""}`}
+      >
+        <AppIcon name="filter" size={13} strokeWidth={2} />
+        Signals
+        {active > 0 && <span className="font-mono text-[11px]">{active}</span>}
+        <AppIcon name="chevD" size={12} strokeWidth={2} className={active > 0 ? "" : "text-ink-3"} />
+      </button>
+      {open && (
+        <div className="absolute left-0 top-full z-20 mt-1 w-[320px] rounded-card border border-line bg-surface p-2 shadow-[var(--shadow-pop)]">
+          <div className="flex flex-col gap-1">
+            {(Object.keys(FILTER_LABELS) as FilterKey[]).map((key) => (
+              <label key={key} className="flex items-center gap-2 text-[12px] text-ink-2">
+                <span className={`w-[132px] shrink-0 truncate ${filters[key] !== "all" ? "text-accent" : ""}`}>{FILTER_LABELS[key]}</span>
+                <select value={filters[key]} onChange={(e) => onChange(key, e.target.value as FilterOption)} className={`${SELECT} flex-1 ${filters[key] !== "all" ? "border-accent-border text-accent" : ""}`}>
+                  <option value="all">All</option>
+                  <option value="bullish">Bullish</option>
+                  <option value="bearish">Bearish</option>
+                  <option value="neutral">Neutral</option>
+                </select>
+              </label>
+            ))}
+          </div>
+          <div className="mt-2 flex items-center justify-between border-t border-line-soft pt-2">
+            <button type="button" onClick={onClear} disabled={active === 0} className="text-[11.5px] text-accent hover:underline disabled:text-ink-faint disabled:no-underline">Clear all</button>
+            <button type="button" onClick={() => setOpen(false)} className={BTN22}>Done</button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -250,7 +333,6 @@ type Props = {
 export function TechnicalScreener({ stocks, onAddToWatchlist }: Props) {
   const router = useRouter();
   const { scannerData, setScannerData } = useStocks();
-  const [tab, setTab] = useState<"portfolio" | "scan">("portfolio");
 
   // ── Portfolio tab state ──
   const [query, setQuery] = useState("");
@@ -453,375 +535,272 @@ export function TechnicalScreener({ stocks, onAddToWatchlist }: Props) {
   };
 
   // ── Sort header component ──
-  const SortHeader = ({ label, sortId, className = "" }: { label: string; sortId: SortKey; className?: string }) => (
-    <th className={`pb-3 cursor-pointer select-none hover:text-ink transition-colors ${className}`} onClick={() => toggleSort(sortId)}>
-      <div className="flex items-center gap-1">
+  const SortHeader = ({ label, sortId, className = "", title }: { label: string; sortId: SortKey; className?: string; title?: string }) => (
+    <th className={className} title={title}>
+      <button type="button" onClick={() => toggleSort(sortId)} className={`inline-flex items-center gap-0.5 hover:text-ink ${sortKey === sortId ? "text-ink-2" : ""}`}>
         {label}
-        {sortKey === sortId && <span className="text-accent">{sortDir === "desc" ? "\u2193" : "\u2191"}</span>}
-      </div>
+        {sortKey === sortId && <AppIcon name={sortDir === "desc" ? "chevD" : "chevU"} size={11} strokeWidth={2} />}
+      </button>
+    </th>
+  );
+  const ScanSortHeader = ({ label, sortId, className = "" }: { label: string; sortId: typeof scanSortKey; className?: string }) => (
+    <th className={className}>
+      <button type="button" onClick={() => toggleScanSort(sortId)} className={`inline-flex items-center gap-0.5 hover:text-ink ${scanSortKey === sortId ? "text-ink-2" : ""}`}>
+        {label}
+        {scanSortKey === sortId && <AppIcon name={scanSortDir === "desc" ? "chevD" : "chevU"} size={11} strokeWidth={2} />}
+      </button>
     </th>
   );
 
+  const SORT_LABEL: Record<SortKey, string> = { ticker: "ticker", composite: "composite", trend: "trend", rsi: "RSI", macd: "MACD", ichimoku: "Ichimoku", momentum: "20d change", improving: "improving" };
+
   return (
-    <section className="space-y-4">
-      {/* Tab bar */}
-      <div className="flex rounded-card border border-line overflow-hidden bg-white">
-        <button
-          onClick={() => setTab("portfolio")}
-          className={`flex-1 px-6 py-3 text-sm font-semibold transition-colors ${
-            tab === "portfolio" ? "bg-ink text-white" : "text-ink-2 hover:bg-surface-2"
-          }`}
-        >
-          My Stocks
-        </button>
-        <button
-          onClick={() => setTab("scan")}
-          className={`flex-1 px-6 py-3 text-sm font-semibold transition-colors ${
-            tab === "scan" ? "bg-accent text-white" : "text-ink-2 hover:bg-surface-2"
-          }`}
-        >
-          Universe Scanner
-        </button>
+    <div className="flex flex-col gap-3.5">
+      {/* ── Toolbar: my stocks ── */}
+      <div className="flex flex-wrap items-center gap-2.5">
+        <div className="seg" role="group" aria-label="Bucket">
+          {(["All", "Portfolio", "Watchlist", "Funds & ETFs"] as const).map((b) => (
+            <button key={b} onClick={() => setBucketFilter(b)} className={bucketFilter === b ? "on" : ""}>{b}</button>
+          ))}
+        </div>
+        <label className="relative">
+          <AppIcon name="search" size={13} strokeWidth={2} className="pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 text-ink-3" />
+          <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search ticker, name, or sector" className={`${INPUT} w-64 pl-7`} />
+        </label>
+        <SignalFilterMenu filters={filters} onChange={setFilter} onClear={() => setFilters({ ...ALL_FILTERS_CLEARED })} />
+        {activeFilterCount > 0 && (
+          <button onClick={() => setFilters({ ...ALL_FILTERS_CLEARED })} className={BTN}>
+            <AppIcon name="x" size={12} strokeWidth={2} />
+            Clear filters ({activeFilterCount})
+          </button>
+        )}
+        <span className="ml-auto text-[11.5px] text-ink-3">
+          {stocksWithTechnicals.length} stocks with data
+          {noTechnicalsCount > 0 && <span className="text-warn"> · {noTechnicalsCount} need scoring</span>}
+        </span>
       </div>
 
-      {tab === "portfolio" && (
-        <>
-          {/* Portfolio header */}
-          <div className="rounded-card border border-line bg-white p-6 shadow-sm">
-            <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
-              <div>
-                <h3 className="text-[15px] font-bold">Technical Screener</h3>
-                <p className="text-sm text-ink-3 mt-1">
-                  Screen stocks by technical signals across 6 factors. {stocksWithTechnicals.length} stocks with data.
-                  {noTechnicalsCount > 0 && <span className="text-warn ml-1">({noTechnicalsCount} need scoring)</span>}
-                </p>
-              </div>
-              <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search ticker, name, or sector"
-                className="w-full min-w-[260px] rounded-card border border-line bg-white px-4 py-3 outline-none placeholder:text-ink-3 md:w-auto" />
-            </div>
-
-            <div className="grid grid-cols-3 gap-3 mt-4">
-              <div className="rounded-card bg-pos-soft border border-pos-border p-3 text-center">
-                <div className="text-2xl font-bold text-pos">{bullishCount}</div>
-                <div className="text-xs text-pos font-medium">Bullish (net +2 or more)</div>
-              </div>
-              <div className="rounded-card bg-surface-2 border border-line p-3 text-center">
-                <div className="text-2xl font-bold text-ink-2">{neutralCount}</div>
-                <div className="text-xs text-ink-3 font-medium">Neutral</div>
-              </div>
-              <div className="rounded-card bg-neg-soft border border-neg-border p-3 text-center">
-                <div className="text-2xl font-bold text-neg">{bearishCount}</div>
-                <div className="text-xs text-neg font-medium">Bearish (net -2 or more)</div>
-              </div>
-            </div>
-
-            <div className="mt-4 flex flex-wrap items-center gap-3">
-              <div className="flex rounded-control border border-line overflow-hidden text-sm">
-                {(["All", "Portfolio", "Watchlist", "Funds & ETFs"] as const).map((b) => (
-                  <button key={b} onClick={() => setBucketFilter(b)}
-                    className={`px-3 py-1.5 font-medium transition-colors ${bucketFilter === b ? "bg-ink text-white" : "text-ink-2 hover:bg-surface-2"}`}>
-                    {b}
-                  </button>
-                ))}
-              </div>
-              {(Object.keys(FILTER_LABELS) as FilterKey[]).map((key) => (
-                <select key={key} value={filters[key]} onChange={(e) => setFilter(key, e.target.value as FilterOption)}
-                  className={`rounded-control border px-3 py-1.5 text-sm outline-none transition-colors ${
-                    filters[key] !== "all" ? "border-accent-border bg-accent-soft text-accent font-semibold" : "border-line bg-white text-ink-2"
-                  }`}>
-                  <option value="all">{FILTER_LABELS[key]}: All</option>
-                  <option value="bullish">Bullish</option>
-                  <option value="bearish">Bearish</option>
-                  <option value="neutral">Neutral</option>
-                </select>
-              ))}
-              {activeFilterCount > 0 && (
-                <button onClick={() => setFilters({ ...ALL_FILTERS_CLEARED })}
-                  className="rounded-control border border-line px-3 py-1.5 text-sm text-ink-3 hover:bg-surface-2 transition-colors">
-                  Clear filters ({activeFilterCount})
-                </button>
-              )}
-            </div>
-          </div>
-
-          {/* Portfolio results table */}
-          <div className="rounded-card border border-line bg-white p-6 shadow-sm overflow-x-auto">
-            <div className="text-sm text-ink-3 mb-3">{filtered.length} of {stocksWithTechnicals.length} stocks</div>
-            <table className="w-full min-w-[1000px] text-left">
+      {/* ── My stocks ── */}
+      <section className="panel">
+        <div className="panel-h">
+          <span className="t">Technical screener</span>
+          <span className="m">
+            6-factor composite · <span className="text-pos">{bullishCount} bullish</span> · {neutralCount} neutral · <span className="text-neg">{bearishCount} bearish</span>
+          </span>
+        </div>
+        {filtered.length === 0 ? (
+          <EmptyState
+            className="!py-8"
+            glyph={<AppIcon name="search" size={18} />}
+            title={stocksWithTechnicals.length === 0 ? "No technical data yet" : "No matches"}
+            body={stocksWithTechnicals.length === 0 ? "Score stocks to generate technicals, then they'll show up here." : "No stocks match the current filters — try loosening them."}
+          />
+        ) : (
+          <div className="tbl-wrap">
+            <table className="data-table min-w-[1000px]">
               <thead>
-                <tr className="border-b border-line text-sm text-ink-3">
-                  <SortHeader label="Ticker" sortId="ticker" />
-                  <th className="pb-3">Name</th>
-                  <th className="pb-3">Sector</th>
-                  <SortHeader label="Composite" sortId="composite" />
+                <tr>
+                  <SortHeader label="Ticker" sortId="ticker" className="pl-3.5" />
+                  <th>Name</th>
+                  <th>Sector</th>
+                  <SortHeader label="Composite" sortId="composite" className="n" title="Net of 6 signals: Trend, RSI, MACD, Ichimoku, Volume, MACD divergence" />
                   <SortHeader label="Trend" sortId="trend" />
                   <SortHeader label="RSI" sortId="rsi" />
                   <SortHeader label="MACD" sortId="macd" />
                   <SortHeader label="Ichimoku" sortId="ichimoku" />
-                  <th className="pb-3">Volume</th>
-                  <th className="pb-3">52W</th>
-                  <SortHeader label="20d Chg" sortId="momentum" />
+                  <th>Volume</th>
+                  <th>52W</th>
+                  <SortHeader label="20d chg" sortId="momentum" className="n pr-3.5" />
                 </tr>
               </thead>
               <tbody>
                 {filtered.map((s) => {
                   const t = s.technicals!;
                   const composite = compositeTechnicalScore(t);
-                  const compositeColor = composite.net >= 3 ? "text-pos bg-pos-soft" : composite.net >= 1 ? "text-pos" : composite.net <= -3 ? "text-neg bg-neg-soft" : composite.net <= -1 ? "text-neg" : "text-ink-3";
                   return (
-                    <tr key={s.ticker} className="border-b border-line-soft align-middle cursor-pointer hover:bg-surface-hover transition-colors"
-                      onClick={() => router.push(`/stock/${s.ticker.toLowerCase()}`)}>
-                      <td className="py-3"><div className="font-semibold text-ink font-mono">{displayTicker(s.ticker)}</div></td>
-                      <td className="py-3 text-xs text-ink-3 truncate max-w-[160px]">{s.name !== s.ticker ? s.name : ""}</td>
-                      <td className="py-3 text-xs text-ink-3">{s.sector}</td>
-                      <td className="py-3"><div className="flex items-center gap-2"><span className={`text-sm font-bold rounded px-1.5 py-0.5 ${compositeColor}`}>{composite.net > 0 ? "+" : ""}{composite.net}</span><CompositeBar bullish={composite.bullish} bearish={composite.bearish} neutral={composite.neutral} /></div></td>
-                      <td className="py-3"><div className="flex items-center gap-1.5"><TechPill signal={getTrendSignal(t)} /><span className="text-xs text-ink-3">{t.dmaSignal.replace(/_/g, " ")}</span></div></td>
-                      <td className="py-3"><div className="flex items-center gap-1.5"><TechPill signal={getRsiSignal(t)} /><span className={`text-xs font-mono ${t.rsi14 > 70 ? "text-neg" : t.rsi14 < 30 ? "text-pos" : "text-ink-2"}`}>{t.rsi14.toFixed(0)}</span></div></td>
-                      <td className="py-3"><div className="flex items-center gap-1.5"><TechPill signal={getMacdSignal(t)} /><span className={`text-xs font-mono ${t.macdHistogram >= 0 ? "text-pos" : "text-neg"}`}>{t.macdHistogram >= 0 ? "+" : ""}{t.macdHistogram.toFixed(2)}</span></div></td>
-                      <td className="py-3"><div className="flex items-center gap-1.5"><TechPill signal={getIchimokuSignal(t)} /><span className="text-xs text-ink-3">{t.ichimoku.overallSignal.replace(/_/g, " ")}</span></div></td>
-                      <td className="py-3"><div className="flex items-center gap-1.5"><TechPill signal={getVolumeSignal(t)} /><span className="text-xs text-ink-3 font-mono">{t.volumeRatio.toFixed(1)}x</span></div></td>
-                      <td className="py-3"><div className="flex items-center gap-1.5"><TechPill signal={getWeek52Signal(t)} /><span className="text-xs text-ink-3 font-mono">{(t.week52Position * 100).toFixed(0)}%</span></div></td>
-                      <td className="py-3"><span className={`text-sm font-semibold ${t.priceChange20d >= 0 ? "text-pos" : "text-neg"}`}>{t.priceChange20d >= 0 ? "+" : ""}{t.priceChange20d.toFixed(1)}%</span></td>
+                    <tr key={s.ticker} className="cursor-pointer" onClick={() => router.push(`/stock/${s.ticker.toLowerCase()}`)}>
+                      <td className="pl-3.5 font-mono font-medium text-ink">{displayTicker(s.ticker)}</td>
+                      <td className="max-w-[160px] truncate text-[12px] text-ink-3">{s.name !== s.ticker ? s.name : ""}</td>
+                      <td className="text-[12px] text-ink-2">{s.sector}</td>
+                      <td className="n">
+                        <span className="inline-flex items-center gap-2">
+                          <CompositeBar bullish={composite.bullish} bearish={composite.bearish} neutral={composite.neutral} />
+                          <span className={`font-medium ${compositeCls(composite.net)}`}>{composite.net > 0 ? "+" : ""}{composite.net}</span>
+                        </span>
+                      </td>
+                      <td><Sig signal={getTrendSignal(t)}>{t.dmaSignal.replace(/_/g, " ")}</Sig></td>
+                      <td><Sig signal={getRsiSignal(t)}><span className={`font-mono ${t.rsi14 > 70 ? "text-neg" : t.rsi14 < 30 ? "text-pos" : ""}`}>{t.rsi14.toFixed(0)}</span></Sig></td>
+                      <td><Sig signal={getMacdSignal(t)}><span className={`font-mono ${t.macdHistogram >= 0 ? "text-pos" : "text-neg"}`}>{t.macdHistogram >= 0 ? "+" : ""}{t.macdHistogram.toFixed(2)}</span></Sig></td>
+                      <td><Sig signal={getIchimokuSignal(t)}>{t.ichimoku.overallSignal.replace(/_/g, " ")}</Sig></td>
+                      <td><Sig signal={getVolumeSignal(t)}><span className="font-mono">{t.volumeRatio.toFixed(1)}x</span></Sig></td>
+                      <td><Sig signal={getWeek52Signal(t)}><span className="font-mono">{(t.week52Position * 100).toFixed(0)}%</span></Sig></td>
+                      <td className={`n pr-3.5 ${t.priceChange20d >= 0 ? "text-pos" : "text-neg"}`}>{t.priceChange20d >= 0 ? "+" : ""}{t.priceChange20d.toFixed(1)}%</td>
                     </tr>
                   );
                 })}
               </tbody>
             </table>
-            {filtered.length === 0 && (
-              <EmptyState
-                glyph={
-                  <svg className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607z" /></svg>
-                }
-                title={stocksWithTechnicals.length === 0 ? "No technical data yet" : "No matches"}
-                body={stocksWithTechnicals.length === 0 ? "Score stocks to generate technicals, then they'll show up here." : "No stocks match the current filters — try loosening them."}
-              />
-            )}
           </div>
-        </>
-      )}
+        )}
+        <div className="flex h-8 items-center border-t border-line-soft px-3.5 text-[11.5px] text-ink-3">
+          {filtered.length} of {stocksWithTechnicals.length} · sorted by {SORT_LABEL[sortKey]}
+        </div>
+      </section>
 
-      {tab === "scan" && (
-        <>
-          {/* Scanner controls */}
-          <div className="rounded-card border border-accent-border bg-white p-6 shadow-sm">
-            <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
-              <div>
-                <h3 className="text-2xl font-semibold">Universe Scanner</h3>
-                <p className="text-sm text-ink-3 mt-1">
-                  Scan an index universe for stocks showing improving technical signals.
-                  Identifies stocks trending <span className="font-semibold text-accent">toward</span> positive territory — not already there.
-                </p>
-                {scanMeta && (
-                  <p className="text-xs text-ink-3 mt-1">
-                    Last scanned: {new Date(scanMeta.scannedAt).toLocaleString("en-US", {
-                      month: "short", day: "numeric", year: "numeric",
-                      hour: "numeric", minute: "2-digit", hour12: true,
-                    })} — {UNIVERSE_LABELS[scanMeta.universe as UniverseKey] || scanMeta.universe}, min score {scanMeta.minScore}/6
-                  </p>
-                )}
-              </div>
-            </div>
-
-            <div className="mt-4 flex flex-wrap items-center gap-3">
-              {/* Universe selector */}
-              <select value={scanUniverse} onChange={(e) => setScanUniverse(e.target.value as UniverseKey)}
-                className="rounded-control border border-line bg-white px-4 py-2.5 text-sm font-medium text-ink outline-none">
-                {(Object.keys(UNIVERSE_LABELS) as UniverseKey[]).map((k) => (
-                  <option key={k} value={k}>{UNIVERSE_LABELS[k]}</option>
-                ))}
+      {/* ── Universe scanner ── */}
+      <section className="panel">
+        <div className="panel-h flex-wrap gap-y-1.5 py-1.5">
+          <span className="t">Universe scanner</span>
+          <span className="m">
+            improving signals — stocks trending <span className="text-ink-2">toward</span> positive territory, not already there
+            {scanMeta && (
+              <>
+                {" · last scanned "}
+                {new Date(scanMeta.scannedAt).toLocaleString("en-US", { month: "short", day: "numeric", year: "numeric", hour: "numeric", minute: "2-digit", hour12: true })}
+                {" — "}{UNIVERSE_LABELS[scanMeta.universe as UniverseKey] || scanMeta.universe}, min score {scanMeta.minScore}/6
+              </>
+            )}
+          </span>
+          <div className="ml-auto flex flex-wrap items-center gap-2">
+            <select value={scanUniverse} onChange={(e) => setScanUniverse(e.target.value as UniverseKey)} className={SELECT} aria-label="Universe">
+              {(Object.keys(UNIVERSE_LABELS) as UniverseKey[]).map((k) => (
+                <option key={k} value={k}>{UNIVERSE_LABELS[k]}</option>
+              ))}
+            </select>
+            <label className="inline-flex items-center gap-1.5 text-[11px] text-ink-3">
+              Min score
+              <select value={minImprovingScore} onChange={(e) => setMinImprovingScore(Number(e.target.value))} className={SELECT}>
+                <option value={1}>1/6 (Weak+)</option>
+                <option value={2}>2/6 (Moderate+)</option>
+                <option value={3}>3/6 (Moderate-Strong)</option>
+                <option value={4}>4/6 (Strong)</option>
               </select>
-
-              {/* Min improving score */}
-              <div className="flex items-center gap-2">
-                <span className="text-sm text-ink-3">Min score:</span>
-                <select value={minImprovingScore} onChange={(e) => setMinImprovingScore(Number(e.target.value))}
-                  className="rounded-control border border-line bg-white px-3 py-2.5 text-sm outline-none">
-                  <option value={1}>1/6 (Weak+)</option>
-                  <option value={2}>2/6 (Moderate+)</option>
-                  <option value={3}>3/6 (Moderate-Strong)</option>
-                  <option value={4}>4/6 (Strong)</option>
-                </select>
-              </div>
-
-              {/* Scan button */}
-              <button onClick={handleScan} disabled={scanning}
-                className="rounded-control bg-accent px-6 py-2.5 text-sm font-semibold text-white hover:bg-accent disabled:opacity-50 transition-colors">
-                {scanning ? "Scanning..." : `Scan ${UNIVERSE_LABELS[scanUniverse]}`}
-              </button>
-
-              {scanProgress && (
-                <span className={`text-sm ${scanning ? "text-accent" : "text-neg"}`}>
-                  {scanning && (
-                    <span className="inline-block w-3 h-3 border-2 border-accent-border border-t-transparent rounded-full animate-spin mr-2 align-middle" />
-                  )}
-                  {scanProgress}
-                </span>
-              )}
-            </div>
-
-            {/* Signal filters (same as portfolio tab) */}
-            {scanResults.length > 0 && (
-              <div className="mt-4 flex flex-wrap items-center gap-3">
-                {(Object.keys(FILTER_LABELS) as FilterKey[]).map((key) => (
-                  <select key={key} value={scanFilters[key]} onChange={(e) => setScanFilter(key, e.target.value as FilterOption)}
-                    className={`rounded-control border px-3 py-1.5 text-sm outline-none transition-colors ${
-                      scanFilters[key] !== "all" ? "border-accent-border bg-accent-soft text-accent font-semibold" : "border-line bg-white text-ink-2"
-                    }`}>
-                    <option value="all">{FILTER_LABELS[key]}: All</option>
-                    <option value="bullish">Bullish</option>
-                    <option value="bearish">Bearish</option>
-                    <option value="neutral">Neutral</option>
-                  </select>
-                ))}
-                {activeScanFilterCount > 0 && (
-                  <button onClick={() => setScanFilters({ ...ALL_FILTERS_CLEARED })}
-                    className="rounded-control border border-line px-3 py-1.5 text-sm text-ink-3 hover:bg-surface-2 transition-colors">
-                    Clear filters ({activeScanFilterCount})
-                  </button>
-                )}
-              </div>
-            )}
-
-            {/* Improving signals legend */}
-            <div className="mt-4 rounded-card bg-accent-soft border border-accent-border p-4">
-              <div className="text-xs font-semibold text-accent mb-2">Improving signals detected (6 factors):</div>
-              <div className="grid grid-cols-2 md:grid-cols-3 gap-2 text-xs text-accent">
-                <div>RSI Recovery — rising from oversold</div>
-                <div>MACD Improving — histogram turning up</div>
-                <div>DMA Approach — price nearing 50 DMA from below</div>
-                <div>Bullish Crossover — recent golden/MACD/TK cross</div>
-                <div>Cloud Breakout — entering or breaking above Ichimoku</div>
-                <div>Accumulation — high volume on up days</div>
-              </div>
-            </div>
+            </label>
+            <button onClick={handleScan} disabled={scanning} className={BTN_PRI}>
+              <AppIcon name={scanning ? "refresh" : "play"} size={13} strokeWidth={2} className={scanning ? "animate-spin" : ""} />
+              {scanning ? "Scanning…" : `Scan ${UNIVERSE_LABELS[scanUniverse]}`}
+            </button>
           </div>
+        </div>
 
-          {/* Scan results */}
-          {scanResults.length > 0 && (
-            <div className="rounded-card border border-line bg-white p-6 shadow-sm overflow-x-auto">
-              <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between mb-4">
-                <div className="text-sm text-ink-3">
-                  {filteredScanResults.length} of {scanResults.length} results
-                  {scanMeta && (
-                    <span className="text-ink-3 ml-1">(from {scanMeta.total} scanned)</span>
-                  )}
-                </div>
-                <input value={scanQuery} onChange={(e) => setScanQuery(e.target.value)} placeholder="Filter by ticker"
-                  className="rounded-card border border-line bg-white px-4 py-2 text-sm outline-none placeholder:text-ink-3 w-48" />
-              </div>
+        {scanProgress && (
+          <div className={`border-b border-line-soft px-3.5 py-2 text-[12.5px] ${scanning ? "text-ink-2" : "text-neg"}`}>{scanProgress}</div>
+        )}
 
-              <table className="w-full min-w-[1100px] text-left">
-                <thead>
-                  <tr className="border-b border-line text-sm text-ink-3">
-                    <th className="pb-3 cursor-pointer" onClick={() => toggleScanSort("ticker")}>
-                      Ticker {scanSortKey === "ticker" && (scanSortDir === "desc" ? "\u2193" : "\u2191")}
-                    </th>
-                    <th className="pb-3">Name</th>
-                    <th className="pb-3">Price</th>
-                    <th className="pb-3 cursor-pointer" onClick={() => toggleScanSort("composite")}>
-                      Composite {scanSortKey === "composite" && (scanSortDir === "desc" ? "\u2193" : "\u2191")}
-                    </th>
-                    <th className="pb-3 cursor-pointer" onClick={() => toggleScanSort("improving")}>
-                      Improving {scanSortKey === "improving" && (scanSortDir === "desc" ? "\u2193" : "\u2191")}
-                    </th>
-                    <th className="pb-3">Trend</th>
-                    <th className="pb-3 cursor-pointer" onClick={() => toggleScanSort("rsi")}>
-                      RSI {scanSortKey === "rsi" && (scanSortDir === "desc" ? "\u2193" : "\u2191")}
-                    </th>
-                    <th className="pb-3">MACD</th>
-                    <th className="pb-3">Ichimoku</th>
-                    <th className="pb-3">Volume</th>
-                    <th className="pb-3">52W</th>
-                    <th className="pb-3 cursor-pointer" onClick={() => toggleScanSort("momentum")}>
-                      20d Chg {scanSortKey === "momentum" && (scanSortDir === "desc" ? "\u2193" : "\u2191")}
-                    </th>
-                    <th className="pb-3"></th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {filteredScanResults.map((r) => {
-                    const t = r.technicals;
-                    const isAdded = addedTickers.has(r.ticker) || existingTickers.includes(r.ticker.replace(".TO", ""));
-                    const composite = compositeTechnicalScore(t);
-                    const compositeColor = composite.net >= 3 ? "text-pos bg-pos-soft" : composite.net >= 1 ? "text-pos" : composite.net <= -3 ? "text-neg bg-neg-soft" : composite.net <= -1 ? "text-neg" : "text-ink-3";
-                    const improvingColor = r.improving.score >= 4 ? "text-accent bg-accent-soft" : r.improving.score >= 2 ? "text-accent" : "text-ink-3";
+        {/* Improving signals legend */}
+        <div className="border-b border-line-soft px-3.5 py-2 text-[11.5px] leading-5 text-ink-3">
+          <span className="text-ink-2">Improving signals (6 factors):</span> RSI recovery — rising from oversold · MACD improving — histogram turning up ·
+          DMA approach — price nearing 50 DMA from below · Bullish crossover — recent golden/MACD/TK cross · Cloud breakout — entering or breaking above Ichimoku ·
+          Accumulation — high volume on up days
+        </div>
 
-                    return (
-                      <tr key={r.ticker} className="border-b border-line-soft align-middle cursor-pointer hover:bg-surface-hover transition-colors"
-                        onClick={() => {
-                          const clean = r.ticker.replace(".TO", "").toLowerCase();
-                          if (existingTickers.includes(clean.toUpperCase()) || existingTickers.includes(r.ticker.replace(".TO", ""))) {
-                            router.push(`/stock/${clean}`);
-                          } else {
-                            // Store scan result for the preview page
-                            try { sessionStorage.setItem(`scan_preview_${r.ticker}`, JSON.stringify(r)); } catch {}
-                            router.push(`/screener/preview/${encodeURIComponent(r.ticker)}`);
-                          }
-                        }}>
-                        <td className="py-3">
-                          <div className="font-semibold text-ink font-mono">{displayTicker(r.ticker)}</div>
-                        </td>
-                        <td className="py-3 text-xs text-ink-3 truncate max-w-[160px]">
-                          {r.name && r.name !== r.ticker ? r.name : ""}
-                          {r.sector && <div className="text-[10px] text-ink-faint">{r.sector}</div>}
-                        </td>
-                        <td className="py-3 text-sm text-ink-2 font-mono">${r.price.toFixed(2)}</td>
-                        <td className="py-3">
-                          <div className="flex items-center gap-2">
-                            <span className={`text-sm font-bold rounded px-1.5 py-0.5 ${compositeColor}`}>{composite.net > 0 ? "+" : ""}{composite.net}</span>
-                            <CompositeBar bullish={composite.bullish} bearish={composite.bearish} neutral={composite.neutral} />
-                          </div>
-                        </td>
-                        <td className="py-3">
-                          <div className="flex items-center gap-2">
-                            <span className={`text-sm font-bold rounded px-1.5 py-0.5 ${improvingColor}`}>
-                              {r.improving.score}/6
-                            </span>
-                            <ImprovingBar score={r.improving.score} />
-                          </div>
-                        </td>
-                        <td className="py-3"><div className="flex items-center gap-1.5"><TechPill signal={getTrendSignal(t)} /><span className="text-xs text-ink-3">{t.dmaSignal.replace(/_/g, " ")}</span></div></td>
-                        <td className="py-3"><div className="flex items-center gap-1.5"><TechPill signal={getRsiSignal(t)} /><span className={`text-xs font-mono ${t.rsi14 > 70 ? "text-neg" : t.rsi14 < 30 ? "text-pos" : "text-ink-2"}`}>{t.rsi14.toFixed(0)}</span></div></td>
-                        <td className="py-3"><div className="flex items-center gap-1.5"><TechPill signal={getMacdSignal(t)} /><span className={`text-xs font-mono ${t.macdHistogram >= 0 ? "text-pos" : "text-neg"}`}>{t.macdHistogram >= 0 ? "+" : ""}{t.macdHistogram.toFixed(2)}</span></div></td>
-                        <td className="py-3"><div className="flex items-center gap-1.5"><TechPill signal={getIchimokuSignal(t)} /><span className="text-xs text-ink-3">{t.ichimoku.overallSignal.replace(/_/g, " ")}</span></div></td>
-                        <td className="py-3"><div className="flex items-center gap-1.5"><TechPill signal={getVolumeSignal(t)} /><span className="text-xs text-ink-3 font-mono">{t.volumeRatio.toFixed(1)}x</span></div></td>
-                        <td className="py-3"><div className="flex items-center gap-1.5"><TechPill signal={getWeek52Signal(t)} /><span className="text-xs text-ink-3 font-mono">{(t.week52Position * 100).toFixed(0)}%</span></div></td>
-                        <td className="py-3">
-                          <span className={`text-sm font-semibold ${r.priceChange20d >= 0 ? "text-pos" : "text-neg"}`}>
-                            {r.priceChange20d >= 0 ? "+" : ""}{r.priceChange20d.toFixed(1)}%
-                          </span>
-                        </td>
-                        <td className="py-3" onClick={(e) => e.stopPropagation()}>
-                          {isAdded ? (
-                            <span className="rounded-lg bg-surface-2 px-3 py-1.5 text-xs font-medium text-ink-3">Added</span>
-                          ) : (
-                            <button onClick={() => handleAddToWatchlist(r)}
-                              className="rounded-lg bg-accent px-3 py-1.5 text-xs font-semibold text-white hover:bg-accent transition-colors">
-                              + Watchlist
-                            </button>
-                          )}
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-          )}
+        {/* Signal filters (same as the my-stocks toolbar) */}
+        {scanResults.length > 0 && (
+          <div className="flex flex-wrap items-center gap-2 border-b border-line-soft px-3.5 py-2">
+            <label className="relative">
+              <AppIcon name="search" size={13} strokeWidth={2} className="pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 text-ink-3" />
+              <input value={scanQuery} onChange={(e) => setScanQuery(e.target.value)} placeholder="Filter by ticker" className={`${INPUT} w-48 pl-7`} />
+            </label>
+            <SignalFilterMenu filters={scanFilters} onChange={setScanFilter} onClear={() => setScanFilters({ ...ALL_FILTERS_CLEARED })} />
+            {activeScanFilterCount > 0 && (
+              <button onClick={() => setScanFilters({ ...ALL_FILTERS_CLEARED })} className={BTN}>
+                <AppIcon name="x" size={12} strokeWidth={2} />
+                Clear filters ({activeScanFilterCount})
+              </button>
+            )}
+            <span className="ml-auto text-[11.5px] text-ink-3">
+              {filteredScanResults.length} of {scanResults.length} results{scanMeta && ` (from ${scanMeta.total} scanned)`}
+            </span>
+          </div>
+        )}
 
-          {!scanning && scanResults.length === 0 && !scanMeta && (
-            <div className="rounded-card border border-line bg-white p-12 shadow-sm text-center text-ink-3">
-              Run a scan to find stocks with improving technical signals.
-            </div>
-          )}
+        {scanResults.length > 0 && (
+          <div className="tbl-wrap">
+            <table className="data-table min-w-[1100px]">
+              <thead>
+                <tr>
+                  <ScanSortHeader label="Ticker" sortId="ticker" className="pl-3.5" />
+                  <th>Name</th>
+                  <th className="n">Price</th>
+                  <ScanSortHeader label="Composite" sortId="composite" className="n" />
+                  <ScanSortHeader label="Improving" sortId="improving" className="n" />
+                  <th>Trend</th>
+                  <ScanSortHeader label="RSI" sortId="rsi" />
+                  <th>MACD</th>
+                  <th>Ichimoku</th>
+                  <th>Volume</th>
+                  <th>52W</th>
+                  <ScanSortHeader label="20d chg" sortId="momentum" className="n" />
+                  <th className="pr-3.5"></th>
+                </tr>
+              </thead>
+              <tbody>
+                {filteredScanResults.map((r) => {
+                  const t = r.technicals;
+                  const isAdded = addedTickers.has(r.ticker) || existingTickers.includes(r.ticker.replace(".TO", ""));
+                  const composite = compositeTechnicalScore(t);
+                  return (
+                    <tr key={r.ticker} className="cursor-pointer"
+                      onClick={() => {
+                        const clean = r.ticker.replace(".TO", "").toLowerCase();
+                        if (existingTickers.includes(clean.toUpperCase()) || existingTickers.includes(r.ticker.replace(".TO", ""))) {
+                          router.push(`/stock/${clean}`);
+                        } else {
+                          // Store scan result for the preview page
+                          try { sessionStorage.setItem(`scan_preview_${r.ticker}`, JSON.stringify(r)); } catch {}
+                          router.push(`/screener/preview/${encodeURIComponent(r.ticker)}`);
+                        }
+                      }}>
+                      <td className="pl-3.5 font-mono font-medium text-ink">{displayTicker(r.ticker)}</td>
+                      <td className="max-w-[160px] truncate text-[12px] text-ink-3">
+                        {r.name && r.name !== r.ticker ? r.name : ""}
+                        {r.sector && <span className="ml-1.5 text-[11px] text-ink-faint">{r.sector}</span>}
+                      </td>
+                      <td className="n text-ink-2">${r.price.toFixed(2)}</td>
+                      <td className="n">
+                        <span className="inline-flex items-center gap-2">
+                          <CompositeBar bullish={composite.bullish} bearish={composite.bearish} neutral={composite.neutral} />
+                          <span className={`font-medium ${compositeCls(composite.net)}`}>{composite.net > 0 ? "+" : ""}{composite.net}</span>
+                        </span>
+                      </td>
+                      <td className="n">
+                        <span className="inline-flex items-center gap-2">
+                          <ImprovingBar score={r.improving.score} />
+                          <span className={r.improving.score >= 2 ? "font-medium text-ink" : "text-ink-3"}>{r.improving.score}<span className="text-ink-faint">/6</span></span>
+                        </span>
+                      </td>
+                      <td><Sig signal={getTrendSignal(t)}>{t.dmaSignal.replace(/_/g, " ")}</Sig></td>
+                      <td><Sig signal={getRsiSignal(t)}><span className={`font-mono ${t.rsi14 > 70 ? "text-neg" : t.rsi14 < 30 ? "text-pos" : ""}`}>{t.rsi14.toFixed(0)}</span></Sig></td>
+                      <td><Sig signal={getMacdSignal(t)}><span className={`font-mono ${t.macdHistogram >= 0 ? "text-pos" : "text-neg"}`}>{t.macdHistogram >= 0 ? "+" : ""}{t.macdHistogram.toFixed(2)}</span></Sig></td>
+                      <td><Sig signal={getIchimokuSignal(t)}>{t.ichimoku.overallSignal.replace(/_/g, " ")}</Sig></td>
+                      <td><Sig signal={getVolumeSignal(t)}><span className="font-mono">{t.volumeRatio.toFixed(1)}x</span></Sig></td>
+                      <td><Sig signal={getWeek52Signal(t)}><span className="font-mono">{(t.week52Position * 100).toFixed(0)}%</span></Sig></td>
+                      <td className={`n ${r.priceChange20d >= 0 ? "text-pos" : "text-neg"}`}>{r.priceChange20d >= 0 ? "+" : ""}{r.priceChange20d.toFixed(1)}%</td>
+                      <td className="pr-3.5 text-right" onClick={(e) => e.stopPropagation()}>
+                        {isAdded ? (
+                          <span className="text-[11.5px] text-ink-3">Added</span>
+                        ) : (
+                          <button onClick={() => handleAddToWatchlist(r)} className={BTN22}>
+                            <AppIcon name="plus" size={11} strokeWidth={2.25} /> Watchlist
+                          </button>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
 
-          {!scanning && scanResults.length === 0 && scanMeta && (
-            <div className="rounded-card border border-line bg-white p-12 shadow-sm text-center text-ink-3">
-              No stocks found with improving score {"\u2265"} {minImprovingScore}. Try lowering the minimum score.
-            </div>
-          )}
-        </>
-      )}
-    </section>
+        {!scanning && scanResults.length === 0 && !scanMeta && (
+          <EmptyState className="!py-8" glyph={<AppIcon name="play" size={18} />} title="No scan yet" body="Pick a universe and a minimum improving score, then run a scan to find stocks with improving technical signals." />
+        )}
+
+        {!scanning && scanResults.length === 0 && scanMeta && (
+          <EmptyState className="!py-8" glyph={<AppIcon name="search" size={18} />} title="No stocks found" body={`Nothing scored an improving score of ${minImprovingScore} or more. Try lowering the minimum score.`} />
+        )}
+      </section>
+    </div>
   );
 }

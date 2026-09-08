@@ -13,7 +13,14 @@ import {
   vixReadout,
 } from "@/app/lib/market-regime";
 import { fredSeries } from "@/app/lib/forward-looking";
-import { rollupHorizons } from "@/app/lib/horizons";
+import { rollupHorizons, signalsToFlip } from "@/app/lib/horizons";
+import { easternToday } from "@/app/lib/date-eastern";
+import {
+  type RegimeHistoryRow,
+  applyLabelHysteresis,
+  readRegimeHistory,
+  upsertTodayRegimeRow,
+} from "@/app/lib/regime-history";
 
 /**
  * Market-regime compute + cache, extracted from /api/market-regime so BOTH the
@@ -68,7 +75,20 @@ async function safeBars(symbol: string, range: string, interval: string): Promis
   }
 }
 
-export async function computeFromYahoo(): Promise<MarketRegimeData> {
+/** How long a cached FRED-derived readout may stand in when today's FRED call
+ *  fails. Prevents a transient fetch error from silently pulling the ISM /
+ *  credit / curve votes off the slate (which used to move the label with
+ *  zero market movement). ISM prints monthly, so it gets a longer leash. */
+const FRED_FALLBACK_MS = 7 * 24 * 60 * 60 * 1000;
+const ISM_FALLBACK_MS = 60 * 24 * 60 * 60 * 1000;
+
+function cacheAgeMs(cached: MarketRegimeData | null): number {
+  if (!cached) return Infinity;
+  const t = new Date(cached.computedAt).getTime();
+  return isFinite(t) ? Date.now() - t : Infinity;
+}
+
+export async function computeFromYahoo(cached: MarketRegimeData | null = null): Promise<MarketRegimeData> {
   // Fetch all required series in parallel. Daily 1y is enough to cover
   // a 50-day SMA with a 20-day lookback cushion (~70 trading days);
   // SPX needs monthly so we ask for 5y daily and resample.
@@ -122,9 +142,17 @@ export async function computeFromYahoo(): Promise<MarketRegimeData> {
   const stoxxR = computeCrossAssetReadout("^STOXX", stoxx);
   const nikkeiR = computeCrossAssetReadout("^N225", nikkei);
 
-  const ismPmi = napmObs ? computeIsmPmi(napmObs) : null;
-  const credit = computeCreditSignal(hyOasObs);
-  const curve = computeYieldCurveSignal(curveObs);
+  // FRED-derived readouts fall back to the cached copy when today's fetch
+  // fails, so the slate stays fixed (see FRED_FALLBACK_MS). A missing
+  // FRED_API_KEY still yields null everywhere — that's a config state, not a
+  // transient error, and the cache would be null too.
+  const age = cacheAgeMs(cached);
+  const ismFresh = napmObs ? computeIsmPmi(napmObs) : null;
+  const ismPmi = ismFresh ?? (age < ISM_FALLBACK_MS ? cached?.ismPmi ?? null : null);
+  const creditFresh = computeCreditSignal(hyOasObs);
+  const credit = creditFresh ?? (age < FRED_FALLBACK_MS ? cached?.credit ?? null : null);
+  const curveFresh = computeYieldCurveSignal(curveObs);
+  const curve = curveFresh ?? (age < FRED_FALLBACK_MS ? cached?.curve ?? null : null);
   const breadthDivergence = computeBreadthDivergence(spx10m, breadth);
 
   const parts = {
@@ -141,7 +169,47 @@ export async function computeFromYahoo(): Promise<MarketRegimeData> {
   const composite = composeRegime(parts);
   const horizons = rollupHorizons(composite.signals);
 
-  return { computedAt: new Date().toISOString(), ...parts, composite, horizons };
+  // Hysteresis: the committed label only follows the raw label after it has
+  // read the same way for HYSTERESIS_CONFIRM_DAYS sessions (regime-history.ts).
+  const today = easternToday();
+  const history = await readRegimeHistory();
+  const prior = history.filter((r) => r.date < today);
+  const raw = composite.rawLabel ?? composite.label;
+  const hyst = applyLabelHysteresis(raw, prior);
+  composite.label = hyst.label;
+  composite.pending = hyst.pending;
+  // Fewest signal changes that would move the RAW label off where it is.
+  composite.signalsToShed =
+    raw === "Neutral"
+      ? Math.min(signalsToFlip(horizons, "Risk-On"), signalsToFlip(horizons, "Risk-Off"))
+      : signalsToFlip(horizons, "Neutral");
+  if (!isFinite(composite.signalsToShed)) composite.signalsToShed = null;
+
+  const computedAt = new Date().toISOString();
+  const data: MarketRegimeData = { computedAt, ...parts, composite, horizons };
+
+  const row: RegimeHistoryRow = {
+    date: today,
+    computedAt,
+    rawLabel: raw,
+    label: composite.label,
+    weightedScore: composite.weightedScore ?? null,
+    score100: composite.score100 ?? null,
+    riskOn: composite.signals.filter((s) => s.direction === "risk-on").length,
+    riskOff: composite.signals.filter((s) => s.direction === "risk-off").length,
+    total: composite.total,
+    signals: Object.fromEntries(composite.signals.map((s) => [s.name, s.direction])),
+    horizons: {
+      tactical: isFinite(horizons.byHorizon.tactical.score) ? horizons.byHorizon.tactical.score : null,
+      cyclical: isFinite(horizons.byHorizon.cyclical.score) ? horizons.byHorizon.cyclical.score : null,
+      structural: isFinite(horizons.byHorizon.structural.score) ? horizons.byHorizon.structural.score : null,
+    },
+    spx: spx10m?.price ?? null,
+    vix: vixR?.price ?? null,
+  };
+  await upsertTodayRegimeRow(row);
+
+  return data;
 }
 
 export async function readRegimeCache(): Promise<MarketRegimeData | null> {
@@ -175,7 +243,8 @@ export async function writeRegimeCache(data: MarketRegimeData): Promise<void> {
 /** Recompute from Yahoo/FRED and persist. Throws if the compute fails so the
  *  caller can decide whether to fall back to a stale cache. */
 export async function refreshMarketRegime(): Promise<MarketRegimeData> {
-  const fresh = await computeFromYahoo();
+  const cached = await readRegimeCache();
+  const fresh = await computeFromYahoo(cached);
   await writeRegimeCache(fresh);
   return fresh;
 }

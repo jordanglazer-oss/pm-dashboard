@@ -4,14 +4,15 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { VERDICT_LABEL, type SynthesisVerdict, type SynthesisResult, type StaleReason } from "@/app/lib/synthesis-screen-display";
 import { canonicalTicker } from "@/app/lib/ticker";
+import { AppIcon } from "@/app/components/AppIcon";
 
 /**
  * Per-name synthesis read on the stock page (canvas: synthesis ranks above
  * everything). Read-only fetch of the same /api/synthesis-screen rows the
  * Synthesis screen renders; shows the verdict, the one-line reason, the
- * plain-English base case, and the next step. Links to Ideas › Synthesis
- * for the full record. Renders nothing while loading or when the name has
- * no synthesis yet (the screen is where generation happens).
+ * plain-English base / bull / bear cases, and the next step. Links to
+ * Ideas › Synthesis for the full record (generation happens there). Renders
+ * nothing while loading or when the name has no synthesis yet.
  */
 
 type Row = {
@@ -20,6 +21,7 @@ type Row = {
   entry?: { result: SynthesisResult; generatedAt?: string } | null;
 };
 
+// Verdict words are the one place a pill survives: 18px, soft tint.
 const VERDICT_TONE: Record<string, string> = {
   advance: "bg-pos-soft text-pos",
   "thesis-intact": "bg-pos-soft text-pos",
@@ -58,32 +60,38 @@ export function StockSynthesisTile({ ticker, className }: { ticker: string; clas
     : null;
 
   return (
-    <div className={`overflow-hidden rounded-card border border-line bg-white shadow-sm ${className || ""}`}>
-      <div className="flex flex-wrap items-center gap-2 border-b border-line-soft px-5 py-3">
-        <h2 className="text-[15px] font-bold text-ink">Synthesis</h2>
-        <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${VERDICT_TONE[verdict] ?? "bg-surface-2 text-ink-2"}`}>
+    <section className={`panel ${className || ""}`}>
+      <div className="panel-h">
+        <span className="t">Synthesis</span>
+        <span className={`inline-flex h-[18px] items-center rounded px-1.5 text-[11px] font-medium ${VERDICT_TONE[verdict] ?? "bg-surface-2 text-ink-2"}`}>
           {VERDICT_LABEL[verdict] ?? verdict}
         </span>
-        {stale && <span className="rounded-full bg-warn-soft px-2 py-0.5 text-[10px] font-bold text-warn">Stale</span>}
-        <span className="ml-auto flex items-center gap-2 text-[11px] text-ink-3">
-          {updated && <span>updated {updated}</span>}
-          <Link href={`/synthesis?ticker=${encodeURIComponent(canonicalTicker(ticker))}&from=stock`} className="font-semibold !text-accent hover:underline">Full record →</Link>
-        </span>
+        {stale && <span className="inline-flex items-center gap-1.5 text-[11.5px] text-warn"><span className="dot bg-warn" /> Stale</span>}
+        {updated && <span className="m">{updated}</span>}
+        <Link
+          href={`/synthesis?ticker=${encodeURIComponent(canonicalTicker(ticker))}&from=stock`}
+          className="ml-auto inline-flex items-center gap-1 text-[12px] !text-accent hover:underline"
+        >
+          Full record <AppIcon name="arrowR" size={12} />
+        </Link>
       </div>
-      <div className="space-y-2 px-5 py-4">
-        {res.verdictReason && <p className="text-[13px] font-semibold leading-5 text-ink">{res.verdictReason}</p>}
+      <div className="flex flex-col gap-1.5 px-3.5 py-2.5 text-[12.5px] leading-[1.5] text-ink-2">
+        {res.verdictReason && <p className="font-medium text-ink">{res.verdictReason}</p>}
         {res.plain?.base && (
-          <p className="text-[13px] leading-5 text-ink-2">
-            <span className="font-semibold text-ink-3">Base: </span>
-            {res.plain.base}
-          </p>
+          <p><span className="font-semibold text-ink">Base</span> {res.plain.base}</p>
+        )}
+        {res.plain?.bull && (
+          <p><span className="font-semibold text-pos">Bull</span> {res.plain.bull}</p>
+        )}
+        {res.plain?.bear && (
+          <p><span className="font-semibold text-neg">Bear</span> {res.plain.bear}</p>
         )}
         {res.nextStep && (
-          <p className="rounded-lg border border-accent-border bg-accent-soft px-3 py-1.5 text-[12px] font-medium leading-5 text-accent-ink">
-            → {res.nextStep}
+          <p className="mt-0.5 flex items-start gap-1.5 text-[12.5px] text-accent-ink">
+            <AppIcon name="arrowR" size={13} className="mt-[3px]" /> <span>{res.nextStep}</span>
           </p>
         )}
       </div>
-    </div>
+    </section>
   );
 }

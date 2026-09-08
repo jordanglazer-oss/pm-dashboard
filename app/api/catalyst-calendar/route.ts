@@ -28,6 +28,8 @@ type StoredStock = {
   name?: string;
   bucket?: string;
   earningsDate?: string;
+  /** /api/refresh-data writes the date here; read both locations. */
+  healthData?: { earningsDate?: string };
 };
 
 export async function GET(req: NextRequest) {
@@ -62,7 +64,9 @@ export async function GET(req: NextRequest) {
     try {
       const raw = await redis.get("pm:stocks");
       const parsed = raw ? JSON.parse(raw) : [];
-      if (Array.isArray(parsed)) stocks = parsed as StoredStock[];
+      if (Array.isArray(parsed)) {
+        stocks = (parsed as StoredStock[]).map((s) => ({ ...s, earningsDate: s.earningsDate ?? s.healthData?.earningsDate }));
+      }
     } catch (e) {
       log.warn("pm:stocks read failed (earnings will be empty):", e instanceof Error ? e.message : e);
     }

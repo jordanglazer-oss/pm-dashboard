@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useStocks } from "@/app/lib/StockContext";
 import { displayTicker } from "@/app/lib/ticker";
+import { AppIcon } from "@/app/components/AppIcon";
 import { apportionColumn, fmtPct2, sameAtDisplay } from "@/app/lib/display-weights";
 import {
   applyScenario,
@@ -889,7 +890,7 @@ export function ModelScenarios({ groups, alwaysOpen = false }: Props) {
   if (!group) return null;
 
   return (
-    <div className={alwaysOpen ? "" : "mt-6 rounded-lg border border-line bg-white"}>
+    <div className={alwaysOpen ? "" : "mt-6 rounded-card border border-line bg-surface"}>
       {!alwaysOpen && (
       <button
         onClick={() => setOpen((v) => !v)}
@@ -971,7 +972,7 @@ export function ModelScenarios({ groups, alwaysOpen = false }: Props) {
                         onBlur={() =>
                           setAllocDraft((d) => ({ ...d, [k]: (customAlloc[k] * 100).toFixed(2) }))
                         }
-                        className="w-16 rounded border border-line bg-white px-1.5 py-0.5 text-right font-mono text-ink"
+                        className="w-16 rounded border border-line bg-surface px-1.5 py-0.5 text-right font-mono text-ink"
                       />
                       <span className="text-ink-3">%</span>
                       {moved && (
@@ -1001,7 +1002,7 @@ export function ModelScenarios({ groups, alwaysOpen = false }: Props) {
                       cash: (src.cash * 100).toFixed(2),
                     });
                   }}
-                  className="rounded border border-line bg-white px-2 py-0.5 text-ink-3 hover:text-ink"
+                  className="rounded border border-line bg-surface px-2 py-0.5 text-ink-3 hover:text-ink"
                 >
                   Reset
                 </button>
@@ -1498,7 +1499,7 @@ export function ModelScenarios({ groups, alwaysOpen = false }: Props) {
                 const changed = rows.filter((r) => r.changed).length;
 
                 return (
-                  <div key={ac} className="overflow-hidden rounded-card border border-line bg-white shadow-sm">
+                  <div key={ac} className="overflow-hidden rounded-card border border-line bg-surface">
                     <div className={`${colors.header} flex items-center justify-between px-5 py-3`}>
                       <h3 className="text-sm font-bold">
                         {ASSET_CLASS_LABELS[ac]}
@@ -1546,7 +1547,7 @@ export function ModelScenarios({ groups, alwaysOpen = false }: Props) {
                             if (e.key === "Enter") e.currentTarget.blur();
                           }}
                           title="The sleeve's share of the portfolio — edit to move money between asset classes"
-                          className="w-16 rounded border border-transparent bg-transparent px-1 py-0.5 text-right font-mono font-semibold hover:border-current/30 focus:border-current/60 focus:bg-white/70"
+                          className="w-16 rounded border border-transparent bg-transparent px-1 py-0.5 text-right font-mono font-semibold hover:border-current/30 focus:border-current/60 focus:bg-surface/70"
                         />
                         <span>% of portfolio</span>
                         {allocMoved && (
@@ -1565,7 +1566,7 @@ export function ModelScenarios({ groups, alwaysOpen = false }: Props) {
                             <select
                               value={spillTarget(ac)}
                               onChange={(e) => setSpill(ac, e.target.value as PimAssetClass | "")}
-                              className="rounded border border-current/40 bg-white/80 px-1 py-0.5 text-xs font-normal text-ink"
+                              className="rounded border border-current/40 bg-surface/80 px-1 py-0.5 text-xs font-normal text-ink"
                             >
                               <option value="">— keep in this sleeve</option>
                               {(["equity", "fixedIncome", "alternative"] as PimAssetClass[])
@@ -1624,13 +1625,13 @@ export function ModelScenarios({ groups, alwaysOpen = false }: Props) {
                         horizontally because the overflow is owned here. */}
                     <div className="max-w-full overflow-x-auto">
                       <table className="w-full min-w-[920px] text-sm">
-                        <thead className="bg-white shadow-[0_1px_0_0_rgb(226_232_240)]">
+                        <thead className="bg-surface [&>tr>th]:border-b [&>tr>th]:border-line">
                           <tr className="border-b border-line-soft text-xs text-ink-3">
                             <th
                               className="py-2.5 pl-4 pr-1 text-center font-semibold"
                               title="Pin a weight so the residual cannot move it"
                             >
-                              📌
+                              <AppIcon name="pin" size={12} className="mx-auto text-ink-3" />
                             </th>
                             <th className="py-2.5 pr-2 text-left font-semibold">Name</th>
                             <th className="py-2.5 px-2 text-left font-semibold">Symbol</th>
@@ -1687,12 +1688,12 @@ export function ModelScenarios({ groups, alwaysOpen = false }: Props) {
                                 <span className="inline-flex items-center gap-1.5">
                                   {displayTicker(r.symbol)}
                                   {r.from == null && (
-                                    <span className="inline-flex items-center rounded-full bg-pos-soft px-1.5 py-px text-[9px] font-bold uppercase tracking-wider text-pos ring-1 ring-pos-border">
+                                    <span className="text-[11px] font-medium text-pos">
                                       New
                                     </span>
                                   )}
                                   {r.to == null && (
-                                    <span className="inline-flex items-center rounded-full bg-neg-soft px-1.5 py-px text-[9px] font-bold uppercase tracking-wider text-neg ring-1 ring-neg-border">
+                                    <span className="text-[11px] font-medium text-neg">
                                       Sold
                                     </span>
                                   )}
@@ -1737,7 +1738,7 @@ export function ModelScenarios({ groups, alwaysOpen = false }: Props) {
                                     onKeyDown={(e) => {
                                       if (e.key === "Enter") e.currentTarget.blur();
                                     }}
-                                    className="w-20 rounded border border-transparent bg-transparent px-1 py-0.5 text-right font-mono font-semibold text-ink hover:border-line focus:border-accent-border focus:bg-white"
+                                    className="w-20 rounded border border-transparent bg-transparent px-1 py-0.5 text-right font-mono font-semibold text-ink hover:border-line focus:border-accent-border focus:bg-surface"
                                   />
                                 )}
                               </td>
@@ -1965,7 +1966,7 @@ export function ModelScenarios({ groups, alwaysOpen = false }: Props) {
               OR an asset-mix shift in force, so an allocation-only scenario
               still shows how it lands on every profile. */}
           {acrossProfiles.length > 1 && (
-            <div className="mt-4 overflow-hidden rounded-card border border-line bg-white">
+            <div className="mt-4 overflow-hidden rounded-card border border-line bg-surface">
               <div className="flex items-center justify-between border-b border-line-soft px-4 py-2.5">
                 <h3 className="text-sm font-bold text-ink">Across the other mandates</h3>
                 <span className="text-xs text-ink-3">

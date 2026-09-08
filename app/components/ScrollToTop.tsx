@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { AppIcon } from "./AppIcon";
 
 /**
  * A back-to-top control for the long data pages (stock detail, research, models).
@@ -25,13 +26,11 @@ export function ScrollToTop() {
       title="Back to top"
       aria-hidden={!show}
       tabIndex={show ? 0 : -1}
-      className={`fixed bottom-5 right-5 z-40 flex h-10 w-10 items-center justify-center rounded-full border border-line bg-surface text-ink-2 shadow-md transition-all duration-200 hover:bg-surface-2 hover:text-ink print:hidden ${
+      className={`fixed bottom-5 right-5 z-40 grid h-7 w-7 place-items-center rounded-control border border-line bg-surface text-ink-3 shadow-[var(--shadow-pop)] transition-all duration-200 hover:bg-surface-hover hover:text-ink print:hidden ${
         show ? "translate-y-0 opacity-100" : "pointer-events-none translate-y-2 opacity-0"
       }`}
     >
-      <svg className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-        <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 15.75l7.5-7.5 7.5 7.5" />
-      </svg>
+      <AppIcon name="chevU" size={14} />
     </button>
   );
 }

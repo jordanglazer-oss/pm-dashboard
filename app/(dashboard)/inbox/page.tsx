@@ -5,6 +5,8 @@ import type { InboxEvent } from "@/app/lib/inbox-log";
 import type { AnalystReports } from "@/app/lib/analyst-snapshots";
 import { useStocks } from "@/app/lib/StockContext";
 import { EmptyState } from "@/app/components/EmptyState";
+import { AppIcon } from "@/app/components/AppIcon";
+import { StatStrip } from "@/app/components/StatStrip";
 import { isScoreable, marketEdgeApplies } from "@/app/lib/scoring";
 import { canonicalTicker } from "@/app/lib/ticker";
 import {
@@ -41,10 +43,21 @@ type Status = {
   configured: boolean;
 };
 
-function statusChip(status: InboxEvent["status"]) {
-  if (status === "success") return "bg-pos-soft text-pos border-pos-border";
-  if (status === "skipped") return "bg-surface-2 text-ink-2 border-line";
-  return "bg-neg-soft text-neg border-neg-border";
+/** Status reads as a dot + the word, in ONE column — never a pill. */
+function statusDot(status: InboxEvent["status"]) {
+  if (status === "success") return "bg-pos";
+  if (status === "skipped") return "bg-ink-3";
+  return "bg-neg";
+}
+
+/** Sort indicator for a `.data-table` column header — an icon, not a glyph. */
+function sortArrow(active: boolean, dir: string) {
+  if (!active) return null;
+  return (
+    <span className="ml-1 inline-flex align-middle text-ink-3">
+      <AppIcon name={dir === "asc" ? "sortAsc" : "sortDesc"} size={11} />
+    </span>
+  );
 }
 
 function fmtBytes(n: number | undefined): string {
@@ -113,25 +126,19 @@ function CollapsibleHeader({
   action?: React.ReactNode;
 }) {
   return (
-    <div className="border-b border-line-soft px-4 py-2 flex items-center justify-between gap-3 flex-wrap">
+    <div className={`panel-h ${collapsed ? "!border-b-0" : ""}`}>
       <button
         onClick={onToggle}
-        className="flex items-center gap-2 cursor-pointer hover:opacity-80 transition-opacity"
+        className="flex min-w-0 flex-1 cursor-pointer items-center gap-2 text-left"
         aria-expanded={!collapsed}
       >
-        <svg
-          className={`w-3.5 h-3.5 text-ink-3 transition-transform ${collapsed ? "-rotate-90" : ""}`}
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="2.5"
-          viewBox="0 0 24 24"
-        >
-          <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
-        </svg>
-        <span className="text-xs font-semibold uppercase tracking-wider text-ink-3">{title}</span>
+        <span className={`shrink-0 text-ink-3 transition-transform ${collapsed ? "-rotate-90" : ""}`}>
+          <AppIcon name="chevD" size={14} strokeWidth={2} />
+        </span>
+        <span className="t">{title}</span>
         {meta}
       </button>
-      {action && <div onClick={(e) => e.stopPropagation()}>{action}</div>}
+      {action && <div className="ml-auto shrink-0" onClick={(e) => e.stopPropagation()}>{action}</div>}
     </div>
   );
 }
@@ -236,7 +243,7 @@ function EditableNumberCell({
       }}
       placeholder={placeholder ?? "—"}
       aria-label={ariaLabel}
-      className={`${width} rounded border border-line bg-white px-1.5 py-0.5 text-xs font-mono text-right outline-none focus:border-accent focus:ring-1 focus:ring-accent-soft placeholder-ink-faint`}
+      className={`${width} rounded-control border border-line bg-surface px-1.5 py-0.5 text-right font-mono text-[12px] outline-none placeholder-ink-faint focus:border-accent-border`}
     />
   );
 }
@@ -294,7 +301,7 @@ function ConsensusButton({
       }}
       aria-label={ariaLabel}
       title="Click to cycle to the next consensus value. Shift-click or right-click to go backwards. Drives aiRating along with the numeric rating."
-      className={`inline-flex w-[82px] items-center justify-center rounded-full border px-2 py-0.5 text-[10px] font-semibold transition-all hover:opacity-90 hover:shadow-sm cursor-pointer whitespace-nowrap ${consensusToneClass(value)}`}
+      className={`inline-flex w-[82px] cursor-pointer items-center justify-center whitespace-nowrap rounded-control border px-2 py-0.5 text-[11px] font-medium transition-colors hover:opacity-90 ${consensusToneClass(value)}`}
     >
       {consensusLabel(value)}
     </button>
@@ -462,8 +469,7 @@ export default function InboxPage() {
       setUiPref("inbox.reportsSortDir", key === "ticker" || key === "source" ? "asc" : "desc");
     }
   };
-  const reportsArrow = (key: string) =>
-    reportsSortKey === key ? (reportsSortDir === "asc" ? " ▲" : " ▼") : "";
+  const reportsArrow = (key: string) => sortArrow(reportsSortKey === key, reportsSortDir);
 
   // Per-section collapsed state. Each section persists independently via
   // uiPrefs so the user's expand/collapse preferences stick across
@@ -581,8 +587,7 @@ export default function InboxPage() {
       setUiPref("inbox.coverageSortDir", "asc");
     }
   };
-  const covArrow = (key: CoverageSortKey) =>
-    covSortKey === key ? (covSortDir === "asc" ? " ▲" : " ▼") : "";
+  const covArrow = (key: CoverageSortKey) => sortArrow(covSortKey === key, covSortDir);
 
   // Filter THEN sort. Comparator handles missing values by floating them
   // to the end of the sort regardless of direction.
@@ -1082,67 +1087,42 @@ export default function InboxPage() {
   const marketEdgeGap = coverageRows.filter((r) => r.marketEdgeApplies && r.marketEdgePowerRating == null).length;
 
   return (
-    <div className="p-3 sm:p-6 max-w-[88rem] mx-auto">
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
-        <div>
-          <h1 className="text-xl sm:text-2xl font-bold">Email Inbox Ingestion</h1>
-          <p className="text-xs sm:text-sm text-ink-3 mt-1">
-            Live log of analyst-report PDFs received via the dfwreports123@gmail.com Apps Script webhook.
-          </p>
+    <div className="flex flex-col gap-3.5">
+      {/* Toolbar: the shell's top bar already names the page, so the first row
+          is state + controls — webhook health, the last-100 tallies, the
+          cached-events filter, and Refresh. */}
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+        <span className="flex items-center gap-1.5 text-[12.5px] text-ink-2" title={data?.configured ? "INBOX_SECRET is set in Vercel" : "INBOX_SECRET is not set in Vercel — the webhook will reject deliveries"}>
+          <span className={`dot ${data?.configured ? "bg-pos" : "bg-neg"}`} />
+          {data?.configured ? "Webhook configured" : "Webhook secret missing — set INBOX_SECRET in Vercel"}
+        </span>
+        <span className="text-[12.5px] text-ink-3" title="Across the last 100 events">
+          <span className="font-mono text-pos">{successes}</span> ok
+          {" · "}
+          <span className="font-mono text-neg">{failures}</span> failed
+        </span>
+        <div className="seg" role="group" aria-label="Cached events">
+          <button className={hideCached ? "on" : undefined} onClick={() => { if (!hideCached) toggleHideCached(); }} title="Hide cache-hit re-ingestions — they confirm dedup, nothing more">
+            Hide cached{cachedCount > 0 && <span className="c">{cachedCount}</span>}
+          </button>
+          <button className={hideCached ? undefined : "on"} onClick={() => { if (hideCached) toggleHideCached(); }} title="Show every event, cache hits included">
+            Show all
+          </button>
         </div>
-        <div className="flex items-center gap-3 flex-wrap">
-          {/* Hide-cached toggle. Defaults to ON because cached events are
-              just dedup confirmations — the PM cares about fresh ingestions
-              and errors. Toggle off temporarily if you want to verify
-              specific cache hits. State persists in pm:ui-prefs. */}
-          <label className="flex items-center gap-1.5 text-xs text-ink-2 cursor-pointer select-none">
-            <input
-              type="checkbox"
-              checked={hideCached}
-              onChange={toggleHideCached}
-              className="w-3.5 h-3.5 rounded border-line text-accent focus:ring-accent-border"
-            />
-            <span>Hide cached</span>
-            {cachedCount > 0 && (
-              <span className="text-[10px] text-ink-3">({cachedCount} hidden)</span>
-            )}
-          </label>
+        <div className="ml-auto flex items-center gap-2">
           {lastUpdated && (
-            <span className="text-[11px] text-ink-3">
-              Updated {lastUpdated.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", second: "2-digit", hour12: true })}
+            <span className="font-mono text-[11.5px] text-ink-3">
+              {lastUpdated.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", second: "2-digit", hour12: true })}
             </span>
           )}
           <button
             onClick={() => void load(true)}
             disabled={refreshing}
-            className="rounded-md border border-line px-3 py-1.5 text-sm hover:bg-surface-2 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1.5"
+            className="inline-flex h-7 items-center gap-1.5 rounded-control border border-line bg-surface px-2.5 text-[12.5px] text-ink-2 transition-colors hover:bg-surface-hover disabled:cursor-not-allowed disabled:opacity-50"
           >
-            {refreshing && (
-              <span className="inline-block w-3 h-3 border-2 border-line border-t-transparent rounded-full animate-spin" />
-            )}
+            <span className={refreshing ? "animate-spin" : ""}><AppIcon name="refresh" size={13} /></span>
             {refreshing ? "Refreshing…" : "Refresh"}
           </button>
-        </div>
-      </div>
-
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-6">
-        <div className="rounded-lg border border-line bg-white p-3">
-          <div className="text-xs text-ink-3">Webhook secret</div>
-          <div className="mt-1 text-sm font-semibold">
-            {data?.configured ? (
-              <span className="text-pos">Configured</span>
-            ) : (
-              <span className="text-neg">Missing — set INBOX_SECRET in Vercel</span>
-            )}
-          </div>
-        </div>
-        <div className="rounded-lg border border-line bg-white p-3">
-          <div className="text-xs text-ink-3">Successes (last 100 events)</div>
-          <div className="mt-1 text-xl font-bold text-pos">{successes}</div>
-        </div>
-        <div className="rounded-lg border border-line bg-white p-3">
-          <div className="text-xs text-ink-3">Failures (last 100 events)</div>
-          <div className="mt-1 text-xl font-bold text-neg">{failures}</div>
         </div>
       </div>
 
@@ -1151,25 +1131,23 @@ export default function InboxPage() {
           gaps: scoreable Portfolio + Watchlist tickers that don't yet have
           a single analyst report ingested. Surfaces the actionable
           "what's still missing" view alongside the activity log. */}
-      <div className="mt-6 rounded-lg border border-line bg-white overflow-hidden">
+      <section className="panel">
         <CollapsibleHeader
           collapsed={coverageCollapsed}
           onToggle={toggleCoverage}
-          title="Coverage Checklist"
+          title="Coverage checklist"
           meta={
             <span className="text-[11px] text-ink-3">
               {totalCovered}/{coverageRows.length} covered ·
               <span className="ml-1">Portfolio {portfolioCovered}/{portfolioTotal}</span> ·
               <span className="ml-1">Watchlist {watchlistCovered}/{watchlistTotal}</span>
               {missingCount > 0 && (
-                <span className="ml-2 inline-flex items-center rounded-full bg-neg-soft text-neg border border-neg-border px-2 py-0.5 text-[10px] font-bold uppercase">
-                  {missingCount} missing
-                </span>
+                <span className="ml-2 text-neg">{missingCount} missing</span>
               )}
             </span>
           }
           action={
-            <div className="flex flex-wrap gap-1">
+            <div className="seg" role="group" aria-label="Coverage filter">
               {[
                 { key: "all", label: "All" },
                 { key: "missing", label: "Missing only" },
@@ -1179,11 +1157,7 @@ export default function InboxPage() {
                 <button
                   key={b.key}
                   onClick={() => setCoverageFilter(b.key)}
-                  className={`text-[11px] font-semibold rounded-full px-2.5 py-0.5 transition-colors ${
-                    coverageFilter === b.key
-                      ? "bg-ink text-white"
-                      : "bg-surface-2 text-ink-2 hover:bg-line"
-                  }`}
+                  className={coverageFilter === b.key ? "on" : undefined}
                 >
                   {b.label}
                 </button>
@@ -1195,69 +1169,73 @@ export default function InboxPage() {
           // Per-source data-freshness strip — at a glance, how many names are
           // missing or stale for each external feed. Green when a source is
           // fully reflected; amber with a count when something didn't land.
-          <div className="flex flex-wrap items-center gap-2 px-4 py-2.5 border-b border-line-soft bg-surface-hover text-[11px]">
-            <span className="font-semibold text-ink-3 uppercase tracking-wider">Data freshness:</span>
-            {[
+          <StatStrip
+            cols={3}
+            className="!rounded-none !border-x-0 !border-t-0 !border-b-line-soft"
+            items={[
               { label: "BoostedAI", gap: boostedGap },
               { label: "SIA", gap: siaGap },
               { label: "MarketEdge", gap: marketEdgeGap },
-            ].map((s) => (
-              <span
-                key={s.label}
-                className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 font-semibold ${
-                  s.gap === 0
-                    ? "bg-pos-soft text-pos border-pos-border"
-                    : "bg-warn-soft text-warn border-warn-border"
-                }`}
-                title={
-                  s.gap === 0
-                    ? `${s.label}: every applicable name has a current value.`
-                    : `${s.label}: ${s.gap} name${s.gap === 1 ? "" : "s"} missing a value or not captured by the last import. ⚠ marks them in the table below.`
-                }
-              >
-                {s.gap === 0 ? "✓" : "⚠"} {s.label} {s.gap === 0 ? "all current" : `${s.gap} to check`}
-              </span>
-            ))}
-            <span className="text-ink-3">— ⚠ in a cell = no value for that source yet. Reload after an email import to pull the latest.</span>
-          </div>
+            ].map((f) => ({
+              label: f.label,
+              value: (
+                <span className="inline-flex items-center gap-1.5">
+                  <span className={`dot ${f.gap === 0 ? "bg-pos" : "bg-warn"}`} />
+                  <span className={f.gap === 0 ? "text-pos" : "text-warn"}>
+                    {f.gap === 0 ? "All current" : `${f.gap} to check`}
+                  </span>
+                </span>
+              ),
+              title: f.gap === 0
+                ? `${f.label}: every applicable name has a current value.`
+                : `${f.label}: ${f.gap} name${f.gap === 1 ? "" : "s"} missing a value or not captured by the last import — flagged in the table below.`,
+            }))}
+          />
         )}
         {!coverageCollapsed && (coverageRows.length === 0 ? (
-          <p className="text-sm text-ink-3 p-4 italic">
-            No scoreable stocks in your Portfolio or Watchlist yet. Add stocks on the Dashboard to start tracking analyst coverage.
-          </p>
+          <EmptyState
+            glyph={<AppIcon name="table" size={18} />}
+            title="No scoreable stocks yet"
+            body="Add Portfolio or Watchlist names on the dashboard to start tracking analyst coverage."
+          />
         ) : sortedCoverage.length === 0 ? (
-          <p className="text-sm text-ink-3 p-4 italic">
-            {coverageFilter === "missing"
-              ? "🎉 Every scoreable stock has at least one source. No gaps."
-              : "No stocks match this filter."}
-          </p>
+          <EmptyState
+            glyph={<AppIcon name={coverageFilter === "missing" ? "check" : "filter"} size={18} />}
+            title={coverageFilter === "missing" ? "No coverage gaps" : "No stocks match this filter"}
+            body={coverageFilter === "missing" ? "Every scoreable stock has at least one source." : undefined}
+          />
         ) : (
-          <div className="overflow-x-auto">
-          <table className="w-full min-w-[1560px] text-sm">
-            <thead className="bg-surface-2 text-xs uppercase tracking-wider text-ink-3">
+          <div>
+          <table className="data-table table-fixed">
+            <thead>
               <tr>
-                <th className="px-3 py-2 text-left cursor-pointer select-none hover:text-ink" onClick={() => toggleCovSort("ticker")}>Ticker{covArrow("ticker")}</th>
-                <th className="px-3 py-2 text-left cursor-pointer select-none hover:text-ink" onClick={() => toggleCovSort("name")}>Name{covArrow("name")}</th>
-                <th className="px-3 py-2 text-left cursor-pointer select-none hover:text-ink" onClick={() => toggleCovSort("bucket")}>Bucket{covArrow("bucket")}</th>
-                <th className="px-3 py-2 text-center w-20 cursor-pointer select-none hover:text-ink" onClick={() => toggleCovSort("rbc")} title="Date the RBC PDF was last uploaded. Amber &gt;90d, red &gt;180d — a cue to fetch a newer report. Click to sort by recency (oldest first).">RBC{covArrow("rbc")}</th>
-                <th className="px-3 py-2 text-center w-20 cursor-pointer select-none hover:text-ink" onClick={() => toggleCovSort("jpm")} title="Date the JPM PDF was last uploaded. Amber &gt;90d, red &gt;180d — a cue to fetch a newer report. Click to sort by recency (oldest first).">JPM{covArrow("jpm")}</th>
-                <th className="px-3 py-2 text-center w-20 cursor-pointer select-none hover:text-ink" onClick={() => toggleCovSort("morn")} title="Date the Morningstar PDF was last uploaded. Amber &gt;90d, red &gt;180d. Morningstar is optional — a blank is not counted as a coverage gap in Status. Click to sort by recency (oldest first).">Morningstar{covArrow("morn")}</th>
-                {FACTSET_COLS.map((c, i) => (
-                  <th
-                    key={c.kind}
-                    className="px-2 py-2 text-center w-20 cursor-pointer select-none hover:text-ink"
-                    onClick={() => toggleCovSort("factset")}
-                    title={c.title}
-                  >
-                    {c.head}
-                    {i === 0 ? covArrow("factset") : null}
-                  </th>
-                ))}
-                <th className="px-3 py-2 text-right w-20 cursor-pointer select-none hover:text-ink" onClick={() => toggleCovSort("boostedAi")} title="Raw BoostedAI rating (0-5, decimals OK). Combined with Consensus to auto-derive the dashboard's aiRating (0-2).">Boosted.ai{covArrow("boostedAi")}</th>
-                <th className="px-3 py-2 text-left w-28 cursor-pointer select-none hover:text-ink" onClick={() => toggleCovSort("consensus")} title="BoostedAI consensus recommendation. Combined with the numeric rating to auto-derive aiRating (Strong Buy / Buy → 2, Hold → 1, Sell / Strong Sell → 0).">Consensus{covArrow("consensus")}</th>
-                <th className="px-3 py-2 text-right w-20 cursor-pointer select-none hover:text-ink" onClick={() => toggleCovSort("sia")} title="SIA SMAX score (0-10 integer). Maps to relativeStrength: 8-10 → 2, 6-7 → 1, 0-5 → 0.">SIA SMAX{covArrow("sia")}</th>
-                <th className="px-3 py-2 text-right w-28 cursor-pointer select-none hover:text-ink" onClick={() => toggleCovSort("marketEdge")} title="MarketEdge Power Rating (−60…+100) and Opinion. Power Rating drives the marketEdge score: ≥ +60 → 2 (Long), −27…+59 → 1 (Neutral), < −27 → 0 (Avoid). Click the rating to edit; click the opinion chip to cycle. N/A for pure-Canadian names (MarketEdge covers US listings only).">MarketEdge{covArrow("marketEdge")}</th>
-                <th className="px-3 py-2 text-left w-32 cursor-pointer select-none hover:text-ink" onClick={() => toggleCovSort("status")} title="Sort by overall coverage status (No reports / Partial / Both). Ascending shows gaps first.">Status{covArrow("status")}</th>
+                <th className="w-[86px] cursor-pointer select-none hover:text-ink" onClick={() => toggleCovSort("ticker")}>Ticker{covArrow("ticker")}</th>
+                <th className="cursor-pointer select-none hover:text-ink" onClick={() => toggleCovSort("name")}>Name{covArrow("name")}</th>
+                <th className="w-[76px] cursor-pointer select-none hover:text-ink" onClick={() => toggleCovSort("bucket")}>Bucket{covArrow("bucket")}</th>
+                {/* Seven date columns became two grouped cells. Fourteen columns
+                    could not fit the tile, so cell content overlapped its
+                    neighbour; every date is still here, sortable, in a third of
+                    the width. */}
+                <th className="w-[152px]" title="Analyst PDFs on file. Amber >90d, red >180d.">
+                  <div className="flex items-center gap-1.5">
+                    <span>Reports</span>
+                    <span className="flex gap-1 font-normal text-ink-faint">
+                      {([["rbc", "RBC"], ["jpm", "JPM"], ["morn", "MS"]] as const).map(([k, l]) => (
+                        <button key={k} type="button" onClick={() => toggleCovSort(k)} className="hover:text-ink" title={`Sort by ${l} recency (oldest first)`}>
+                          {l}{covArrow(k)}
+                        </button>
+                      ))}
+                    </span>
+                  </div>
+                </th>
+                <th className="w-[184px] cursor-pointer select-none hover:text-ink" onClick={() => toggleCovSort("factset")} title="Newest FactSet alert of each kind held for this name.">
+                  FactSet{covArrow("factset")}
+                </th>
+                <th className="n w-[68px] cursor-pointer select-none hover:text-ink" onClick={() => toggleCovSort("boostedAi")} title="Raw BoostedAI rating (0-5, decimals OK). Combined with Consensus to auto-derive the dashboard's aiRating (0-2).">Boosted.ai{covArrow("boostedAi")}</th>
+                <th className="w-[84px] cursor-pointer select-none hover:text-ink" onClick={() => toggleCovSort("consensus")} title="BoostedAI consensus recommendation. Combined with the numeric rating to auto-derive aiRating (Strong Buy / Buy → 2, Hold → 1, Sell / Strong Sell → 0).">Consensus{covArrow("consensus")}</th>
+                <th className="n w-[58px] cursor-pointer select-none hover:text-ink" onClick={() => toggleCovSort("sia")} title="SIA SMAX score (0-10 integer). Maps to relativeStrength: 8-10 → 2, 6-7 → 1, 0-5 → 0.">SIA SMAX{covArrow("sia")}</th>
+                <th className="n w-[88px] cursor-pointer select-none hover:text-ink" onClick={() => toggleCovSort("marketEdge")} title="MarketEdge Power Rating (−60…+100) and Opinion. Power Rating drives the marketEdge score: ≥ +60 → 2 (Long), −27…+59 → 1 (Neutral), < −27 → 0 (Avoid). Click the rating to edit; click the opinion chip to cycle. N/A for pure-Canadian names (MarketEdge covers US listings only).">MarketEdge{covArrow("marketEdge")}</th>
+                <th className="w-[104px] cursor-pointer select-none hover:text-ink" onClick={() => toggleCovSort("status")} title="Sort by overall coverage status (No reports / Partial / Both). Ascending shows gaps first.">Status{covArrow("status")}</th>
               </tr>
             </thead>
             <tbody>
@@ -1268,71 +1246,63 @@ export default function InboxPage() {
                 return (
                   <tr
                     key={`${r.bucket}-${r.displayTicker}`}
-                    className={`border-t border-line-soft transition-colors ${
-                      noCoverage ? "bg-neg-soft/40 hover:bg-neg-soft/60" : "hover:bg-surface-hover"
-                    }`}
+                    className={noCoverage ? "[&>td]:bg-neg-soft" : undefined}
                   >
-                    <td className="px-3 py-2">
+                    <td>
                       <Link href={`/stock/${r.displayTicker.toLowerCase()}`} className="font-mono font-semibold text-ink hover:underline">
                         {r.displayTicker}
                       </Link>
                     </td>
-                    <td className="px-3 py-2 text-xs text-ink-2 truncate max-w-[260px]" title={r.name}>{r.name}</td>
-                    <td className="px-3 py-2">
-                      <span className={`inline-block rounded px-1.5 py-0.5 text-[10px] font-semibold ${
-                        r.bucket === "Portfolio"
-                          ? "bg-accent-soft text-accent border border-accent-border"
-                          : "bg-surface-2 text-ink-2 border border-line"
-                      }`}>{r.bucket}</span>
+                    <td className="break-words leading-[1.35] text-ink-2" title={r.name}>{r.name}</td>
+                    <td>
+                      <span className={r.bucket === "Portfolio" ? "text-ink-2" : "text-ink-3"}>{r.bucket}</span>
                     </td>
-                    <td className="px-3 py-2 text-center">
-                      {r.rbcDate ? (
-                        <span className={`inline-block text-xs font-semibold ${staleClass(daysSince(r.rbcDate))}`} title={`RBC report last uploaded ${fmtTime(r.rbcDate)}${(daysSince(r.rbcDate) ?? 0) > 90 ? " — worth checking for a newer one" : ""}`}>
-                          {fmtReportDate(r.rbcDate)}
-                        </span>
-                      ) : (
-                        <span className="inline-block text-ink-faint text-base" title="No RBC report yet">—</span>
-                      )}
+                    <td>
+                      <div className="grid grid-cols-3 gap-x-1.5">
+                        {([
+                          ["RBC", r.rbcDate, "RBC report"],
+                          ["JPM", r.jpmDate, "JPM report"],
+                          ["MS", r.mornDate, "Morningstar report (optional source)"],
+                        ] as const).map(([label, date, what]) => (
+                          <div key={label} className="min-w-0 text-center">
+                            <div className="text-[10px] leading-none text-ink-faint">{label}</div>
+                            {date ? (
+                              <div className={`text-[11.5px] font-semibold leading-tight ${staleClass(daysSince(date))}`} title={`${what} last uploaded ${fmtTime(date)}${(daysSince(date) ?? 0) > 90 ? " — worth checking for a newer one" : ""}`}>
+                                {fmtReportDate(date)}
+                              </div>
+                            ) : (
+                              <div className="text-[11.5px] leading-tight text-ink-faint" title={`No ${what} yet`}>—</div>
+                            )}
+                          </div>
+                        ))}
+                      </div>
                     </td>
-                    <td className="px-3 py-2 text-center">
-                      {r.jpmDate ? (
-                        <span className={`inline-block text-xs font-semibold ${staleClass(daysSince(r.jpmDate))}`} title={`JPM report last uploaded ${fmtTime(r.jpmDate)}${(daysSince(r.jpmDate) ?? 0) > 90 ? " — worth checking for a newer one" : ""}`}>
-                          {fmtReportDate(r.jpmDate)}
-                        </span>
-                      ) : (
-                        <span className="inline-block text-ink-faint text-base" title="No JPM report yet">—</span>
-                      )}
+                    <td>
+                      <div className="grid grid-cols-4 gap-x-1.5">
+                        {FACTSET_COLS.map((c) => {
+                          const e = r.factset[c.kind];
+                          return (
+                            <div key={c.kind} className="min-w-0 text-center">
+                              <div className="truncate text-[10px] leading-none text-ink-faint" title={c.head}>{c.head.slice(0, 4)}</div>
+                              {e ? (
+                                <div
+                                  className={`text-[11.5px] font-semibold leading-tight ${staleClass(daysSince(e.date))}`}
+                                  title={`${e.label}${e.event ? ` — ${e.event}` : ""} (${e.date})`}
+                                >
+                                  {fmtReportDate(e.date)}
+                                </div>
+                              ) : (
+                                <div className="text-[11.5px] leading-tight text-ink-faint" title={`No ${c.head} alert ingested for this name yet`}>—</div>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
                     </td>
-                    <td className="px-3 py-2 text-center">
-                      {r.mornDate ? (
-                        <span className={`inline-block text-xs font-semibold ${staleClass(daysSince(r.mornDate))}`} title={`Morningstar report last uploaded ${fmtTime(r.mornDate)}${(daysSince(r.mornDate) ?? 0) > 90 ? " — worth checking for a newer one" : ""}`}>
-                          {fmtReportDate(r.mornDate)}
-                        </span>
-                      ) : (
-                        <span className="inline-block text-ink-faint text-base" title="No Morningstar report yet (optional source)">—</span>
-                      )}
-                    </td>
-                    {FACTSET_COLS.map((c) => {
-                      const e = r.factset[c.kind];
-                      return (
-                        <td key={c.kind} className="px-2 py-2 text-center">
-                          {e ? (
-                            <span
-                              className={`inline-block text-xs font-semibold ${staleClass(daysSince(e.date))}`}
-                              title={`${e.label}${e.event ? ` — ${e.event}` : ""} (${e.date})`}
-                            >
-                              {fmtReportDate(e.date)}
-                            </span>
-                          ) : (
-                            <span className="inline-block text-ink-faint text-base" title={`No ${c.head} alert ingested for this name yet`}>—</span>
-                          )}
-                        </td>
-                      );
-                    })}
-                    <td className="px-3 py-2 text-right">
+                    <td className="n">
                       <div className="flex items-center justify-end gap-1">
                         {r.boostedAi == null && (
-                          <span className="text-warn text-xs leading-none" title="No BoostedAI rating for this name yet. Send the Boosted.ai unified-data CSV, or edit the value here.">⚠</span>
+                          <span className="inline-flex text-warn" title="No BoostedAI rating for this name yet. Send the Boosted.ai unified-data CSV, or edit the value here."><AppIcon name="warn" size={11} /></span>
                         )}
                         <EditableNumberCell
                           value={r.boostedAi}
@@ -1347,17 +1317,17 @@ export default function InboxPage() {
                         />
                       </div>
                     </td>
-                    <td className="px-3 py-2">
+                    <td>
                       <ConsensusButton
                         value={r.boostedAiConsensus}
                         ariaLabel={`BoostedAI consensus for ${r.displayTicker}`}
                         onChange={(next) => saveBoostedAiConsensus(r.displayTicker, next)}
                       />
                     </td>
-                    <td className="px-3 py-2 text-right">
+                    <td className="n">
                       <div className="flex items-center justify-end gap-1">
                         {r.sia == null && (
-                          <span className="text-warn text-xs leading-none" title="No SIA SMAX for this name yet. Send the SIA CSV export, or edit the value here.">⚠</span>
+                          <span className="inline-flex text-warn" title="No SIA SMAX for this name yet. Send the SIA CSV export, or edit the value here."><AppIcon name="warn" size={11} /></span>
                         )}
                         <EditableNumberCell
                           value={r.sia}
@@ -1374,11 +1344,11 @@ export default function InboxPage() {
                     </td>
                     {/* MarketEdge: Power Rating (editable) + Opinion chip
                         (click to cycle). N/A for pure-Canadian names. */}
-                    <td className="px-3 py-2 text-right">
+                    <td className="n">
                       {r.marketEdgeApplies ? (
                         <div className="flex items-center justify-end gap-1.5">
                           {r.marketEdgePowerRating == null && (
-                            <span className="text-warn text-xs leading-none" title="No MarketEdge Power Rating for this name yet. Send the ChartScout Likes CSV, or edit the value here.">⚠</span>
+                            <span className="inline-flex text-warn" title="No MarketEdge Power Rating for this name yet. Send the ChartScout Likes CSV, or edit the value here."><AppIcon name="warn" size={11} /></span>
                           )}
                           <EditableNumberCell
                             value={r.marketEdgePowerRating}
@@ -1395,28 +1365,23 @@ export default function InboxPage() {
                             type="button"
                             onClick={() => cycleMarketEdgeOpinion(r.displayTicker, r.marketEdgeOpinion)}
                             title="Click to cycle MarketEdge opinion: — → Long → Neutral → Avoid"
-                            className={`rounded px-1.5 py-0.5 text-[10px] font-semibold border ${
-                              r.marketEdgeOpinion === "long" ? "bg-pos-soft text-pos border-pos-border"
-                              : r.marketEdgeOpinion === "avoid" ? "bg-neg-soft text-neg border-neg-border"
-                              : r.marketEdgeOpinion === "neutral" ? "bg-surface-2 text-ink-2 border-line"
-                              : "bg-white text-ink-3 border-line"
+                            className={`rounded-control border px-1.5 py-0.5 text-[11px] transition-colors ${
+                              r.marketEdgeOpinion === "long" ? "border-pos-border bg-pos-soft text-pos"
+                              : r.marketEdgeOpinion === "avoid" ? "border-neg-border bg-neg-soft text-neg"
+                              : r.marketEdgeOpinion === "neutral" ? "border-line bg-surface-2 text-ink-2"
+                              : "border-line bg-surface text-ink-3"
                             }`}
                           >
                             {r.marketEdgeOpinion === "long" ? "Long" : r.marketEdgeOpinion === "avoid" ? "Avoid" : r.marketEdgeOpinion === "neutral" ? "Neutral" : "—"}
                           </button>
                         </div>
                       ) : (
-                        <span className="text-[10px] text-ink-3 italic" title="MarketEdge (ChartScout) covers US-listed stocks only. This pure-Canadian name is excluded from the marketEdge category, so a blank here is expected — not a gap.">N/A</span>
+                        <span className="text-[11px] text-ink-3" title="MarketEdge (ChartScout) covers US-listed stocks only. This pure-Canadian name is excluded from the marketEdge category, so a blank here is expected — not a gap.">N/A</span>
                       )}
                     </td>
-                    <td className="px-3 py-2">
-                      <span className={`inline-block rounded-full px-2 py-0.5 text-[10px] font-semibold ${
-                        fullyCovered
-                          ? "bg-pos-soft text-pos border border-pos-border"
-                          : partiallyCovered
-                          ? "bg-warn-soft text-warn border border-warn-border"
-                          : "bg-neg-soft text-neg border border-neg-border"
-                      }`}>
+                    <td>
+                      <span className="inline-flex items-center gap-1.5">
+                        <span className={`dot ${fullyCovered ? "bg-pos" : partiallyCovered ? "bg-warn" : "bg-neg"}`} />
                         {fullyCovered ? "Both" : partiallyCovered ? "Partial" : "No reports"}
                       </span>
                     </td>
@@ -1427,72 +1392,72 @@ export default function InboxPage() {
           </table>
           </div>
         ))}
-      </div>
+      </section>
 
-
-      <div className="rounded-lg border border-line bg-white overflow-hidden">
+      <section className="panel">
         <CollapsibleHeader
           collapsed={eventsCollapsed}
           onToggle={toggleEvents}
-          title="Recent Ingestion Events"
+          title="Recent ingestion events"
           meta={<span className="text-[11px] text-ink-3">{events.length} total · {visibleEvents.length} shown</span>}
         />
         {!eventsCollapsed && (loading && events.length === 0 ? (
-          <p className="text-sm text-ink-3 p-4">Loading…</p>
+          <p className="px-3.5 py-3 text-[12.5px] text-ink-3">Loading…</p>
         ) : error ? (
-          <p className="text-sm text-neg p-4">{error}</p>
+          <p className="px-3.5 py-3 text-[12.5px] text-neg">{error}</p>
         ) : events.length === 0 ? (
           <EmptyState
-            glyph={<svg className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M21.75 6.75v10.5a2.25 2.25 0 01-2.25 2.25h-15a2.25 2.25 0 01-2.25-2.25V6.75m19.5 0A2.25 2.25 0 0019.5 4.5h-15a2.25 2.25 0 00-2.25 2.25m19.5 0v.243a2.25 2.25 0 01-1.07 1.916l-7.5 4.615a2.25 2.25 0 01-2.36 0L3.32 8.91a2.25 2.25 0 01-1.07-1.916V6.75" /></svg>}
+            glyph={<AppIcon name="inbox" size={18} />}
             title="No ingestion events yet"
             body="Once the Apps Script runs and forwards an email, events will appear here."
           />
         ) : visibleEvents.length === 0 ? (
-          <p className="text-sm text-ink-3 p-4 italic">
-            All {cachedCount} recent event{cachedCount === 1 ? "" : "s"} {cachedCount === 1 ? "is" : "are"} cached re-ingestions (no Anthropic spend, data unchanged). Uncheck &quot;Hide cached&quot; above to see them.
-          </p>
+          <EmptyState
+            glyph={<AppIcon name="check" size={18} />}
+            title="Nothing but cache hits"
+            body={`All ${cachedCount} recent event${cachedCount === 1 ? "" : "s"} ${cachedCount === 1 ? "is a" : "are"} cached re-ingestion${cachedCount === 1 ? "" : "s"} — no Anthropic spend, data unchanged. Switch to "Show all" to see them.`}
+          />
         ) : (
           <div className="overflow-x-auto">
-          <table className="w-full min-w-[700px] text-sm">
-            <thead className="bg-surface-2 text-xs uppercase tracking-wider text-ink-3">
+          <table className="data-table min-w-[700px]">
+            <thead>
               <tr>
-                <th className="px-3 py-2 text-left">Time</th>
-                <th className="px-3 py-2 text-left">Status</th>
-                <th className="px-3 py-2 text-left">Ticker · Source</th>
-                <th className="px-3 py-2 text-left">Subject / Sender</th>
-                <th className="px-3 py-2 text-left">Detail</th>
+                <th>Time</th>
+                <th>Status</th>
+                <th>Ticker · Source</th>
+                <th>Subject / Sender</th>
+                <th>Detail</th>
               </tr>
             </thead>
             <tbody>
               {visibleEvents.map((e) => (
-                <tr key={e.id} className="border-t border-line-soft align-top">
-                  <td className="px-3 py-2 whitespace-nowrap text-ink-3 text-xs">{fmtTime(e.receivedAt)}</td>
-                  <td className="px-3 py-2">
-                    <span className={`inline-block rounded border px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider ${statusChip(e.status)}`}>
+                <tr key={e.id} className="align-top">
+                  <td className="text-ink-3">{fmtTime(e.receivedAt)}</td>
+                  <td>
+                    <span className="inline-flex items-center gap-1.5">
+                      <span className={`dot ${statusDot(e.status)}`} />
                       {e.status}
                     </span>
                     {e.cached && (
-                      <span className="ml-1 inline-block rounded border border-line bg-surface-2 px-1 py-0.5 text-[9px] font-bold uppercase text-ink-3" title="Hash-gated cache hit — no Anthropic spend">
-                        cached
-                      </span>
+                      <span className="ml-1.5 text-[11px] text-ink-3" title="Hash-gated cache hit — no Anthropic spend">cached</span>
                     )}
                   </td>
-                  <td className="px-3 py-2 whitespace-nowrap">
+                  <td>
                     {e.ticker ? (
                       <span className="font-mono font-semibold text-ink">{e.ticker}</span>
                     ) : (
                       <span className="text-ink-faint">—</span>
                     )}
-                    {e.source && <span className="ml-1 text-[10px] uppercase text-ink-3">{e.source}</span>}
+                    {e.source && <span className="ml-1.5 text-[11px] text-ink-3">{e.source}</span>}
                   </td>
-                  <td className="px-3 py-2 text-xs text-ink">
+                  <td>
                     {e.subject ? <div className="truncate max-w-[260px]" title={e.subject}>{e.subject}</div> : <div className="text-ink-faint">—</div>}
-                    {e.sender && <div className="text-[10px] text-ink-3 truncate max-w-[260px]" title={e.sender}>{e.sender}</div>}
+                    {e.sender && <div className="max-w-[260px] truncate text-[11px] text-ink-3" title={e.sender}>{e.sender}</div>}
                   </td>
-                  <td className="px-3 py-2 text-xs text-ink-2">
+                  <td className="text-ink-2">
                     {e.message}
                     {e.filename && (
-                      <div className="text-[10px] text-ink-3 mt-0.5">
+                      <div className="mt-0.5 text-[11px] text-ink-3">
                         {e.filename} · {fmtBytes(e.size)}
                       </div>
                     )}
@@ -1503,26 +1468,24 @@ export default function InboxPage() {
           </table>
           </div>
         ))}
-      </div>
+      </section>
 
       {/* ── SIA + BoostedAI screenshot importer ──
           Watchlist screenshots → Anthropic vision → per-stock updates.
           Screenshot wins ONLY when it has a value; manual stays otherwise.
           Hash-gated cache (pm:sia-scrape-cache, pm:boosted-ai-scrape-cache)
           so re-uploading an unchanged image costs zero Anthropic tokens. */}
-      <div className="mt-6 rounded-lg border border-violet bg-white overflow-hidden">
-        <div className="border-b border-violet-soft bg-violet-soft/40 px-4 py-3">
-          <h2 className="text-sm font-semibold text-ink">SIA + BoostedAI — Screenshot upload</h2>
-          <p className="text-[11px] text-ink-3 mt-0.5">
-            Drop a watchlist screenshot from SIACharts or Boosted.ai. Anthropic vision reads the rows and updates every matched ticker (dual-listed names included). A value already on a stock is preserved if the vision can&apos;t read its new value — a yellow chip shows up on that stock&apos;s SIA / BoostedAI input until the next successful read.
-          </p>
+      <section className="panel">
+        <div className="panel-h">
+          <span className="t">Imports</span>
+          <span className="m">SIA · BoostedAI · MarketEdge — CSV preferred, screenshot as the fallback</span>
         </div>
-        <div className="grid sm:grid-cols-2 divide-y sm:divide-y-0 sm:divide-x divide-violet-soft">
+        <div className="grid divide-y divide-line-soft lg:grid-cols-3 lg:divide-x lg:divide-y-0">
           {/* SIA upload zone — CSV preferred (instant, $0, 100% reliable);
               screenshot is the fallback when CSV isn't available. */}
-          <div className="p-4">
-            <div className="flex flex-wrap items-center justify-between gap-2 mb-1.5">
-              <h3 className="text-xs font-semibold text-ink uppercase tracking-wider">SIA watchlist</h3>
+          <div className="px-3.5 py-3">
+            <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+              <span className="text-[12.5px] font-medium text-ink">SIA watchlist</span>
               <div className="flex items-center gap-1.5">
                 {/* CSV (preferred) */}
                 <input
@@ -1538,11 +1501,7 @@ export default function InboxPage() {
                 />
                 <label
                   htmlFor="sia-csv-input"
-                  className={`text-xs font-semibold px-3 py-1.5 rounded-md cursor-pointer transition-colors ${
-                    siaImporting
-                      ? "bg-line text-ink-3 cursor-wait"
-                      : "bg-violet text-white hover:bg-violet"
-                  }`}
+                  className={siaImporting ? "inline-flex h-7 items-center rounded-control bg-line px-3 text-[12.5px] font-medium text-ink-3 cursor-wait" : "inline-flex h-7 cursor-pointer items-center rounded-control bg-ink px-3 text-[12.5px] font-medium text-white transition-colors hover:bg-ink-2"}
                   title="Preferred: upload the SIA CSV export. 100% reliable, no Anthropic spend, instant."
                 >
                   {siaImporting ? "Working…" : "Upload CSV"}
@@ -1559,25 +1518,21 @@ export default function InboxPage() {
                 />
                 <label
                   htmlFor="sia-screenshot-input"
-                  className={`text-xs font-semibold px-2.5 py-1.5 rounded-md cursor-pointer border transition-colors ${
-                    siaImporting
-                      ? "bg-surface-2 text-ink-3 border-line cursor-wait"
-                      : "bg-white text-violet border-violet hover:bg-violet-soft"
-                  }`}
+                  className={siaImporting ? "inline-flex h-7 items-center rounded-control border border-line bg-surface-2 px-2.5 text-[12.5px] text-ink-3 cursor-wait" : "inline-flex h-7 cursor-pointer items-center rounded-control border border-line bg-surface px-2.5 text-[12.5px] text-ink-2 transition-colors hover:bg-surface-hover"}
                   title="Fallback when CSV export isn't available. Vision-parsed; ~95% reliable; one Anthropic call per upload."
                 >
                   Screenshot
                 </label>
               </div>
             </div>
-            <p className="text-[10px] text-ink-3">
+            <p className="text-[11px] leading-4 text-ink-3">
               Reads <span className="font-mono">SYM · SMAX</span> per row (CSV) or via vision (screenshot). Updates <code>sia</code> and recomputes the relativeStrength score.
             </p>
           </div>
           {/* BoostedAI upload zone — CSV preferred; screenshot is the fallback. */}
-          <div className="p-4">
-            <div className="flex flex-wrap items-center justify-between gap-2 mb-1.5">
-              <h3 className="text-xs font-semibold text-ink uppercase tracking-wider">BoostedAI watchlist</h3>
+          <div className="px-3.5 py-3">
+            <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+              <span className="text-[12.5px] font-medium text-ink">BoostedAI watchlist</span>
               <div className="flex items-center gap-1.5">
                 {/* CSV (preferred) */}
                 <input
@@ -1593,9 +1548,7 @@ export default function InboxPage() {
                 />
                 <label
                   htmlFor="boosted-csv-input"
-                  className={`text-xs font-semibold px-3 py-1.5 rounded-md cursor-pointer transition-colors ${
-                    boostedImporting ? "bg-line text-ink-3 cursor-wait" : "bg-violet text-white hover:bg-violet"
-                  }`}
+                  className={boostedImporting ? "inline-flex h-7 items-center rounded-control bg-line px-3 text-[12.5px] font-medium text-ink-3 cursor-wait" : "inline-flex h-7 cursor-pointer items-center rounded-control bg-ink px-3 text-[12.5px] font-medium text-white transition-colors hover:bg-ink-2"}
                   title="Preferred: the Boosted.ai unified-data CSV export. 100% reliable, no Anthropic spend, instant."
                 >
                   {boostedImporting ? "Working…" : "Upload CSV"}
@@ -1612,22 +1565,54 @@ export default function InboxPage() {
                 />
                 <label
                   htmlFor="boosted-screenshot-input"
-                  className={`text-xs font-semibold px-2.5 py-1.5 rounded-md cursor-pointer border transition-colors ${
-                    boostedImporting ? "bg-surface-2 text-ink-3 border-line cursor-wait" : "bg-white text-violet border-violet hover:bg-violet-soft"
-                  }`}
+                  className={boostedImporting ? "inline-flex h-7 items-center rounded-control border border-line bg-surface-2 px-2.5 text-[12.5px] text-ink-3 cursor-wait" : "inline-flex h-7 cursor-pointer items-center rounded-control border border-line bg-surface px-2.5 text-[12.5px] text-ink-2 transition-colors hover:bg-surface-hover"}
                   title="Fallback when the CSV export isn't handy. Vision-parsed; one Anthropic call per upload."
                 >
                   Screenshot
                 </label>
               </div>
             </div>
-            <p className="text-[10px] text-ink-3">
+            <p className="text-[11px] leading-4 text-ink-3">
               Reads <span className="font-mono">TICKER · AVERAGE RATING · CONSENSUS</span> (CSV) or via vision (screenshot). Updates both BoostedAI fields and recomputes the aiRating score.
+            </p>
+          </div>
+          {/* ── MarketEdge ("ChartScout") weekly CSV ──
+              Matches each row's Symbol against pm:stocks (with dual-listing
+              fallback), refreshes the marketEdge fields and recomputes the
+              composite from Power Rating. Writes go through
+              updateStockFields / updateScore, so they persist via the usual
+              debounced pm:stocks PUT (no new key). */}
+          <div className="px-3.5 py-3">
+            <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+              <span className="text-[12.5px] font-medium text-ink">MarketEdge weekly</span>
+              <div className="flex items-center gap-1.5">
+                <input
+                  ref={marketEdgeFileRef}
+                  type="file"
+                  accept=".csv,.tsv,text/csv,text/tab-separated-values,text/plain"
+                  onChange={(e) => {
+                    const f = e.target.files?.[0];
+                    if (f) void handleMarketEdgeCsv(f);
+                  }}
+                  className="hidden"
+                  id="marketedge-csv-input"
+                />
+                <label
+                  htmlFor="marketedge-csv-input"
+                  className={marketEdgeImporting ? "inline-flex h-7 items-center rounded-control bg-line px-3 text-[12.5px] font-medium text-ink-3 cursor-wait" : "inline-flex h-7 cursor-pointer items-center rounded-control bg-ink px-3 text-[12.5px] font-medium text-white transition-colors hover:bg-ink-2"}
+                  title="The weekly ChartScout Likes export. Parsed locally — no Anthropic spend."
+                >
+                  {marketEdgeImporting ? "Importing…" : "Upload CSV"}
+                </label>
+              </div>
+            </div>
+            <p className="text-[11px] leading-4 text-ink-3">
+              ChartScout Likes export. Reads <span className="font-mono">Symbol · Opinion · Score · Power Rating · Opinion Date</span> by header. Matches by ticker, dual-listed names included. Power Rating drives the MarketEdge score; Opinion drives the warning flag only.
             </p>
           </div>
         </div>
         {screenshotImportSummary && (
-          <div className="px-4 py-3 text-xs space-y-1 border-t border-violet-soft bg-violet-soft/20">
+          <div className="space-y-1 border-t border-line-soft px-3.5 py-2.5 text-[11.5px]">
             <div className="text-ink">
               <span className="font-semibold capitalize">{screenshotImportSummary.source}:</span>{" "}
               <span className="font-semibold">{screenshotImportSummary.matched}</span> matched / {screenshotImportSummary.rowsParsed} rows ·{" "}
@@ -1636,12 +1621,12 @@ export default function InboxPage() {
             </div>
             {screenshotImportSummary.inScreenshotButUnreadable.length > 0 && (
               <div className="text-warn">
-                ⚠ In screenshot but value unreadable: <span className="font-mono">{screenshotImportSummary.inScreenshotButUnreadable.join(", ")}</span>
+                In screenshot but value unreadable: <span className="font-mono">{screenshotImportSummary.inScreenshotButUnreadable.join(", ")}</span>
               </div>
             )}
             {screenshotImportSummary.expectedButMissing.length > 0 && (
               <div className="text-warn">
-                ⚠ Expected scoreable names NOT in screenshot: <span className="font-mono">{screenshotImportSummary.expectedButMissing.join(", ")}</span>
+                Expected scoreable names not in the screenshot: <span className="font-mono">{screenshotImportSummary.expectedButMissing.join(", ")}</span>
               </div>
             )}
             {screenshotImportSummary.note && (
@@ -1659,51 +1644,12 @@ export default function InboxPage() {
             )}
           </div>
         )}
-      </div>
-
-      {/* ── MarketEdge ("ChartScout") CSV importer ──
-          Weekly upload — matches each row's Symbol against pm:stocks (with
-          dual-listing fallback) and refreshes the marketEdge fields +
-          recomputes the marketEdge composite score from Power Rating. The
-          per-stock writes go through updateStockFields / updateScore so
-          they persist via the usual debounced pm:stocks PUT (no new key). */}
-      <div className="mt-6 rounded-lg border border-accent-border bg-white overflow-hidden">
-        <div className="border-b border-violet-soft bg-accent-soft/40 px-4 py-3 flex items-center justify-between flex-wrap gap-2">
-          <div>
-            <h2 className="text-sm font-semibold text-ink">MarketEdge — Weekly CSV upload</h2>
-            <p className="text-[11px] text-ink-3 mt-0.5">
-              ChartScout Likes export. Reads <span className="font-mono">Symbol · Opinion · Score · Power Rating · Opinion Date</span> by header (other columns ignored). Matches by ticker — including dual-listed names (US ↔ Canadian). Recomputes the MarketEdge composite score from Power Rating; Opinion + Opinion Score drive the warning flag, not the score.
-            </p>
-          </div>
-          <div className="flex items-center gap-2">
-            <input
-              ref={marketEdgeFileRef}
-              type="file"
-              accept=".csv,.tsv,text/csv,text/tab-separated-values,text/plain"
-              onChange={(e) => {
-                const f = e.target.files?.[0];
-                if (f) void handleMarketEdgeCsv(f);
-              }}
-              className="hidden"
-              id="marketedge-csv-input"
-            />
-            <label
-              htmlFor="marketedge-csv-input"
-              className={`text-xs font-semibold px-3 py-1.5 rounded-md cursor-pointer transition-colors ${
-                marketEdgeImporting
-                  ? "bg-line text-ink-3 cursor-wait"
-                  : "bg-accent text-white hover:bg-accent"
-              }`}
-            >
-              {marketEdgeImporting ? "Importing…" : "Upload CSV"}
-            </label>
-          </div>
-        </div>
         {marketEdgeImportSummary && (
-          <div className="px-4 py-3 text-xs space-y-1">
+          <div className="space-y-1 border-t border-line-soft px-3.5 py-2.5 text-[11.5px]">
             <div className="text-ink">
-              <span className="font-semibold">{marketEdgeImportSummary.matched}</span> matched / {marketEdgeImportSummary.rows} rows ·{" "}
-              <span className="font-semibold text-pos">{marketEdgeImportSummary.updated}</span> updated
+              <span className="font-medium">MarketEdge:</span>{" "}
+              <span className="font-mono">{marketEdgeImportSummary.matched}</span> matched / <span className="font-mono">{marketEdgeImportSummary.rows}</span> rows ·{" "}
+              <span className="font-mono text-pos">{marketEdgeImportSummary.updated}</span> updated
             </div>
             {marketEdgeImportSummary.unmatched.length > 0 && (
               <div className="text-warn">
@@ -1719,7 +1665,7 @@ export default function InboxPage() {
             )}
           </div>
         )}
-      </div>
+      </section>
 
       {/* ── All Ingested Reports ──
           Permanent per-(ticker, source) view read directly from
@@ -1727,11 +1673,11 @@ export default function InboxPage() {
           Shows the ORIGINAL extraction date (extractedAt) rather than the
           last-retry date, so cached re-ingestions don't make stale reports
           look freshly processed. */}
-      <div className="mt-6 rounded-lg border border-line bg-white overflow-hidden">
+      <section className="panel">
         <CollapsibleHeader
           collapsed={reportsCollapsed}
           onToggle={toggleReports}
-          title="All Ingested Reports"
+          title="All ingested reports"
           meta={
             <span className="text-[11px] text-ink-3">
               {reportRows.length} report{reportRows.length === 1 ? "" : "s"} across {new Set(reportRows.map((r) => r.ticker)).size} ticker{new Set(reportRows.map((r) => r.ticker)).size === 1 ? "" : "s"}
@@ -1739,222 +1685,229 @@ export default function InboxPage() {
           }
         />
         {!reportsCollapsed && (reports === null ? (
-          <p className="text-sm text-ink-3 p-4">Loading…</p>
+          <p className="px-3.5 py-3 text-[12.5px] text-ink-3">Loading…</p>
         ) : reportRows.length === 0 ? (
-          <p className="text-sm text-ink-3 p-4 italic">
-            No reports stored yet. Once any PDF gets fully ingested (via inbox webhook or manual upload), it appears here permanently.
-          </p>
+          <EmptyState
+            glyph={<AppIcon name="doc" size={18} />}
+            title="No reports stored yet"
+            body="Once a PDF is fully ingested — via the inbox webhook or a manual upload — it appears here permanently."
+          />
         ) : (
           <div className="overflow-x-auto">
-          <table className="w-full min-w-[700px] text-sm">
-            <thead className="bg-surface-2 text-xs uppercase tracking-wider text-ink-3">
+          <table className="data-table min-w-[700px]">
+            <thead>
               <tr>
-                <th className="px-3 py-2 text-left cursor-pointer select-none hover:text-ink" onClick={() => toggleReportsSort("ticker")}>Ticker{reportsArrow("ticker")}</th>
-                <th className="px-3 py-2 text-left cursor-pointer select-none hover:text-ink" onClick={() => toggleReportsSort("source")}>Source{reportsArrow("source")}</th>
-                <th className="px-3 py-2 text-left cursor-pointer select-none hover:text-ink" onClick={() => toggleReportsSort("date")}>Extracted{reportsArrow("date")}</th>
-                <th className="px-3 py-2 text-left cursor-pointer select-none hover:text-ink" onClick={() => toggleReportsSort("rating")}>Rating{reportsArrow("rating")}</th>
-                <th className="px-3 py-2 text-right cursor-pointer select-none hover:text-ink" onClick={() => toggleReportsSort("target")}>Target{reportsArrow("target")}</th>
-                <th className="px-3 py-2 text-left">File</th>
+                <th className="cursor-pointer select-none hover:text-ink" onClick={() => toggleReportsSort("ticker")}>Ticker{reportsArrow("ticker")}</th>
+                <th className="cursor-pointer select-none hover:text-ink" onClick={() => toggleReportsSort("source")}>Source{reportsArrow("source")}</th>
+                <th className="cursor-pointer select-none hover:text-ink" onClick={() => toggleReportsSort("date")}>Extracted{reportsArrow("date")}</th>
+                <th className="cursor-pointer select-none hover:text-ink" onClick={() => toggleReportsSort("rating")}>Rating{reportsArrow("rating")}</th>
+                <th className="n cursor-pointer select-none hover:text-ink" onClick={() => toggleReportsSort("target")}>Target{reportsArrow("target")}</th>
+                <th>File</th>
               </tr>
             </thead>
             <tbody>
               {sortedReports.map((r) => (
-                <tr key={`${r.ticker}-${r.source}`} className="border-t border-line-soft hover:bg-surface-hover transition-colors">
-                  <td className="px-3 py-2">
+                <tr key={`${r.ticker}-${r.source}`}>
+                  <td>
                     <Link href={`/stock/${r.ticker.toLowerCase()}`} className="font-mono font-semibold text-ink hover:underline">
                       {r.ticker}
                     </Link>
                   </td>
-                  <td className="px-3 py-2 text-xs uppercase tracking-wider text-ink-3">{r.source}</td>
-                  <td className="px-3 py-2 text-xs text-ink whitespace-nowrap">{r.date}</td>
-                  <td className="px-3 py-2 text-xs">
-                    <span className={`inline-block rounded px-1.5 py-0.5 text-[10px] font-semibold ${
+                  <td className="text-ink-3">{r.source}</td>
+                  <td>{r.date}</td>
+                  <td>
+                    <span className={
                       r.rating.toLowerCase().includes("outperform") || r.rating.toLowerCase().includes("overweight")
-                        ? "bg-pos-soft text-pos border border-pos-border"
+                        ? "text-pos"
                         : r.rating.toLowerCase().includes("underperform") || r.rating.toLowerCase().includes("underweight")
-                        ? "bg-neg-soft text-neg border border-neg-border"
+                        ? "text-neg"
                         : r.rating === "—"
-                        ? "bg-surface-2 text-ink-3 border border-line"
-                        : "bg-warn-soft text-warn border border-warn-border"
-                    }`}>
+                        ? "text-ink-3"
+                        : "text-warn"
+                    }>
                       {r.rating}
                     </span>
                   </td>
-                  <td className="px-3 py-2 text-right text-xs font-mono text-ink">{r.target}</td>
-                  <td className="px-3 py-2 text-xs text-ink-3 truncate max-w-[260px]" title={r.fileSize}>{r.fileSize}</td>
+                  <td className="n">{r.target}</td>
+                  <td className="text-ink-3 truncate max-w-[260px]" title={r.fileSize}>{r.fileSize}</td>
                 </tr>
               ))}
             </tbody>
           </table>
           </div>
         ))}
-      </div>
+      </section>
 
       {/* ── How to send by email ──
           Single reference table covering every email-routed input the
           Apps Script forwards. Subject prefix → handler is set in
           app/lib/inbox-dispatch.ts (classifySubject); table rows must
           stay in sync if those prefixes change. */}
-      <div className="mt-6 rounded-lg border border-accent-border bg-accent-soft/60">
-        <button
-          onClick={() => setUiPref("inbox.section.emailHelp.collapsed", emailHelpCollapsed ? "0" : "1")}
-          className="w-full flex items-center gap-2 px-4 py-3 text-left"
-          aria-expanded={!emailHelpCollapsed}
-        >
-          <svg className={`w-4 h-4 shrink-0 text-accent transition-transform ${emailHelpCollapsed ? "" : "rotate-90"}`} fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" /></svg>
-          <span className="font-semibold text-accent">How to send by email — subject-prefix routing</span>
-        </button>
+      <section className="panel">
+        <div className={`panel-h ${emailHelpCollapsed ? "!border-b-0" : ""}`}>
+          <button
+            onClick={() => setUiPref("inbox.section.emailHelp.collapsed", emailHelpCollapsed ? "0" : "1")}
+            className="flex min-w-0 flex-1 cursor-pointer items-center gap-2 text-left"
+            aria-expanded={!emailHelpCollapsed}
+          >
+            <span className={`shrink-0 text-ink-3 transition-transform ${emailHelpCollapsed ? "-rotate-90" : ""}`}>
+              <AppIcon name="chevD" size={14} strokeWidth={2} />
+            </span>
+            <span className="t">How to send by email</span>
+            <span className="m">subject-prefix routing</span>
+          </button>
+        </div>
         {!emailHelpCollapsed && (
-        <div className="px-4 pb-4">
-        <p className="text-accent text-sm mb-3">
+        <div className="px-3.5 py-3">
+        <p className="mb-3 text-[12.5px] leading-5 text-ink-2">
           From any email account, send <span className="font-mono">dfwreports123@gmail.com</span> a message — the subject prefix tells the dashboard what to do with it. Case-insensitive. The Apps Script polls every 5 minutes, so entries appear in the activity log above within ~5 min.
         </p>
         <div className="overflow-x-auto">
-          <table className="w-full text-xs border-collapse">
+          <table className="data-table min-w-[720px]">
             <thead>
-              <tr className="border-b border-accent-border text-left text-accent">
-                <th className="py-1.5 pr-3 font-semibold whitespace-nowrap">Subject starts with…</th>
-                <th className="py-1.5 pr-3 font-semibold whitespace-nowrap">Attach</th>
-                <th className="py-1.5 pr-3 font-semibold">What it does</th>
-                <th className="py-1.5 font-semibold whitespace-nowrap">Example</th>
+              <tr>
+                <th>Subject starts with…</th>
+                <th>Attach</th>
+                <th>What it does</th>
+                <th>Example</th>
               </tr>
             </thead>
-            <tbody className="text-accent align-top">
-              <tr className="border-b border-accent-border">
-                <td className="py-2 pr-3 font-mono whitespace-nowrap">Analyst Report: &lt;TICKER&gt;</td>
-                <td className="py-2 pr-3 whitespace-nowrap">PDF</td>
-                <td className="py-2 pr-3">Subject is just <span className="font-mono">Analyst Report: &lt;TICKER&gt;</span> (no firm). The firm comes from the <span className="font-semibold">PDF filename</span>: name it <span className="font-mono">&lt;TICKER&gt;_RBC.pdf</span> or <span className="font-mono">&lt;TICKER&gt;_JPM.pdf</span> to route to the right slot. You can attach <span className="font-semibold">several PDFs in one email</span> (e.g. <span className="font-mono">AVGO_JPM.pdf</span> + <span className="font-mono">AVGO_RBC.pdf</span>) and each routes on its own. Max ~15 MB each.</td>
-                <td className="py-2 font-mono whitespace-nowrap">Analyst Report: AVGO</td>
+            <tbody className="align-top">
+              <tr>
+                <td className="font-mono">Analyst Report: &lt;TICKER&gt;</td>
+                <td>PDF</td>
+                <td>Subject is just <span className="font-mono">Analyst Report: &lt;TICKER&gt;</span> (no firm). The firm comes from the <span className="font-semibold">PDF filename</span>: name it <span className="font-mono">&lt;TICKER&gt;_RBC.pdf</span> or <span className="font-mono">&lt;TICKER&gt;_JPM.pdf</span> to route to the right slot. You can attach <span className="font-semibold">several PDFs in one email</span> (e.g. <span className="font-mono">AVGO_JPM.pdf</span> + <span className="font-mono">AVGO_RBC.pdf</span>) and each routes on its own. Max ~15 MB each.</td>
+                <td className="font-mono">Analyst Report: AVGO</td>
               </tr>
-              <tr className="border-b border-accent-border">
-                <td className="py-2 pr-3 font-mono whitespace-nowrap">SIA</td>
-                <td className="py-2 pr-3 whitespace-nowrap">
+              <tr>
+                <td className="font-mono">SIA</td>
+                <td>
                   <span className="text-pos font-semibold">CSV (preferred)</span>
                   <br />or screenshot (PNG/JPG/PDF)
                 </td>
-                <td className="py-2 pr-3">Reads <span className="font-mono">SYM</span> + <span className="font-mono">SMAX</span> per row. Updates each matched stock&apos;s SMAX and recomputes the SIA score. CSV is auto-detected; held ETFs/funds are skipped silently.</td>
-                <td className="py-2 font-mono whitespace-nowrap">SIA — Mar 5</td>
+                <td>Reads <span className="font-mono">SYM</span> + <span className="font-mono">SMAX</span> per row. Updates each matched stock&apos;s SMAX and recomputes the SIA score. CSV is auto-detected; held ETFs/funds are skipped silently.</td>
+                <td className="font-mono">SIA — Mar 5</td>
               </tr>
-              <tr className="border-b border-accent-border">
-                <td className="py-2 pr-3 font-mono whitespace-nowrap">BoostedAI <span className="text-accent">or</span> Boosted</td>
-                <td className="py-2 pr-3 whitespace-nowrap">
+              <tr>
+                <td className="font-mono">BoostedAI <span className="text-ink-3">or</span> Boosted</td>
+                <td>
                   <span className="text-pos font-semibold">CSV (preferred)</span>
                   <br />or screenshot (PNG/JPG/PDF)
                 </td>
-                <td className="py-2 pr-3">Reads <span className="font-mono">TICKER</span> + <span className="font-mono">AVERAGE RATING</span> + <span className="font-mono">CONSENSUS RECOMMENDATION</span> per row. Updates the BoostedAI fields and recomputes the AI Rating score. Send the Boosted.ai unified-data CSV export; held ETFs/funds are skipped silently.</td>
-                <td className="py-2 font-mono whitespace-nowrap">BoostedAI watchlist</td>
+                <td>Reads <span className="font-mono">TICKER</span> + <span className="font-mono">AVERAGE RATING</span> + <span className="font-mono">CONSENSUS RECOMMENDATION</span> per row. Updates the BoostedAI fields and recomputes the AI Rating score. Send the Boosted.ai unified-data CSV export; held ETFs/funds are skipped silently.</td>
+                <td className="font-mono">BoostedAI watchlist</td>
               </tr>
-              <tr className="border-b border-accent-border">
-                <td className="py-2 pr-3 font-mono whitespace-nowrap">MarketEdge <span className="text-accent">or</span> ChartScout</td>
-                <td className="py-2 pr-3 whitespace-nowrap">CSV</td>
-                <td className="py-2 pr-3">Parses the ChartScout Likes export by header (Symbol / Opinion / Score / Power Rating / Opinion Date). Updates the MarketEdge fields and the MarketEdge composite score.</td>
-                <td className="py-2 font-mono whitespace-nowrap">MarketEdge weekly</td>
+              <tr>
+                <td className="font-mono">MarketEdge <span className="text-ink-3">or</span> ChartScout</td>
+                <td>CSV</td>
+                <td>Parses the ChartScout Likes export by header (Symbol / Opinion / Score / Power Rating / Opinion Date). Updates the MarketEdge fields and the MarketEdge composite score.</td>
+                <td className="font-mono">MarketEdge weekly</td>
               </tr>
-              <tr className="border-b border-accent-border">
-                <td className="py-2 pr-3 font-mono whitespace-nowrap">Strategist</td>
-                <td className="py-2 pr-3 whitespace-nowrap">PDF or image</td>
-                <td className="py-2 pr-3">Lands in the Brief&apos;s &ldquo;Analyst / Strategist Reports&rdquo; dropbox — picked up automatically on the next Brief refresh.</td>
-                <td className="py-2 font-mono whitespace-nowrap">Strategist note from Newton</td>
+              <tr>
+                <td className="font-mono">Strategist</td>
+                <td>PDF or image</td>
+                <td>Lands in the Brief&apos;s &ldquo;Analyst / Strategist Reports&rdquo; dropbox — picked up automatically on the next Brief refresh.</td>
+                <td className="font-mono">Strategist note from Newton</td>
               </tr>
               {/* ── Research lists (Fundstrat / RBC / Seeking Alpha / FEW) ── */}
-              <tr className="border-b border-accent-border">
-                <td className="py-2 pr-3 font-mono whitespace-nowrap">Fundstrat Top</td>
-                <td className="py-2 pr-3 whitespace-nowrap">Screenshot (PNG/JPG/PDF)</td>
-                <td className="py-2 pr-3">Merges into the Fundstrat Large-Cap Top Ideas list on the Research tab.</td>
-                <td className="py-2 font-mono whitespace-nowrap">Fundstrat Top</td>
+              <tr>
+                <td className="font-mono">Fundstrat Top</td>
+                <td>Screenshot (PNG/JPG/PDF)</td>
+                <td>Merges into the Fundstrat Large-Cap Top Ideas list on the Research tab.</td>
+                <td className="font-mono">Fundstrat Top</td>
               </tr>
-              <tr className="border-b border-accent-border">
-                <td className="py-2 pr-3 font-mono whitespace-nowrap">Fundstrat Bottom</td>
-                <td className="py-2 pr-3 whitespace-nowrap">Screenshot (PNG/JPG/PDF)</td>
-                <td className="py-2 pr-3">Merges into the Fundstrat Large-Cap Bottom Ideas list.</td>
-                <td className="py-2 font-mono whitespace-nowrap">Fundstrat Bottom</td>
+              <tr>
+                <td className="font-mono">Fundstrat Bottom</td>
+                <td>Screenshot (PNG/JPG/PDF)</td>
+                <td>Merges into the Fundstrat Large-Cap Bottom Ideas list.</td>
+                <td className="font-mono">Fundstrat Bottom</td>
               </tr>
-              <tr className="border-b border-accent-border">
-                <td className="py-2 pr-3 font-mono whitespace-nowrap">Fundstrat SMID Top</td>
-                <td className="py-2 pr-3 whitespace-nowrap">Screenshot (PNG/JPG/PDF)</td>
-                <td className="py-2 pr-3">Merges into the Fundstrat SMID-Cap Top Ideas list.</td>
-                <td className="py-2 font-mono whitespace-nowrap">Fundstrat SMID Top</td>
+              <tr>
+                <td className="font-mono">Fundstrat SMID Top</td>
+                <td>Screenshot (PNG/JPG/PDF)</td>
+                <td>Merges into the Fundstrat SMID-Cap Top Ideas list.</td>
+                <td className="font-mono">Fundstrat SMID Top</td>
               </tr>
-              <tr className="border-b border-accent-border">
-                <td className="py-2 pr-3 font-mono whitespace-nowrap">Fundstrat SMID Bottom</td>
-                <td className="py-2 pr-3 whitespace-nowrap">Screenshot (PNG/JPG/PDF)</td>
-                <td className="py-2 pr-3">Merges into the Fundstrat SMID-Cap Bottom Ideas list.</td>
-                <td className="py-2 font-mono whitespace-nowrap">Fundstrat SMID Bottom</td>
+              <tr>
+                <td className="font-mono">Fundstrat SMID Bottom</td>
+                <td>Screenshot (PNG/JPG/PDF)</td>
+                <td>Merges into the Fundstrat SMID-Cap Bottom Ideas list.</td>
+                <td className="font-mono">Fundstrat SMID Bottom</td>
               </tr>
-              <tr className="border-b border-accent-border">
-                <td className="py-2 pr-3 font-mono whitespace-nowrap">Fundstrat Large-Cap Core</td>
-                <td className="py-2 pr-3 whitespace-nowrap">Screenshot (PNG/JPG/PDF)</td>
-                <td className="py-2 pr-3">Merges into the Fundstrat Large-Cap Core Ideas DQM screen (ticker, company, sector, industry, mkt cap, 1M/YTD relative perf, P/E, DQM rank, momentum rating, trend flags). Perf is relative to the S&amp;P 500.</td>
-                <td className="py-2 font-mono whitespace-nowrap">Fundstrat Large-Cap Core</td>
+              <tr>
+                <td className="font-mono">Fundstrat Large-Cap Core</td>
+                <td>Screenshot (PNG/JPG/PDF)</td>
+                <td>Merges into the Fundstrat Large-Cap Core Ideas DQM screen (ticker, company, sector, industry, mkt cap, 1M/YTD relative perf, P/E, DQM rank, momentum rating, trend flags). Perf is relative to the S&amp;P 500.</td>
+                <td className="font-mono">Fundstrat Large-Cap Core</td>
               </tr>
-              <tr className="border-b border-accent-border">
-                <td className="py-2 pr-3 font-mono whitespace-nowrap">Fundstrat SMID Core</td>
-                <td className="py-2 pr-3 whitespace-nowrap">Screenshot (PNG/JPG/PDF)</td>
-                <td className="py-2 pr-3">Merges into the Fundstrat SMID Core Ideas DQM screen (same columns as Large-Cap Core). Perf is relative to the Russell 2500.</td>
-                <td className="py-2 font-mono whitespace-nowrap">Fundstrat SMID Core</td>
+              <tr>
+                <td className="font-mono">Fundstrat SMID Core</td>
+                <td>Screenshot (PNG/JPG/PDF)</td>
+                <td>Merges into the Fundstrat SMID Core Ideas DQM screen (same columns as Large-Cap Core). Perf is relative to the Russell 2500.</td>
+                <td className="font-mono">Fundstrat SMID Core</td>
               </tr>
-              <tr className="border-b border-accent-border">
-                <td className="py-2 pr-3 font-mono whitespace-nowrap">RBC Canadian</td>
-                <td className="py-2 pr-3 whitespace-nowrap">Screenshot (PNG/JPG/PDF)</td>
-                <td className="py-2 pr-3">Merges into the RBC Canadian Focus List. Tickers auto-canonicalize to <span className="font-mono">.TO</span>.</td>
-                <td className="py-2 font-mono whitespace-nowrap">RBC Canadian</td>
+              <tr>
+                <td className="font-mono">RBC Canadian</td>
+                <td>Screenshot (PNG/JPG/PDF)</td>
+                <td>Merges into the RBC Canadian Focus List. Tickers auto-canonicalize to <span className="font-mono">.TO</span>.</td>
+                <td className="font-mono">RBC Canadian</td>
               </tr>
-              <tr className="border-b border-accent-border">
-                <td className="py-2 pr-3 font-mono whitespace-nowrap">RBC US</td>
-                <td className="py-2 pr-3 whitespace-nowrap">Screenshot (PNG/JPG/PDF)</td>
-                <td className="py-2 pr-3">Merges into the RBC US Focus List.</td>
-                <td className="py-2 font-mono whitespace-nowrap">RBC US</td>
+              <tr>
+                <td className="font-mono">RBC US</td>
+                <td>Screenshot (PNG/JPG/PDF)</td>
+                <td>Merges into the RBC US Focus List.</td>
+                <td className="font-mono">RBC US</td>
               </tr>
-              <tr className="border-b border-accent-border">
-                <td className="py-2 pr-3 font-mono whitespace-nowrap">JPM Focus</td>
-                <td className="py-2 pr-3 whitespace-nowrap">Screenshot (PNG/JPG/PDF)</td>
-                <td className="py-2 pr-3">Merges into the JPM US Equity Analyst Focus List. Contributes to each name&rsquo;s research-mention score.</td>
-                <td className="py-2 font-mono whitespace-nowrap">JPM Focus</td>
+              <tr>
+                <td className="font-mono">JPM Focus</td>
+                <td>Screenshot (PNG/JPG/PDF)</td>
+                <td>Merges into the JPM US Equity Analyst Focus List. Contributes to each name&rsquo;s research-mention score.</td>
+                <td className="font-mono">JPM Focus</td>
               </tr>
-              <tr className="border-b border-accent-border">
-                <td className="py-2 pr-3 font-mono whitespace-nowrap text-ink-faint line-through">Equate CAD / USD</td>
-                <td className="py-2 pr-3 whitespace-nowrap text-ink-faint">RBC Equate PDF</td>
-                <td className="py-2 pr-3 text-ink-3"><span className="font-semibold">Retired.</span> The two Equate research lists are no longer vision-parsed out of the PDF&rsquo;s CORE 40 model portfolios — they are built from the xlsx rank sheets below. Sending the PDF under these subjects is refused so it cannot overwrite the spreadsheet-built list.</td>
-                <td className="py-2 font-mono whitespace-nowrap text-ink-faint">—</td>
+              <tr>
+                <td className="font-mono text-ink-faint line-through">Equate CAD / USD</td>
+                <td className="text-ink-faint">RBC Equate PDF</td>
+                <td className="text-ink-3"><span className="font-semibold">Retired.</span> The two Equate research lists are no longer vision-parsed out of the PDF&rsquo;s CORE 40 model portfolios — they are built from the xlsx rank sheets below. Sending the PDF under these subjects is refused so it cannot overwrite the spreadsheet-built list.</td>
+                <td className="font-mono text-ink-faint">—</td>
               </tr>
-              <tr className="border-b border-accent-border">
-                <td className="py-2 pr-3 font-mono whitespace-nowrap">
+              <tr>
+                <td className="font-mono">
                   RBC EQUATE …Ranks
-                  <div className="mt-0.5 font-sans text-[10px] font-normal opacity-70">or just forward the email</div>
+                  <div className="mt-0.5 font-sans text-[11px] text-ink-3">or just forward the email</div>
                 </td>
-                <td className="py-2 pr-3 whitespace-nowrap">XLSX rank sheets</td>
-                <td className="py-2 pr-3">
+                <td>XLSX rank sheets</td>
+                <td>
                   The weekly <span className="font-semibold">Model Ranks</span> spreadsheets — the full quant ranking (~1,360 US names, ~300 Canadian). Now the ONLY Equate source; they replaced the CORE 40 PDF parse.
                   {" "}<span className="font-semibold">Forward the vendor email unedited</span>: the attachment filenames identify region and cut on their own, and the subject is matched on the words &quot;equate&quot; + &quot;ranks&quot;, at any date.
                   {" "}The <span className="font-semibold">top decile</span> populates the Research tab&rsquo;s two Equate lists (+1 research mention per name) and the <span className="font-semibold">Suggested Watchlist</span>; every decile-1 name also carries an <span className="font-semibold">Equate rank</span> signal on the Conviction board. Parsed locally — no AI cost.
                   {" "}<span className="opacity-70">US All Cap and Canada All Cap are used; US Large Cap is a subset of All Cap at identical ranks and is stored but not scored.</span>
                 </td>
-                <td className="py-2 font-mono whitespace-nowrap">
+                <td className="font-mono">
                   FW: RBC EQUATE
                   <br />Quantitative Ranks
                 </td>
               </tr>
-              <tr className="border-b border-accent-border">
-                <td className="py-2 pr-3 font-mono whitespace-nowrap">RBCCM FEW</td>
-                <td className="py-2 pr-3 whitespace-nowrap">Screenshot (PNG/JPG/PDF)</td>
-                <td className="py-2 pr-3">Merges into the RBCCM Canadian FEW Portfolio list.</td>
-                <td className="py-2 font-mono whitespace-nowrap">RBCCM FEW</td>
+              <tr>
+                <td className="font-mono">RBCCM FEW</td>
+                <td>Screenshot (PNG/JPG/PDF)</td>
+                <td>Merges into the RBCCM Canadian FEW Portfolio list.</td>
+                <td className="font-mono">RBCCM FEW</td>
               </tr>
               <tr>
-                <td className="py-2 pr-3 font-mono whitespace-nowrap">Seeking Alpha <span className="text-accent">or</span> Alpha Picks</td>
-                <td className="py-2 pr-3 whitespace-nowrap">Screenshot (PNG/JPG/PDF)</td>
-                <td className="py-2 pr-3">Merges into the Seeking Alpha — Alpha Picks list. Composite ticker+date key so a name can appear on multiple dates.</td>
-                <td className="py-2 font-mono whitespace-nowrap">Alpha Picks weekly</td>
+                <td className="font-mono">Seeking Alpha <span className="text-ink-3">or</span> Alpha Picks</td>
+                <td>Screenshot (PNG/JPG/PDF)</td>
+                <td>Merges into the Seeking Alpha — Alpha Picks list. Composite ticker+date key so a name can appear on multiple dates.</td>
+                <td className="font-mono">Alpha Picks weekly</td>
               </tr>
             </tbody>
           </table>
         </div>
-        <p className="mt-3 text-[11px] text-accent">
-          Screenshots from iPhone, Mac, or Windows all work. <span className="italic">Legacy:</span> <span className="font-mono">Analyst Report: &lt;TICKER&gt; &lt;RBC|JPM&gt;</span> with any filename is still supported.
+        <p className="mt-3 text-[11.5px] text-ink-3">
+          Screenshots from iPhone, Mac, or Windows all work. Legacy: <span className="font-mono">Analyst Report: &lt;TICKER&gt; &lt;RBC|JPM&gt;</span> with any filename is still supported.
         </p>
         </div>
         )}
-      </div>
+      </section>
     </div>
   );
 }

@@ -7,6 +7,8 @@ import { useStocks } from "@/app/lib/StockContext";
 import type { TechnicalIndicators, ImprovingScore } from "@/app/lib/technicals";
 import type { Stock } from "@/app/lib/types";
 import StockChart from "@/app/components/StockChart";
+import { AppIcon } from "@/app/components/AppIcon";
+import { EmptyState } from "@/app/components/EmptyState";
 
 type ScanResult = {
   ticker: string;
@@ -19,16 +21,22 @@ type ScanResult = {
   improving: ImprovingScore;
 };
 
+const BTN = "inline-flex h-7 items-center gap-1.5 rounded-control border border-line bg-surface px-2.5 text-[12.5px] !text-ink-2 hover:bg-surface-hover hover:!text-ink";
+const BTN_PRI = "inline-flex h-7 items-center gap-1.5 rounded-control bg-ink px-2.5 text-[12.5px] font-medium text-white hover:bg-ink-2";
+
+const SIGNAL_DOT = { bullish: "bg-pos", bearish: "bg-neg", neutral: "bg-ink-faint" } as const;
+const SIGNAL_CLS = { bullish: "text-pos", bearish: "text-neg", neutral: "text-ink-3" } as const;
+
+/** One signal row: label · reading · dot + word. */
 function SignalRow({ label, signal, detail }: { label: string; signal: "bullish" | "bearish" | "neutral"; detail: string }) {
-  const color = signal === "bullish" ? "bg-pos-soft text-pos" : signal === "bearish" ? "bg-neg-soft text-neg" : "bg-surface-2 text-ink-3";
   return (
-    <div className="flex items-center justify-between py-2 border-b border-line-soft last:border-0">
-      <span className="text-sm text-ink-2">{label}</span>
-      <div className="flex items-center gap-2">
-        <span className="text-sm text-ink-2">{detail}</span>
-        <span className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ${color}`}>{signal}</span>
-      </div>
-    </div>
+    <tr>
+      <td className="pl-3.5 text-ink-2">{label}</td>
+      <td className="n text-ink-2">{detail}</td>
+      <td className={`pr-3.5 text-right ${SIGNAL_CLS[signal]}`}>
+        <span className="inline-flex items-center gap-1.5"><span className={`dot ${SIGNAL_DOT[signal]}`} />{signal}</span>
+      </td>
+    </tr>
   );
 }
 
@@ -40,6 +48,8 @@ const ZERO_SCORES = {
   cashFlowQuality: 0, competitiveMoat: 0, turnaround: 0, catalysts: 0,
   trackRecord: 0, ownershipTrends: 0,
 };
+
+const pct = (v: number) => `${v >= 0 ? "+" : ""}${v.toFixed(1)}%`;
 
 export default function ScanPreviewPage() {
   const params = useParams();
@@ -68,15 +78,20 @@ export default function ScanPreviewPage() {
 
   if (!data) {
     return (
-      <main className="min-h-screen bg-[#f4f5f7] px-4 py-6 text-ink md:px-8 md:py-8">
-        <div className="mx-auto max-w-3xl">
-          <div className="rounded-card border border-line bg-white p-8 text-center shadow-sm">
-            <h1 className="text-2xl font-semibold text-ink">No preview data</h1>
-            <p className="mt-2 text-ink-3">Return to the screener and click a stock from the scan results.</p>
-            <Link href="/screener" className="mt-4 inline-block text-accent hover:underline text-sm">Back to Screener</Link>
-          </div>
+      <div className="flex flex-col gap-3.5">
+        <div className="flex flex-wrap items-center gap-2.5">
+          <Link href="/screener" className={BTN}><AppIcon name="arrowL" size={13} strokeWidth={2} /> Screener</Link>
+          <span className="text-[11.5px] text-ink-3">Scan preview · {rawTicker}</span>
         </div>
-      </main>
+        <section className="panel">
+          <EmptyState
+            glyph={<AppIcon name="search" size={18} />}
+            title="No preview data"
+            body="Return to the screener and click a stock from the scan results."
+            action={<Link href="/screener" className={BTN}><AppIcon name="arrowL" size={13} strokeWidth={2} /> Back to screener</Link>}
+          />
+        </section>
+      </div>
     );
   }
 
@@ -115,7 +130,7 @@ export default function ScanPreviewPage() {
   const bullish = signals.filter((s) => s === "bullish").length;
   const bearish = signals.filter((s) => s === "bearish").length;
   const net = bullish - bearish;
-  const compositeColor = net >= 3 ? "text-pos" : net >= 1 ? "text-pos" : net <= -3 ? "text-neg" : net <= -1 ? "text-neg" : "text-ink-2";
+  const compositeColor = net >= 1 ? "text-pos" : net <= -1 ? "text-neg" : "text-ink-2";
 
   const handleAdd = () => {
     const stock: Stock = {
@@ -134,115 +149,98 @@ export default function ScanPreviewPage() {
     setAdded(true);
   };
 
+  const stat = (label: string, value: React.ReactNode, cls = "text-ink") => (
+    <div className="px-4 py-2.5">
+      <div className="text-[11px] text-ink-3">{label}</div>
+      <div className={`mt-0.5 font-mono text-[13px] font-medium tabular-nums ${cls}`}>{value}</div>
+    </div>
+  );
+
   return (
-    <main className="min-h-screen bg-[#f4f5f7] text-ink overflow-x-hidden">
-      {/* Nav bar */}
-      <div className="border-b border-line bg-white px-4 py-2.5 md:px-8">
-        <div className="flex items-center gap-3">
-          <Link href="/screener" className="rounded-lg border border-line px-3 py-1.5 text-xs font-semibold text-ink-3 hover:bg-surface-2 transition-colors">
-            &larr; Screener
-          </Link>
-          <span className="text-[10px] font-semibold uppercase tracking-wider text-accent">Scan Preview</span>
+    <div className="flex flex-col gap-3.5">
+      {/* ── Toolbar ── */}
+      <div className="flex flex-wrap items-center gap-2.5">
+        <Link href="/screener" className={BTN}><AppIcon name="arrowL" size={13} strokeWidth={2} /> Screener</Link>
+        <span className="text-[11.5px] text-ink-3">Scan preview · not yet in the book</span>
+        <div className="ml-auto">
+          {added || alreadyExists ? (
+            <span className="inline-flex h-7 items-center gap-1.5 text-[12.5px] text-ink-3"><AppIcon name="check" size={13} strokeWidth={2} /> Added to Watchlist</span>
+          ) : (
+            <button onClick={handleAdd} className={BTN_PRI}>
+              <AppIcon name="plus" size={13} strokeWidth={2.25} /> Add to Watchlist
+            </button>
+          )}
         </div>
       </div>
 
-      <div className="px-4 py-6 md:px-8 md:py-8">
-        <div className="mx-auto max-w-3xl space-y-6">
-          {/* Header */}
-          <div className="rounded-card border border-line bg-white p-6 shadow-sm">
-            <div className="flex items-baseline gap-3 mb-1">
-              <h1 className="text-3xl font-bold font-mono tracking-tight">{rawTicker}</h1>
-              <span className="text-2xl font-semibold text-ink-2">${data.price.toFixed(2)}</span>
-              <span className="rounded-full bg-accent-soft text-accent px-2.5 py-0.5 text-xs font-semibold">Scan Result</span>
-            </div>
-            {data.name && data.name !== rawTicker && (
-              <p className="text-sm text-ink-3 mb-1">{data.name}</p>
-            )}
-            {data.sector && (
-              <p className="text-xs text-ink-3 mb-2">{data.sector}</p>
-            )}
+      {/* ── Header strip ── */}
+      <section className="panel">
+        <div className="panel-h">
+          <span className="font-mono text-[15px] font-semibold text-ink">{rawTicker}</span>
+          {data.name && data.name !== rawTicker && <span className="text-[12.5px] text-ink-2">{data.name}</span>}
+          {data.sector && <span className="m">{data.sector}</span>}
+        </div>
+        <div className="grid grid-cols-2 divide-x divide-line-soft sm:grid-cols-5">
+          {stat("Price", `$${data.price.toFixed(2)}`)}
+          {stat("5d", pct(data.priceChange5d), data.priceChange5d >= 0 ? "text-pos" : "text-neg")}
+          {stat("20d", pct(data.priceChange20d), data.priceChange20d >= 0 ? "text-pos" : "text-neg")}
+          {stat("Composite technical", <>{net > 0 ? "+" : ""}{net} <span className="text-[11px] font-normal text-ink-3">{bullish} bullish · {bearish} bearish</span></>, compositeColor)}
+          {stat("Improving", <>{imp.score}<span className="text-ink-faint">/6</span></>)}
+        </div>
+      </section>
 
-            <div className="flex items-center gap-3 mb-4">
-              {added || alreadyExists ? (
-                <span className="rounded-lg bg-surface-2 px-4 py-1.5 text-sm font-medium text-ink-3">Added to Watchlist</span>
-              ) : (
-                <button onClick={handleAdd}
-                  className="rounded-lg bg-accent px-4 py-1.5 text-sm font-semibold text-white hover:bg-accent transition-colors">
-                  + Add to Watchlist
-                </button>
-              )}
-              <span className={`text-sm font-semibold ${data.priceChange5d >= 0 ? "text-pos" : "text-neg"}`}>
-                5d: {data.priceChange5d >= 0 ? "+" : ""}{data.priceChange5d.toFixed(1)}%
-              </span>
-              <span className={`text-sm font-semibold ${data.priceChange20d >= 0 ? "text-pos" : "text-neg"}`}>
-                20d: {data.priceChange20d >= 0 ? "+" : ""}{data.priceChange20d.toFixed(1)}%
-              </span>
-            </div>
+      {/* Price Chart */}
+      <StockChart ticker={rawTicker} technicals={data.technicals} />
 
-            {/* Composite score */}
-            <div className="flex items-center gap-3 mb-2">
-              <span className="text-sm text-ink-3">Composite Technical Score:</span>
-              <span className={`text-lg font-bold ${compositeColor}`}>{net > 0 ? "+" : ""}{net}</span>
-              <span className="text-xs text-ink-3">({bullish} bullish, {bearish} bearish)</span>
-            </div>
+      <div className="grid grid-cols-1 items-start gap-3.5 lg:grid-cols-2">
+        {/* Improving Signals */}
+        <section className="panel">
+          <div className="panel-h">
+            <span className="t">Improving signals</span>
+            <span className="m"><span className="font-mono text-ink">{imp.score}</span>/6 active</span>
           </div>
-
-          {/* Price Chart */}
-          <StockChart ticker={rawTicker} technicals={data.technicals} />
-
-          {/* Improving Signals */}
-          <div className="rounded-card border border-accent-border bg-white p-6 shadow-sm">
-            <div className="flex items-center gap-3 mb-4">
-              <h2 className="text-lg font-bold text-ink">Improving Signals</h2>
-              <span className="rounded-full bg-accent-soft text-accent px-2.5 py-0.5 text-sm font-bold">{imp.score}/6</span>
-            </div>
-            <div className="space-y-2">
+          <table className="data-table">
+            <thead><tr><th className="pl-3.5">Signal</th><th className="pr-3.5 text-right">State</th></tr></thead>
+            <tbody>
               {imp.signals.map((s) => (
-                <div key={s.name} className="flex items-center justify-between py-1.5 border-b border-line-soft last:border-0">
-                  <span className="text-sm text-ink-2">{s.name}</span>
-                  <span className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ${s.active ? "bg-accent-soft text-accent" : "bg-surface-2 text-ink-3"}`}>
-                    {s.active ? "Active" : "Inactive"}
-                  </span>
-                </div>
+                <tr key={s.name}>
+                  <td className="pl-3.5 text-ink-2">{s.name}</td>
+                  <td className={`pr-3.5 text-right ${s.active ? "text-ink" : "text-ink-3"}`}>
+                    <span className="inline-flex items-center gap-1.5"><span className={`dot ${s.active ? "bg-accent" : "bg-ink-faint"}`} />{s.active ? "Active" : "Inactive"}</span>
+                  </td>
+                </tr>
               ))}
-            </div>
-          </div>
+            </tbody>
+          </table>
+        </section>
 
-          {/* Technical Signals */}
-          <div className="rounded-card border border-line bg-white p-6 shadow-sm">
-            <h2 className="text-lg font-bold text-ink mb-4">Technical Signals</h2>
-            <SignalRow label="Trend (DMA)" signal={getTrendSignal()} detail={t.dmaSignal.replace(/_/g, " ")} />
-            <SignalRow label="RSI (14)" signal={getRsiSignal()} detail={t.rsi14.toFixed(1)} />
-            <SignalRow label="MACD" signal={getMacdSignal()} detail={`Histogram: ${t.macdHistogram >= 0 ? "+" : ""}${t.macdHistogram.toFixed(2)}`} />
-            <SignalRow label="Ichimoku Cloud" signal={getIchimokuSignal()} detail={t.ichimoku.overallSignal.replace(/_/g, " ")} />
-            <SignalRow label="Volume" signal={getVolumeSignal()} detail={`${t.volumeRatio.toFixed(1)}x avg`} />
-            <SignalRow label="52-Week Position" signal={getWeek52Signal()} detail={`${(t.week52Position * 100).toFixed(0)}%`} />
-          </div>
-
-          {/* Key Levels */}
-          <div className="rounded-card border border-line bg-white p-6 shadow-sm">
-            <h2 className="text-lg font-bold text-ink mb-4">Key Levels</h2>
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-              <div className="rounded-card bg-surface-2 p-3">
-                <div className="text-xs text-ink-3">SMA 50</div>
-                <div className="mt-1 text-lg font-semibold font-mono">${t.sma50.toFixed(2)}</div>
-              </div>
-              <div className="rounded-card bg-surface-2 p-3">
-                <div className="text-xs text-ink-3">SMA 200</div>
-                <div className="mt-1 text-lg font-semibold font-mono">${t.sma200.toFixed(2)}</div>
-              </div>
-              <div className="rounded-card bg-surface-2 p-3">
-                <div className="text-xs text-ink-3">52W High</div>
-                <div className="mt-1 text-lg font-semibold font-mono">${t.week52High.toFixed(2)}</div>
-              </div>
-              <div className="rounded-card bg-surface-2 p-3">
-                <div className="text-xs text-ink-3">52W Low</div>
-                <div className="mt-1 text-lg font-semibold font-mono">${t.week52Low.toFixed(2)}</div>
-              </div>
-            </div>
-          </div>
-        </div>
+        {/* Technical Signals */}
+        <section className="panel">
+          <div className="panel-h"><span className="t">Technical signals</span><span className="m">6 reads</span></div>
+          <table className="data-table">
+            <thead><tr><th className="pl-3.5">Signal</th><th className="n">Reading</th><th className="pr-3.5 text-right">Read</th></tr></thead>
+            <tbody>
+              <SignalRow label="Trend (DMA)" signal={getTrendSignal()} detail={t.dmaSignal.replace(/_/g, " ")} />
+              <SignalRow label="RSI (14)" signal={getRsiSignal()} detail={t.rsi14.toFixed(1)} />
+              <SignalRow label="MACD" signal={getMacdSignal()} detail={`histogram ${t.macdHistogram >= 0 ? "+" : ""}${t.macdHistogram.toFixed(2)}`} />
+              <SignalRow label="Ichimoku cloud" signal={getIchimokuSignal()} detail={t.ichimoku.overallSignal.replace(/_/g, " ")} />
+              <SignalRow label="Volume" signal={getVolumeSignal()} detail={`${t.volumeRatio.toFixed(1)}x avg`} />
+              <SignalRow label="52-week position" signal={getWeek52Signal()} detail={`${(t.week52Position * 100).toFixed(0)}%`} />
+            </tbody>
+          </table>
+        </section>
       </div>
-    </main>
+
+      {/* Key Levels */}
+      <section className="panel">
+        <div className="panel-h"><span className="t">Key levels</span></div>
+        <div className="grid grid-cols-2 divide-x divide-line-soft md:grid-cols-4">
+          {stat("SMA 50", `$${t.sma50.toFixed(2)}`)}
+          {stat("SMA 200", `$${t.sma200.toFixed(2)}`)}
+          {stat("52W high", `$${t.week52High.toFixed(2)}`)}
+          {stat("52W low", `$${t.week52Low.toFixed(2)}`)}
+        </div>
+      </section>
+    </div>
   );
 }

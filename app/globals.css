@@ -13,53 +13,71 @@
  */
 @theme {
   /* Surfaces */
-  --color-ground: #f6f7f9;        /* page background */
+  --color-ground: #f5f6f8;        /* page background */
   --color-surface: #ffffff;       /* cards / panels */
   --color-surface-2: #fafbfc;     /* subtle zebra / inset */
-  --color-surface-hover: #f4f6fb; /* row / control hover */
+  --color-surface-hover: #f3f5f9; /* row / control hover */
 
   /* Hairlines */
-  --color-line: #e6e8ec;          /* card + strong divider */
-  --color-line-soft: #f0f1f4;     /* row divider */
+  --color-line: #e4e7ec;          /* card + strong divider */
+  --color-line-soft: #eef0f4;     /* row divider */
 
   /* Ink (text) */
-  --color-ink: #10151c;           /* primary */
-  --color-ink-2: #5b6472;         /* secondary */
-  --color-ink-3: #9aa3b0;         /* tertiary / placeholder */
-  --color-ink-faint: #c3c8d0;     /* faint */
+  --color-ink: #111827;           /* primary */
+  --color-ink-2: #4b5563;         /* secondary */
+  --color-ink-3: #8a93a2;         /* tertiary / placeholder */
+  --color-ink-faint: #c4cad3;     /* faint */
 
   /* Accent (brand) */
   --color-accent: #2d5bd0;
-  --color-accent-ink: #2c43be;    /* accent text on tint */
-  --color-accent-soft: #eef4ff;   /* accent tint bg */
-  --color-accent-border: #cfe0ff;
+  --color-accent-ink: #2547b8;    /* accent text on tint */
+  --color-accent-soft: #eef3ff;   /* accent tint bg */
+  --color-accent-border: #cddcff;
 
   /* Semantic status */
   --color-pos: #12805c;
-  --color-pos-soft: #f0f9f4;
+  --color-pos-soft: #ecf7f1;
   --color-pos-border: #bfe3d4;
-  --color-neg: #d1435b;
-  --color-neg-soft: #fdf2f3;
+  --color-neg: #cc3f57;
+  --color-neg-soft: #fdf1f3;
   --color-neg-border: #f2c9cf;
-  --color-warn: #b8791f;
-  --color-warn-soft: #fbf6ea;
+  --color-warn: #b0741c;
+  --color-warn-soft: #fbf5e8;
   --color-warn-border: #f2e2bf;
 
+  /* Hub accents — one hue per section of the rail (Today / Portfolio / Ideas /
+     Research). Same chroma and lightness as the brand accent, hue varied, so
+     the four read as a family rather than a rainbow. Used ONLY for wayfinding
+     (rail active state, group labels, the crumb, a panel's title mark) — never
+     for data, which stays on the semantic pos/neg/warn set. */
+  --color-hub-today: #b3701f;
+  --color-hub-today-soft: #fbeed4;
+  --color-hub-portfolio: #2d5bd0;
+  --color-hub-portfolio-soft: #e6edfd;
+  --color-hub-ideas: #6f55c4;
+  --color-hub-ideas-soft: #ece6f9;
+  --color-hub-research: #0f7d84;
+  --color-hub-research-soft: #dcefef;
+
   /* Structural / alt accent */
-  --color-violet: #7c5cd0;
-  --color-violet-soft: #f3f0fb;
+  --color-violet: #6f55c4;
+  --color-violet-soft: #f2effb;
   --color-violet-border: #ddd3f2;
 
-  /* Radius — Precision Light drops the old 24px rounding */
-  --radius-card: 8px;
-  --radius-control: 8px;
+  /* Radius — the workspace redesign tightens cards + controls to 6px */
+  --radius-card: 6px;
+  --radius-control: 6px;
   --radius-pill: 20px;
 
   /* Elevation ladder — static cards use shadow-sm, sectioned containers use
      shadow-card. Tinted (16 21 28) rather than pure black so shadows sit calmly
      in the light system. (#09) */
-  --shadow-sm: 0 1px 2px rgb(16 21 28 / 0.05);
-  --shadow-card: 0 1px 2px rgb(16 21 28 / 0.05), 0 4px 12px -4px rgb(16 21 28 / 0.08);
+  /* Workspace redesign: panels are a hairline, not a shadow. Both tokens
+     resolve to "none" so every existing shadow-sm / shadow-card usage flattens
+     without a per-component edit; popovers/menus set their own shadow. */
+  --shadow-sm: 0 0 0 0 transparent;
+  --shadow-card: 0 0 0 0 transparent;
+  --shadow-pop: 0 1px 2px rgb(17 24 39 / 0.06), 0 8px 24px -8px rgb(17 24 39 / 0.18);
 
   /* Type — IBM Plex Sans (UI) / IBM Plex Mono (numbers/tickers) */
   --font-sans: var(--font-plex-sans), -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
@@ -76,8 +94,8 @@
 
   /* Legacy aliases kept so any lingering var(--background)/var(--foreground)
      references resolve to the new palette during the migration. */
-  --background: #f6f7f9;
-  --foreground: #10151c;
+  --background: #f5f6f8;
+  --foreground: #111827;
 }
 
 * {
@@ -94,6 +112,160 @@ body {
   background: var(--color-ground);
   color: var(--color-ink);
   font-family: var(--font-sans);
+  font-size: 13px;
+  line-height: 1.4;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ── Workspace shell normalization ──────────────────────────────────────────
+   Pages were authored as centred 1280px (Brief: 1560px) containers under a
+   top-tab site. Inside the rail shell the content column IS the page, so the
+   caps come off and every page shares one 16/20px gutter. Scoped to the
+   content column; the login page and printable client report are untouched. */
+.app-content > div > main,
+.app-content > main {
+  padding: 16px 16px 24px;
+  min-height: calc(100vh - 48px);
+}
+@media (min-width: 768px) {
+  .app-content > div > main,
+  .app-content > main { padding: 16px 20px 28px; }
+}
+.app-content main > .max-w-7xl,
+.app-content main > .max-w-\[1560px\],
+.app-content main > .max-w-6xl,
+.app-content main > .max-w-5xl {
+  max-width: none;
+}
+
+/* ── Workspace component classes ────────────────────────────────────────────
+   These live in @layer components ON PURPOSE. Unlayered CSS beats every
+   layered Tailwind utility regardless of specificity, so an unlayered
+   `.data-table td { white-space: nowrap }` silently overrode `whitespace-normal`
+   on expanded rows — text could not wrap and ran over the next column. Inside
+   `components` the utilities layer wins, so a per-element override just works.
+   Never move these out of the layer. ── */
+@layer components {
+  /* Segmented control — the one switcher style (bucket toggles, view modes,
+     profile pickers). `.seg > .on` is the selected item. */
+  .seg {
+    display: inline-flex;
+    align-items: center;
+    height: 28px;
+    padding: 2px;
+    gap: 2px;
+    border: 1px solid var(--color-line);
+    border-radius: var(--radius-control);
+    background: var(--color-surface-2);
+  }
+  .seg > * {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    height: 22px;
+    padding: 0 10px;
+    border-radius: 4px;
+    font-size: 12.5px;
+    color: var(--color-ink-2);
+    white-space: nowrap;
+    cursor: pointer;
+    transition: color 0.12s ease, background-color 0.12s ease;
+  }
+  .seg > *:hover { color: var(--color-ink); }
+  .seg > .on {
+    background: var(--color-surface);
+    color: var(--color-ink);
+    font-weight: 500;
+    box-shadow: 0 1px 1px rgb(17 24 39 / 0.06);
+  }
+  .seg .c { font-family: var(--font-mono); font-size: 11px; color: var(--color-ink-3); }
+
+  /* Panel — a hairline card with a 38px header. `overflow: hidden` keeps the
+     rounded corners, which means a table wider than the panel gets CLIPPED
+     with no way to reach the rest. `.tbl-wrap` is the escape hatch: put it on
+     the div around a wide table so the TABLE scrolls inside its tile while the
+     page itself never scrolls sideways. */
+  .panel {
+    background: var(--color-surface);
+    border: 1px solid var(--color-line);
+    border-radius: var(--radius-card);
+    overflow: hidden;
+  }
+  .tbl-wrap { overflow-x: auto; overscroll-behavior-x: contain; }
+  /* NEVER make a .data-table `display: block` to get it scrolling. That splits
+     thead and tbody into two independent tables, so the column widths stop
+     agreeing and every header sits over the wrong column — which is exactly
+     what happened on the Brief. A wide table needs a `.tbl-wrap` DIV around
+     it; the table itself always stays a table. */
+  .panel-h {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    min-height: 38px;
+    padding: 0 14px;
+    border-bottom: 1px solid var(--color-line-soft);
+  }
+  /* A panel header takes its colour from a hue class on the header itself:
+     <div className="panel-h hue-ideas">. The hue sets three variables, so the
+     header tint, the title colour, the divider and the title mark all move
+     together. No hue class = the neutral grey header. */
+  .hue-today,     .panel:has(.t-mark.bg-hub-today),     .hue-today .panel:has(.t-mark.bg-hub-today)     { --h: var(--color-hub-today);     --h-soft: var(--color-hub-today-soft);     --h-line: #f0dfc4; }
+  .hue-portfolio, .panel:has(.t-mark.bg-hub-portfolio), .hue-today .panel:has(.t-mark.bg-hub-portfolio), .hue-portfolio .panel:has(.t-mark.bg-hub-portfolio), .hue-ideas .panel:has(.t-mark.bg-hub-portfolio), .hue-research .panel:has(.t-mark.bg-hub-portfolio) { --h: var(--color-hub-portfolio); --h-soft: var(--color-hub-portfolio-soft); --h-line: #d5e2fb; }
+  .hue-ideas,     .panel:has(.t-mark.bg-hub-ideas)     { --h: var(--color-hub-ideas);     --h-soft: var(--color-hub-ideas-soft);     --h-line: #ded6f5; }
+  .hue-research,  .panel:has(.t-mark.bg-hub-research)  { --h: var(--color-hub-research);  --h-soft: var(--color-hub-research-soft);  --h-line: #c9e6e7; }
+  .hue-pos, .panel:has(.t-mark.bg-pos), .hue-today .panel:has(.t-mark.bg-pos), .hue-portfolio .panel:has(.t-mark.bg-pos), .hue-ideas .panel:has(.t-mark.bg-pos), .hue-research .panel:has(.t-mark.bg-pos)           { --h: var(--color-pos);           --h-soft: var(--color-pos-soft);           --h-line: var(--color-pos-border); }
+  .hue-neg, .panel:has(.t-mark.bg-neg), .hue-today .panel:has(.t-mark.bg-neg), .hue-portfolio .panel:has(.t-mark.bg-neg), .hue-ideas .panel:has(.t-mark.bg-neg), .hue-research .panel:has(.t-mark.bg-neg)           { --h: var(--color-neg);           --h-soft: var(--color-neg-soft);           --h-line: var(--color-neg-border); }
+  .hue-warn,      .panel:has(.t-mark.bg-warn)          { --h: var(--color-warn);          --h-soft: var(--color-warn-soft);          --h-line: var(--color-warn-border); }
+  /* The mark itself takes the hue, so `.t-mark` alone is enough on new panels. */
+  .t-mark { background: var(--h, var(--color-ink-faint)); }
+
+  .panel-h {
+    background: var(--h-soft, var(--color-surface-2));
+    /* fallthrough so a hue class on the header still tints it */
+    border-bottom-color: var(--h-line, var(--color-line-soft));
+  }
+  .panel-h .t { font-size: 13px; font-weight: 600; color: var(--h, var(--color-ink)); letter-spacing: -0.005em; }
+  .panel-h .m { font-size: 11.5px; color: var(--color-ink-3); }
+  /* Inside a hued panel the table header picks the same tint up, so a table
+     reads as part of its section rather than as a grey slab. */
+
+  /* A 3px coloured mark before a panel title — the cheapest way to make a
+     section header findable without shouting. Colour it with a hub or
+     semantic token: <span class="t-mark bg-hub-ideas" />. */
+  .t-mark {
+    display: inline-block; width: 3px; height: 13px; border-radius: 2px;
+    background: var(--color-ink-faint); flex-shrink: 0;
+  }
+
+  /* Status dot — 6px, colour carries the meaning, the word beside it names it. */
+  .dot { display: inline-block; width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
+
+  /* Data tables: 30px header / 34px rows, hairline dividers, right-aligned mono
+     numerics via .n. Opt-in with .data-table so legacy tables are untouched. */
+  .data-table { border-collapse: collapse; width: 100%; }
+  /* Table headers carry their section's colour as TEXT and a 2px rule rather
+     than a second tinted slab — the panel header above is already tinted, and
+     stacking two fills reads muddy. Column names are legible colour, not grey. */
+  .data-table th {
+    height: 30px; padding: 0 10px; text-align: left; white-space: nowrap;
+    font-size: 11px; font-weight: 600; letter-spacing: 0.01em;
+    color: var(--h, var(--color-ink-2));
+    background: color-mix(in srgb, var(--h-soft, var(--color-surface-2)) 55%, #fff);
+    border-bottom: 2px solid var(--h-line, var(--color-line));
+  }
+  .data-table td {
+    height: 34px; padding: 0 10px;
+    font-size: 12.5px; color: var(--color-ink);
+    border-bottom: 1px solid var(--color-line-soft);
+  }
+  /* Numerics never wrap (a split figure is unreadable); text cells DO, because
+     wrapping a long name is better than making the whole page scroll sideways.
+     Add `.nw` to a cell that must stay on one line. */
+  .data-table td.n, .data-table td.nw { white-space: nowrap; }
+  .data-table th.n, .data-table td.n { text-align: right; }
+  .data-table td.n { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+  .data-table tbody tr:hover td { background: var(--color-surface-hover); }
+  .data-table tbody tr.sel td { background: var(--color-accent-soft); }
 }
 
 a {
@@ -101,10 +273,21 @@ a {
   text-decoration: none;
 }
 
+/* Controls inherit the page font — but NOT its weight. `font: inherit` is a
+   shorthand that also resets font-weight, and this rule is UNLAYERED, so in
+   Tailwind v4 it beat every layered `font-medium` / `font-semibold` utility:
+   bold on a <button> or <input> silently rendered at 400 app-wide. The
+   longhands keep the original intent (controls stop using the UA's system
+   font) and leave weight to the utility. Same class of gotcha as the
+   unlayered `a { color: inherit }` rule above. */
 button,
 input,
-select {
-  font: inherit;
+select,
+textarea {
+  font-family: inherit;
+  font-size: inherit;
+  line-height: inherit;
+  letter-spacing: inherit;
 }
 
 /* iOS zooms the whole page when a focused form control renders below 16px, and
@@ -285,4 +468,39 @@ button:not(:disabled):active,
   body {
     padding-bottom: calc(60px + env(safe-area-inset-bottom));
   }
+}
+
+/* ── Motion: entrances and hovers ───────────────────────────────────────────
+   Every keyframe here is gated on prefers-reduced-motion at the bottom of the
+   file. Durations stay short (0.18–0.4s) so the app feels quick, not animated. */
+
+/* Panels rise in on mount; stagger with --i on a container's children. */
+@keyframes panel-in { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+.animate-panel-in { animation: panel-in 0.32s cubic-bezier(0.22, 1, 0.36, 1) both; }
+
+/* Stagger helper: set --i on each child (0,1,2…) inside a .stagger parent. */
+.stagger > * { animation: panel-in 0.32s cubic-bezier(0.22, 1, 0.36, 1) both; animation-delay: calc(var(--i, 0) * 45ms); }
+
+/* Interactive table rows: a hairline accent rail slides in on hover, so the
+   row you are pointing at is unmistakable without repainting it. */
+.data-table tbody tr.row-link { cursor: pointer; }
+.data-table tbody tr.row-link > td:first-child { position: relative; }
+.data-table tbody tr.row-link > td:first-child::before {
+  content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 2px;
+  background: var(--color-accent); transform: scaleY(0); transform-origin: center;
+  transition: transform 0.16s ease;
+}
+.data-table tbody tr.row-link:hover > td:first-child::before,
+.data-table tbody tr.row-link.sel > td:first-child::before { transform: scaleY(1); }
+
+/* Segmented control: the active chip settles rather than snapping. */
+.seg > * { transition: color 0.14s ease, background-color 0.14s ease, box-shadow 0.14s ease; }
+
+/* Rail items glide their tint in. */
+.rail-item { transition: background-color 0.14s ease, color 0.14s ease; }
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-panel-in, .stagger > * { animation: none; }
+  .data-table tbody tr.row-link > td:first-child::before { transition: none; }
+  .seg > *, .rail-item { transition: none; }
 }

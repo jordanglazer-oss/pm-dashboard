@@ -21,6 +21,7 @@
  */
 
 import type { MarketRegimeData } from "@/app/lib/market-regime";
+import { signalsToFlip } from "@/app/lib/horizons";
 
 export type TransitionMomentum = "deteriorating" | "improving";
 
@@ -300,9 +301,27 @@ export function computeRegimeTransition(r: MarketRegimeData): RegimeTransition {
         : "toward Neutral";
   }
 
-  // Boundary gap — how many signals from losing the current label.
+  // Boundary gap — how many signals from losing the current label. With the
+  // weighted composite (horizons.ts) this is the fewest individual signal
+  // changes that would move the label; a signal's pull depends on its
+  // horizon weight, so it's computed greedily rather than counted. Falls
+  // back to the legacy 66%-count arithmetic for cached blobs without
+  // horizons. When a flip is already PENDING (raw label has moved, hysteresis
+  // holding the committed one) the gap is 1 — the line is already crossed.
   let boundaryGap: number;
-  if (label === "Risk-On") boundaryGap = Math.max(1, riskOn - threshold + 1);
+  if (r.composite.pending) {
+    boundaryGap = 1;
+  } else if (r.horizons) {
+    const nextLabel: "Risk-On" | "Neutral" | "Risk-Off" =
+      label === "Neutral"
+        ? anticipated === "Risk-Off" ? "Risk-Off" : "Risk-On"
+        : "Neutral";
+    const gap =
+      label === "Neutral" && !leaningToFlip
+        ? Math.min(signalsToFlip(r.horizons, "Risk-On"), signalsToFlip(r.horizons, "Risk-Off"))
+        : signalsToFlip(r.horizons, nextLabel);
+    boundaryGap = isFinite(gap) ? Math.max(1, gap) : Math.max(1, total);
+  } else if (label === "Risk-On") boundaryGap = Math.max(1, riskOn - threshold + 1);
   else if (label === "Risk-Off") boundaryGap = Math.max(1, riskOff - threshold + 1);
   else boundaryGap = anticipated === "Risk-On" ? Math.max(1, threshold - riskOn) : Math.max(1, threshold - riskOff);
 

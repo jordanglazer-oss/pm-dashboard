@@ -3,6 +3,7 @@ import { computeRegimeTransition, type RegimeTransition } from "@/app/lib/regime
 import type { MarketRegimeData } from "@/app/lib/market-regime";
 import type { StockContext } from "@/app/lib/alerts";
 import { checkAll, trippedCount, type KillCondition, type KillCheck } from "@/app/lib/kill-conditions";
+import { loadKillSignalSources, killSignalExtrasFor } from "./metric-resolver";
 
 /**
  * ONE loader for every input the alert engine needs, so the in-app
@@ -68,7 +69,7 @@ type StoredStock = {
   /** YYYY-MM-DD (Yahoo calendarEvents) — feeds the catalyst-aware escalation. */
   earningsDate?: string;
   riskAlert?: { level?: string; summary?: string; signals?: Array<{ name: string; status: string }> };
-  healthData?: { twoHundredDayAvg?: number; currentPrice?: number };
+  healthData?: { twoHundredDayAvg?: number; currentPrice?: number; earningsDate?: string };
 };
 
 function parse<T>(raw: string | null, fallback: T): T {
@@ -165,7 +166,12 @@ export async function loadAlertInputs(): Promise<AlertInputs> {
       revDown: typeof fs?.revDown === "number" ? fs.revDown : null,
       riskLevel: s.riskAlert?.level ?? null,
       instrumentType: s.instrumentType ?? null,
-      earningsDate: typeof s.earningsDate === "string" ? s.earningsDate.slice(0, 10) : null,
+      earningsDate:
+        typeof s.earningsDate === "string"
+          ? s.earningsDate.slice(0, 10)
+          : typeof s.healthData?.earningsDate === "string"
+          ? s.healthData.earningsDate.slice(0, 10)
+          : null,
     };
   }
 
@@ -182,13 +188,18 @@ export async function loadAlertInputs(): Promise<AlertInputs> {
   const stockByTicker = new Map<string, StoredStock>();
   for (const s of stocks) if (s.ticker) stockByTicker.set(s.ticker.toUpperCase(), s);
   const killWatch: KillWatchRow[] = [];
+  // Server-side signal sources for the metric / SIA / Equate / MarketEdge kinds
+  // (one batch of reads, shared across every underwritten name).
+  const extrasSrc = await loadKillSignalSources().catch(() => null);
   for (const [rawTk, t] of Object.entries(posTheses)) {
     const conds = Array.isArray(t?.killConditions) ? t.killConditions : [];
     if (!conds.length) continue;
     const tk = rawTk.toUpperCase();
     const st = stockByTicker.get(tk);
     const fs = snaps[tk]?.factset;
+    const extras = extrasSrc ? killSignalExtrasFor(tk, conds, extrasSrc) : {};
     const checks = checkAll(conds, {
+      ...extras,
       score: compositeFor(tk),
       scoreDelta45d: scoreDeltaFor(tk),
       netRevisions: netRevFor(tk),
