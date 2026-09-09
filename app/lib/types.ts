@@ -327,11 +327,46 @@ export const INSTRUMENT_LABELS: Record<InstrumentType, string> = {
   "mutual-fund": "Mutual Fund",
 };
 
+export type StockBucket = "Portfolio" | "Watchlist" | "Suggested";
+
+/** The book: what the PM owns or actively tracks. Everything that speaks about
+ *  "our names" means this — Suggested is a staging area, not a holding. */
+export const BOOK_BUCKETS = ["Portfolio", "Watchlist"] as const;
+
+export function isBookStock(s: { bucket?: string }): boolean {
+  return s.bucket === "Portfolio" || s.bucket === "Watchlist";
+}
+
+export function isSuggestedStock(s: { bucket?: string }): boolean {
+  return s.bucket === "Suggested";
+}
+
+/** Book-only view of a mixed list. The default for anything that isn't
+ *  explicitly about the Suggested staging area. */
+export function bookStocks<T extends { bucket?: string }>(stocks: T[]): T[] {
+  return stocks.filter(isBookStock);
+}
+
 export type Stock = {
   ticker: string;
   name: string;
   instrumentType?: InstrumentType;
-  bucket: "Portfolio" | "Watchlist";
+  /**
+   * Which list this name sits on.
+   *
+   * "Portfolio" / "Watchlist" are THE BOOK — names the PM owns or is actively
+   * tracking. "Suggested" is the funnel's staging area: a record auto-created
+   * for every name on 2+ bullish research lists so external provider data
+   * (MarketEdge / SIA / BoostedAI) and analyst reports have somewhere to land
+   * before the name is promoted, and so it can be scored on demand.
+   *
+   * A Suggested record is DELIBERATELY invisible to every book-driven surface
+   * (brief, alerts, change monitor, PIM, risk analytics, coverage nags). Read
+   * the book with `bookStocks()` / `isBookStock()` — never assume `bucket` is
+   * binary, and never write `bucket === "Portfolio" ? a : b` over a set that
+   * may contain Suggested names.
+   */
+  bucket: StockBucket;
   sector: string;
   beta: number;
   weights: { portfolio: number };

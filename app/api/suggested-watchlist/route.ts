@@ -19,6 +19,12 @@ import { requestCoverage } from "@/app/lib/coverage-request";
 import { crossListingRoot } from "@/app/lib/ticker";
 import type { CandidateStore } from "@/app/lib/watchlist-candidates";
 import { getReportsForTicker, type AnalystReports } from "@/app/lib/analyst-snapshots";
+import {
+  SUGGESTED_STOCKS_KEY,
+  syncSuggestedStocks,
+  type SuggestedStock,
+} from "@/app/lib/suggested-stocks";
+import type { Stock } from "@/app/lib/types";
 
 /**
  * Suggested Watchlist (funnel stage 2).
@@ -34,8 +40,16 @@ import { getReportsForTicker, type AnalystReports } from "@/app/lib/analyst-snap
  * Redis: reads pm:research, pm:stocks, pm:suggested-watchlist,
  * pm:synthesis-decisions, pm:sia-history, pm:watchlist-candidates,
  * pm:watchlist-notified. POST writes pm:suggested-watchlist (read-merge-
- * write) and, via requestCoverage, pm:mail-outbox + pm:watchlist-notified.
- * Never touches pm:stocks.
+ * write), pm:stocks-suggested (the staging records — see below), and, via
+ * requestCoverage, pm:mail-outbox + pm:watchlist-notified. Reads pm:stocks;
+ * NEVER writes it.
+ *
+ * STAGING RECORDS. POST also reconciles pm:stocks-suggested: one Stock-shaped
+ * record per qualifying name the book doesn't already track, so provider data
+ * (MarketEdge / SIA / BoostedAI) has somewhere to land and the name can be
+ * scored on demand before it's promoted. Records that stop qualifying are
+ * pruned ONLY when empty; anything carrying data is kept and marked. See
+ * app/lib/suggested-stocks.ts for why this is a separate key.
  */
 
 const log = createLogger("Suggested");
@@ -144,6 +158,56 @@ export async function GET() {
   }
 }
 
+/**
+ * Reconcile pm:stocks-suggested against the qualifying list.
+ *
+ * Rollback: the pre-image is stashed at `pm:stocks-suggested.pre-sync-<ts>`
+ * whenever the sync drops or marks anything, so a bad reconcile is one
+ * `redis.set` away from being undone. Nothing is stashed when the sync only
+ * adds records (nothing to lose).
+ */
+async function syncStagingRecords(
+  qualifying: Array<{ ticker: string; name?: string; sector?: string; currency?: string }>,
+  nowIso: string,
+  dryRun: boolean,
+): Promise<{ created: string[]; fellOff: string[]; pruned: string[]; promotedAway: string[]; total: number; stashKey?: string }> {
+  const redis = await getRedis();
+  let prev: SuggestedStock[] = [];
+  try {
+    const raw = await redis.get(SUGGESTED_STOCKS_KEY);
+    const parsed = raw ? JSON.parse(raw) : [];
+    prev = Array.isArray(parsed) ? (parsed as SuggestedStock[]) : [];
+  } catch {
+    prev = [];
+  }
+
+  // pm:stocks READ-ONLY — just the ticker list.
+  let bookTickers: string[] = [];
+  try {
+    const raw = await redis.get("pm:stocks");
+    const parsed = raw ? JSON.parse(raw) : [];
+    if (Array.isArray(parsed)) bookTickers = (parsed as Stock[]).map((s) => s?.ticker).filter(Boolean);
+  } catch {
+    // A failed pm:stocks read must NOT be read as "the book is empty" — that
+    // would create staging duplicates of every held name. Skip the sync.
+    log.warn("pm:stocks unreadable — skipping staging sync this run");
+    return { created: [], fellOff: [], pruned: [], promotedAway: [], total: prev.length };
+  }
+
+  const { next, created, fellOff, pruned, promotedAway } = syncSuggestedStocks(prev, qualifying, bookTickers, nowIso);
+  const destructive = pruned.length > 0 || promotedAway.length > 0 || fellOff.length > 0;
+  let stashKey: string | undefined;
+  if (!dryRun) {
+    if (destructive && prev.length > 0) {
+      stashKey = `${SUGGESTED_STOCKS_KEY}.pre-sync-${nowIso.replace(/[:.]/g, "-")}`;
+      await redis.set(stashKey, JSON.stringify(prev));
+    }
+    await redis.set(SUGGESTED_STOCKS_KEY, JSON.stringify(next));
+    log.info(`staging: +${created.length} created, ${fellOff.length} fell off, ${pruned.length} pruned, ${promotedAway.length} promoted away (${next.length} total)`);
+  }
+  return { created, fellOff, pruned, promotedAway, total: next.length, stashKey };
+}
+
 export async function POST(req: NextRequest) {
   const dryRun = new URL(req.url).searchParams.get("dryRun") === "1";
   try {
@@ -174,6 +238,17 @@ export async function POST(req: NextRequest) {
       await (await getRedis()).set(SUGGESTED_STORE_KEY, JSON.stringify(next));
     }
 
+    // ── Staging records (pm:stocks-suggested) ────────────────────────
+    // Read-modify-write, and pm:stocks is READ-ONLY here (it only supplies the
+    // book's tickers so a name the PM already tracks never gets a duplicate
+    // staging record).
+    const sync = await syncStagingRecords(qualifying.map((r) => ({
+      ticker: r.ticker,
+      name: r.name,
+      sector: r.sector,
+      currency: r.currency,
+    })), nowIso, dryRun);
+
     return NextResponse.json({
       ok: true,
       dryRun,
@@ -182,6 +257,7 @@ export async function POST(req: NextRequest) {
       newTickers,
       coverageRequested: emailed,
       updatedAt: next.updatedAt,
+      staging: sync,
     });
   } catch (e) {
     log.error("POST failed:", e);

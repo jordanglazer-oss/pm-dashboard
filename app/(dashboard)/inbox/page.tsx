@@ -1,7 +1,8 @@
 "use client";
 
-import React, { useCallback, useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { InboxEvent } from "@/app/lib/inbox-log";
+import type { Stock } from "@/app/lib/types";
 import type { AnalystReports } from "@/app/lib/analyst-snapshots";
 import { useStocks } from "@/app/lib/StockContext";
 import { EmptyState } from "@/app/components/EmptyState";
@@ -746,15 +747,49 @@ export default function InboxPage() {
     note?: string;
     errors: string[];
   };
+  // ── Suggested staging records (pm:stocks-suggested) ───────────────
+  // The provider exports cover the watchlist AND the Suggested list, so the
+  // importers match against both. Staging records are read-only here; patches
+  // for them are merged through the KV route (see dispatchPatches).
+  const [suggestedRecords, setSuggestedRecords] = useState<Stock[]>([]);
+  useEffect(() => {
+    let alive = true;
+    fetch("/api/kv/stocks-suggested", { cache: "no-store" })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => { if (alive && Array.isArray(d?.stocks)) setSuggestedRecords(d.stocks as Stock[]); })
+      .catch(() => {});
+    return () => { alive = false; };
+  }, []);
+  const bookTickers = useMemo(() => new Set(stocks.map((s) => s.ticker)), [stocks]);
+  /** Book + staging, the pool every provider importer matches against. */
+  const importPool = useMemo(
+    () => [...stocks, ...suggestedRecords.filter((s) => !bookTickers.has(s.ticker))],
+    [stocks, suggestedRecords, bookTickers],
+  );
+
   /** Dispatch a StockPatch[] through the React context. Used by SIA + Boosted
    *  + MarketEdge importers to apply the patches computed by the shared
    *  app/lib/stock-patches helpers. */
   const dispatchPatches = useCallback((patches: StockPatch[]) => {
     for (const p of patches) {
+      // A patch for a name the book doesn't hold belongs to a Suggested
+      // staging record — those live in pm:stocks-suggested, not in the React
+      // context, so they're merged server-side one record at a time. Same
+      // routing rule as the email ingest: the book wins when both exist.
+      if (!bookTickers.has(p.ticker)) {
+        const scores: Record<string, number> = {};
+        for (const su of p.scoreUpdates ?? []) scores[su.key] = su.value;
+        void fetch("/api/kv/stocks-suggested", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ ticker: p.ticker, fields: p.fields, scores }),
+        }).catch(() => {});
+        continue;
+      }
       if (Object.keys(p.fields).length > 0) updateStockFields(p.ticker, p.fields);
       for (const su of p.scoreUpdates ?? []) updateScore(p.ticker, su.key, su.value);
     }
-  }, [updateStockFields, updateScore]);
+  }, [updateStockFields, updateScore, bookTickers]);
   const [screenshotImportSummary, setScreenshotImportSummary] = useState<ScreenshotImportSummary | null>(null);
   const [siaImporting, setSiaImporting] = useState(false);
   const [boostedImporting, setBoostedImporting] = useState(false);
@@ -798,12 +833,12 @@ export default function InboxPage() {
       // Expected = scoreable individual stocks in Portfolio + Watchlist
       // (ETFs and funds don't have SIA scores). The shared helper handles
       // the priority rule, dual-listing match, and timestamp bookkeeping.
-      const expected = stocks.filter(isScoreable);
+      const expected = importPool.filter(isScoreable);
       const now = new Date().toISOString();
       // Pass `stocks` (full Portfolio + Watchlist) so any held ETFs/funds
       // in the screenshot drop out of "unmatched" silently — they don't
       // feed relativeStrength so the warning would be misleading.
-      const { patches, summary } = applySiaEntries(expected, data.entries || [], now, stocks);
+      const { patches, summary } = applySiaEntries(expected, data.entries || [], now, importPool);
       dispatchPatches(patches);
       setScreenshotImportSummary({
         source: "sia",
@@ -821,7 +856,7 @@ export default function InboxPage() {
       setSiaImporting(false);
       if (siaFileRef.current) siaFileRef.current.value = "";
     }
-  }, [stocks, dispatchPatches]);
+  }, [importPool, dispatchPatches]);
 
   /** Same priority rule + dual-listing match + held-ETF filter as the
    *  screenshot path — just feeds CSV-parsed rows through the same
@@ -842,7 +877,7 @@ export default function InboxPage() {
         });
         return;
       }
-      const expected = stocks.filter(isScoreable);
+      const expected = importPool.filter(isScoreable);
       const now = new Date().toISOString();
       // Full-index export → also persist the universe snapshot, the only place
       // the ~96% of rows you don't hold survive (applySiaEntries drops them by
@@ -857,7 +892,7 @@ export default function InboxPage() {
       const named = isNamedUniverseExport(file.name);
       const completeCut = looksLikeCompleteIndexCut(parsed.ranked.map((r) => r.rank));
       const isUniverse = parsed.rows.length >= UNIVERSE_MIN_ROWS || named || completeCut;
-      const { patches, summary } = applySiaEntries(expected, parsed.rows, now, stocks, isUniverse);
+      const { patches, summary } = applySiaEntries(expected, parsed.rows, now, importPool, isUniverse);
       dispatchPatches(patches);
       let snapshotError: string[] = [];
       let snapshotNote = "";
@@ -930,7 +965,7 @@ export default function InboxPage() {
       setSiaImporting(false);
       if (siaCsvFileRef.current) siaCsvFileRef.current.value = "";
     }
-  }, [stocks, dispatchPatches]);
+  }, [importPool, stocks, dispatchPatches]);
 
   /** BoostedAI CSV — preferred over the screenshot (more reliable, $0).
    *  Reads the Boosted.ai unified-data export (TICKER + AVERAGE RATING +
@@ -950,9 +985,9 @@ export default function InboxPage() {
         });
         return;
       }
-      const expected = stocks.filter(isScoreable);
+      const expected = importPool.filter(isScoreable);
       const now = new Date().toISOString();
-      const { patches, summary } = applyBoostedEntries(expected, parsed.rows, now, stocks);
+      const { patches, summary } = applyBoostedEntries(expected, parsed.rows, now, importPool);
       dispatchPatches(patches);
       setScreenshotImportSummary({ source: "boosted", cached: false, ...summary, errors: [] });
     } catch (e) {
@@ -965,7 +1000,7 @@ export default function InboxPage() {
       setBoostedImporting(false);
       if (boostedCsvFileRef.current) boostedCsvFileRef.current.value = "";
     }
-  }, [stocks, dispatchPatches]);
+  }, [importPool, dispatchPatches]);
 
   const handleBoostedScreenshots = useCallback(async (files: FileList | null) => {
     if (!files || files.length === 0) return;
@@ -993,10 +1028,10 @@ export default function InboxPage() {
         entries: Array<{ ticker: string; rating?: number; consensus?: BoostedAiConsensus }>;
         cached?: boolean;
       };
-      const expected = stocks.filter(isScoreable);
+      const expected = importPool.filter(isScoreable);
       const now = new Date().toISOString();
       // Pass `stocks` so held ETFs/funds drop out of "unmatched" silently.
-      const { patches, summary } = applyBoostedEntries(expected, data.entries || [], now, stocks);
+      const { patches, summary } = applyBoostedEntries(expected, data.entries || [], now, importPool);
       dispatchPatches(patches);
       setScreenshotImportSummary({
         source: "boosted",
@@ -1014,7 +1049,7 @@ export default function InboxPage() {
       setBoostedImporting(false);
       if (boostedFileRef.current) boostedFileRef.current.value = "";
     }
-  }, [stocks, dispatchPatches]);
+  }, [importPool, dispatchPatches]);
 
   // ── MarketEdge ("ChartScout") CSV importer ────────────────────────
   // Weekly upload of the ChartScout Likes export. We pull just the four
@@ -1046,7 +1081,7 @@ export default function InboxPage() {
         setMarketEdgeImportSummary({ rows: 0, matched: 0, updated: 0, unmatched: [], errors: parsed.errors });
         return;
       }
-      const { patches, summary } = applyMarketEdgeRows(stocks, parsed.rows);
+      const { patches, summary } = applyMarketEdgeRows(importPool, parsed.rows);
       dispatchPatches(patches);
       setMarketEdgeImportSummary({
         rows: summary.rowsParsed,
@@ -1064,7 +1099,7 @@ export default function InboxPage() {
       setMarketEdgeImporting(false);
       if (marketEdgeFileRef.current) marketEdgeFileRef.current.value = "";
     }
-  }, [stocks, dispatchPatches]);
+  }, [importPool, dispatchPatches]);
 
   const totalCovered = coverageRows.filter((r) => r.hasRbc || r.hasJpm).length;
   const portfolioCovered = coverageRows.filter((r) => r.bucket === "Portfolio" && (r.hasRbc || r.hasJpm)).length;

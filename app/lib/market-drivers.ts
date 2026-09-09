@@ -17,7 +17,7 @@ import { crossSectional, factsetConfigured, totalReturnFormula, type FactsetValu
 import { fetchYahooDaily } from "@/app/lib/daily-summary/yahoo";
 import { resolveFactsetId } from "@/app/lib/factset-symbols";
 import { SP500, TSX60 } from "@/app/lib/factor-constituents";
-import type { Stock } from "@/app/lib/types";
+import { isBookStock, type Stock } from "@/app/lib/types";
 
 const log = createLogger("Market-drivers");
 
@@ -375,8 +375,9 @@ export async function buildMarketDrivers(): Promise<MarketDrivers> {
     const parsed = raw ? (JSON.parse(raw) as Stock[] | { stocks?: Stock[] }) : [];
     const list = Array.isArray(parsed) ? parsed : parsed.stocks ?? [];
     for (const s of list) {
-      if (!s?.ticker) continue;
-      held.set(s.ticker.toUpperCase(), { bucket: s.bucket, name: s.name });
+      // Book only — a Suggested staging record is not a held/watched name.
+      if (!s?.ticker || !isBookStock(s)) continue;
+      held.set(s.ticker.toUpperCase(), { bucket: s.bucket as "Portfolio" | "Watchlist", name: s.name });
     }
   } catch {
     /* flags degrade to null */

@@ -25,7 +25,7 @@
  */
 
 import { getRedis } from "./redis";
-import type { Stock, ScoreKey } from "./types";
+import { isBookStock, type Stock, type ScoreKey } from "./types";
 import { isScoreable } from "./scoring";
 import {
   extractSiaFromAttachments,
@@ -33,6 +33,7 @@ import {
   type AttachmentInput,
 } from "./screenshot-extractors";
 import { parseMarketEdgeCsv } from "./marketedge-csv";
+import { SUGGESTED_STOCKS_KEY, type SuggestedStock } from "./suggested-stocks";
 import { parseSiaCsv } from "./sia-csv";
 import { writeSiaSnapshot, UNIVERSE_MIN_ROWS, isNamedUniverseExport, looksLikeCompleteIndexCut, type SiaRow } from "./sia-universe";
 import { appendSiaHistory } from "./sia-history";
@@ -230,25 +231,52 @@ export function isCsvDataUrl(dataUrl: string): boolean { return CSV_MIME_RE.test
 
 // ── Server-side pm:stocks read-modify-write ────────────────────────
 
-/** Apply a StockPatch[] to the pm:stocks blob directly (no React). Returns
- *  the count of stocks actually touched. Read-modify-write so no other
- *  fields are dropped. */
-async function applyPatchesToRedis(patches: StockPatch[]): Promise<{ touched: number }> {
-  if (patches.length === 0) return { touched: 0 };
+/**
+ * Apply a StockPatch[] to the stock blobs directly (no React). Returns the
+ * count of stocks actually touched. Read-modify-write so no other fields are
+ * dropped.
+ *
+ * Two stores, one pass: a patch lands on the pm:stocks record when the book
+ * holds the ticker, otherwise on the pm:stocks-suggested staging record. The
+ * BOOK ALWAYS WINS — if the same name somehow exists in both (a manual add
+ * between two syncs), the book record is the one that gets the data and the
+ * staging copy is left untouched for the next sync to drop. Each store is
+ * rewritten only when something in it actually changed.
+ */
+async function applyPatchesToRedis(patches: StockPatch[]): Promise<{ touched: number; touchedSuggested: number }> {
+  if (patches.length === 0) return { touched: 0, touchedSuggested: 0 };
   const redis = await getRedis();
   const raw = await redis.get("pm:stocks");
-  if (!raw) return { touched: 0 };
+  // An unreadable pm:stocks means we can't tell book from staging — do
+  // nothing rather than risk writing a book name's data onto a staging record.
+  if (!raw) return { touched: 0, touchedSuggested: 0 };
   const stocks = JSON.parse(raw) as Stock[];
+
+  let suggested: SuggestedStock[] = [];
+  try {
+    const sugRaw = await redis.get(SUGGESTED_STOCKS_KEY);
+    const parsed = sugRaw ? JSON.parse(sugRaw) : [];
+    if (Array.isArray(parsed)) suggested = parsed as SuggestedStock[];
+  } catch {
+    suggested = [];
+  }
+
   let touched = 0;
+  let touchedSuggested = 0;
   const byTicker = new Map<string, Stock>();
   for (const s of stocks) byTicker.set(s.ticker, s);
+  const suggestedByTicker = new Map<string, SuggestedStock>();
+  for (const s of suggested) suggestedByTicker.set(s.ticker, s);
+
   for (const p of patches) {
-    const s = byTicker.get(p.ticker);
+    const inBook = byTicker.get(p.ticker);
+    const s = inBook ?? suggestedByTicker.get(p.ticker);
     if (!s) continue;
     // Field merge.
     if (Object.keys(p.fields).length > 0) {
       Object.assign(s, p.fields);
-      touched += 1;
+      if (inBook) touched += 1;
+      else touchedSuggested += 1;
     }
     // Score updates.
     if (p.scoreUpdates && p.scoreUpdates.length > 0) {
@@ -259,8 +287,9 @@ async function applyPatchesToRedis(patches: StockPatch[]): Promise<{ touched: nu
       s.scores = nextScores;
     }
   }
-  await redis.set("pm:stocks", JSON.stringify(stocks));
-  return { touched };
+  if (touched > 0) await redis.set("pm:stocks", JSON.stringify(stocks));
+  if (touchedSuggested > 0) await redis.set(SUGGESTED_STOCKS_KEY, JSON.stringify(suggested));
+  return { touched, touchedSuggested };
 }
 
 async function readStocks(): Promise<Stock[]> {
@@ -269,6 +298,37 @@ async function readStocks(): Promise<Stock[]> {
     const raw = await redis.get("pm:stocks");
     if (!raw) return [];
     return JSON.parse(raw) as Stock[];
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * The pool the PROVIDER ingests match against: the book plus the Suggested
+ * staging records. A suggested name is exported to SIA / MarketEdge / BoostedAI
+ * alongside the watchlist, so its rows have to land somewhere — without this
+ * they were parsed, counted as unmatched, and dropped.
+ *
+ * Book records come first so a ticker present in both matches the book.
+ * Deliberately NOT used by the book-only paths (street takeaways, coverage
+ * scoping): staging names stay out of those.
+ */
+async function readStocksWithSuggested(): Promise<Stock[]> {
+  const [book, suggested] = await Promise.all([readStocks(), readSuggestedRecords()]);
+  const seen = new Set(book.map((s) => s.ticker));
+  return [...book, ...suggested.filter((s) => !seen.has(s.ticker))];
+}
+
+/** Drop staging records from a mixed pool. */
+function bookOnly(stocks: Stock[]): Stock[] {
+  return stocks.filter(isBookStock);
+}
+
+async function readSuggestedRecords(): Promise<SuggestedStock[]> {
+  try {
+    const raw = await (await getRedis()).get(SUGGESTED_STOCKS_KEY);
+    const parsed = raw ? JSON.parse(raw) : [];
+    return Array.isArray(parsed) ? (parsed as SuggestedStock[]) : [];
   } catch {
     return [];
   }
@@ -605,7 +665,8 @@ async function handleSia(att: AttachmentInput, label: string): Promise<DispatchR
     if (parsed.errors.length > 0) {
       return { ok: false, kind: "sia", status: 400, message: `SIA attachment isn't a readable CSV (${parsed.errors.join("; ")}). Expecting a SIA CSV export, a screenshot (PNG/JPG), or a PDF.` };
     }
-    const stocks = await readStocks();
+    // Book + Suggested staging records: the SIA export covers both lists.
+    const stocks = await readStocksWithSuggested();
     const expected = stocks.filter(isScoreable);
     // A full-index export (S&P 500 / TSX) also feeds the universe snapshot
     // store, which is the ONLY place the non-held rows survive — applySiaEntries
@@ -643,7 +704,11 @@ async function handleSia(att: AttachmentInput, label: string): Promise<DispatchR
     // nothing here touches a score. First reading of the day wins, so the
     // holdings exports (which carry SIA's percentile) take precedence over the
     // index exports (which carry rank) when both cover the same name.
-    const histNote = await logSiaHistory(parsed.ranked, stocks, isUniverse);
+    // Book only, deliberately: pm:sia-history is the drift evidence for names
+    // the PM actually tracks, and CLAUDE.md keeps its scope tight. A staging
+    // name gets its SMAX on the record; it just doesn't accrue history until
+    // it's promoted.
+    const histNote = await logSiaHistory(parsed.ranked, bookOnly(stocks), isUniverse);
     return {
       ok: true,
       kind: "sia",
@@ -652,7 +717,7 @@ async function handleSia(att: AttachmentInput, label: string): Promise<DispatchR
     };
   }
   const { entries, cached } = await extractSiaFromAttachments([att]);
-  const stocks = await readStocks();
+  const stocks = await readStocksWithSuggested();
   const expected = stocks.filter(isScoreable);
   // Pass full pm:stocks pool so held ETFs/funds in the screenshot drop
   // out of "unmatched" silently (they don't feed relativeStrength).
@@ -676,7 +741,7 @@ async function handleBoosted(att: AttachmentInput, label: string): Promise<Dispa
     if (parsed.errors.length > 0) {
       return { ok: false, kind: "boosted", status: 400, message: `BoostedAI attachment isn't a readable CSV (${parsed.errors.join("; ")}). Expecting the Boosted.ai unified-data CSV export, a screenshot (PNG/JPG), or a PDF.` };
     }
-    const stocks = await readStocks();
+    const stocks = await readStocksWithSuggested();
     const expected = stocks.filter(isScoreable);
     const { patches, summary } = applyBoostedEntries(expected, parsed.rows, new Date().toISOString(), stocks);
     const { touched } = await applyPatchesToRedis(patches);
@@ -688,7 +753,7 @@ async function handleBoosted(att: AttachmentInput, label: string): Promise<Dispa
     };
   }
   const { entries, cached } = await extractBoostedFromAttachments([att]);
-  const stocks = await readStocks();
+  const stocks = await readStocksWithSuggested();
   const expected = stocks.filter(isScoreable);
   const { patches, summary } = applyBoostedEntries(expected, entries, new Date().toISOString(), stocks);
   const { touched } = await applyPatchesToRedis(patches);
@@ -713,7 +778,7 @@ async function handleMarketEdge(att: AttachmentInput, label: string): Promise<Di
   if (parsed.errors.length > 0) {
     return { ok: false, kind: "marketedge", status: 400, message: `MarketEdge attachment isn't a readable CSV (${parsed.errors.join("; ")}). Expecting the ChartScout Likes CSV export.` };
   }
-  const stocks = await readStocks();
+  const stocks = await readStocksWithSuggested();
   const { patches, summary } = applyMarketEdgeRows(stocks, parsed.rows);
   const { touched } = await applyPatchesToRedis(patches);
   return {

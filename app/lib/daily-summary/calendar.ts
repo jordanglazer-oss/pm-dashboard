@@ -20,7 +20,7 @@ import { earningsEvents, econEvents, fomcEvents, type CatalystCalendar } from "@
 import { fredSeries } from "@/app/lib/forward-looking";
 import { loadStreetTakeaways, type StreetTakeaway } from "@/app/lib/street-takeaways";
 import { SUGGESTED_STORE_KEY, type SuggestedStore } from "@/app/lib/suggested-watchlist";
-import type { Stock } from "@/app/lib/types";
+import { bookStocks, type Stock } from "@/app/lib/types";
 
 const log = createLogger("Summary-calendar");
 
@@ -206,7 +206,9 @@ export async function buildCalendarSection(windowDays = 14): Promise<CalendarSec
     econEvents(today, end).catch(() => ({ events: [], status: "unavailable" as const })),
     econActuals(),
   ]);
-  const stocks: Stock[] = Array.isArray(stocksRaw) ? stocksRaw : stocksRaw?.stocks ?? [];
+  // Book only. A Suggested record in pm:stocks is a staging entry, not a name
+  // the PM holds or watches — it must not read as "held" anywhere in the brief.
+  const stocks: Stock[] = bookStocks(Array.isArray(stocksRaw) ? stocksRaw : stocksRaw?.stocks ?? []);
   const heldTickers = new Set(stocks.map((s) => s.ticker.toUpperCase()));
   const nameOf = new Map(stocks.map((s) => [s.ticker.toUpperCase(), s.name]));
 
@@ -262,7 +264,8 @@ export async function buildCalendarSection(windowDays = 14): Promise<CalendarSec
     postPrints.push({
       ticker: tk,
       name: s.name,
-      bucket: s.bucket,
+      // `stocks` is book-filtered above, so this is Portfolio | Watchlist.
+      bucket: s.bucket as "Portfolio" | "Watchlist",
       date: m.date,
       event: m.event,
       results: (m.results ?? []).slice(0, 4).map((r) => ({ label: r.label, actual: r.actual, consensus: r.consensus, yoy: r.yoy })),

@@ -16,7 +16,7 @@
  * pm:analyst-snapshots on every page load.
  */
 
-import type { ScoredStock } from "./types";
+import { isBookStock, type ScoredStock } from "./types";
 import type { ResearchState } from "./defaults";
 import type { AnalystSnapshots } from "./analyst-snapshots";
 import { marketEdgeApplies, isScoreable } from "./scoring";
@@ -161,15 +161,16 @@ export function computeConviction(input: ComputeConvictionInput): ConvictionEntr
   const entries = new Map<string, ConvictionEntry>();
   const stockByKey = new Map<string, ScoredStock>();
   for (const s of stocks) {
-    // Conviction is an equity-selection tool — exclude ETFs / mutual funds.
-    if (!isScoreable(s)) continue;
+    // Conviction is an equity-selection tool — exclude ETFs / mutual funds,
+    // and Suggested staging records (not yet names the PM tracks).
+    if (!isScoreable(s) || !isBookStock(s)) continue;
     const key = norm(s.ticker);
     stockByKey.set(key, s);
     entries.set(key, {
       key,
       ticker: s.ticker,
       name: s.name,
-      bucket: s.bucket,
+      bucket: s.bucket as "Portfolio" | "Watchlist",
       total: 0,
       signals: [],
       scored: true,
