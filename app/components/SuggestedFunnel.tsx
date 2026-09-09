@@ -3,6 +3,7 @@
 import React, { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { useStocks } from "@/app/lib/StockContext";
+import { computeScores } from "@/app/lib/scoring";
 import { usePersistedOpen } from "@/app/lib/useCollapsed";
 import { displayTicker } from "@/app/lib/ticker";
 import TickerLink from "@/app/components/TickerLink";
@@ -13,7 +14,7 @@ import { SUGGESTED_MIN_LISTS } from "@/app/lib/research-ranked";
 import type { SuggestedRow, SuggestedDecision } from "@/app/lib/suggested-watchlist";
 import type { SynthesisVerdict } from "@/app/lib/synthesis-screen-display";
 import { VERDICT_LABEL } from "@/app/lib/synthesis-screen-display";
-import type { Stock, ScoreKey } from "@/app/lib/types";
+import type { Stock, ScoreKey, ScoreExplanations } from "@/app/lib/types";
 import type { SuggestedAiView, PositionTier } from "@/app/lib/suggested-ai";
 
 /** AI tier → status dot + word. Colour by job: positioned / neutral / against. */
@@ -71,12 +72,86 @@ function SortIcon({ col, sortKey, dir }: { col: string; sortKey: string; dir: "a
  * the "Movers" tab beside it.
  */
 export function SuggestedFunnel({ onCountChange }: { onCountChange?: (n: number) => void }) {
-  const { stocks, addStock } = useStocks();
+  const { stocks, addStock, marketData } = useStocks();
   const [data, setData] = useState<Payload | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [status, setStatus] = useState<string | null>(null);
   const [adding, setAdding] = useState<string | null>(null);
+  // ── Staging records (pm:stocks-suggested) ─────────────────────────
+  // Every qualifying name has a Stock-shaped record where its provider data
+  // (MarketEdge / SIA / BoostedAI) lands and where an on-demand score is kept,
+  // so a name arrives on the Watchlist already carrying what we gathered while
+  // it sat here. Keyed by upper-cased ticker.
+  const [records, setRecords] = useState<Map<string, Stock>>(new Map());
+  const [scoringTicker, setScoringTicker] = useState<string | null>(null);
+  const [scoreErr, setScoreErr] = useState<string | null>(null);
+  const loadRecords = useCallback(async () => {
+    try {
+      const r = await fetch("/api/kv/stocks-suggested", { cache: "no-store" });
+      if (!r.ok) return;
+      const d = await r.json();
+      if (!Array.isArray(d?.stocks)) return;
+      setRecords(new Map((d.stocks as Stock[]).map((s) => [s.ticker.toUpperCase(), s])));
+    } catch { /* leave what we have */ }
+  }, []);
+  useEffect(() => { void loadRecords(); }, [loadRecords]);
+  const recordFor = useCallback(
+    (row: SuggestedRow) => records.get(row.ticker.toUpperCase()) ?? records.get(row.key.toUpperCase()),
+    [records],
+  );
+
+  /**
+   * Score one staging name on demand. Same /api/score call the book uses; the
+   * result is merged into the staging record rather than into pm:stocks (the
+   * KV route merges ONE record, so this can never clobber the sync or an
+   * ingest that ran in between). Never automatic — a full score is the
+   * expensive path and this list turns over weekly.
+   */
+  const scoreOne = async (row: SuggestedRow) => {
+    const rec = recordFor(row);
+    if (!rec || scoringTicker) return;
+    setScoringTicker(row.ticker);
+    setScoreErr(null);
+    try {
+      const res = await fetch("/api/score", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ticker: rec.ticker }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setScoreErr(`${displayTicker(row.ticker)}: ${data?.error ?? `scoring failed (HTTP ${res.status})`}`);
+        return;
+      }
+      const fields: Record<string, unknown> = {};
+      if (data.name) fields.name = data.name;
+      if (data.sector) fields.sector = data.sector;
+      if (typeof data.beta === "number") fields.beta = data.beta;
+      if (typeof data.price === "number") fields.price = data.price;
+      if (data.companySummary) fields.companySummary = data.companySummary;
+      if (data.investmentThesis) fields.investmentThesis = data.investmentThesis;
+      if (data.bearCase) fields.bearCase = data.bearCase;
+      if (data.healthData) fields.healthData = data.healthData;
+      const merge = await fetch("/api/kv/stocks-suggested", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          ticker: rec.ticker,
+          scores: data.scores ?? {},
+          explanations: (data.explanations ?? {}) as ScoreExplanations,
+          lastScored: new Date().toISOString(),
+          fields,
+        }),
+      });
+      if (!merge.ok) setScoreErr(`${displayTicker(row.ticker)}: scored, but saving failed`);
+      await loadRecords();
+    } catch (e) {
+      setScoreErr(`${displayTicker(row.ticker)}: ${e instanceof Error ? e.message : String(e)}`);
+    } finally {
+      setScoringTicker(null);
+    }
+  };
   const [requesting, setRequesting] = useState<string | null>(null);
   const [showPassed, setShowPassed] = useState(false);
   const [ccy, setCcy] = useState<"All" | "CAD" | "USD">("All");
@@ -182,7 +257,11 @@ export function SuggestedFunnel({ onCountChange }: { onCountChange?: (n: number)
             : `${j.qualifying} names · ${j.newTickers?.length ?? 0} new · ${j.coverageRequested?.length ?? 0} coverage request${(j.coverageRequested?.length ?? 0) === 1 ? "" : "s"} queued`,
         );
       } else setStatus(j.error ?? "Refresh failed");
-      await load();
+      if (j.staging) {
+        const st = j.staging as { created?: string[]; pruned?: string[]; fellOff?: string[]; total?: number };
+        setStatus((prev) => `${prev ?? ""} · staging ${st.total ?? 0} records (+${st.created?.length ?? 0} new${st.pruned?.length ? `, ${st.pruned.length} pruned` : ""})`);
+      }
+      await Promise.all([load(), loadRecords()]);
     } finally {
       setRefreshing(false);
     }
@@ -195,8 +274,14 @@ export function SuggestedFunnel({ onCountChange }: { onCountChange?: (n: number)
 
   const promote = async (row: SuggestedRow) => {
     setAdding(row.ticker);
-    let name = row.name || row.ticker;
-    let sector = row.sector || "Technology";
+    // The staging record is the starting point when there is one: it carries
+    // whatever landed while the name sat in the funnel — MarketEdge opinion,
+    // SIA SMAX, BoostedAI rating, and an on-demand score with its
+    // explanations. Promoting without it would throw all of that away and the
+    // name would arrive on the Watchlist blank.
+    const staged = recordFor(row);
+    let name = staged?.name || row.name || row.ticker;
+    let sector = staged?.sector || row.sector || "Technology";
     try {
       const res = await fetch(`/api/company-name?tickers=${encodeURIComponent(row.ticker)}`);
       if (res.ok) {
@@ -205,8 +290,13 @@ export function SuggestedFunnel({ onCountChange }: { onCountChange?: (n: number)
         if (d.sectors?.[row.ticker]) sector = d.sectors[row.ticker];
       }
     } catch { /* keep the list's values */ }
-    const stock: Stock = { ticker: row.ticker, name, bucket: "Watchlist", sector, beta: 1.0, weights: { portfolio: 0 }, scores: { ...ZERO_SCORES }, notes: "" };
+    const base: Stock = staged
+      ? { ...staged, suggestedSince: undefined, fallenOffAt: undefined } as Stock
+      : { ticker: row.ticker, name, bucket: "Watchlist", sector, beta: 1.0, weights: { portfolio: 0 }, scores: { ...ZERO_SCORES }, notes: "" };
+    const stock: Stock = { ...base, ticker: row.ticker, name, sector, bucket: "Watchlist" };
     addStock(stock);
+    // The next Suggested refresh drops the staging copy (the book now tracks
+    // the name); its data has just moved across.
     // Remember the choice so the Synthesis Suggested tab shows it as advanced.
     void fetch("/api/kv/synthesis-decisions", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ticker: row.ticker, verdict: "advance" }) }).catch(() => {});
     setAdding(null);
@@ -320,6 +410,8 @@ export function SuggestedFunnel({ onCountChange }: { onCountChange?: (n: number)
         )}
         {status && <span className="text-ink-2">{status}</span>}
         {aiErr && <span className="text-neg">{aiErr}</span>}
+        {scoreErr && <span className="text-neg">{scoreErr}</span>}
+        {scoringTicker && <span className="text-ink-2">Scoring {displayTicker(scoringTicker)}…</span>}
       </div>
 
       {loading ? (
@@ -339,6 +431,7 @@ export function SuggestedFunnel({ onCountChange }: { onCountChange?: (n: number)
                 <th className={TH_SORT} onClick={() => toggle("name")}>Name<SortIcon col="name" sortKey={sortKey} dir={sortDir} /></th>
                 <th className={TH_SORT} onClick={() => toggle("sector")}>Sector<SortIcon col="sector" sortKey={sortKey} dir={sortDir} /></th>
                 <th className={`n ${TH_SORT}`} onClick={() => toggle("lists")}>Lists<SortIcon col="lists" sortKey={sortKey} dir={sortDir} /></th>
+                <th className="n" title="41-point composite, scored on demand. The chips show which provider data has landed on this name: M = MarketEdge, S = SIA, B = BoostedAI.">Score</th>
                 <th title="AI positioning vs today's backdrop">AI view</th>
                 <th>Sources</th>
                 <th title="Entry setup (signals met / known) and improving reads">Setup</th>
@@ -367,6 +460,41 @@ export function SuggestedFunnel({ onCountChange }: { onCountChange?: (n: number)
                     <td className="n">
                       {r.listCount}
                       {r.listDelta !== 0 && <span className={`ml-1 text-[11px] ${r.listDelta > 0 ? "text-pos" : "text-neg"}`}>{r.listDelta > 0 ? "+" : ""}{r.listDelta}</span>}
+                    </td>
+                    <td className="n">
+                      {(() => {
+                        const rec = recordFor(r);
+                        if (!rec) return <span className="text-ink-faint" title="No staging record yet — the next Suggested refresh creates one.">—</span>;
+                        const scored = rec.lastScored ? computeScores(rec, marketData) : null;
+                        const data = [
+                          rec.marketEdge?.powerRating != null || rec.marketEdge?.opinion ? "M" : null,
+                          typeof rec.sia === "number" ? "S" : null,
+                          typeof rec.boostedAi === "number" ? "B" : null,
+                        ].filter(Boolean) as string[];
+                        return (
+                          <span className="inline-flex items-center justify-end gap-1.5">
+                            {scored ? (
+                              <span className="font-mono text-ink" title={`${scored.ratingLabel} · scored ${rec.lastScored?.slice(0, 10)}`}>{scored.adjusted.toFixed(1)}</span>
+                            ) : (
+                              <span className="text-ink-faint">—</span>
+                            )}
+                            {data.length > 0 && (
+                              <span className="font-sans text-[11px] text-ink-3" title={`Provider data on file: ${data.map((d) => (d === "M" ? "MarketEdge" : d === "S" ? "SIA" : "BoostedAI")).join(", ")}`}>{data.join("")}</span>
+                            )}
+                            {!h && (
+                              <button
+                                type="button"
+                                onClick={() => scoreOne(r)}
+                                disabled={scoringTicker != null}
+                                className={ROW_BTN}
+                                title={rec.lastScored ? "Re-score this name (full 41-point pass)" : "Score this name now (full 41-point pass) — nothing is scored automatically"}
+                              >
+                                {scoringTicker === r.ticker ? "…" : rec.lastScored ? "Re-score" : "Score"}
+                              </button>
+                            )}
+                          </span>
+                        );
+                      })()}
                     </td>
                     <td>
                       {tier ? (

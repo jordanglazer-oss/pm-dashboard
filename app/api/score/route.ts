@@ -12,6 +12,7 @@ import { computeAnalystConsensus, getSnapshotForTicker, setSnapshotForTicker, bu
 import type { AnalystSnapshots } from "@/app/lib/analyst-snapshots";
 import { mapBoostedAiToAiRating, mapSmaxToRelativeStrength, consensusLabel, type BoostedAiConsensus } from "@/app/lib/external-scoring";
 import { getRedis } from "@/app/lib/redis";
+import { readStockPool, findInPool } from "@/app/lib/stock-pool";
 import { resolveFactsetId } from "@/app/lib/factset-symbols";
 import { factsetConfigured, relayRetry } from "@/app/lib/factset";
 import { sectorPlaybookBlock } from "@/app/lib/sector-playbook";
@@ -763,12 +764,9 @@ export async function POST(request: NextRequest) {
       // for what this company does" is computed, not model discretion.
       let storedSector: string | null = null;
       try {
-        const redis = await getRedis();
-        const stocksRaw = await redis.get("pm:stocks");
-        if (stocksRaw) {
-          const stocks = JSON.parse(stocksRaw) as Array<{ ticker?: string; sector?: string }>;
-          storedSector = stocks.find((s) => (s.ticker || "").toUpperCase() === upperTicker)?.sector ?? null;
-        }
+        // Book first, then the Suggested staging store — a staging name being
+        // scored on demand has its sector there, not in pm:stocks.
+        storedSector = findInPool(await readStockPool(), upperTicker)?.sector ?? null;
       } catch { /* stored sector stays null */ }
       const playbook = sectorPlaybookBlock(
         factsetUsed ? (factsetSnap?.sector ?? null) : storedSector,
@@ -998,9 +996,9 @@ export async function POST(request: NextRequest) {
     // Instruction text lives in score-prompt-fragments.ts (hashed).
     if (!skipPriorAnchor) try {
       const redis = await getRedis();
-      const [rawHist, rawStocksPrior] = await Promise.all([
+      const [rawHist, priorPool] = await Promise.all([
         redis.get("pm:score-history"),
-        redis.get("pm:stocks"),
+        readStockPool(),
       ]);
       const histBlob = rawHist
         ? (JSON.parse(rawHist) as Record<string, Array<{ timestamp?: string; total?: number; rubricHash?: string; scores?: Record<string, number> }>>)
@@ -1025,8 +1023,7 @@ export async function POST(request: NextRequest) {
           const anchorKeys = partialKeys ?? AI_KEYS;
           let priorExplanations: ScoreExplanations = {};
           try {
-            const stocksArr = rawStocksPrior ? (JSON.parse(rawStocksPrior) as Array<{ ticker?: string; explanations?: ScoreExplanations }>) : [];
-            const match = stocksArr.find((s) => (s.ticker || "").toUpperCase() === upperTicker);
+            const match = findInPool(priorPool, upperTicker);
             if (match?.explanations) priorExplanations = match.explanations;
           } catch { /* summaries are additive — lines render without them */ }
           const lines: PriorCategoryLine[] = anchorKeys
@@ -1294,24 +1291,21 @@ export async function POST(request: NextRequest) {
     scores.analystConsensus = consensus.score;
 
     // aiRating & relativeStrength: derived from BoostedAI / SIA fields on the
-    // stock. Read pm:stocks to get the external-tool inputs, then bucket-map.
+    // stock record (book or staging), then bucket-mapped.
     let stockBoostedAi: number | null = null;
     let stockBoostedAiConsensus: BoostedAiConsensus | null = null;
     let stockSia: number | null = null;
     try {
-      const redis = await getRedis();
-      const rawStocks = await redis.get("pm:stocks");
-      if (rawStocks) {
-        const stocksArr = JSON.parse(rawStocks) as Array<{ ticker: string; boostedAi?: number; boostedAiConsensus?: string; sia?: number }>;
-        const match = stocksArr.find((s) => s.ticker.toUpperCase() === upperTicker);
-        if (match) {
-          stockBoostedAi = typeof match.boostedAi === "number" ? match.boostedAi : null;
-          stockBoostedAiConsensus = (match.boostedAiConsensus as BoostedAiConsensus) ?? null;
-          stockSia = typeof match.sia === "number" ? match.sia : null;
-        }
+      // Book + Suggested staging: a staging name carries the same BoostedAI /
+      // SIA fields, ingested from the same exports.
+      const match = findInPool(await readStockPool(), upperTicker);
+      if (match) {
+        stockBoostedAi = typeof match.boostedAi === "number" ? match.boostedAi : null;
+        stockBoostedAiConsensus = (match.boostedAiConsensus as BoostedAiConsensus) ?? null;
+        stockSia = typeof match.sia === "number" ? match.sia : null;
       }
     } catch (e) {
-      console.error("Failed to read pm:stocks for external-tool fields:", e);
+      console.error("Failed to read the stock pool for external-tool fields:", e);
     }
     const derivedAiRating = mapBoostedAiToAiRating(stockBoostedAi, stockBoostedAiConsensus);
     if (derivedAiRating != null) scores.aiRating = derivedAiRating;
