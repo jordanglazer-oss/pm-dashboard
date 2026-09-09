@@ -1848,7 +1848,7 @@ function RankingTable({
   // provider data is what we read a name WITH, so it has to arrive before the
   // name is promoted, not after.
   const [siaCopied, setSiaCopied] = useState(false);
-  const [suggestedExportTickers, setSuggestedExportTickers] = useState<string[]>([]);
+  const [suggestedExportNames, setSuggestedExportNames] = useState<Array<{ ticker: string; currency?: string }>>([]);
   const suggestedFetched = useRef(false);
   useEffect(() => {
     // One read per session, and only once the export buttons are actually on
@@ -1862,10 +1862,13 @@ function RankingTable({
         if (!alive || !Array.isArray(d?.rows)) return;
         // Active rows only — a name the PM has already passed on doesn't need
         // provider coverage. `passed` is deliberately excluded.
-        setSuggestedExportTickers(
-          (d.rows as Array<{ ticker?: unknown }>)
-            .map((r) => String(r?.ticker ?? "").trim())
-            .filter(Boolean),
+        setSuggestedExportNames(
+          (d.rows as Array<{ ticker?: unknown; currency?: unknown }>)
+            .map((r) => ({
+              ticker: String(r?.ticker ?? "").trim(),
+              currency: typeof r?.currency === "string" ? r.currency : undefined,
+            }))
+            .filter((r) => !!r.ticker),
         );
       })
       .catch(() => {
@@ -1878,10 +1881,10 @@ function RankingTable({
   // canonical symbol, so a Suggested name already on the watchlist appears once.
   const exportStocks = useMemo(
     () => [
-      ...stocks.map((s) => ({ ticker: s.ticker })),
-      ...suggestedExportTickers.map((t) => ({ ticker: t })),
+      ...stocks.map((s) => ({ ticker: s.ticker, currency: s.currency })),
+      ...suggestedExportNames,
     ],
-    [stocks, suggestedExportTickers],
+    [stocks, suggestedExportNames],
   );
   const [marketEdgeState, setMarketEdgeState] = useState<"idle" | "loading" | "done">("idle");
   const [marketEdgeCount, setMarketEdgeCount] = useState<number | null>(null);
@@ -1914,7 +1917,7 @@ function RankingTable({
     } catch {
       /* clipboard blocked — no-op */
     }
-    requestProviderData("sia", exportStocks.map((s) => siaSymbol(s.ticker)).filter(Boolean));
+    requestProviderData("sia", exportStocks.map((s) => siaSymbol(s.ticker, s.currency)).filter(Boolean));
   };
   // MarketEdge (US-only). US names export directly; Canadian names are included
   // only when FactSet confirms they're interlisted (same company also trades in
@@ -2050,7 +2053,7 @@ function RankingTable({
                 <button
                   onClick={handleExportBoostedXlsx}
                   className="flex h-7 items-center gap-1.5 rounded-control border border-line bg-surface px-2.5 text-[12.5px] text-ink-2 transition-colors hover:bg-surface-hover hover:text-ink"
-                  title={`Download a BoostedAI-ready Excel file (SYMBOL,COUNTRY,CURRENCY) for the watchlist${suggestedExportTickers.length > 0 ? ` + the ${suggestedExportTickers.length} Suggested name${suggestedExportTickers.length === 1 ? "" : "s"}` : ""}`}
+                  title={`Download a BoostedAI-ready Excel file (SYMBOL,COUNTRY,CURRENCY) for the watchlist${suggestedExportNames.length > 0 ? ` + the ${suggestedExportNames.length} Suggested name${suggestedExportNames.length === 1 ? "" : "s"}` : ""}`}
                 >
                   <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75V16.5M16.5 12 12 16.5m0 0L7.5 12m4.5 4.5V3" /></svg>
                   BoostedAI Excel
@@ -2058,7 +2061,7 @@ function RankingTable({
                 <button
                   onClick={handleCopySia}
                   className="flex h-7 items-center gap-1.5 rounded-control border border-line bg-surface px-2.5 text-[12.5px] text-ink-2 transition-colors hover:bg-surface-hover hover:text-ink"
-                  title={`Copy the watchlist symbols (SIA / SIACharts format) to paste into a matrix${suggestedExportTickers.length > 0 ? `, including the ${suggestedExportTickers.length} Suggested name${suggestedExportTickers.length === 1 ? "" : "s"}` : ""}`}
+                  title={`Copy the watchlist symbols (SIA / SIACharts format) to paste into a matrix${suggestedExportNames.length > 0 ? `, including the ${suggestedExportNames.length} Suggested name${suggestedExportNames.length === 1 ? "" : "s"}` : ""}`}
                 >
                   <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M15.666 3.888A2.25 2.25 0 0 0 13.5 2.25h-3c-1.03 0-1.9.693-2.166 1.638m7.332 0c.055.194.084.4.084.612v0a.75.75 0 0 1-.75.75H9a.75.75 0 0 1-.75-.75v0c0-.212.03-.418.084-.612m7.332 0c.646.049 1.288.11 1.927.184 1.1.128 1.907 1.077 1.907 2.185V19.5a2.25 2.25 0 0 1-2.25 2.25H6.75A2.25 2.25 0 0 1 4.5 19.5V6.257c0-1.108.806-2.057 1.907-2.185a48.208 48.208 0 0 1 1.927-.184" /></svg>
                   {siaCopied ? "Copied!" : "Copy SIA symbols"}
@@ -2067,7 +2070,7 @@ function RankingTable({
                   onClick={handleCopyMarketEdge}
                   disabled={marketEdgeState === "loading"}
                   className="flex h-7 items-center gap-1.5 rounded-control border border-line bg-surface px-2.5 text-[12.5px] text-ink-2 transition-colors hover:bg-surface-hover hover:text-ink disabled:opacity-60"
-                  title={`Copy US symbols for MarketEdge — one per line, from the watchlist${suggestedExportTickers.length > 0 ? ` + the ${suggestedExportTickers.length} Suggested name${suggestedExportTickers.length === 1 ? "" : "s"}` : ""}. US names + Canadian names FactSet confirms are interlisted (dual-listed in the US); Canadian-only names excluded.`}
+                  title={`Copy US symbols for MarketEdge — one per line, from the watchlist${suggestedExportNames.length > 0 ? ` + the ${suggestedExportNames.length} Suggested name${suggestedExportNames.length === 1 ? "" : "s"}` : ""}. US names + Canadian names FactSet confirms are interlisted (dual-listed in the US); Canadian-only names excluded.`}
                 >
                   {marketEdgeState === "loading" ? (
                     <svg className="w-3.5 h-3.5 animate-spin" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0 3.181 3.183a8.25 8.25 0 0 0 13.803-3.7M4.031 9.865a8.25 8.25 0 0 1 13.803-3.7l3.181 3.182" /></svg>
