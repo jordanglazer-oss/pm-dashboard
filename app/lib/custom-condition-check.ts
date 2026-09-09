@@ -3,6 +3,7 @@ import { getRedis } from "./redis";
 import type { KillCondition } from "./kill-conditions";
 import { buildTickerEvidence, latestEvidenceAt } from "./thesis-evidence";
 import { parseModelJson } from "./json-repair";
+import { abbreviationRule } from "./prose-style";
 
 /**
  * AI verification of CUSTOM kill conditions — the automation for the one
@@ -120,7 +121,8 @@ Rules:
   (b) NOT ON A QUARTERLY CADENCE — it exists but only appears at milestones, investor days or annually, so most quarters cannot answer the condition. THIS IS ALSO STRUCTURAL: a condition that can only be checked when the company feels like announcing it is not a watchable condition. undisclosed=true, suggest a rewrite against a line item reported EVERY quarter. (Example: a subscription MEMBER COUNT is usually a milestone disclosure; the revenue or bookings line it drives is quarterly.)
   (c) QUARTER NOT REPORTED YET — the figure is a normal quarterly line and this period simply has not been published. Temporary. Omit undisclosed and suggest nothing; the next report answers it.
 - The distinction that matters is CADENCE, not existence: if the metric was last disclosed one or more quarters ago and the latest report did not repeat it, that is case (b), not (c).
-- The reading must contain a real figure/date you found, not a restatement of the condition.`;
+- The reading must contain a real figure/date you found, not a restatement of the condition.
+- ${abbreviationRule('the "reading" and "suggestedRewrite" lines')}`;
 
   const resp = await client.messages.create({
     model: "claude-sonnet-5",

@@ -8,6 +8,7 @@ import { parseModelJson } from "@/app/lib/json-repair";
 import { loadStreetTakeaways } from "@/app/lib/street-takeaways";
 import { availableMetricLines, labelMatches } from "@/app/lib/metric-resolver";
 import { canonicalTicker } from "@/app/lib/ticker";
+import { abbreviationRule } from "@/app/lib/prose-style";
 import type { SynthesisScreenCache, SynthesisEntry } from "@/app/lib/synthesis-screen-display";
 
 /**
@@ -287,7 +288,8 @@ Rules:
 - At least ONE condition must test the company's position in its industry or the market (a share, a relative-growth, a peer-relative figure as a custom — or one of the position kinds).
 - Do NOT propose score_floor or score_decay.
 - Keep each custom under 250 characters. One test per condition. No judgment calls ("management loses credibility").
-- Ground everything in the material above — no invented figures, segments or events.`;
+- Ground everything in the material above — no invented figures, segments or events.
+- ${abbreviationRule('the "why" bullets, the pillar set, and the condition notes — each is displayed on its own, so an acronym used in a condition note must be spelled out in that note (or in its pillar title/claim) rather than only in "why"')}`;
 
     const ask = async (extra = "") => {
       const resp = await client.messages.create({

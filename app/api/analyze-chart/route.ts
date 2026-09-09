@@ -3,6 +3,7 @@ import { parseModelJson } from "@/app/lib/json-repair";
 import Anthropic from "@anthropic-ai/sdk";
 import type { TechnicalIndicators } from "@/app/lib/technicals";
 import { formatTechnicalsForPrompt } from "@/app/lib/technicals";
+import { abbreviationRule } from "@/app/lib/prose-style";
 
 const client = new Anthropic();
 
@@ -84,7 +85,9 @@ Rules:
           ],
         },
       ],
-      system: `You are a senior technical analyst writing for a portfolio manager. Output JSON ONLY — no prose outside the JSON envelope. Be direct, specific with price levels, no hedging language. The prose body should read like a research note, not a blog post.`,
+      system: `You are a senior technical analyst writing for a portfolio manager. Output JSON ONLY — no prose outside the JSON envelope. Be direct, specific with price levels, no hedging language. The prose body should read like a research note, not a blog post.
+
+${abbreviationRule("the prose body")}`,
     });
 
     const rawText =

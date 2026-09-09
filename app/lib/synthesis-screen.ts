@@ -33,6 +33,7 @@ import type { StreetTakeaway } from "./street-takeaways";
 import type { ResearchMentionsResult } from "./research-mentions";
 import { formatStreetTakeawaysForPrompt } from "./street-takeaways";
 import { sectorEtfFor, sectorRank, formatLeadershipForPrompt, type SectorLeadership } from "./sector-leadership";
+import { abbreviationRule } from "./prose-style";
 import {
   WATCHLIST_VERDICTS,
   PORTFOLIO_VERDICTS,
@@ -414,6 +415,8 @@ STRICT EVIDENCE RULES:
 7b. NO REPETITION: each fact, figure, and argument appears EXACTLY ONCE across the whole object. Before emitting a field, check what you already wrote — if a number is in priceAction it may not reappear elsewhere; if a bullet already makes a point, no other field may restate it in different words. Repetition is the single most common defect in this output; prefer omitting a restatement over padding a field.
 8. Third-party technical opinions (MarketEdge, BoostedAI, SIA) are CORROBORATING input for "priceAction" and technical bullets — never a verdict driver on their own (vendor agreement does not outvote deteriorating fundamentals). MarketEdge's Opinion Score is the most forward-leaning of them (a deteriorating Long is an early warning). Any reading flagged STALE must be discounted and, if it would otherwise matter, listed in "dataGaps" as needing a refresh.
 9. "whatTheyDo" is the ONE exception to rule 1's data-only constraint, and only partially: describing the business QUALITATIVELY (what the company does, how it charges customers, which segments exist and which drive profit) may draw on the BUSINESS PROFILE block, the report extracts, and your general industry knowledge. But every NUMBER in it (revenue splits, margins, segment sizes) must still come from the provided data blocks — never from memory. If segment economics aren't in the data and you aren't qualitatively certain, say "segment economics not in data" rather than guessing.
+
+10. ${abbreviationRule("whatTheyDo, and again on first use inside the base / bull / bear bullet sets, plain, priceAction and keyDebate — the PM may read any one of them without the others")}
 
 OUTPUT: respond with ONLY a JSON object, no markdown fences:
 {

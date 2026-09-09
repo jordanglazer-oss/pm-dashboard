@@ -13,6 +13,7 @@
  *   at module load (audit Finding 08) — never hand-write category lists here.
  */
 import { SCORE_GROUPS } from "./types";
+import { abbreviationRule } from "./prose-style";
 
 const MANUAL_KEYS = SCORE_GROUPS.flatMap((g) => g.categories)
   .filter((c) => c.inputType === "manual")
@@ -260,6 +261,9 @@ Also provide:
 - companySummary: STRICT 1-2 SENTENCES explaining what the company does in plain language that a portfolio manager can relay to clients. Focus on the core business, key products/services, and what drives revenue. Keep it simple and jargon-free. When the "INGESTED ANALYST REPORTS" block is present above, you may ground the description in the analysts' framing of the business — but do NOT extend the length beyond 1-2 sentences. If you draw a fact from a specific report, name the source briefly (e.g., "RBC describes the company as ...").
 - investmentThesis: STRICT 1-2 SENTENCES on why to own this stock right now given current market conditions. Reference specific catalysts, valuation support, or thematic tailwinds. This should be a concise "elevator pitch" a PM could use with clients. When the "INGESTED ANALYST REPORTS" block is present above, USE the analysts' actual bull-case thesis bullets as your source material — do not paraphrase from your own training data when RBC/JPM have laid out the rationale. Still capped at 1-2 sentences; pick the strongest 1-2 thesis points and compress them. If the analysts disagree (e.g., one bullish, one bearish), reflect that briefly (e.g., "RBC sees X driving upside; JPM cautions about Y"). When both RBC and JPM rate the stock favorably with similar drivers, lean on their shared thesis. Never let the analyst material lengthen this field beyond 2 sentences.
 - bearCase: STRICT 1-2 SENTENCES giving the DEVIL'S-ADVOCATE case — the most credible reasons this thesis could be WRONG and the specific "thesis-breakers" the PM should watch (e.g., "Margins compress if input costs stay elevated; a miss on the FY+1 EPS estimate or a break below the 200-day would challenge the setup"). Ground it in real risks from the data (stretched valuation vs its own history, decelerating growth, rising leverage, negative estimate revisions, weak SIA/technicals, insider selling) and in the analysts' actual risk bullets when the INGESTED ANALYST REPORTS block is present. Be concrete and falsifiable — name the metric or level that would confirm the bear case, not generic "macro risk." This is a discipline check that must exist for EVERY name, even strong buys. Cap at 2 sentences.
+
+
+${abbreviationRule("each of companySummary, investmentThesis, bearCase, and each category explanation summary — they are displayed separately, so each must stand on its own")}
 
 COMPLETENESS REQUIREMENT: You MUST score ALL 11 categories listed above and include an explanation for EVERY one. Do not skip, omit, or abbreviate any category. When a category's inputs are genuinely unavailable, that is NOT a reason to omit it — apply the DATA GAP rule from the MISSING DATA section (the gap default score, confidence "low", summary opening "DATA GAP:"), never a judgment-low score. Incomplete responses are unusable.
 

@@ -4,6 +4,7 @@ import { getRedis } from "@/app/lib/redis";
 import { loadAlertInputs } from "@/app/lib/alert-inputs";
 import { createHash } from "crypto";
 import { parseModelJson } from "@/app/lib/json-repair";
+import { abbreviationRule } from "@/app/lib/prose-style";
 
 /**
  * POST /api/thesis-check { ticker } — the on-trip written thesis check
@@ -112,7 +113,9 @@ Answer in JSON only:
   "suggestedAction": "1 sentence, concrete. NEVER recommend an automatic trade — recommend what to review/decide and by when. If the PM's own rule says exit, say so plainly."
 }
 
-Rules: use ONLY the facts above — do not invent numbers or events. If the tripped condition is unrelated to the written thesis, say "no" and explain the mismatch; do not manufacture a connection.`;
+Rules: use ONLY the facts above — do not invent numbers or events. If the tripped condition is unrelated to the written thesis, say "no" and explain the mismatch; do not manufacture a connection.
+
+${abbreviationRule("each field of your answer")}`;
 
     const resp = await client.messages.create({
       model: "claude-sonnet-5",
