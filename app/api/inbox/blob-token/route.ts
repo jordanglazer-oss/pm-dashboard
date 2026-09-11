@@ -43,11 +43,19 @@ export async function POST(req: NextRequest) {
     });
     return NextResponse.json({
       clientToken,
+      // The Blob API wants the store id as its own header on every write
+      // (x-vercel-blob-store-id) — @vercel/blob's requestApi sends it for
+      // every auth kind, client tokens included. Parsed the same way the SDK
+      // does: "vercel_blob_rw_<storeId>_<secret>".
+      storeId: process.env.BLOB_READ_WRITE_TOKEN.split("_")[3] ?? "",
       // The Blob UPLOAD endpoint (not the storage host): a PUT to the API URL
       // with the pathname as a query param, mirroring what @vercel/blob's
       // put() does internally (requestApi(`/?pathname=...`)).
       uploadUrl: `https://vercel.com/api/blob/?pathname=${encodeURIComponent(pathname)}`,
       apiVersion: 12, // Vercel Blob upload API version the script must send.
+      // Sent by the uploader as x-vercel-blob-access. MUST stay "private":
+      // the ingest route hydrates the staged file with get({ access:
+      // "private" }), which cannot read a blob written as public.
       access: "private",
     });
   } catch (e) {

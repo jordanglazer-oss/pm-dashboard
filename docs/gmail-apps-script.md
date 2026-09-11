@@ -247,8 +247,14 @@ function stageAttachmentToBlob(ingestUrl, secret, att) {
   }
   const t = JSON.parse(tokenRes.getContentText());
 
-  // Mirrors what @vercel/blob's put() sends: the client token carries the
-  // store id, so no separate store header is needed.
+  // Mirrors what @vercel/blob's put() sends. Re-verified against the installed
+  // SDK (v2.4.1) after the first live 9 MB note failed here: BOTH of these are
+  // sent unconditionally by the SDK and were missing, so the upload leg never
+  // worked. `x-vercel-blob-access` is set on every put() (createPutHeaders sets
+  // it first, before any option check) and MUST be "private" — the ingest route
+  // reads the file back with get({ access: "private" }). `x-vercel-blob-store-id`
+  // is sent by requestApi for every auth kind, client tokens included; the
+  // earlier assumption that the token alone carried it was wrong.
   const putRes = UrlFetchApp.fetch(t.uploadUrl, {
     method: "put",
     contentType: contentType,
@@ -256,12 +262,17 @@ function stageAttachmentToBlob(ingestUrl, secret, att) {
       Authorization: "Bearer " + t.clientToken,
       "x-api-version": String(t.apiVersion),
       "x-content-type": contentType,
+      "x-vercel-blob-access": t.access || "private",
+      // Server-provided; falls back to the store id embedded in the client
+      // token ("vercel_blob_client_<storeId>_<payload>") if an older
+      // /api/inbox/blob-token deployment doesn't return it yet.
+      "x-vercel-blob-store-id": t.storeId || String(t.clientToken).split("_")[3] || "",
     },
     payload: att.getBytes(),
     muteHttpExceptions: true,
   });
   if (putRes.getResponseCode() >= 300) {
-    throw new Error("blob PUT " + putRes.getResponseCode() + " :: " + putRes.getContentText().slice(0, 200));
+    throw new Error("blob PUT " + putRes.getResponseCode() + " :: " + putRes.getContentText().slice(0, 300));
   }
   return pathname;
 }
