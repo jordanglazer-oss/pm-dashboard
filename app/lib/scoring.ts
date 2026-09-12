@@ -211,7 +211,7 @@ const CATEGORY_MAX: Partial<Record<ScoreKey, number>> = Object.fromEntries(
  *  prompt mandates the exact "DATA GAP:" summary prefix for this case, so the
  *  prefix is the machine-readable contract. Legacy string[] explanations
  *  predate the DATA GAP rule entirely → never gap-parked. */
-function isDataGapExplanation(expl: unknown): boolean {
+export function isDataGapExplanation(expl: unknown): boolean {
   if (!expl || Array.isArray(expl) || typeof expl !== "object") return false;
   const summary = (expl as { summary?: unknown }).summary;
   return typeof summary === "string" && summary.trimStart().toUpperCase().startsWith("DATA GAP");
