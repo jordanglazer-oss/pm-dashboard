@@ -10,6 +10,7 @@ import { canonicalTicker, displayTicker } from "@/app/lib/ticker";
 import { VERDICT_LABEL, type SynthesisResult, type StaleReason } from "@/app/lib/synthesis-screen-display";
 import { describeCondition, type KillCondition } from "@/app/lib/kill-conditions";
 import { AppIcon } from "./AppIcon";
+import { SetupChip } from "./SetupChip";
 
 /**
  * Docked inspector for the Holdings table (canvas: Main.dc.html). Selecting
@@ -305,6 +306,7 @@ export function HoldingInspector({
             <span className="font-mono text-[12px] text-ink-3">/{MAX_SCORE}</span>
           </div>
           <div className="text-[11.5px] text-ink-3">{s.ratingLabel || s.rating}{lastScored ? ` · ${lastScored}` : ""}</div>
+          <div className="mt-1 flex justify-end"><SetupChip stock={s} conviction={s.ratingLabel || s.rating} size="sm" /></div>
         </div>
       </div>
 

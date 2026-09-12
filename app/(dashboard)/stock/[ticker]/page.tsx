@@ -10,6 +10,7 @@ import { SCORE_GROUPS, MAX_SCORE, INSTRUMENT_LABELS } from "@/app/lib/types";
 import type { ScoreKey, Scores, FundData, ScoreDataPoint, ScoreDataPointSource, ExternalSourceNote } from "@/app/lib/types";
 import { groupTotal, isScoreable, normalizeSector, marketEdgeApplies, boostedAiApplies, siaApplies, ownershipTrendsApplies } from "@/app/lib/scoring";
 import { ratingLabelFor, ratingToneFor } from "@/app/lib/rating-bands";
+import { SetupChip } from "@/app/components/SetupChip";
 import { computeAnalystConsensus, buildConsensusExplanation } from "@/app/lib/analyst-snapshots";
 import { displayTicker } from "@/app/lib/ticker";
 import { AnalystSnapshotPanel } from "@/app/components/AnalystSnapshotPanel";
@@ -1767,6 +1768,8 @@ export default function StockDetailPage() {
               <div className="flex flex-wrap items-center gap-4 border-b border-line-soft px-3.5 py-3">
                 <ScoreDonut score={stock.adjusted} max={MAX_SCORE} groups={SCORE_GROUPS} stock={stock} />
                 <div className="flex min-w-0 flex-1 flex-col gap-1.5">
+                  {/* Setup grade — the timing layer read beside conviction (rubric v3). */}
+                  <SetupChip stock={stock} conviction={stock.ratingLabel || stock.rating} />
                   {/* Regime-adjustment caption: how much the current market
                       regime is helping or hurting this name's rating. */}
                   {(() => {
