@@ -112,6 +112,46 @@ const CANDIDATE_SETS: Record<string, { key: string; formula: string; note: strin
     { key: "qtrEps0", formula: "FF_EPS(QTR,0)", note: "EPS, latest quarter" },
     { key: "qtrEps4", formula: "FF_EPS(QTR,-4)", note: "EPS, same quarter last year (y/y growth base)" },
   ],
+  // Rubric v3 "Returns & margins" + forward-growth candidates. Probe BEFORE
+  // designing the category: it is only worth adding if it is data-backed.
+  // Controls (proven codes) are included so a relay/id problem is
+  // distinguishable from a bad code. Run on a compounder (AAPL-US / MSFT-US)
+  // AND on a financial (JPM-US) where ROIC is expected null, so we know how
+  // the DATA GAP path will behave. ?candidates=returns&id=MSFT-US
+  returns: [
+    { key: "ctrlRoeLtm", formula: "FF_ROE(LTM,0)", note: "CONTROL — ROE TTM (proven)" },
+    { key: "ctrlOperMgnLtm", formula: "FF_OPER_MGN(LTM,0)", note: "CONTROL — operating margin TTM (proven)" },
+    { key: "roicLtm", formula: "FF_ROIC(LTM,0)", note: "Return on invested capital, TTM" },
+    { key: "roicLtmY1", formula: "FF_ROIC(LTM,-4)", note: "ROIC, year-ago TTM (trend base)" },
+    { key: "roicAnn", formula: "FF_ROIC(ANN,0)", note: "ROIC, latest FY (alt basis)" },
+    { key: "rotcLtm", formula: "FF_ROTC(LTM,0)", note: "Return on total capital, TTM (alt to ROIC)" },
+    { key: "roaLtm", formula: "FF_ROA(LTM,0)", note: "Return on assets, TTM (fallback for financials)" },
+    { key: "wacc", formula: "FF_WACC(ANN,0)", note: "WACC — for ROIC-minus-WACC spread (may be unavailable)" },
+    { key: "waccFg", formula: "FG_WACC", note: "WACC (FG family alt)" },
+    { key: "operMgnY1", formula: "FF_OPER_MGN(LTM,-4)", note: "Operating margin, year-ago TTM (trend)" },
+    { key: "operMgnY2", formula: "FF_OPER_MGN(LTM,-8)", note: "Operating margin, 2y-ago TTM (trend)" },
+    { key: "grossMgnLtm", formula: "FF_GROSS_MGN(LTM,0)", note: "Gross margin, TTM" },
+    { key: "grossMgnY1", formula: "FF_GROSS_MGN(LTM,-4)", note: "Gross margin, year-ago TTM" },
+    { key: "operIncLtm", formula: "FF_OPER_INC(LTM,0)", note: "Operating income TTM (incremental-margin numerator)" },
+    { key: "operIncY1", formula: "FF_OPER_INC(LTM,-4)", note: "Operating income year-ago TTM" },
+    { key: "ebitLtm", formula: "FF_EBIT_OPER(LTM,0)", note: "EBIT TTM (ROIC numerator if FF_ROIC fails)" },
+    { key: "taxRate", formula: "FF_INC_TAX_RATE(LTM,0)", note: "Effective tax rate (NOPAT if computing ROIC ourselves)" },
+    { key: "comEq", formula: "FF_COM_EQ(QTR,0)", note: "Common equity, latest Q (invested-capital piece)" },
+    { key: "pfdStk", formula: "FF_PFD_STK(QTR,0)", note: "Preferred stock, latest Q (invested-capital piece)" },
+    { key: "minInt", formula: "FF_MIN_INT_ACCUM(QTR,0)", note: "Minority interest, latest Q (invested-capital piece)" },
+    { key: "fcfMgn", formula: "FF_FREE_CF_MGN(LTM,0)", note: "FCF margin TTM (direct code, else compute)" },
+    // Forward growth for the growth category rewrite.
+    { key: "ctrlEpsFy1", formula: "FE_ESTIMATE(EPS,MEAN,ANN_ROLL,1,NOW,'')", note: "CONTROL — FY+1 EPS mean (proven)" },
+    { key: "epsNtm", formula: "FE_ESTIMATE(EPS,MEAN,NTMA,0,NOW,'')", note: "NTM EPS mean (rolling forward)" },
+    { key: "salesNtm", formula: "FE_ESTIMATE(SALES,MEAN,NTMA,0,NOW,'')", note: "NTM sales mean" },
+    { key: "epsLtmEst", formula: "FE_ESTIMATE(EPS,MEAN,LTMA,0,NOW,'')", note: "LTM actual EPS on estimates basis (NTM growth denominator)" },
+    { key: "epsFy1Ago3m", formula: "FE_ESTIMATE(EPS,MEAN,ANN_ROLL,1,-3M,'')", note: "FY+1 EPS mean as of 3 months ago (revision magnitude)" },
+    { key: "epsFy1Ago90d", formula: "FE_ESTIMATE(EPS,MEAN,ANN_ROLL,1,-90D,'')", note: "FY+1 EPS mean as of 90 days ago (alt date syntax)" },
+    { key: "ltg", formula: "FE_ESTIMATE(LTG,MEAN,ANN_ROLL,0,NOW,'')", note: "Long-term EPS growth estimate" },
+    { key: "ebitdaFy1", formula: "FE_ESTIMATE(EBITDA,MEAN,ANN_ROLL,1,NOW,'')", note: "FY+1 EBITDA mean" },
+    { key: "ebitdaFy2", formula: "FE_ESTIMATE(EBITDA,MEAN,ANN_ROLL,2,NOW,'')", note: "FY+2 EBITDA mean" },
+    { key: "fcfFy1", formula: "FE_ESTIMATE(FCF,MEAN,ANN_ROLL,1,NOW,'')", note: "FY+1 free cash flow mean" },
+  ],
   guidance: [
     { key: "guidEpsMeanQ1", formula: "FE_GUIDANCE(EPS,MEAN,QTR_ROLL,1,NOW,'')", note: "EPS guidance mean, next quarter" },
     { key: "guidEpsHighQ1", formula: "FE_GUIDANCE(EPS,HIGH,QTR_ROLL,1,NOW,'')", note: "EPS guidance high, next quarter" },
