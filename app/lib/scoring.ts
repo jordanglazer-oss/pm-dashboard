@@ -363,8 +363,7 @@ export function forwardMultiplier(
 // Legacy aliases for backward compatibility
 const OFFENSIVE_SECTORS = GROWTH_SECTORS;
 
-// MarketEdge (ChartScout) covers US-listed stocks only. The category max.
-const MARKETEDGE_MAX = 2;
+// MarketEdge (ChartScout) covers US-listed stocks only.
 // Canadian listings of INDIVIDUAL stocks (excludes the .U USD-ETF suffix,
 // which is irrelevant here since ETFs aren't scored).
 const CANADIAN_LISTING_RE = /(\.TO|\.V|\.NE|\.CN|-T)$/i;
@@ -395,8 +394,6 @@ export function marketEdgeApplies(stock: Stock): boolean {
 // RAW source is absent — unless a nonzero score exists (legacy manual entry),
 // which still counts. Once the weekly import lands, the category snaps in
 // automatically.
-const AIRATING_MAX = 2;
-const RELSTRENGTH_MAX = 2;
 
 /** BoostedAI (aiRating) counts only once a rating/consensus was imported. */
 export function boostedAiApplies(stock: Stock): boolean {
@@ -427,16 +424,6 @@ export function ownershipTrendsApplies(stock: Stock): boolean {
   return !CANADIAN_LISTING_RE.test(stock.ticker.trim());
 }
 
-/** MarketEdge in the COMPOSITE: the structural Canadian rule above, plus the
- *  same not-yet-imported rule for US names. Deliberately separate from
- *  marketEdgeApplies — the coverage UI keeps using that, because for a US name
- *  missing MarketEdge data is a gap to chase, not an N/A. */
-function marketEdgeCountsInComposite(stock: Stock): boolean {
-  if (!marketEdgeApplies(stock)) return false;
-  const me = stock.marketEdge;
-  if (me && (me.powerRating != null || me.opinion != null || me.opinionScore != null)) return true;
-  return (stock.scores.marketEdge || 0) !== 0;
-}
 
 export function computeScores(
   stock: Stock,
@@ -450,26 +437,14 @@ export function computeScores(
     (sum, key) => sum + (stock.scores[key] || 0),
     0
   );
-  // External-category N/A handling: each of MarketEdge / BoostedAI / SIA drops
-  // out of BOTH the numerator and the denominator when it doesn't apply
-  // (structurally uncovered, or its data simply hasn't been imported yet), and
-  // the remaining score is normalized back to the full 0–MAX_SCORE scale so
-  // ratings stay comparable on the same thresholds. A fresh watchlist add is
-  // judged only on the categories that actually have data.
+  // N/A handling: a category drops out of BOTH the numerator and the
+  // denominator when it structurally doesn't apply, and the remaining score
+  // is normalized back to the full 0–MAX_SCORE scale so ratings stay
+  // comparable on the same thresholds. (Rubric v3: the MarketEdge / BoostedAI
+  // / SIA cases that used to live here left the composite with the
+  // technicals — they now abstain inside the setup grade instead.)
   let applicableSum = rawSum;
   let effectiveMax = MAX_SCORE;
-  if (!marketEdgeCountsInComposite(stock)) {
-    applicableSum -= stock.scores.marketEdge || 0;
-    effectiveMax -= MARKETEDGE_MAX;
-  }
-  if (!boostedAiApplies(stock)) {
-    applicableSum -= stock.scores.aiRating || 0;
-    effectiveMax -= AIRATING_MAX;
-  }
-  if (!siaApplies(stock)) {
-    applicableSum -= stock.scores.relativeStrength || 0;
-    effectiveMax -= RELSTRENGTH_MAX;
-  }
   if (!ownershipTrendsApplies(stock)) {
     applicableSum -= stock.scores.ownershipTrends || 0;
     effectiveMax -= OWNERSHIP_MAX;

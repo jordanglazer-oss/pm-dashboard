@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useMemo, useEffect, useRef } from "react";
+import { ZERO_SCORES as ALL_ZERO_SCORES } from "@/app/lib/types";
 import { useRouter } from "next/navigation";
 import { EmptyState } from "@/app/components/EmptyState";
 import { AppIcon } from "@/app/components/AppIcon";
@@ -311,14 +312,8 @@ type ScanResult = {
 
 // ── Zero scores constant ──
 
-const ZERO_SCORES: Record<ScoreKey, number> = {
-  brand: 0, secular: 0, researchCoverage: 0, marketEdge: 0,
-  analystConsensus: 0, researchMentions: 0,
-  charting: 0, relativeStrength: 0, aiRating: 0, growth: 0,
-  relativeValuation: 0, historicalValuation: 0, leverageCoverage: 0,
-  cashFlowQuality: 0, competitiveMoat: 0, turnaround: 0, catalysts: 0,
-  trackRecord: 0, ownershipTrends: 0,
-};
+// Every category at 0 — one shared literal (types.ts) so a new category can't break this file.
+const ZERO_SCORES = ALL_ZERO_SCORES;
 
 // ── Main component ──
 

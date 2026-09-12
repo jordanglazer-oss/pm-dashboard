@@ -6,7 +6,7 @@ import { useParams, useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { useStocks } from "@/app/lib/StockContext";
 import { resolveUsEquityPct } from "@/app/lib/us-equity-exposure";
-import { SCORE_GROUPS, MAX_SCORE, INSTRUMENT_LABELS } from "@/app/lib/types";
+import { SCORE_GROUPS, ALL_GROUPS, SETUP_GROUP, MAX_SCORE, INSTRUMENT_LABELS } from "@/app/lib/types";
 import type { ScoreKey, Scores, FundData, ScoreDataPoint, ScoreDataPointSource, ExternalSourceNote } from "@/app/lib/types";
 import { groupTotal, isScoreable, normalizeSector, marketEdgeApplies, boostedAiApplies, siaApplies, ownershipTrendsApplies } from "@/app/lib/scoring";
 import { ratingLabelFor, ratingToneFor } from "@/app/lib/rating-bands";
@@ -1807,10 +1807,13 @@ export default function StockDetailPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {SCORE_GROUPS.map((group) => {
+                  {ALL_GROUPS.map((group) => {
                     const total = groupTotal(stock, group);
                     const pct = (total / group.maxTotal) * 100;
                     const groupOpen = expandedGroups.has(group.name);
+                    // Rubric v3: the setup group is rendered + edited here but
+                    // is NOT part of the composite — it feeds the setup grade.
+                    const isSetup = group.name === SETUP_GROUP.name;
 
                     // Notes column: anything that changed the composite comes
                     // first (N/A exclusions, DATA GAP parks, the value-trap
@@ -1837,10 +1840,19 @@ export default function StockDetailPage() {
                       const s = Array.isArray(e) ? e.join(" ") : e && typeof e === "object" ? e.summary ?? "" : "";
                       if (s) { firstSummary = s; break; }
                     }
-                    const note = flags.length ? flags.join(" · ") : firstSummary;
+                    const note = isSetup
+                      ? "Not in the composite — feeds the setup grade (timing), read beside conviction"
+                      : flags.length ? flags.join(" · ") : firstSummary;
 
                     return (
                       <React.Fragment key={group.name}>
+                        {isSetup && (
+                          <tr aria-hidden="true">
+                            <td colSpan={4} style={{ height: "auto", padding: 0 }}>
+                              <div className="border-t-2 border-line" />
+                            </td>
+                          </tr>
+                        )}
                         <tr
                           className="cursor-pointer"
                           onClick={() => toggleGroup(group.name)}
@@ -1848,7 +1860,8 @@ export default function StockDetailPage() {
                           <td className="pl-3.5">
                             <span className="inline-flex items-center gap-1.5">
                               <span className="text-ink-3"><AppIcon name={groupOpen ? "chevD" : "chevR"} size={13} /></span>
-                              <span className="font-medium">{group.name}</span>
+                              <span className={isSetup ? "font-medium text-ink-2" : "font-medium"}>{group.name}</span>
+                              {isSetup && <SetupChip stock={stock} showAction={false} size="sm" />}
                             </span>
                           </td>
                           <td>
@@ -1905,7 +1918,10 @@ export default function StockDetailPage() {
                                   // source URLs / dates that feed back into the scoring prompt. The
                                   // toggle always appears for these two, even with no AI content.
                                   const isExternalSources = cat.key === "externalSources";
-                                  const isResearchCoverage = cat.key === "researchCoverage";
+                                  // Rubric v3: researchCoverage is retired as a score; its PM log
+                                  // (named-firm initiations / PT changes) stays and is edited from
+                                  // catalysts, which is where the prompt now routes that evidence.
+                                  const isResearchCoverage = cat.key === "catalysts";
                                   const isAnalystConsensus = cat.key === "analystConsensus";
                                   const hasNotesEditor = isExternalSources || isResearchCoverage;
                                   const externalNotes = stock.externalSourceNotes ?? [];
@@ -2082,7 +2098,7 @@ export default function StockDetailPage() {
                                         <ExternalSourcesEditor
                                           notes={notesForThis}
                                           onChange={(next) => updateStockFields(ticker, isExternalSources ? { externalSourceNotes: next } : { researchCoverageNotes: next })}
-                                          headerLabel={isExternalSources ? "External sources log" : "Research coverage log"}
+                                          headerLabel={isExternalSources ? "External sources log" : "Research coverage log (feeds catalysts)"}
                                           emptyHint={isExternalSources
                                             ? "No sources logged. Click “Add source” to track analyst reports, news, podcasts, or other external research feeding this score."
                                             : "No coverage logged. Log named-firm activity (Morgan Stanley initiation, Goldman PT change, etc.) here as evidence of an active information environment. RBC and JPM go in the Analyst consensus panel; this is for everyone else."}

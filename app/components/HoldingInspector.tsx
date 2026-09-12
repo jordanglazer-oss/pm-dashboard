@@ -4,7 +4,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useStocks } from "@/app/lib/StockContext";
-import { SCORE_GROUPS, MAX_SCORE, type ScoreKey } from "@/app/lib/types";
+import { SCORE_GROUPS, ALL_GROUPS, SETUP_GROUP, MAX_SCORE, type ScoreKey } from "@/app/lib/types";
 import { groupTotal } from "@/app/lib/scoring";
 import { canonicalTicker, displayTicker } from "@/app/lib/ticker";
 import { VERDICT_LABEL, type SynthesisResult, type StaleReason } from "@/app/lib/synthesis-screen-display";
@@ -238,8 +238,8 @@ export function HoldingInspector({
 
   const scoresTab = (
     <div className="flex flex-col gap-4">
-      {SCORE_GROUPS.map((g) => (
-        <div key={g.name}>
+      {ALL_GROUPS.map((g) => (
+        <div key={g.name} className={g.name === SETUP_GROUP.name ? "border-t border-line pt-3" : undefined}>
           <div className="mb-1.5 flex items-baseline justify-between">
             <span className="text-[12px] font-semibold text-ink">{g.name}</span>
             <span className="font-mono text-[12px] text-ink-3">{groupTotal(s, g)}<span className="text-ink-faint">/{g.maxTotal}</span></span>

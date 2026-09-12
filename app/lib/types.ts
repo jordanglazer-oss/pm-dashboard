@@ -36,16 +36,21 @@ export type ScoreKey =
   | "brand"
   | "secular"
   // Research
+  /** RETIRED in rubric v3 (Sep 2026): a "how well-watched" meta-signal that
+   *  duplicated analystConsensus. Kept in the union so stored blobs still
+   *  typecheck; nothing sums or renders it. */
   | "researchCoverage"
   | "analystConsensus"
   | "researchMentions"
-  // Technicals
+  // Setup layer (rubric v3): still stored + editable, NOT in the composite.
+  // They feed the 0-10 setup grade in app/lib/setup-grade.ts instead.
   | "charting"
   | "relativeStrength"
   | "aiRating"
   | "marketEdge"
   // Fundamental
   | "growth"
+  | "returnsMargins"
   | "relativeValuation"
   | "historicalValuation"
   | "leverageCoverage"
@@ -59,6 +64,32 @@ export type ScoreKey =
   | "ownershipTrends";
 
 export type Scores = Record<ScoreKey, number>;
+
+/** Every ScoreKey at 0 — the one place a full `Scores` literal lives. Use
+ *  `{ ...ZERO_SCORES }` instead of hand-listing keys so adding a category
+ *  never breaks a dozen call sites again. */
+export const ZERO_SCORES: Scores = {
+  brand: 0,
+  secular: 0,
+  researchCoverage: 0,
+  analystConsensus: 0,
+  researchMentions: 0,
+  charting: 0,
+  relativeStrength: 0,
+  aiRating: 0,
+  marketEdge: 0,
+  growth: 0,
+  returnsMargins: 0,
+  relativeValuation: 0,
+  historicalValuation: 0,
+  leverageCoverage: 0,
+  cashFlowQuality: 0,
+  competitiveMoat: 0,
+  turnaround: 0,
+  catalysts: 0,
+  trackRecord: 0,
+  ownershipTrends: 0,
+};
 
 /**
  * A single data point referenced in a scoring explanation, with an
@@ -169,32 +200,20 @@ export const SCORE_GROUPS: ScoreGroup[] = [
     name: "Research",
     color: "purple",
     icon: "◇",
-    maxTotal: 7,
+    maxTotal: 6,
     categories: [
-      { key: "researchCoverage", label: "Research coverage", max: 1, inputType: "semi" },
       { key: "analystConsensus", label: "Analyst consensus", max: 3, inputType: "computed" },
       { key: "researchMentions", label: "Research mentions", max: 3, inputType: "computed" },
-    ],
-  },
-  {
-    name: "Technicals",
-    color: "teal",
-    icon: "◆",
-    maxTotal: 9,
-    categories: [
-      { key: "charting", label: "Charting", max: 3, inputType: "manual" },
-      { key: "relativeStrength", label: "SIA (relative strength)", max: 2, inputType: "computed" },
-      { key: "aiRating", label: "BoostedAI (AI rating)", max: 2, inputType: "computed" },
-      { key: "marketEdge", label: "MarketEdge (Power Rating)", max: 2, inputType: "computed" },
     ],
   },
   {
     name: "Fundamental",
     color: "green",
     icon: "■",
-    maxTotal: 11,
+    maxTotal: 13,
     categories: [
-      { key: "growth", label: "Growth (rev / earnings / FCF)", max: 3, inputType: "auto" },
+      { key: "growth", label: "Growth (forward: NTM / revisions / LTG)", max: 3, inputType: "auto" },
+      { key: "returnsMargins", label: "Returns & margins", max: 2, inputType: "auto" },
       { key: "relativeValuation", label: "Relative valuation", max: 3, inputType: "auto" },
       { key: "historicalValuation", label: "Historical valuation", max: 2, inputType: "auto" },
       { key: "leverageCoverage", label: "Leverage & coverage", max: 2, inputType: "auto" },
@@ -224,7 +243,37 @@ export const SCORE_GROUPS: ScoreGroup[] = [
   },
 ];
 
-export const MAX_SCORE = SCORE_GROUPS.reduce((sum, g) => sum + g.maxTotal, 0); // 41 (40 - externalSources 1 + marketEdge 2)
+/**
+ * Rubric v3 (Sep 2026): the composite is a CONVICTION score — 33 points.
+ * Technicals (9) and researchCoverage (1) left it; returnsMargins (2) joined.
+ * Cutoffs live in rating-bands.ts and were recalibrated from live data, not
+ * scaled by ratio (see /api/admin/rubric-v3-calibration).
+ */
+export const MAX_SCORE = SCORE_GROUPS.reduce((sum, g) => sum + g.maxTotal, 0); // 33
+
+/**
+ * The SETUP layer — the four technical categories. Still stored on
+ * `stock.scores`, still edited on the stock page (charting by hand, the
+ * other three by import), but NOT summed into MAX_SCORE. They feed the 0-10
+ * setup grade (app/lib/setup-grade.ts), which is read BESIDE the conviction
+ * score: conviction says what to own, setup says when.
+ */
+export const SETUP_GROUP: ScoreGroup = {
+  name: "Setup (technicals)",
+  color: "teal",
+  icon: "◆",
+  maxTotal: 9,
+  categories: [
+    { key: "charting", label: "Charting", max: 3, inputType: "manual" },
+    { key: "relativeStrength", label: "SIA (relative strength)", max: 2, inputType: "computed" },
+    { key: "aiRating", label: "BoostedAI (AI rating)", max: 2, inputType: "computed" },
+    { key: "marketEdge", label: "MarketEdge (Power Rating)", max: 2, inputType: "computed" },
+  ],
+};
+
+/** Composite groups + the setup group — for UI that must render or edit
+ *  EVERY stored category (accordions, history deltas, manual-age stamps). */
+export const ALL_GROUPS: ScoreGroup[] = [...SCORE_GROUPS, SETUP_GROUP];
 
 export type HealthData = {
   fiftyDayAvg?: number;

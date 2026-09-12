@@ -44,6 +44,11 @@ const ANNUAL_METRICS: { base: string; formula: string; label: string; years: num
   { base: "grossMgn", formula: "FF_GROSS_MGN", label: "Gross margin %", years: 5 },
   { base: "operMgn", formula: "FF_OPER_MGN", label: "Operating margin %", years: 5 },
   { base: "roe", formula: "FF_ROE", label: "ROE %", years: 3 },
+  // Rubric v3 returnsMargins: ratio codes populate on the ANNUAL basis only on
+  // this entitlement (LTM ROIC/ROE/ROA are null — probed 2026-09-12), so the
+  // returns trend is fiscal-year to fiscal-year.
+  { base: "roic", formula: "FF_ROIC", label: "ROIC %", years: 3 },
+  { base: "roa", formula: "FF_ROA", label: "ROA %", years: 2 },
   { base: "debt", formula: "FF_DEBT", label: "Total debt", years: 3 },
   { base: "ebitda", formula: "FF_EBITDA_OPER", label: "EBITDA", years: 3 },
   { base: "cash", formula: "FF_CASH_ST", label: "Cash & ST investments", years: 1 },
@@ -51,8 +56,37 @@ const ANNUAL_METRICS: { base: string; formula: string; label: string; years: num
 ];
 
 /** Point-in-time metrics (current value, no series). */
+// Fixed fiscal years for the revision-magnitude read. FE_ESTIMATE(...,ANN_ROLL,1,-3M)
+// straddles a fiscal-year roll (MSFT read a fake +16% "revision" that was
+// FY27→FY28), so the FY+1 consensus is compared with ITSELF 3 months ago on a
+// FIXED year: we fetch the three candidate years and pick the one whose NOW
+// value equals the rolling FY+1 (see forwardGrowthLine).
+const CURRENT_YEAR = new Date().getUTCFullYear();
+const FIXED_FY_CANDIDATES = [CURRENT_YEAR, CURRENT_YEAR + 1, CURRENT_YEAR + 2];
+const FIXED_FY_METRICS: ScoringFormula[] = FIXED_FY_CANDIDATES.flatMap((y) => [
+  { key: `epsFy${y}Now`, formula: `FE_ESTIMATE(EPS,MEAN,ANN,${y},NOW,'')`, note: `FY${y} EPS consensus today (fixed year)` },
+  { key: `epsFy${y}Ago3m`, formula: `FE_ESTIMATE(EPS,MEAN,ANN,${y},-3M,'')`, note: `FY${y} EPS consensus 3 months ago (fixed year)` },
+]);
+
 const POINT_METRICS: ScoringFormula[] = [
   { key: "salesLtm", formula: "FF_SALES(LTM,0)", note: "Revenue, trailing 12m" },
+  // Rubric v3 — returnsMargins (margin trajectory on the TTM basis, which the
+  // entitlement DOES populate; LTM,-4 = the TTM window ended 4 quarters ago).
+  { key: "operMgnLtm0", formula: "FF_OPER_MGN(LTM,0)", note: "Operating margin %, TTM (returnsMargins)" },
+  { key: "operMgnLtm4", formula: "FF_OPER_MGN(LTM,-4)", note: "Operating margin %, year-ago TTM (returnsMargins)" },
+  { key: "operMgnLtm8", formula: "FF_OPER_MGN(LTM,-8)", note: "Operating margin %, 2y-ago TTM (returnsMargins)" },
+  { key: "grossMgnLtm0", formula: "FF_GROSS_MGN(LTM,0)", note: "Gross margin %, TTM (returnsMargins)" },
+  { key: "grossMgnLtm4", formula: "FF_GROSS_MGN(LTM,-4)", note: "Gross margin %, year-ago TTM (returnsMargins)" },
+  { key: "operIncLtm0", formula: "FF_OPER_INC(LTM,0)", note: "Operating income, TTM (incremental margin numerator)" },
+  { key: "operIncLtm4", formula: "FF_OPER_INC(LTM,-4)", note: "Operating income, year-ago TTM" },
+  { key: "salesLtm4", formula: "FF_SALES(LTM,-4)", note: "Revenue, year-ago TTM (incremental margin denominator)" },
+  { key: "fcfLtm", formula: "FF_FREE_CF(LTM,0)", note: "Free cash flow, TTM (FCF margin)" },
+  // Rubric v3 — forward growth anchors.
+  { key: "epsNtm", formula: "FE_ESTIMATE(EPS,MEAN,NTMA,0,NOW,'')", note: "NTM EPS consensus (growth anchor)" },
+  { key: "epsLtmA", formula: "FE_ESTIMATE(EPS,MEAN,LTMA,0,NOW,'')", note: "LTM actual EPS on the estimates basis (NTM growth denominator)" },
+  { key: "salesNtm", formula: "FE_ESTIMATE(SALES,MEAN,NTMA,0,NOW,'')", note: "NTM sales consensus (growth anchor)" },
+  { key: "ltg", formula: "FE_ESTIMATE(LTG,MEAN,ANN_ROLL,0,NOW,'')", note: "Long-term (3-5y) EPS growth consensus %" },
+  ...FIXED_FY_METRICS,
   { key: "epsLtm", formula: "FF_EPS(LTM,0)", note: "EPS, trailing 12m" },
   { key: "pe", formula: "FG_PE", note: "P/E" },
   { key: "pbk", formula: "FG_PBK", note: "P/B" },
@@ -215,6 +249,52 @@ function seriesRow(values: Record<string, number | null>, base: string, n: numbe
  * model can read trends, recent quarters for revenue/EPS momentum, and TTM for
  * freshness. Currency figures are in millions as FactSet returns them.
  */
+function pct(a: unknown, b: unknown, digits = 1): string {
+  if (typeof a !== "number" || typeof b !== "number" || b === 0 || !isFinite(a) || !isFinite(b)) return "n/a";
+  return `${(((a - b) / Math.abs(b)) * 100).toFixed(digits)}%`;
+}
+
+/** Rubric v3 — returnsMargins anchor: ROIC level + direction (annual basis),
+ *  with ROE / ROA beside it for the financials the playbook points there. */
+function returnsLine(v: Record<string, number | null>): string {
+  return `Returns (returnsMargins anchor) — ROIC % FY: ${seriesRow(v, "roic", 3, "Ann")} | ROA % FY: ${seriesRow(v, "roa", 2, "Ann")} (ROE above; banks/insurers/asset managers/REITs score on ROE per the playbook — ROIC is not meaningful there. No WACC is available: judge the spread against the business-model norm and the PEER block).`;
+}
+
+/** Rubric v3 — returnsMargins corroboration: margin trajectory on the TTM
+ *  basis plus the incremental operating margin over the last year. */
+function marginTrendLine(v: Record<string, number | null>): string {
+  const inc =
+    typeof v.operIncLtm0 === "number" && typeof v.operIncLtm4 === "number" && typeof v.salesLtm === "number" && typeof v.salesLtm4 === "number" && v.salesLtm !== v.salesLtm4
+      ? `${(((v.operIncLtm0 - v.operIncLtm4) / (v.salesLtm - v.salesLtm4)) * 100).toFixed(1)}%`
+      : "n/a";
+  const fcfMgn = typeof v.fcfLtm === "number" && typeof v.salesLtm === "number" && v.salesLtm !== 0 ? `${((v.fcfLtm / v.salesLtm) * 100).toFixed(1)}%` : "n/a";
+  return `Margin trend (returnsMargins) — Operating margin % TTM: now ${fmt(v.operMgnLtm0)} | year-ago ${fmt(v.operMgnLtm4)} | 2y-ago ${fmt(v.operMgnLtm8)} · Gross margin % TTM: now ${fmt(v.grossMgnLtm0)} | year-ago ${fmt(v.grossMgnLtm4)} · Incremental operating margin (Δ op. income ÷ Δ sales, last year): ${inc} (above the current margin = operating leverage; below = the next dollar earns less) · FCF margin TTM ${fcfMgn}`;
+}
+
+/** Rubric v3 — growth anchor: NTM consensus growth, LTG, and the FIXED-year
+ *  3-month revision (the FY+1 year is found by matching its NOW value to the
+ *  rolling FY+1 consensus, so a fiscal-year roll can never masquerade as a
+ *  revision). */
+function forwardGrowthLine(v: Record<string, number | null>): string {
+  const ntmEps = pct(v.epsNtm, v.epsLtmA);
+  const ntmSales = pct(v.salesNtm, v.salesLtm);
+  const fy1 = v.epsEstFy1;
+  let rev = "n/a";
+  let fyLabel = "";
+  if (typeof fy1 === "number") {
+    for (const y of FIXED_FY_CANDIDATES) {
+      const now = v[`epsFy${y}Now`];
+      const ago = v[`epsFy${y}Ago3m`];
+      if (typeof now === "number" && Math.abs(now - fy1) < 1e-6) {
+        fyLabel = `FY${y}`;
+        rev = typeof ago === "number" && ago !== 0 ? `${(((now - ago) / Math.abs(ago)) * 100).toFixed(1)}% (${fmt(ago, 2)} → ${fmt(now, 2)})` : "n/a";
+        break;
+      }
+    }
+  }
+  return `Forward growth (growth anchor) — NTM EPS growth ${ntmEps} (NTM ${fmt(v.epsNtm, 2)} vs LTM actual ${fmt(v.epsLtmA, 2)}) | NTM sales growth ${ntmSales} (NTM ${fmt(v.salesNtm)} vs TTM ${fmt(v.salesLtm)}) | LTG (3-5y EPS) ${fmt(v.ltg)}% | FY+1 consensus revision, last 3 months on the SAME fiscal year${fyLabel ? ` (${fyLabel})` : ""}: ${rev} — this is the revision MAGNITUDE; the up/down counts below are its breadth.`;
+}
+
 export function formatSnapshotForPrompt(snap: CompanySnapshot): string {
   const v = snap.values;
   // Derived valuation — inputs are all FactSet, so these count as FactSet data.
@@ -247,6 +327,9 @@ export function formatSnapshotForPrompt(snap: CompanySnapshot): string {
     `Gross margin % — FY: ${seriesRow(v, "grossMgn", 5, "Ann")}`,
     `Operating margin % — FY: ${seriesRow(v, "operMgn", 5, "Ann")}`,
     `ROE % — FY: ${seriesRow(v, "roe", 3, "Ann")}`,
+    returnsLine(v),
+    marginTrendLine(v),
+    forwardGrowthLine(v),
     `Leverage — Total debt FY: ${seriesRow(v, "debt", 3, "Ann")} | EBITDA FY: ${seriesRow(v, "ebitda", 3, "Ann")} | Cash & ST ${fmt(v.cashAnn0)} | Interest exp ${fmt(v.intExpAnn0)}`,
     `Valuation (current): P/E ${fmt(v.pe)} | Forward P/E ${fmt(fwdPe)} | EV/EBITDA ${fmt(evEbitda)} | P/B ${fmt(v.pbk)} | P/S ${fmt(v.psales)} | Div yield ${fmt(v.divYld, 2)}% | Mkt cap ${fmt(v.mktVal)} | EV ${fmt(ev)}`,
     `Price: ${fmt(v.price, 2)} | 52-week range: ${fmt(v.low52w, 2)} – ${fmt(v.high52w, 2)}`,

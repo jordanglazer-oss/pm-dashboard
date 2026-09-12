@@ -1,6 +1,7 @@
 "use client";
 
 import { Fragment, useEffect, useMemo, useState } from "react";
+import { ZERO_SCORES as ALL_ZERO_SCORES } from "@/app/lib/types";
 import Link from "next/link";
 import { useSearchParams, useRouter, usePathname } from "next/navigation";
 import { useStocks } from "@/app/lib/StockContext";
@@ -14,14 +15,8 @@ import { IDEA_STATUS_LABELS, type IdeaPipelineStore, type IdeaPipelineEntry, typ
 import type { ResearchState } from "@/app/lib/defaults";
 import type { Stock, ScoreKey } from "@/app/lib/types";
 
-const ZERO_SCORES: Record<ScoreKey, number> = {
-  brand: 0, secular: 0, researchCoverage: 0, marketEdge: 0,
-  analystConsensus: 0, researchMentions: 0,
-  charting: 0, relativeStrength: 0, aiRating: 0, growth: 0,
-  relativeValuation: 0, historicalValuation: 0, leverageCoverage: 0,
-  cashFlowQuality: 0, competitiveMoat: 0, turnaround: 0, catalysts: 0,
-  trackRecord: 0, ownershipTrends: 0,
-};
+// Every category at 0 — one shared literal (types.ts) so a new category can't break this file.
+const ZERO_SCORES = ALL_ZERO_SCORES;
 
 const BTN = "inline-flex h-7 items-center gap-1.5 rounded-control border border-line bg-surface px-2.5 text-[12.5px] text-ink-2 hover:bg-surface-hover";
 const BTN22 = "inline-flex h-[22px] items-center gap-1 rounded-control border border-line bg-surface px-1.5 text-[11.5px] text-ink-2 hover:bg-surface-hover hover:text-ink disabled:opacity-40";

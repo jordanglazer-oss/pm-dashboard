@@ -1,7 +1,7 @@
 /**
- * Sector playbooks — DETERMINISTIC metric selection for the five fundamental
- * scoring categories (growth, relativeValuation, historicalValuation,
- * leverageCoverage, cashFlowQuality), chosen server-side from the company's
+ * Sector playbooks — DETERMINISTIC metric selection for the six fundamental
+ * scoring categories (growth, returnsMargins, relativeValuation,
+ * historicalValuation, leverageCoverage, cashFlowQuality), chosen server-side from the company's
  * FactSet GICS sector + industry rather than left to model discretion.
  *
  * Rationale (user direction, 2026-07-20): the 41-pt framework stays exactly
@@ -20,6 +20,7 @@ const P = (label: string, body: string): Playbook => ({ label, body: body.trim()
 const PLAYBOOKS: Record<string, Playbook> = {
   bank: P("Banks", `
 growth: loan growth, deposit growth, net interest income / NIM trajectory, fee-income mix. Do NOT grade on generic "revenue growth".
+returnsMargins: ROE and ROTCE (primary) vs the bank's cost of equity (~10–11%); ROA as the secondary check; efficiency ratio trajectory as the margin read. ROIC and operating margin are MEANINGLESS for banks — never cite them.
 relativeValuation: P/B (primary) and P/E vs bank peers; a premium P/B must be justified by superior ROE/ROTE.
 historicalValuation: P/B vs the bank's own history, adjusted for the rate environment.
 leverageCoverage: CET1 / Tier 1 ratios, credit-loss provisions, NPL trends. Debt/EBITDA and interest coverage are MEANINGLESS for banks — debt is their raw material; never cite them.
@@ -27,6 +28,7 @@ cashFlowQuality: FCF is not a bank concept. Use ROE/ROTE, provision adequacy, an
 
   capmarkets: P("Capital Markets / Diversified Financials", `
 growth: AUM / net flows, fee-related earnings, advisory backlog (cycle-aware).
+returnsMargins: ROE (primary) and fee-related-earnings margin / operating margin on net revenue; for alt managers, FRE margin trajectory. ROIC is not meaningful where the balance sheet is the product.
 relativeValuation: P/E on operating EPS vs peers; P/AUM or fee-multiple where relevant.
 historicalValuation: P/E vs own history across a full market cycle — trough multiples on peak markets deceive.
 leverageCoverage: balance-sheet leverage and funding mix; Debt/EBITDA rarely meaningful.
@@ -34,6 +36,7 @@ cashFlowQuality: earnings-to-distributable-cash conversion, comp ratio disciplin
 
   insurance: P("Insurance", `
 growth: net premiums written, book value per share growth (the compounding engine), float growth.
+returnsMargins: ROE vs cost of equity (primary); combined ratio trajectory is the margin read (lower = better; sub-95% is strong for P&C). ROIC and operating margin do not apply.
 relativeValuation: P/B vs peers (primary); P/E on operating EPS excluding mark-to-market noise.
 historicalValuation: P/B vs own history.
 leverageCoverage: financial leverage, reserve adequacy/development, ratings headroom. Debt/EBITDA not meaningful.
@@ -41,6 +44,7 @@ cashFlowQuality: combined ratio (P&C) or benefit ratio trends, investment income
 
   reit: P("REITs / Real Estate", `
 growth: FFO/AFFO per share growth, same-property NOI, occupancy and leasing spreads.
+returnsMargins: ROE and FFO / AFFO margin on revenue; NOI margin trend and same-property NOI growth as the margin read. ROIC on book is distorted by depreciated real estate — do not anchor on it.
 relativeValuation: P/FFO or P/AFFO vs peers, implied cap rate vs private-market, premium/discount to NAV. GAAP P/E is near-meaningless (depreciation).
 historicalValuation: P/FFO vs own history, spread vs rates.
 leverageCoverage: net debt/EBITDA, debt/gross assets, fixed-charge coverage, maturity ladder.
@@ -48,6 +52,7 @@ cashFlowQuality: AFFO payout ratio sustainability; development pipeline funding.
 
   software: P("Software / IT Services", `
 growth: revenue or ARR growth PLUS net revenue retention; Rule of 40 (growth + FCF margin) as the quality bar.
+returnsMargins: operating margin and FCF margin trajectory (Rule of 40 context), gross margin level (≥70% for true software), incremental operating margin as evidence of operating leverage; ROIC is inflated by low invested capital — use it directionally only.
 relativeValuation: EV/Sales calibrated to growth+margin, EV/FCF; P/E only when earnings are mature and representative.
 historicalValuation: EV/Sales and EV/FCF vs own history.
 leverageCoverage: usually net cash — the REAL balance-sheet drag is stock-based-comp dilution; grade SBC as % of revenue.
@@ -55,6 +60,7 @@ cashFlowQuality: FCF margin, SBC-adjusted FCF, deferred revenue / billings trend
 
   semis: P("Semiconductors", `
 growth: cycle-aware — separate content/secular growth from cycle swings; inventory and channel health are leading signals.
+returnsMargins: ROIC through the cycle (mid-cycle, not peak), gross margin level and direction (the key competitive-position signal in semis), operating margin trajectory; a peak-cycle ROIC scores on mid-cycle.
 relativeValuation: P/E and EV/EBITDA vs semis peers at a SIMILAR cycle position; through-cycle earnings power beats spot multiples.
 historicalValuation: multiples vs own history across the full cycle — cheap-on-peak is expensive.
 leverageCoverage: net debt/EBITDA (fabless usually net cash; foundry/IDM carry capex debt).
@@ -62,6 +68,7 @@ cashFlowQuality: FCF conversion through the cycle, capex intensity, buyback disc
 
   hardware: P("Tech Hardware / Electronics", `
 growth: units × ASP decomposition, attach/services mix shift, backlog.
+returnsMargins: ROIC (primary) and operating margin trajectory; gross margin direction signals pricing power vs commoditisation; incremental margin on mix shifts.
 relativeValuation: P/E and EV/EBITDA vs hardware peers (structurally lower multiples than software — do not cross-compare).
 historicalValuation: vs own history; re-rating requires a mix-shift story, not hope.
 leverageCoverage: net debt/EBITDA, working-capital cycle.
@@ -69,6 +76,7 @@ cashFlowQuality: FCF conversion ≥ net income as the quality bar; inventory tur
 
   pharma: P("Pharmaceuticals", `
 growth: portfolio growth NET of patent-cliff exposure (name the cliffs and dates), pipeline contribution.
+returnsMargins: ROIC (primary — R&D is the invested capital being tested), operating margin level and trajectory; gross margin is structurally high and uninformative; watch margin compression from loss-of-exclusivity.
 relativeValuation: P/E vs pharma peers, adjusted for cliff timing; EV/EBITDA secondary.
 historicalValuation: P/E vs own history, cliff-adjusted.
 leverageCoverage: net debt/EBITDA vs deal capacity; litigation reserves where material.
@@ -76,6 +84,7 @@ cashFlowQuality: FCF stability, R&D productivity (approvals per R&D dollar), div
 
   biotech: P("Biotechnology", `
 growth: pipeline milestones and addressable markets, not trailing revenue; for commercial names, launch trajectory.
+returnsMargins: for pre-profit names the category is DATA GAP (1, confidence low) — returns are not yet a meaningful test. For commercial-stage names: gross margin on product sales and the path to positive operating margin.
 relativeValuation: for profitable names P/E vs peers; for pre-profit names EV vs pipeline value and cash — conventional multiples are meaningless.
 historicalValuation: use cautiously across approval cycles.
 leverageCoverage: CASH RUNWAY IN QUARTERS is the leverage metric; convertible/debt maturities vs runway.
@@ -83,6 +92,7 @@ cashFlowQuality: burn rate vs milestones for pre-commercial; gross-to-net dynami
 
   medtech: P("MedTech / Life Sciences Tools", `
 growth: procedure volumes / utilization, new-product cycles, recurring consumables mix.
+returnsMargins: ROIC (primary) and operating margin trajectory; gross margin (≥60% typical for devices, tools lower) direction; incremental margin as evidence of scale.
 relativeValuation: P/E and EV/EBITDA vs medtech peers (premium justified by recurring mix).
 historicalValuation: vs own history.
 leverageCoverage: net debt/EBITDA vs M&A cadence.
@@ -90,6 +100,7 @@ cashFlowQuality: FCF conversion, R&D as % sales sustainability.`),
 
   energy: P("Energy (Oil & Gas)", `
 growth: production per share growth and reserve replacement — NOT nominal revenue (price-driven).
+returnsMargins: ROCE / ROIC through the cycle at a mid-cycle commodity deck (state the deck), FCF margin at strip; operating margin is commodity-driven — judge the RELATIVE cost position vs peers, not the absolute level.
 relativeValuation: EV/EBITDA, P/CF, and FCF yield AT STRIP prices vs peers. A low P/E on peak commodity earnings is EXPENSIVE — say so explicitly when it applies.
 historicalValuation: through-cycle multiples vs own history at comparable commodity decks.
 leverageCoverage: net debt/EBITDA at a CONSERVATIVE price deck, hedge book coverage, maturity wall.
@@ -97,6 +108,7 @@ cashFlowQuality: FCF at strip, capital discipline (reinvestment rate), sharehold
 
   mining: P("Metals & Mining", `
 growth: production growth per share, reserve life, grade trends.
+returnsMargins: ROIC / ROCE at mid-cycle prices, AISC (all-in sustaining cost) position vs peers as the margin read, FCF margin at spot; a peak-price ROIC scores on mid-cycle.
 relativeValuation: EV/EBITDA and P/NAV vs peers; cost-curve position (AISC quartile) is the moat proxy.
 historicalValuation: through-cycle vs own history — cheap-on-peak-prices deceives.
 leverageCoverage: net debt/EBITDA at conservative commodity prices, capex commitments vs balance sheet.
@@ -104,6 +116,7 @@ cashFlowQuality: FCF at spot AND at conservative deck, sustaining vs growth cape
 
   materials: P("Materials / Chemicals", `
 growth: volume vs price decomposition, capacity additions vs demand.
+returnsMargins: ROIC vs the company's own cycle history and vs peers, EBITDA margin trajectory (the standard chemicals read), incremental margin on volume recovery.
 relativeValuation: EV/EBITDA vs peers mid-cycle; specialty deserves premium to commodity chemistry — compare within the right bucket.
 historicalValuation: mid-cycle multiple vs own history.
 leverageCoverage: net debt/EBITDA through-cycle, pension where material.
@@ -111,6 +124,7 @@ cashFlowQuality: FCF conversion mid-cycle, working-capital swings with input cos
 
   utility: P("Utilities", `
 growth: rate-base growth (the earnings algorithm) and allowed-ROE trajectory; regulatory relationships.
+returnsMargins: allowed ROE vs earned ROE (the gap is the read — earning at or above the allowed return is strong), regulatory lag; ROIC and operating margin are rate-base outputs, not competitive signals.
 relativeValuation: P/E vs regulated peers, dividend yield spread vs long bonds.
 historicalValuation: P/E and yield-spread vs own history.
 leverageCoverage: FFO/debt (ratings lens), regulatory support for recovery; absolute debt levels are structural, not a red flag per se.
@@ -118,6 +132,7 @@ cashFlowQuality: dividend coverage from regulated earnings; heavy capex with NEG
 
   retail: P("Retail / Consumer Discretionary", `
 growth: comparable-store sales (traffic vs ticket), unit growth, e-commerce mix.
+returnsMargins: ROIC (primary — inventory and stores are the invested capital), operating margin trajectory, gross margin direction (promotional intensity, shrink); incremental margin on same-store-sales growth.
 relativeValuation: P/E and EV/EBITDA vs peers; lease-adjusted where leases are large.
 historicalValuation: vs own history at similar margin levels.
 leverageCoverage: LEASE-ADJUSTED net debt/EBITDAR, inventory position vs sales trend.
@@ -125,6 +140,7 @@ cashFlowQuality: inventory turns, working-capital discipline, FCF through the se
 
   staples: P("Consumer Staples", `
 growth: ORGANIC growth split into volume vs price/mix — price-only growth is lower quality; market-share trends.
+returnsMargins: ROIC (primary; brand-led names should clear 15% comfortably), gross margin direction (pricing vs input costs), operating margin trajectory; watch for margin held up only by price without volume.
 relativeValuation: P/E vs staples peers; the stability premium is legitimate but bounded.
 historicalValuation: P/E vs own history and vs the staples group's premium to market.
 leverageCoverage: net debt/EBITDA vs the sector's tolerance (typically 2-3x), dividend commitment.
@@ -132,6 +148,7 @@ cashFlowQuality: FCF conversion ≥ 90% of net income as the bar, promotional-sp
 
   telecom: P("Telecom", `
 growth: subscriber adds and ARPU by segment; converged-bundle penetration.
+returnsMargins: ROIC vs cost of capital (structurally thin — a spread above ~1–2 pts is good), EBITDA margin trajectory, FCF margin after spectrum and capex.
 relativeValuation: EV/EBITDA and FCF yield vs telecom peers; P/E distorted by D&A.
 historicalValuation: EV/EBITDA vs own history.
 leverageCoverage: net debt/EBITDA (sector norms run higher, ~2.5-3.5x), spectrum commitments, dividend vs FCF.
@@ -139,6 +156,7 @@ cashFlowQuality: FCF AFTER spectrum and network capex; dividend coverage from th
 
   media: P("Media / Entertainment / Interactive", `
 growth: engagement (users/subs) × monetization (ARPU/ad pricing); content or platform flywheel evidence.
+returnsMargins: ROIC (primary), operating margin trajectory; for ad-driven and platform names, incremental operating margin on revenue growth is the operating-leverage test; for content names, content-cost amortisation vs revenue.
 relativeValuation: EV/EBITDA vs peers; for ad-driven platforms P/E and EV/FCF; content amortization distorts GAAP.
 historicalValuation: vs own history.
 leverageCoverage: net debt/EBITDA vs content-spend commitments.
@@ -146,6 +164,7 @@ cashFlowQuality: FCF after content/platform capex; conversion trends as spend ma
 
   industrial: P("Industrials", `
 growth: organic growth vs M&A split, backlog and book-to-bill, aftermarket/services mix.
+returnsMargins: ROIC (primary; quality industrials clear 15%), operating margin trajectory through the cycle, incremental margin on volume (should exceed the current margin in an upcycle), FCF margin.
 relativeValuation: EV/EBITDA and P/E vs peers at similar cycle position.
 historicalValuation: vs own history mid-cycle.
 leverageCoverage: net debt/EBITDA through-cycle, pension where material.

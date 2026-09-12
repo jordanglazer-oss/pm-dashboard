@@ -18,7 +18,7 @@ import { EmptyState } from "@/app/components/EmptyState";
 import { FlashValue } from "@/app/components/FlashValue";
 import { useStocks } from "@/app/lib/StockContext";
 import type { Stock, ScoreKey } from "@/app/lib/types";
-import { MAX_SCORE } from "@/app/lib/types";
+import { MAX_SCORE, ZERO_SCORES as ALL_ZERO_SCORES } from "@/app/lib/types";
 import { RATING_BANDS } from "@/app/lib/rating-bands";
 
 /** Fire-and-forget: log tickers dropped from a research list to the
@@ -542,14 +542,8 @@ type SortDir = "asc" | "desc";
 
 type LivePrices = Record<string, number | null>;
 
-const ZERO_SCORES: Record<ScoreKey, number> = {
-  brand: 0, secular: 0, researchCoverage: 0, marketEdge: 0,
-  analystConsensus: 0, researchMentions: 0,
-  charting: 0, relativeStrength: 0, aiRating: 0, growth: 0,
-  relativeValuation: 0, historicalValuation: 0, leverageCoverage: 0,
-  cashFlowQuality: 0, competitiveMoat: 0, turnaround: 0, catalysts: 0,
-  trackRecord: 0, ownershipTrends: 0,
-};
+// Every category at 0 — one shared literal (types.ts) so a new category can't break this file.
+const ZERO_SCORES = ALL_ZERO_SCORES;
 
 /** Source rail: label → CollapsibleSection prefKey (also its DOM id). */
 const RAIL_GROUPS: { label: string; items: { key: string; label: string }[] }[] = [

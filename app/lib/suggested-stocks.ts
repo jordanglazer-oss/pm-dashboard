@@ -37,7 +37,7 @@
  * Never deletes anything that holds data. Prunes stash the pre-image first.
  */
 
-import { SCORE_GROUPS, type Stock, type Scores, type ScoreKey } from "./types";
+import { ZERO_SCORES, type Stock, type Scores, type ScoreKey } from "./types";
 import { canonicalTicker } from "./ticker";
 
 export const SUGGESTED_STOCKS_KEY = "pm:stocks-suggested";
@@ -52,11 +52,7 @@ export type SuggestedStock = Stock & {
 
 /** Every score key at 0 — a new staging record starts unscored. */
 export function zeroScores(): Scores {
-  const out = {} as Scores;
-  for (const g of SCORE_GROUPS) {
-    for (const c of g.categories) out[c.key as ScoreKey] = 0;
-  }
-  return out;
+  return { ...ZERO_SCORES };
 }
 
 /** What the sync knows about a qualifying name (from the ranked research). */

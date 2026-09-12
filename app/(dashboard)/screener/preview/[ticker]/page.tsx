@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
+import { ZERO_SCORES as ALL_ZERO_SCORES } from "@/app/lib/types";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import { useStocks } from "@/app/lib/StockContext";
@@ -40,14 +41,8 @@ function SignalRow({ label, signal, detail }: { label: string; signal: "bullish"
   );
 }
 
-const ZERO_SCORES = {
-  brand: 0, secular: 0, researchCoverage: 0, marketEdge: 0,
-  analystConsensus: 0, researchMentions: 0,
-  charting: 0, relativeStrength: 0, aiRating: 0, growth: 0,
-  relativeValuation: 0, historicalValuation: 0, leverageCoverage: 0,
-  cashFlowQuality: 0, competitiveMoat: 0, turnaround: 0, catalysts: 0,
-  trackRecord: 0, ownershipTrends: 0,
-};
+// Every category at 0 — one shared literal (types.ts) so a new category can't break this file.
+const ZERO_SCORES = ALL_ZERO_SCORES;
 
 const pct = (v: number) => `${v >= 0 ? "+" : ""}${v.toFixed(1)}%`;
 

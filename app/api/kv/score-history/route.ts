@@ -91,7 +91,12 @@ export type ScoreHistoryEntry = {
    * ONLY a filed SEC material-event disclosure can trigger a hard floor
    * (web_search findings are risk notes for bearCase, never zeros),
    * antitrust/litigation/conduct probes explicitly excluded, and the score
-   * route rejects (422) any model-invented floor.
+   * route rejects (422) any model-invented floor. 6 = rubric v3 (2026-09):
+   * the composite becomes a 33-pt CONVICTION score — the four technical
+   * categories leave it for the separate setup grade, researchCoverage is
+   * retired, returnsMargins (2 pts, ROIC level/trend + margin trajectory)
+   * joins Fundamental, growth is scored forward (NTM consensus, fixed-year
+   * revisions, LTG), and the cutoffs are recalibrated (26.5/23.5/19.5/16).
    */
   rubricRev?: number;
   /**

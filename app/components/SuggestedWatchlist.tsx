@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useEffect, useState, useCallback } from "react";
+import { ZERO_SCORES as ALL_ZERO_SCORES } from "@/app/lib/types";
 import { useStocks } from "@/app/lib/StockContext";
 import { displayTicker } from "@/app/lib/ticker";
 import TickerLink from "@/app/components/TickerLink";
@@ -11,14 +12,8 @@ import type { ScoreKey } from "@/app/lib/types";
 import type { Candidate, CandidateStore } from "@/app/lib/watchlist-candidates";
 
 /** A promoted candidate starts unscored — the scoring flow fills it in. */
-const ZERO_SCORES: Record<ScoreKey, number> = {
-  brand: 0, secular: 0, researchCoverage: 0, marketEdge: 0,
-  analystConsensus: 0, researchMentions: 0,
-  charting: 0, relativeStrength: 0, aiRating: 0, growth: 0,
-  relativeValuation: 0, historicalValuation: 0, leverageCoverage: 0,
-  cashFlowQuality: 0, competitiveMoat: 0, turnaround: 0, catalysts: 0,
-  trackRecord: 0, ownershipTrends: 0,
-};
+// Every category at 0 — one shared literal (types.ts) so a new category can't break this file.
+const ZERO_SCORES = ALL_ZERO_SCORES;
 
 /* Control vocabulary: 28px toolbar controls; in-row buttons follow the Ideas
    canvas (22px, 11.5px) so they sit inside a 34px row. */

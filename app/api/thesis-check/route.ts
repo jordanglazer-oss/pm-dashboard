@@ -1,3 +1,4 @@
+import { MAX_SCORE } from "@/app/lib/types";
 import Anthropic from "@anthropic-ai/sdk";
 import { NextRequest, NextResponse } from "next/server";
 import { getRedis } from "@/app/lib/redis";
@@ -73,7 +74,7 @@ export async function POST(req: NextRequest) {
       .join("\n");
     const ctx = context[tk];
     const ctxLine = [
-      ctx?.composite != null ? `composite ${ctx.composite}/41` : null,
+      ctx?.composite != null ? `composite ${ctx.composite}/${MAX_SCORE}` : null,
       ctx?.scoreDelta != null ? `Δ45d ${ctx.scoreDelta >= 0 ? "+" : ""}${ctx.scoreDelta}` : null,
       ctx?.netRevisions != null ? `net revisions ${ctx.netRevisions >= 0 ? "+" : ""}${ctx.netRevisions}` : null,
       ctx?.riskLevel ? `risk ${ctx.riskLevel}` : null,

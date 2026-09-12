@@ -17,7 +17,7 @@
 
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import type { Scores, ScoreKey } from "@/app/lib/types";
-import { SCORE_GROUPS } from "@/app/lib/types";
+import { ALL_GROUPS } from "@/app/lib/types";
 import { CollapsibleSection } from "@/app/components/CollapsibleSection";
 import { AppIcon } from "@/app/components/AppIcon";
 
@@ -49,7 +49,7 @@ type Props = {
 };
 
 // Flatten SCORE_GROUPS → [{key,label}] for delta rendering
-const ALL_CATEGORIES: { key: ScoreKey; label: string }[] = SCORE_GROUPS.flatMap((g) =>
+const ALL_CATEGORIES: { key: ScoreKey; label: string }[] = ALL_GROUPS.flatMap((g) =>
   g.categories.map((c) => ({ key: c.key as ScoreKey, label: c.label })),
 );
 

@@ -35,19 +35,25 @@ export default function MethodologyPage() {
         <Sect title="The one-paragraph version">
           <p>
             Stock <b>selection</b> is scored; portfolio <b>discipline</b> is pre-registered and measured.
-            A 41-point fundamental score answers &ldquo;is this a good stock.&rdquo; A separate quantitative
-            factor screen gives an independent second opinion. When a position is taken, the manager writes
+            A 33-point conviction score answers &ldquo;is this a business worth owning&rdquo;; a separate
+            0&ndash;10 setup grade, built from the technical inputs, answers &ldquo;is now the time.&rdquo; The
+            two are read side by side, never blended. A separate quantitative factor screen gives an independent
+            second opinion. When a position is taken, the manager writes
             the thesis down <i>with the conditions that would prove it wrong</i> — and software watches those
             conditions daily and grades every decision against its sector afterward. AI assists at exactly two
             points; it never scores mechanically alone, never edits a thesis, and never trades.
           </p>
         </Sect>
 
-        <Sect n="1" title="Scoring — the primary verdict (41-point composite)">
+        <Sect n="1" title="Scoring — the primary verdict (33-point conviction score + setup grade)">
           <p>
-            Every name is scored across seven categories — fundamentals, valuation, technicals, analyst
-            revisions, ownership, external research, market regime fit — using FactSet as the primary data
-            source, verified against public filings. Scores are re-run on material events (earnings, guidance,
+            Every name&rsquo;s conviction score is built from five groups &mdash; long-term franchise, research
+            (analyst consensus and list mentions), fundamentals (forward growth, returns and margins, relative
+            and historical valuation, leverage, cash-flow quality), company-specific factors and management
+            &mdash; using FactSet as the primary data source, verified against public filings. Technicals
+            (SIA relative strength, BoostedAI, MarketEdge, trend and the manager&rsquo;s own chart read) are
+            deliberately kept out of that number: they are price-derived and fast-moving, so they form a
+            separate setup grade that times entries and exits without moving the verdict on the business. Scores are re-run on material events (earnings, guidance,
             rating changes), not on a calendar, and every change is logged to an append-only history so score
             drift is visible over time.
           </p>
@@ -61,12 +67,12 @@ export default function MethodologyPage() {
             In parallel, a purely quantitative screen ranks the universe on a small set of factors with
             long-run academic support (valuation vs sector, quality, momentum, estimate-revision momentum),
             computed sector-neutrally with no human judgment. It deliberately is <b>not</b> blended into the
-            41-point score: when the two disagree, that disagreement is the information. The screen&rsquo;s own
+            33-point score: when the two disagree, that disagreement is the information. The screen&rsquo;s own
             predictive power is validated against forward returns before it earns any formal weight.
           </p>
           <p className="text-ink-3">
             Where you see it: <Link href="/factor-lab">Factor Lab</Link>,
-            including the side-by-side comparison against the 41-point score.
+            including the side-by-side comparison against the 33-point score.
           </p>
         </Sect>
 
@@ -137,7 +143,7 @@ export default function MethodologyPage() {
 
         <Sect title="Data sources &amp; refresh cadence">
           <p>
-            <b>41-point score:</b> FactSet is the primary source for fundamentals, estimates and sector
+            <b>33-point score:</b> FactSet is the primary source for fundamentals, estimates and sector
             classification (via a dedicated relay); figures are verified against public filings during each
             scoring run, with the source of every data point stored in an audit trail. Prices and technicals
             come from Yahoo Finance; insider activity from SEC filings (US listings). Scores refresh on

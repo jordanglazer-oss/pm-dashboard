@@ -10,7 +10,7 @@ import { useStocks } from "@/app/lib/StockContext";
 import { useNotifications } from "@/app/lib/NotificationsContext";
 import { FlashValue } from "@/app/components/FlashValue";
 import { SkeletonTable } from "@/app/components/Skeleton";
-import { SCORE_GROUPS, INSTRUMENT_LABELS } from "@/app/lib/types";
+import { SCORE_GROUPS, MAX_SCORE, INSTRUMENT_LABELS } from "@/app/lib/types";
 import type { ScoredStock, ScoreKey, HealthData, FundHolding, FundSectorWeight } from "@/app/lib/types";
 import type { TechnicalIndicators, RiskAlert } from "@/app/lib/technicals";
 import { groupTotal, isScoreable, normalizeSector, computeScores } from "@/app/lib/scoring";
@@ -2416,7 +2416,7 @@ function RankingTable({
                   {/* Score = adjusted composite (with regime delta) */}
                   <td className="n">
                     <span className="font-medium text-ink">{Number(s.adjusted.toFixed(1))}</span>
-                    <span className="text-[11px] text-ink-faint">/41</span>
+                    <span className="text-[11px] text-ink-faint">/{MAX_SCORE}</span>
                     <span className={`ml-1 text-[11px] ${adj > 0 ? "text-pos" : adj < 0 ? "text-neg" : "text-ink-faint"}`} title="Regime adjustment vs the raw score">
                       {adj > 0 ? "+" : ""}{adj}
                     </span>

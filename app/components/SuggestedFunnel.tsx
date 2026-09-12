@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useCallback, useEffect, useState } from "react";
+import { ZERO_SCORES as ALL_ZERO_SCORES } from "@/app/lib/types";
 import Link from "next/link";
 import { useStocks } from "@/app/lib/StockContext";
 import { computeScores } from "@/app/lib/scoring";
@@ -32,14 +33,8 @@ const DECISION_DOT: Record<SuggestedDecision, { dot: string; text: string; word:
 };
 
 /** A promoted name starts unscored — the scoring flow fills it in. */
-const ZERO_SCORES: Record<ScoreKey, number> = {
-  brand: 0, secular: 0, researchCoverage: 0, marketEdge: 0,
-  analystConsensus: 0, researchMentions: 0,
-  charting: 0, relativeStrength: 0, aiRating: 0, growth: 0,
-  relativeValuation: 0, historicalValuation: 0, leverageCoverage: 0,
-  cashFlowQuality: 0, competitiveMoat: 0, turnaround: 0, catalysts: 0,
-  trackRecord: 0, ownershipTrends: 0,
-};
+// Every category at 0 — one shared literal (types.ts) so a new category can't break this file.
+const ZERO_SCORES = ALL_ZERO_SCORES;
 
 type Payload = {
   rows: SuggestedRow[];
@@ -431,7 +426,7 @@ export function SuggestedFunnel({ onCountChange }: { onCountChange?: (n: number)
                 <th className={TH_SORT} onClick={() => toggle("name")}>Name<SortIcon col="name" sortKey={sortKey} dir={sortDir} /></th>
                 <th className={TH_SORT} onClick={() => toggle("sector")}>Sector<SortIcon col="sector" sortKey={sortKey} dir={sortDir} /></th>
                 <th className={`n ${TH_SORT}`} onClick={() => toggle("lists")}>Lists<SortIcon col="lists" sortKey={sortKey} dir={sortDir} /></th>
-                <th className="n" title="41-point composite, scored on demand. The chips show which provider data has landed on this name: M = MarketEdge, S = SIA, B = BoostedAI.">Score</th>
+                <th className="n" title="Conviction composite, scored on demand. The chips show which provider data has landed on this name: M = MarketEdge, S = SIA, B = BoostedAI.">Score</th>
                 <th title="AI positioning vs today's backdrop">AI view</th>
                 <th>Sources</th>
                 <th title="Entry setup (signals met / known) and improving reads">Setup</th>
@@ -487,7 +482,7 @@ export function SuggestedFunnel({ onCountChange }: { onCountChange?: (n: number)
                                 onClick={() => scoreOne(r)}
                                 disabled={scoringTicker != null}
                                 className={ROW_BTN}
-                                title={rec.lastScored ? "Re-score this name (full 41-point pass)" : "Score this name now (full 41-point pass) — nothing is scored automatically"}
+                                title={rec.lastScored ? "Re-score this name (full composite pass)" : "Score this name now (full composite pass) — nothing is scored automatically"}
                               >
                                 {scoringTicker === r.ticker ? "…" : rec.lastScored ? "Re-score" : "Score"}
                               </button>

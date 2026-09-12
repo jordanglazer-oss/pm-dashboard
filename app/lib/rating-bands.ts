@@ -33,13 +33,27 @@ export type RatingBands = {
   underweight: number;
 };
 
-/** Cutoffs on the current 41-pt composite (`MAX_SCORE` in types.ts). */
+/**
+ * Cutoffs on the 33-pt conviction composite (`MAX_SCORE` in types.ts).
+ *
+ * Rubric v3 recalibration (2026-09-12, /api/admin/rubric-v3-calibration on
+ * 61 live book names): the old 30/26/22/18 on 41 were QUANTILE-matched onto
+ * the 31-pt conviction subtotal (25 / 22 / 18.5 / 15 → fractions .806 /
+ * .71 / .597 / .484, keeping 75% of labels; ratio-scaling kept only 36%),
+ * then carried to 33 as fractions. Re-run the calibration once
+ * returnsMargins has been scored across the book and adjust here if the
+ * distribution has shifted. Legacy 41-pt values: 30 / 26 / 22 / 18.
+ */
 export const RATING_BANDS: RatingBands = {
-  strongBuy: 30,
-  moderateBuy: 26,
-  hold: 22,
-  underweight: 18,
+  strongBuy: 26.5,
+  moderateBuy: 23.5,
+  hold: 19.5,
+  underweight: 16,
 };
+
+/** The pre-v3 cutoffs on the 41-pt scale — for reading history entries
+ *  stamped `scaleMax: 41` (or unstamped). */
+export const LEGACY_41_BANDS: RatingBands = { strongBuy: 30, moderateBuy: 26, hold: 22, underweight: 18 };
 
 export function ratingLabelFor(adjusted: number, bands: RatingBands = RATING_BANDS): RatingLabel {
   if (adjusted >= bands.strongBuy) return "Strong Buy";

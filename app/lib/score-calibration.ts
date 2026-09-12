@@ -19,7 +19,7 @@
 
 import type { ScoreHistoryStore, ScoreHistoryEntry } from "@/app/api/kv/score-history/route";
 import type { ScoreKey } from "./types";
-import { SCORE_GROUPS } from "./types";
+import { ALL_GROUPS } from "./types";
 import { ratingLabelFor, ratingTierFor } from "./rating-bands";
 
 /**
@@ -30,7 +30,7 @@ import { ratingLabelFor, ratingTierFor } from "./rating-bands";
  * — the per-category signal must reflect categories the score still uses.
  */
 const VALID_SCORE_KEYS = new Set<ScoreKey>(
-  SCORE_GROUPS.flatMap((g) => g.categories.map((c) => c.key as ScoreKey)),
+  ALL_GROUPS.flatMap((g) => g.categories.map((c) => c.key as ScoreKey)),
 );
 
 export type PriceMap = Record<string, number>; // dateISO(YYYY-MM-DD) → close

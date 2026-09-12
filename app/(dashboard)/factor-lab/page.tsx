@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useStocks } from "@/app/lib/StockContext";
 import { isScoreable } from "@/app/lib/scoring";
 import { MAX_SCORE } from "@/app/lib/types";
+import { RATING_BANDS } from "@/app/lib/rating-bands";
 import { displayTicker } from "@/app/lib/ticker";
 import { SkeletonTable } from "@/app/components/Skeleton";
 import { EmptyState } from "@/app/components/EmptyState";
@@ -76,19 +77,19 @@ type ScreenName = {
   distress?: "distress" | "grey";
 };
 
-/** Map a 0–100 blend to the 41-pt system's Buy/Hold/Sell bands: the same
- *  FRACTIONAL thresholds (30/41 ≈ 73%, 18/41 ≈ 44%) so the what-if is an
+/** Map a 0–100 blend to the composite's Buy/Hold/Sell bands using the SAME
+ *  fractional cutoffs (rating-bands.ts ÷ MAX_SCORE) so the what-if is an
  *  apples-to-apples rating comparison, not a new opinion scale. */
 function impliedRating(p: number | null): "Buy" | "Hold" | "Sell" | null {
   if (p == null) return null;
-  if (p >= 73) return "Buy";
-  if (p <= 44) return "Sell";
+  if (p >= (RATING_BANDS.strongBuy / MAX_SCORE) * 100) return "Buy";
+  if (p <= (RATING_BANDS.underweight / MAX_SCORE) * 100) return "Sell";
   return "Hold";
 }
 
 const LENS_ORDER = ["s41", "quant", "overlay", "blend70", "blendMod"] as const;
 const LENS_LABEL: Record<string, string> = {
-  s41: "41-pt score",
+  s41: `${MAX_SCORE}-pt score`,
   quant: "Quant %ile",
   overlay: "Judgment overlay",
   blend70: "Blend 70/30",

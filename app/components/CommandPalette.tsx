@@ -27,6 +27,7 @@
  * so the most-used items float to the top.
  */
 
+import { MAX_SCORE } from "@/app/lib/types";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useStocks } from "@/app/lib/StockContext";
@@ -347,7 +348,7 @@ export function CommandPalette({ open, onClose, onTriggerQuickAdd }: Props) {
                       <span className="shrink-0 font-mono text-[12px] tabular-nums text-ink-2">{e.price.toFixed(2)}</span>
                     )}
                     {e.score != null && (
-                      <span className="shrink-0 font-mono text-[12px] tabular-nums text-ink">{e.score.toFixed(1)}<span className="text-ink-faint">/41</span></span>
+                      <span className="shrink-0 font-mono text-[12px] tabular-nums text-ink">{e.score.toFixed(1)}<span className="text-ink-faint">/{MAX_SCORE}</span></span>
                     )}
                     {active && (
                       <kbd className="shrink-0 rounded border border-line bg-surface px-1 py-px font-mono text-[10px] text-ink-3">Enter</kbd>

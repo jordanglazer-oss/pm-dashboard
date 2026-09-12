@@ -2,7 +2,7 @@
 
 import React, { createContext, useContext, useState, useMemo, useCallback, useEffect, useRef } from "react";
 import type { Stock, MarketData, ScoredStock, MorningBrief, ScoreKey, ScoreExplanations, HealthData, TechnicalIndicators, RiskAlert, FundData } from "./types";
-import { SCORE_GROUPS } from "./types";
+import { SCORE_GROUPS, ALL_GROUPS } from "./types";
 import type { PimHolding, PimModelData, PimModelGroup, PimPortfolioState, PimModelGroupState } from "./pim-types";
 import { computeScores, isOffensiveSector, isScoreable, transitionWeight } from "./scoring";
 import { defaultMarketData } from "./defaults";
@@ -35,7 +35,7 @@ const LEGACY_LOCKED_EQUITY_SYMBOLS = new Set(["FID5982", "FID5982-T", "GRNJ"]);
 // PM-entered category keys (inputType "manual") — updateScore stamps
 // manualScoredAt for these so aged manual entries are badgeable.
 const MANUAL_SCORE_KEYS: ReadonlySet<ScoreKey> = new Set<ScoreKey>(
-  SCORE_GROUPS.flatMap((g) => g.categories.filter((c) => c.inputType === "manual").map((c) => c.key as ScoreKey))
+  ALL_GROUPS.flatMap((g) => g.categories.filter((c) => c.inputType === "manual").map((c) => c.key as ScoreKey))
 );
 
 // One-shot migration for the Research-category restructure (researchCoverage

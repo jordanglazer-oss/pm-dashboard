@@ -2,8 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { getRedis } from "@/app/lib/redis";
 import { bookStocks, MAX_SCORE, SCORE_GROUPS } from "@/app/lib/types";
 import type { Stock, MarketData, ScoreKey } from "@/app/lib/types";
-import { computeScores, isScoreable, ownershipTrendsApplies, isDataGapExplanation } from "@/app/lib/scoring";
-import { RATING_BANDS, ratingLabelFor, type RatingBands, type RatingLabel } from "@/app/lib/rating-bands";
+import { computeScores, isScoreable, ownershipTrendsApplies, isDataGapExplanation, marketEdgeApplies, boostedAiApplies, siaApplies } from "@/app/lib/scoring";
+import { RATING_BANDS, LEGACY_41_BANDS, ratingLabelFor, type RatingBands, type RatingLabel } from "@/app/lib/rating-bands";
 import type { ScoreHistoryStore } from "@/app/api/kv/score-history/route";
 
 /**
@@ -12,23 +12,24 @@ import type { ScoreHistoryStore } from "@/app/api/kv/score-history/route";
  *
  * READ-ONLY. Reads pm:stocks, pm:market and pm:score-history; writes nothing.
  *
- * Rubric v3 pulls the four technical categories (charting / SIA / BoostedAI /
+ * Rubric v3 pulled the four technical categories (charting / SIA / BoostedAI /
  * MarketEdge) and researchCoverage OUT of the composite into a separate setup
- * layer, so the conviction score's max drops from 41 to 31 today (33 once the
- * new Returns & margins category exists). The Buy/Hold/Sell cutoffs must be
- * RECALIBRATED from where today's names actually land, not scaled by ratio.
- * This route answers three questions on live data:
+ * layer and added returnsMargins, so the conviction score is 33 pts. The
+ * Buy/Hold/Sell cutoffs were RECALIBRATED from where the names landed, not
+ * scaled by ratio (this route produced that evidence pre-cutover). It stays
+ * useful after cutover: re-run it once returnsMargins has been scored across
+ * the book to check the live cutoffs still preserve the intended distribution.
+ * "41" below is the LEGACY composite reconstructed from stored scores. Three
+ * questions on live data:
  *
- *   1. TODAY — every scoreable book name's current adjusted (41-pt) rating
- *      beside its v3-comparable conviction subtotal (31-pt), regime
- *      multiplier applied identically.
- *   2. BANDS — two candidate cutoff sets on the 31 scale: ratio-scaled
- *      (30·31/41 …) and quantile-matched (keeps today's COUNT of Strong
- *      Buys / Moderate Buys / Holds / Underweights), each with the share of
- *      names whose label is unchanged.
- *   3. HISTORY — across consecutive score-history entries, how much of each
- *      score move came from the technical categories, and how many
- *      label changes would not have happened on the v3 subtotal.
+ *   1. TODAY — every scoreable book name's legacy (41-pt) rating beside its
+ *      live 33-pt conviction score, regime multiplier applied identically.
+ *   2. BANDS — the LIVE cutoffs (rating-bands.ts) and a quantile-matched
+ *      proposal (keeps the legacy COUNT of Strong Buys / Moderate Buys /
+ *      Holds / Underweights), each with the share of labels unchanged.
+ *   3. HISTORY — across consecutive legacy-era score-history entries, how
+ *      much of each score move came from the technical categories, and how
+ *      many label changes would not have happened on the v3 subtotal.
  */
 
 export const dynamic = "force-dynamic";
@@ -37,40 +38,44 @@ export const maxDuration = 30;
 const TECH_KEYS: ScoreKey[] = ["charting", "relativeStrength", "aiRating", "marketEdge"];
 const DROPPED_KEYS: ScoreKey[] = [...TECH_KEYS, "researchCoverage"];
 
-const CATEGORY_MAX: Record<string, number> = Object.fromEntries(
-  SCORE_GROUPS.flatMap((g) => g.categories.map((c) => [c.key, c.max])),
-);
-const V3_KEYS: ScoreKey[] = SCORE_GROUPS.flatMap((g) => g.categories.map((c) => c.key as ScoreKey)).filter(
-  (k) => !DROPPED_KEYS.includes(k),
-);
-const V3_MAX = V3_KEYS.reduce((s, k) => s + (CATEGORY_MAX[k] ?? 0), 0); // 31 today
-// The AI/SEMI categories whose DATA GAP parking computeScores renormalizes away.
-const V3_GAP_KEYS: ScoreKey[] = SCORE_GROUPS.flatMap((g) =>
-  g.categories.filter((c) => c.inputType === "auto" || c.inputType === "semi").map((c) => c.key as ScoreKey),
-).filter((k) => V3_KEYS.includes(k));
+// LIVE composite (rubric v3, 33 pts) — straight from SCORE_GROUPS.
+const V3_KEYS: ScoreKey[] = SCORE_GROUPS.flatMap((g) => g.categories.map((c) => c.key as ScoreKey));
+const V3_MAX = MAX_SCORE;
+
+// LEGACY composite (rubric ≤ 5, 41 pts) reconstructed from the stored
+// category scores: v3 keys minus returnsMargins, plus technicals + coverage.
+const LEGACY_MAX_BY_KEY: Record<string, number> = {
+  brand: 2, secular: 2, researchCoverage: 1, analystConsensus: 3, researchMentions: 3,
+  charting: 3, relativeStrength: 2, aiRating: 2, marketEdge: 2,
+  growth: 3, relativeValuation: 3, historicalValuation: 2, leverageCoverage: 2, cashFlowQuality: 1,
+  competitiveMoat: 2, turnaround: 2, catalysts: 3, trackRecord: 1, ownershipTrends: 2,
+};
+const LEGACY_KEYS = Object.keys(LEGACY_MAX_BY_KEY) as ScoreKey[];
+const LEGACY_MAX = 41;
+const LEGACY_GAP_KEYS: ScoreKey[] = ["secular", "researchCoverage", "growth", "relativeValuation", "historicalValuation", "leverageCoverage", "cashFlowQuality", "competitiveMoat", "catalysts", "trackRecord", "ownershipTrends"];
 
 /**
- * The v3 conviction subtotal, computed with the SAME numerator/denominator
- * rules computeScores applies to the 41-pt composite (ownershipTrends N/A on
- * Canadian listings, DATA GAP categories dropped from both sides), then
- * renormalized to V3_MAX. Mirrors computeScores rather than calling it so
- * the live 41-pt path is untouched.
+ * The pre-v3 41-pt raw, with the SAME numerator/denominator rules the old
+ * computeScores applied: MarketEdge / BoostedAI / SIA / ownershipTrends N/A
+ * drops and DATA GAP categories removed from both sides, renormalized to 41.
  */
-function v3Raw(stock: Stock): number {
-  let sum = V3_KEYS.reduce((s, k) => s + (stock.scores[k] || 0), 0);
-  let effMax = V3_MAX;
-  if (!ownershipTrendsApplies(stock)) {
-    sum -= stock.scores.ownershipTrends || 0;
-    effMax -= CATEGORY_MAX.ownershipTrends;
-  }
-  for (const k of V3_GAP_KEYS) {
+function legacyRaw(stock: Stock): number {
+  let sum = LEGACY_KEYS.reduce((s, k) => s + (stock.scores[k] || 0), 0);
+  let effMax = LEGACY_MAX;
+  const me = stock.marketEdge;
+  const meCounts = marketEdgeApplies(stock) && ((me && (me.powerRating != null || me.opinion != null || me.opinionScore != null)) || (stock.scores.marketEdge || 0) !== 0);
+  if (!meCounts) { sum -= stock.scores.marketEdge || 0; effMax -= 2; }
+  if (!boostedAiApplies(stock)) { sum -= stock.scores.aiRating || 0; effMax -= 2; }
+  if (!siaApplies(stock)) { sum -= stock.scores.relativeStrength || 0; effMax -= 2; }
+  if (!ownershipTrendsApplies(stock)) { sum -= stock.scores.ownershipTrends || 0; effMax -= 2; }
+  for (const k of LEGACY_GAP_KEYS) {
     if (k === "ownershipTrends" && !ownershipTrendsApplies(stock)) continue;
     if (isDataGapExplanation(stock.explanations?.[k])) {
       sum -= stock.scores[k] || 0;
-      effMax -= CATEGORY_MAX[k] ?? 0;
+      effMax -= LEGACY_MAX_BY_KEY[k] ?? 0;
     }
   }
-  const norm = effMax > 0 ? sum * (V3_MAX / effMax) : sum;
+  const norm = effMax > 0 ? sum * (LEGACY_MAX / effMax) : sum;
   return Math.round(norm * 10) / 10;
 }
 
@@ -122,10 +127,10 @@ function quantileBands(rows: Row[]): RatingBands {
   const uw = cutoffFor(countAtOrAbove("Underweight"));
   const fin = (x: number, fallback: number) => (Number.isFinite(x) ? x : fallback);
   return {
-    strongBuy: fin(sb, roundHalf((RATING_BANDS.strongBuy * V3_MAX) / MAX_SCORE)),
-    moderateBuy: fin(mb, roundHalf((RATING_BANDS.moderateBuy * V3_MAX) / MAX_SCORE)),
-    hold: fin(ho, roundHalf((RATING_BANDS.hold * V3_MAX) / MAX_SCORE)),
-    underweight: fin(uw, roundHalf((RATING_BANDS.underweight * V3_MAX) / MAX_SCORE)),
+    strongBuy: fin(sb, RATING_BANDS.strongBuy),
+    moderateBuy: fin(mb, RATING_BANDS.moderateBuy),
+    hold: fin(ho, RATING_BANDS.hold),
+    underweight: fin(uw, RATING_BANDS.underweight),
   };
 }
 
@@ -152,32 +157,30 @@ export async function GET(req: NextRequest) {
     const rows: Row[] = stocks
       .filter((s) => isScoreable(s) && s.scores)
       .map((s) => {
-        const scored = computeScores(s, market);
+        const scored = computeScores(s, market); // LIVE v3 (33)
         const multiplier = scored.raw > 0 ? scored.adjusted / scored.raw : 1;
-        const raw31 = v3Raw(s);
+        const raw41 = legacyRaw(s);
+        const adjusted41 = Math.round(raw41 * multiplier * 10) / 10;
         return {
           ticker: s.ticker,
           bucket: s.bucket,
           sector: s.sector,
-          raw41: scored.raw,
-          adjusted41: scored.adjusted,
-          label41: ratingLabelFor(scored.adjusted),
+          raw41,
+          adjusted41,
+          label41: ratingLabelFor(adjusted41, LEGACY_41_BANDS),
           tech: Math.round(TECH_KEYS.reduce((t, k) => t + (s.scores[k] || 0), 0) * 10) / 10,
           coverage: s.scores.researchCoverage || 0,
-          raw31,
-          adjusted31: Math.round(raw31 * multiplier * 10) / 10,
+          raw31: scored.raw,
+          adjusted31: scored.adjusted,
           multiplier: Math.round(multiplier * 1000) / 1000,
         };
       })
       .sort((a, b) => b.adjusted31 - a.adjusted31);
 
     // ── 2. BANDS ─────────────────────────────────────────────────────────
-    const ratioBands: RatingBands = {
-      strongBuy: roundHalf((RATING_BANDS.strongBuy * V3_MAX) / MAX_SCORE),
-      moderateBuy: roundHalf((RATING_BANDS.moderateBuy * V3_MAX) / MAX_SCORE),
-      hold: roundHalf((RATING_BANDS.hold * V3_MAX) / MAX_SCORE),
-      underweight: roundHalf((RATING_BANDS.underweight * V3_MAX) / MAX_SCORE),
-    };
+    // A = the cutoffs actually LIVE in rating-bands.ts; B = what quantile
+    // matching against the legacy labels would propose today.
+    const ratioBands: RatingBands = RATING_BANDS;
     const qBands = quantileBands(rows);
     const ratioAgree = agreement(rows, ratioBands);
     const qAgree = agreement(rows, qBands);
@@ -214,8 +217,9 @@ export async function GET(req: NextRequest) {
         shares.push(share);
         if (share > 0.5) techDominant++;
         if (dV3 === 0) techOnly++;
-        const l41Prev = ratingLabelFor(prev.adjusted);
-        const l41Cur = ratingLabelFor(cur.adjusted);
+        if ((prev.scaleMax ?? 41) !== 41 || (cur.scaleMax ?? 41) !== 41) continue; // legacy-era pairs only
+        const l41Prev = ratingLabelFor(prev.adjusted, LEGACY_41_BANDS);
+        const l41Cur = ratingLabelFor(cur.adjusted, LEGACY_41_BANDS);
         if (l41Prev !== l41Cur) {
           flips41++;
           const mPrev = prev.raw > 0 ? prev.adjusted / prev.raw : 1;
@@ -239,8 +243,8 @@ export async function GET(req: NextRequest) {
       today: rows,
       distribution41: dist41,
       bands: {
-        current41: RATING_BANDS,
-        ratio31: { cutoffs: ratioBands, fractionOfMax: asFraction(ratioBands), agreementPct: ratioAgree.pct, moved: ratioAgree.moved },
+        legacy41: LEGACY_41_BANDS,
+        live33: { cutoffs: ratioBands, fractionOfMax: asFraction(ratioBands), agreementPct: ratioAgree.pct, moved: ratioAgree.moved },
         quantile31: { cutoffs: qBands, fractionOfMax: asFraction(qBands), agreementPct: qAgree.pct, moved: qAgree.moved },
       },
       history: {
@@ -256,10 +260,10 @@ export async function GET(req: NextRequest) {
 
     // ── plain-text rendering ─────────────────────────────────────────────
     const out: string[] = [];
-    out.push(`RUBRIC V3 CALIBRATION (read-only)   regime=${market.riskRegime}   names=${rows.length}   41-pt max=${MAX_SCORE}   v3 max today=${V3_MAX}`);
-    out.push(`dropped from composite: ${DROPPED_KEYS.join(", ")}`);
+    out.push(`RUBRIC V3 CALIBRATION (read-only)   regime=${market.riskRegime}   names=${rows.length}   legacy max=${LEGACY_MAX}   live max=${V3_MAX}`);
+    out.push(`legacy 41 is RECONSTRUCTED from stored scores (${DROPPED_KEYS.join(", ")} added back, returnsMargins removed); live ${V3_MAX} is computeScores.`);
     out.push("");
-    out.push("== 1. TODAY (sorted by v3 adjusted) ==");
+    out.push(`== 1. TODAY (sorted by live ${V3_MAX}-pt adjusted) ==`);
     out.push(`${pad("ticker", 10)}${pad("bkt", 5)}${pad("adj41", 7, true)}${pad("label41", 14)}${pad("tech", 6, true)}${pad("cov", 5, true)}${pad("raw31", 7, true)}${pad("adj31", 7, true)}${pad("mult", 7, true)}`);
     for (const r of rows) {
       out.push(
@@ -270,18 +274,18 @@ export async function GET(req: NextRequest) {
     out.push("== 2. BANDS ==");
     out.push(`today's label counts (41): ${LABELS.map((l) => `${l}=${dist41[l]}`).join("  ")}`);
     const fmtBands = (b: RatingBands) => `SB≥${b.strongBuy}  MB≥${b.moderateBuy}  H≥${b.hold}  UW≥${b.underweight}`;
-    out.push(`A. ratio-scaled on ${V3_MAX}:     ${fmtBands(ratioBands)}   labels unchanged: ${ratioAgree.pct}%`);
+    out.push(`A. LIVE cutoffs on ${V3_MAX}:      ${fmtBands(ratioBands)}   labels unchanged vs legacy: ${ratioAgree.pct}%`);
     if (ratioAgree.moved.length) out.push(`   moved: ${ratioAgree.moved.join("; ")}`);
-    out.push(`B. quantile-matched on ${V3_MAX}: ${fmtBands(qBands)}   labels unchanged: ${qAgree.pct}%`);
+    out.push(`B. quantile-matched on ${V3_MAX}: ${fmtBands(qBands)}   labels unchanged vs legacy: ${qAgree.pct}%`);
     if (qAgree.moved.length) out.push(`   moved: ${qAgree.moved.join("; ")}`);
-    out.push(`   as fraction of max (carries to 33): A=${JSON.stringify(asFraction(ratioBands))}  B=${JSON.stringify(asFraction(qBands))}`);
+    out.push(`   as fraction of max: A=${JSON.stringify(asFraction(ratioBands))}  B=${JSON.stringify(asFraction(qBands))}`);
     out.push("");
     out.push("== 3. HISTORY (consecutive rescore pairs, book names) ==");
     out.push(`pairs with any category movement: ${pairs}`);
     out.push(`median share of the raw move from technicals+coverage: ${payload.history.medianTechShare ?? "n/a"}%`);
     out.push(`pairs where technicals+coverage were >50% of the move: ${payload.history.techDominantPct ?? "n/a"}%`);
     out.push(`pairs where NOTHING non-technical moved: ${payload.history.techOnlyPct ?? "n/a"}%`);
-    out.push(`label changes on the 41 scale: ${flips41}; of those, unchanged on the v3 subtotal (ratio bands): ${flipsAvoided}`);
+    out.push(`label changes on the legacy 41 scale: ${flips41}; of those, unchanged on the v3 subtotal (live bands): ${flipsAvoided}`);
     return new NextResponse(out.join("\n"), { headers: { "content-type": "text/plain; charset=utf-8" } });
   } catch (e) {
     return NextResponse.json({ ok: false, error: e instanceof Error ? e.message : String(e) }, { status: 500 });

@@ -21,7 +21,7 @@ export const LENSES = ["s41", "quant", "overlay", "blend70", "blendMod"] as cons
 export type Lens = (typeof LENSES)[number];
 
 export const LENS_LABEL: Record<Lens, string> = {
-  s41: "41-pt score",
+  s41: "Composite score",
   quant: "Quant %ile",
   overlay: "Judgment overlay",
   blend70: "Blend 70/30",

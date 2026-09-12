@@ -158,7 +158,7 @@ export default function FactorLensTile({
                   <div className="text-[11px] text-ink-3">{entry!.sector || "—"}{entry!.confidence != null ? ` · conf ${entry!.confidence}` : ""}</div>
                 </div>
                 <div>
-                  <div className="text-[11px] text-ink-3">41-pt</div>
+                  <div className="text-[11px] text-ink-3">{MAX_SCORE}-pt</div>
                   <div className="font-mono text-[22px] font-semibold text-ink-2">{Number(adjusted.toFixed(1))}<span className="text-[13px] text-ink-faint">/{MAX_SCORE}</span></div>
                   <div className="text-[11px] text-ink-3">committee score</div>
                 </div>
