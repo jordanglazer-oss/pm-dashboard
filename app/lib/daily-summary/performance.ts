@@ -26,6 +26,8 @@ import {
 export type AlphaCoreRead = {
   available: boolean;
   asOf: string | null;
+  /** pm:pim-performance.lastUpdated — when the ledger was last recalculated. */
+  lastUpdated: string | null;
   alpha: PeriodReturns;
   core: PeriodReturns;
   spread: PeriodReturns; // alpha − core, percentage points
@@ -129,6 +131,7 @@ export async function buildPerformanceSection(): Promise<PerformanceSection> {
   const alphaCore: AlphaCoreRead = {
     available,
     asOf: available ? alpha[alpha.length - 1].date : null,
+    lastUpdated: typeof perf?.lastUpdated === "string" ? perf.lastUpdated : null,
     alpha: alphaR,
     core: coreR,
     spread,

@@ -22,7 +22,7 @@ export default function BriefPage() {
         onBriefGenerated={setBrief}
         onUpdateMarketData={updateMarketData}
         variant="summary"
-        summary={<DailySummaryView />}
+        summary={<DailySummaryView refreshKey={brief?.generatedAt} />}
       />
     </main>
   );

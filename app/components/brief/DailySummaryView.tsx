@@ -32,7 +32,7 @@ import { HedgeLedgerContext } from "./hedge-ledger";
 
 const REGIME_PREF = "brief.summary.regimeDetail";
 
-export function DailySummaryView({ onLoaded }: { onLoaded?: (s: DailySummary) => void }) {
+export function DailySummaryView({ onLoaded, refreshKey }: { onLoaded?: (s: DailySummary) => void; /** Changes when the brief is regenerated — re-pull so the panel reads the refreshed ledger. */ refreshKey?: string | null }) {
   const { uiPrefs, setUiPref } = useStocks();
   const ledger = useContext(HedgeLedgerContext);
   const [data, setData] = useState<DailySummary | null>(null);
@@ -60,6 +60,29 @@ export function DailySummaryView({ onLoaded }: { onLoaded?: (s: DailySummary) =>
 
   useEffect(() => {
     void load();
+  }, [load]);
+
+  // Brief regenerated → the server refreshed the performance ledger on the
+  // way in; re-pull so Alpha vs core reflects it without a page reload.
+  const seenRefreshKey = useRef<string | null | undefined>(undefined);
+  useEffect(() => {
+    if (seenRefreshKey.current === undefined) { seenRefreshKey.current = refreshKey ?? null; return; }
+    if ((refreshKey ?? null) === seenRefreshKey.current) return;
+    seenRefreshKey.current = refreshKey ?? null;
+    void load();
+  }, [refreshKey, load]);
+
+  // Intraday: re-pull every 15 minutes while the tab is visible. The route
+  // gates the underlying ledger refresh (market hours + staleness), so this
+  // is cheap when nothing can have changed.
+  useEffect(() => {
+    const id = setInterval(() => {
+      if (typeof document !== "undefined" && document.visibilityState !== "visible") return;
+      void load();
+    }, 15 * 60 * 1000);
+    const onVisible = () => { if (document.visibilityState === "visible") void load(); };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => { clearInterval(id); document.removeEventListener("visibilitychange", onVisible); };
   }, [load]);
 
   // A hedge logged or closed from the Hedging cell changes the active list

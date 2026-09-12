@@ -273,6 +273,18 @@ function HedgeLogForm() {
   );
 }
 
+/** "14:32 ET" for today, "Sep 5, 16:01 ET" for an older stamp — so a stale
+ *  ledger is visible on the tile rather than silently flat. */
+function fmtEtClock(iso: string): string {
+  const d = new Date(iso);
+  if (!Number.isFinite(d.getTime())) return "";
+  const sameDay = new Intl.DateTimeFormat("en-CA", { timeZone: "America/New_York", year: "numeric", month: "2-digit", day: "2-digit" });
+  const time = new Intl.DateTimeFormat("en-US", { timeZone: "America/New_York", hour: "2-digit", minute: "2-digit", hour12: false }).format(d);
+  if (sameDay.format(d) === sameDay.format(new Date())) return `${time} ET`;
+  const day = new Intl.DateTimeFormat("en-US", { timeZone: "America/New_York", month: "short", day: "numeric" }).format(d);
+  return `${day}, ${time} ET`;
+}
+
 /* ── Alpha vs core ───────────────────────────────────────────────────── */
 
 const PERIODS = [
@@ -314,7 +326,7 @@ function AlphaCell({ s }: { s: DailySummary }) {
       <div className="mb-2.5 mt-1 flex items-start gap-2">
         <div className="min-w-0">
           <div className={`font-mono text-[22px] font-semibold leading-none ${d1 == null ? "text-ink-3" : d1 > 0 ? "text-pos" : d1 < 0 ? "text-neg" : "text-ink"}`}>{fmtPct(d1)}</div>
-          <div className="mt-1.5 break-words text-[11px] text-ink-3">spread today{mom ? ` · ${mom}` : ""}</div>
+          <div className="mt-1.5 break-words text-[11px] text-ink-3">spread today{mom ? ` · ${mom}` : ""}{p.lastUpdated ? ` · updated ${fmtEtClock(p.lastUpdated)}` : ""}</div>
         </div>
         {p.spark.length > 2 && <Spark points={p.spark.map((x) => x.value)} baseline={100} width={72} height={26} className="ml-auto shrink-0" />}
       </div>

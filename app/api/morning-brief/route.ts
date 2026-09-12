@@ -1,5 +1,6 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { NextRequest, NextResponse } from "next/server";
+import { ensureDailyValuesFresh } from "@/app/lib/daily-value-refresh";
 import { createProgressWriter } from "@/app/lib/brief-progress";
 import { createHash } from "crypto";
 import { getRedis } from "@/app/lib/redis";
@@ -739,6 +740,16 @@ export async function POST(request: NextRequest) {
     // promise actually settles. runId comes from the client; old clients
     // without one leave the writer inert. Cosmetic: never throws, never awaited.
     const progress = createProgressWriter(typeof body?.runId === "string" ? body.runId : undefined);
+
+    // Bring the PIM performance ledger (alpha / core series behind the Brief's
+    // "Alpha vs core" cell) up to date before the brief is built, so a
+    // regeneration never reads a week-old ledger. Best-effort and bounded.
+    try {
+      const r = await ensureDailyValuesFresh({ maxWaitMs: 10_000 });
+      if (r.ran) console.log(`[Brief] performance ledger refresh: ${r.reason}${r.updates != null ? ` (${r.updates} models)` : ""}`);
+    } catch (e) {
+      console.error("[Brief] performance ledger refresh failed:", e instanceof Error ? e.message : String(e));
+    }
 
     if (!marketData) {
       return NextResponse.json(
