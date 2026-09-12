@@ -152,6 +152,28 @@ const CANDIDATE_SETS: Record<string, { key: string; formula: string; note: strin
     { key: "ebitdaFy2", formula: "FE_ESTIMATE(EBITDA,MEAN,ANN_ROLL,2,NOW,'')", note: "FY+2 EBITDA mean" },
     { key: "fcfFy1", formula: "FE_ESTIMATE(FCF,MEAN,ANN_ROLL,1,NOW,'')", note: "FY+1 free cash flow mean" },
   ],
+  // Round 2 (after the first returns probe). TTM ratio codes are null on this
+  // entitlement (ROE/ROIC/ROA/ROTC all ok-but-null on LTM; ANN populates), so
+  // the ROIC trend must come from prior fiscal years. And ANN_ROLL,1 as of -3M
+  // straddles a fiscal-year roll (MSFT read +16% "revision" that was FY27→FY28),
+  // so revision magnitude needs a FIXED fiscal year. Probe the fixed-year
+  // syntaxes; whichever resolves with NOW and -3M both populated wins.
+  // ?candidates=returns2&id=MSFT-US (June FY, just rolled) and id=JPM-US
+  returns2: [
+    { key: "roicAnnY1", formula: "FF_ROIC(ANN,-1)", note: "ROIC, prior FY (trend base)" },
+    { key: "roicAnnY2", formula: "FF_ROIC(ANN,-2)", note: "ROIC, two FYs ago (trend base)" },
+    { key: "roeAnn", formula: "FF_ROE(ANN,0)", note: "CONTROL — ROE latest FY (proven basis)" },
+    { key: "roeAnnY1", formula: "FF_ROE(ANN,-1)", note: "ROE prior FY (financials' returns trend)" },
+    { key: "roaAnn", formula: "FF_ROA(ANN,0)", note: "ROA latest FY (financials fallback)" },
+    { key: "epsFy2027Now", formula: "FE_ESTIMATE(EPS,MEAN,ANN,2027,NOW,'')", note: "FY2027 EPS mean today (fixed-year syntax A)" },
+    { key: "epsFy2027Ago3m", formula: "FE_ESTIMATE(EPS,MEAN,ANN,2027,-3M,'')", note: "FY2027 EPS mean 3 months ago (fixed-year A)" },
+    { key: "epsFy2027NowB", formula: "FE_ESTIMATE(EPS,MEAN,ANN_FIXED,2027,NOW,'')", note: "FY2027 EPS mean today (fixed-year syntax B)" },
+    { key: "epsFy2027Ago3mB", formula: "FE_ESTIMATE(EPS,MEAN,ANN_FIXED,2027,-3M,'')", note: "FY2027 EPS mean 3 months ago (fixed-year B)" },
+    { key: "epsNtmAgo3m", formula: "FE_ESTIMATE(EPS,MEAN,NTMA,0,-3M,'')", note: "NTM EPS mean 3 months ago (rolling; compare drift vs fixed-year)" },
+    { key: "epsRollRptDate", formula: "FE_ESTIMATE(EPS,MEAN,ANN_ROLL,1,NOW,'')", note: "CONTROL — FY+1 mean today" },
+    { key: "fyEnd", formula: "FF_FYR", note: "Fiscal-year-end month (to pick the fixed year per name)" },
+    { key: "fyEndAlt", formula: "FF_FISCAL_YEAR_END", note: "Fiscal-year-end (alt code)" },
+  ],
   guidance: [
     { key: "guidEpsMeanQ1", formula: "FE_GUIDANCE(EPS,MEAN,QTR_ROLL,1,NOW,'')", note: "EPS guidance mean, next quarter" },
     { key: "guidEpsHighQ1", formula: "FE_GUIDANCE(EPS,HIGH,QTR_ROLL,1,NOW,'')", note: "EPS guidance high, next quarter" },
