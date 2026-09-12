@@ -20,6 +20,7 @@
 import type { ScoreHistoryStore, ScoreHistoryEntry } from "@/app/api/kv/score-history/route";
 import type { ScoreKey } from "./types";
 import { SCORE_GROUPS } from "./types";
+import { ratingLabelFor, ratingTierFor } from "./rating-bands";
 
 /**
  * Keys that are part of the CURRENT scoring schema. pm:score-history is an
@@ -39,10 +40,12 @@ export type Bucket = "Sell" | "Hold" | "Moderate Buy" | "Strong Buy";
 const BUCKET_ORDER: Bucket[] = ["Sell", "Hold", "Moderate Buy", "Strong Buy"];
 
 function bucketFor(adjusted: number): Bucket {
-  if (adjusted >= 30) return "Strong Buy";
-  if (adjusted >= 26) return "Moderate Buy";
-  if (adjusted <= 18) return "Sell";
-  return "Hold"; // 18 < x < 26
+  // Same cutoffs as computeScores (rating-bands.ts). Sell is the TIER
+  // (≤ underweight cutoff), then the two Buy labels, else Hold.
+  if (ratingTierFor(adjusted) === "Sell") return "Sell";
+  const label = ratingLabelFor(adjusted);
+  if (label === "Strong Buy" || label === "Moderate Buy") return label;
+  return "Hold";
 }
 
 /** Close on-or-before `dateISO`, scanning back up to `slack` days for a

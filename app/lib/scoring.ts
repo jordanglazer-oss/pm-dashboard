@@ -1,5 +1,6 @@
 import type { Stock, ScoredStock, MarketData, ScoreKey } from "./types";
 import { MAX_SCORE, SCORE_GROUPS } from "./types";
+import { ratingLabelFor, ratingTierFor } from "./rating-bands";
 
 // ── Sector name normalization ──────────────────────────────────────────
 // Yahoo Finance, fund data providers, and other sources use non-standard
@@ -501,16 +502,9 @@ export function computeScores(
   const multiplier = regimeMultiplier(stock.sector, marketData.riskRegime, stock.scores);
   const adjusted = Math.round(raw * multiplier * 10) / 10;
 
-  let rating: "Buy" | "Hold" | "Sell" = "Hold";
-  if (adjusted >= 30) rating = "Buy";
-  else if (adjusted <= 18) rating = "Sell";
-
-  let ratingLabel = "Hold";
-  if (adjusted >= 30) ratingLabel = "Strong Buy";
-  else if (adjusted >= 26) ratingLabel = "Moderate Buy";
-  else if (adjusted >= 22) ratingLabel = "Hold";
-  else if (adjusted >= 18) ratingLabel = "Underweight";
-  else ratingLabel = "Sell";
+  // Cutoffs live in rating-bands.ts (single source for every consumer).
+  const rating: "Buy" | "Hold" | "Sell" = ratingTierFor(adjusted);
+  const ratingLabel: string = ratingLabelFor(adjusted);
 
   let risk: "High" | "Medium" | "Low" = "Medium";
   if (marketData.riskRegime === "Risk-Off" && stock.beta >= 1.15)

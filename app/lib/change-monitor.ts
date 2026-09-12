@@ -25,6 +25,7 @@ import type { AnalystSnapshots } from "./analyst-snapshots";
 import type { ResearchRemovalStore } from "./research-removals";
 import { siaPercentileDrift, type SiaHistoryStore } from "./sia-history";
 import { isScoreable, marketEdgeApplies } from "./scoring";
+import { ratingLabelFor, ratingTierFor } from "./rating-bands";
 
 // ── Tunable thresholds ──────────────────────────────────────────────
 export const THRESHOLDS = {
@@ -67,18 +68,12 @@ export type ChangeEvent = {
   at: string;
 };
 
-// Rating thresholds mirror computeScores (Buy ≥ 30, Sell ≤ 18 on the 41 scale).
+// Rating thresholds are the same ones computeScores uses (rating-bands.ts).
 function ratingTier(adjusted: number): "Buy" | "Hold" | "Sell" {
-  if (adjusted >= 30) return "Buy";
-  if (adjusted <= 18) return "Sell";
-  return "Hold";
+  return ratingTierFor(adjusted);
 }
 function ratingLabel(adjusted: number): string {
-  if (adjusted >= 30) return "Strong Buy";
-  if (adjusted >= 26) return "Moderate Buy";
-  if (adjusted >= 22) return "Hold";
-  if (adjusted >= 18) return "Underweight";
-  return "Sell";
+  return ratingLabelFor(adjusted);
 }
 
 const CATEGORY_LABELS: Partial<Record<ScoreKey, string>> = {

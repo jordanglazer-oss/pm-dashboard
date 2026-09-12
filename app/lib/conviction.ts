@@ -20,6 +20,7 @@ import { isBookStock, type ScoredStock } from "./types";
 import type { ResearchState } from "./defaults";
 import type { AnalystSnapshots } from "./analyst-snapshots";
 import { marketEdgeApplies, isScoreable } from "./scoring";
+import { ratingLabelFor } from "./rating-bands";
 
 /** Normalize a ticker for cross-source matching (strip $, class slash → dash,
  *  drop exchange/class suffix). Mirrors app/lib/research-merge.ts. */
@@ -78,11 +79,14 @@ const LISTS: { field: keyof ResearchState; label: string; dir: 1 | -1 }[] = [
 ];
 
 function ratingFor(adjusted: number): { label: string; points: number } {
-  if (adjusted >= 30) return { label: "Strong Buy", points: 3 };
-  if (adjusted >= 26) return { label: "Buy", points: 2 };
-  if (adjusted >= 22) return { label: "Hold", points: 0 };
-  if (adjusted >= 18) return { label: "Underweight", points: -1 };
-  return { label: "Sell", points: -2 };
+  // Cutoffs from rating-bands.ts; the board shortens "Moderate Buy" to "Buy".
+  switch (ratingLabelFor(adjusted)) {
+    case "Strong Buy": return { label: "Strong Buy", points: 3 };
+    case "Moderate Buy": return { label: "Buy", points: 2 };
+    case "Hold": return { label: "Hold", points: 0 };
+    case "Underweight": return { label: "Underweight", points: -1 };
+    default: return { label: "Sell", points: -2 };
+  }
 }
 
 export type ComputeConvictionInput = {

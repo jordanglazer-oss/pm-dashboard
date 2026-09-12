@@ -18,6 +18,8 @@ import { EmptyState } from "@/app/components/EmptyState";
 import { FlashValue } from "@/app/components/FlashValue";
 import { useStocks } from "@/app/lib/StockContext";
 import type { Stock, ScoreKey } from "@/app/lib/types";
+import { MAX_SCORE } from "@/app/lib/types";
+import { RATING_BANDS } from "@/app/lib/rating-bands";
 
 /** Fire-and-forget: log tickers dropped from a research list to the
  *  append-only pm:research-removals store so the Dashboard Change Monitor
@@ -4724,11 +4726,11 @@ export default function ResearchPage() {
             <div className="-ml-px -mt-px border-l border-t border-line-soft px-3.5 py-3">
               <div className="mb-2 text-[11px] text-ink-3">PIM score thresholds</div>
               <div className="space-y-1 text-[12.5px]">
-                <div className="flex justify-between"><span className="text-pos">Strong Buy</span><span className="font-mono text-ink-2">&ge; 30/40</span></div>
-                <div className="flex justify-between"><span className="text-pos">Moderate Buy</span><span className="font-mono text-ink-2">&ge; 26/40</span></div>
-                <div className="flex justify-between"><span className="text-warn">Hold</span><span className="font-mono text-ink-2">&ge; 22/40</span></div>
-                <div className="flex justify-between"><span className="text-neg">Underweight</span><span className="font-mono text-ink-2">&ge; 18/40</span></div>
-                <div className="flex justify-between"><span className="text-neg">Sell</span><span className="font-mono text-ink-2">&lt; 18/40</span></div>
+                <div className="flex justify-between"><span className="text-pos">Strong Buy</span><span className="font-mono text-ink-2">&ge; {RATING_BANDS.strongBuy}/{MAX_SCORE}</span></div>
+                <div className="flex justify-between"><span className="text-pos">Moderate Buy</span><span className="font-mono text-ink-2">&ge; {RATING_BANDS.moderateBuy}/{MAX_SCORE}</span></div>
+                <div className="flex justify-between"><span className="text-warn">Hold</span><span className="font-mono text-ink-2">&ge; {RATING_BANDS.hold}/{MAX_SCORE}</span></div>
+                <div className="flex justify-between"><span className="text-neg">Underweight</span><span className="font-mono text-ink-2">&ge; {RATING_BANDS.underweight}/{MAX_SCORE}</span></div>
+                <div className="flex justify-between"><span className="text-neg">Sell</span><span className="font-mono text-ink-2">&lt; {RATING_BANDS.underweight}/{MAX_SCORE}</span></div>
               </div>
             </div>
             <div className="-ml-px -mt-px border-l border-t border-line-soft px-3.5 py-3">

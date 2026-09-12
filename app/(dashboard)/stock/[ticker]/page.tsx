@@ -9,6 +9,7 @@ import { resolveUsEquityPct } from "@/app/lib/us-equity-exposure";
 import { SCORE_GROUPS, MAX_SCORE, INSTRUMENT_LABELS } from "@/app/lib/types";
 import type { ScoreKey, Scores, FundData, ScoreDataPoint, ScoreDataPointSource, ExternalSourceNote } from "@/app/lib/types";
 import { groupTotal, isScoreable, normalizeSector, marketEdgeApplies, boostedAiApplies, siaApplies, ownershipTrendsApplies } from "@/app/lib/scoring";
+import { ratingLabelFor, ratingToneFor } from "@/app/lib/rating-bands";
 import { computeAnalystConsensus, buildConsensusExplanation } from "@/app/lib/analyst-snapshots";
 import { displayTicker } from "@/app/lib/ticker";
 import { AnalystSnapshotPanel } from "@/app/components/AnalystSnapshotPanel";
@@ -427,15 +428,10 @@ function ScoreDonut({ score, max, groups, stock }: { score: number; max: number;
     }
   }
 
-  // Rating label
-  let ratingLabel = "Hold";
-  if (score >= 30) ratingLabel = "Strong Buy";
-  else if (score >= 26) ratingLabel = "Moderate Buy";
-  else if (score >= 22) ratingLabel = "Hold";
-  else if (score >= 18) ratingLabel = "Underweight";
-  else ratingLabel = "Sell";
-
-  const ratingTextCls = score >= 26 ? "text-pos" : score >= 22 ? "text-warn" : "text-neg";
+  // Rating label + tone — cutoffs from rating-bands.ts
+  const ratingLabel: string = ratingLabelFor(score);
+  const tone = ratingToneFor(score);
+  const ratingTextCls = tone === "pos" ? "text-pos" : tone === "warn" ? "text-warn" : "text-neg";
 
   return (
     <div className="animate-scale-in flex shrink-0 flex-col items-center">
