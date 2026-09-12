@@ -8,6 +8,7 @@ import { daysSinceEastern, easternHour } from "@/app/lib/date-eastern";
 import { POST as scorePOST } from "@/app/api/score/route";
 import { RUBRIC_HASH, RUBRIC_REV } from "@/app/lib/rubric-version";
 import type { MarketData, ScoreKey, ScoreExplanations, Stock } from "@/app/lib/types";
+import { MAX_SCORE } from "@/app/lib/types";
 import type { ScoreHistoryStore, ScoreHistoryEntry } from "@/app/api/kv/score-history/route";
 
 /**
@@ -391,6 +392,7 @@ export async function autoRescoreStep(): Promise<{
       // a different-rubric prior and never anchor it.
       rubricRev: RUBRIC_REV,
       rubricHash: RUBRIC_HASH,
+      scaleMax: MAX_SCORE,
     } as ScoreHistoryEntry;
     hist[pick.ticker] = [...(hist[pick.ticker] ?? []), entry];
     await redis.set("pm:score-history", JSON.stringify(hist));

@@ -1,5 +1,6 @@
 import { getRedis } from "@/app/lib/redis";
 import { NextRequest, NextResponse } from "next/server";
+import { MAX_SCORE } from "@/app/lib/types";
 import type { Scores } from "@/app/lib/types";
 
 /**
@@ -93,6 +94,14 @@ export type ScoreHistoryEntry = {
    * route rejects (422) any model-invented floor.
    */
   rubricRev?: number;
+  /**
+   * The composite's MAX_SCORE when this entry was written (41 through rubric
+   * rev 5; 33 from rubric v3, when technicals + coverage left the composite).
+   * Stamped server-side. Absent = written before the stamp existed = 41.
+   * Consumers that difference two entries (change monitor, ScoreDelta) must
+   * not compare across different scales — a re-base is not a score move.
+   */
+  scaleMax?: number;
   /**
    * Content-derived rubric fingerprint (sha256 of the master scoring prompt +
    * playbook bodies, first 8 chars — see app/lib/rubric-version.ts). Stamped
@@ -247,6 +256,7 @@ export async function POST(req: NextRequest) {
       // of the deployed prompt, not of whoever posted the entry.
       rubricRev: RUBRIC_REV,
       rubricHash: RUBRIC_HASH,
+      scaleMax: MAX_SCORE,
     });
     current[ticker] = arr;
     await redis.set(KEY, JSON.stringify(current));

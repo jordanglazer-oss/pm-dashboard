@@ -162,6 +162,24 @@ export function computeChangeEvents(input: ComputeInput): ChangeEvent[] {
     if (baseline === latest) continue;
     if (Date.parse(latest.timestamp) < windowStartMs) continue; // nothing changed in-window
 
+    // A rubric re-base (41-pt → 33-pt) is not a score move. Entries written
+    // before the stamp existed were all on the 41 scale. Surface the reset
+    // once as a data note instead of a false composite drop.
+    const baseScale = baseline.scaleMax ?? 41;
+    const latestScale = latest.scaleMax ?? 41;
+    if (baseScale !== latestScale) {
+      events.push({
+        id: `${ticker}:rebase:${latest.date}`,
+        ticker, name: nameFor(ticker), bucket: bucketFor(ticker),
+        type: "data",
+        severity: "info",
+        headline: `Rubric re-based ${baseScale} → ${latestScale} pts`,
+        detail: `Composite comparison resets at this rescore (${ratingLabel(latest.adjusted)} on the new scale).`,
+        at: latest.date,
+      });
+      continue;
+    }
+
     const dAdj = latest.adjusted - baseline.adjusted;
     const tierBefore = ratingTier(baseline.adjusted);
     const tierAfter = ratingTier(latest.adjusted);

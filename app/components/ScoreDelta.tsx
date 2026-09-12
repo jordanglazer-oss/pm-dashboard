@@ -24,6 +24,7 @@ type Entry = {
   raw: number;
   adjusted: number;
   rubricRev?: number;
+  scaleMax?: number;
 };
 
 type Props = {
@@ -69,12 +70,25 @@ export function ScoreDelta({ ticker, className = "" }: Props) {
     if (!entries || entries.length < 2) return null;
     const latest = entries[entries.length - 1];
     const prior = entries[entries.length - 2];
+    // Entries written before the stamp existed were all on the 41 scale.
+    const rebased = (latest.scaleMax ?? 41) !== (prior.scaleMax ?? 41);
     const delta = latest.total - prior.total;
-    return { latest, prior, delta };
+    return { latest, prior, delta, rebased };
   }, [entries]);
 
   if (!summary) return null;
-  const { latest, prior, delta } = summary;
+  const { latest, prior, delta, rebased } = summary;
+  if (rebased) {
+    return (
+      <span className={`inline-flex items-center gap-1.5 whitespace-nowrap text-[11.5px] text-ink-3 ${className}`} title={`The scoring rubric was re-based from ${prior.scaleMax ?? 41} to ${latest.scaleMax ?? 41} points at this rescore, so the composite is not comparable to the prior entry.`}>
+        <span className="font-mono font-medium text-ink-2">Re-based</span>
+        <span>{prior.scaleMax ?? 41} → {latest.scaleMax ?? 41} pts</span>
+        {typeof latest.rubricRev === "number" && (
+          <span>· rubric rev <span className="font-mono">{latest.rubricRev}</span></span>
+        )}
+      </span>
+    );
+  }
   const absDelta = Math.abs(delta);
   const positive = delta > 0;
   const neutral = absDelta < 0.05;
