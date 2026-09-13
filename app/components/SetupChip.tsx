@@ -2,7 +2,7 @@
 
 import React from "react";
 import type { Stock } from "@/app/lib/types";
-import { computeSetup, setupTone, actionFor, SETUP_MAX, type SetupContext } from "@/app/lib/setup-grade";
+import { computeSetup, setupTone, actionFor, type SetupContext } from "@/app/lib/setup-grade";
 
 /**
  * Compact two-axis read: the setup grade (timing layer) beside the
@@ -29,7 +29,7 @@ export function SetupChip({
   const toneCls =
     tone === "pos" ? "bg-pos-soft text-pos" : tone === "warn" ? "bg-warn-soft text-warn" : tone === "neg" ? "bg-neg-soft text-neg" : "bg-line-soft text-ink-3";
   const title = [
-    r.score != null ? `Setup ${r.score}/${SETUP_MAX} (${r.rawPoints}/${r.availableMax} of inputs present)` : "Setup: not enough inputs",
+    r.score != null ? `Setup ${r.rawPoints}/${r.availableMax}${r.chartingScored ? " (charting scored — /9 basis)" : " (feeds only — /6 basis; score charting to move to /9)"}` : "Setup: not enough inputs",
     ...r.inputs.map((i) => `${i.label}: ${i.present && i.points != null ? `${i.points}/${i.max}` : "—"}${i.note ? ` · ${i.note}` : ""}`),
     ...r.flags.map((f) => `${f.notch ? "▼ " : "• "}${f.label}`),
   ].join("\n");
@@ -39,7 +39,7 @@ export function SetupChip({
       <span className={`inline-flex items-center gap-1 rounded font-medium ${pad} ${toneCls}`}>
         <span>Setup</span>
         <span>{r.grade ?? "n/a"}</span>
-        {r.score != null && <span className="font-mono opacity-80">{r.score}</span>}
+        {r.score != null && <span className="font-mono opacity-80">{r.rawPoints}/{r.availableMax}</span>}
         {r.notches > 0 && <span aria-label={`${r.notches} notch${r.notches === 1 ? "" : "es"} down`}>{"▼".repeat(r.notches)}</span>}
       </span>
       {showAction && conviction && r.grade && (

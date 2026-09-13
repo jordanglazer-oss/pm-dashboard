@@ -68,7 +68,7 @@ function matchesFilter(s: ScoredStock, filter: InstrumentFilter): boolean {
 
 export function StockScoring({ stocks, onScoreStock, onUpdateCostBasis, onRefreshData, onUpdateFundData, onUpdateMarketData }: Props) {
   const router = useRouter();
-  const { uiPrefs, setUiPref, updatePrice, updateStockFields, updateScore } = useStocks();
+  const { uiPrefs, setUiPref, updatePrice, updateStockFields, updateScore, clearManualScore } = useStocks();
   const [query, setQuery] = useState("");
 
   // Persist sort state across refreshes and devices via Redis KV
@@ -466,7 +466,7 @@ export function StockScoring({ stocks, onScoreStock, onUpdateCostBasis, onRefres
                           setUiPref(confirmKey, "");
                           if (charted === 0) return;
                           for (const s of sectionStocks) {
-                            if ((s.scores?.charting ?? 0) > 0) updateScore(s.ticker, "charting", 0);
+                            if ((s.scores?.charting ?? 0) > 0 || s.manualScoredAt?.charting) clearManualScore(s.ticker, "charting");
                           }
                           setUiPref(prefKey, new Date().toISOString());
                         }}

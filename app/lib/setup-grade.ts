@@ -13,13 +13,21 @@
  *   SIA SMAX           0–2     stock.scores.relativeStrength (existing tier map)
  *   BoostedAI          0–2     stock.scores.aiRating (existing map, clamped ≥ 0)
  *   MarketEdge         0–2     stock.scores.marketEdge (existing Opinion map)
- *   Trend              0–1     price vs 200-day, 50-day vs 200-day (one vote, not
- *                              two — it overlaps SIA/MarketEdge on trend, its value
- *                              is being transparent, daily and always present)
- *   Charting (PM)      0–3     stock.scores.charting, 1-for-1, with staleness
+ *   Charting (PM)      0–3     stock.scores.charting, 1-for-1, ONLY once the PM has
+ *                              actually scored it (see below), with staleness
  *
- * Missing inputs ABSTAIN: the score is renormalized to the inputs present
- * (minimum two), the same rule computeScores applies to N/A categories. No
+ * The BASE grade is out of 6 (the three imported feeds). It becomes out of 9
+ * when the PM has scored charting. Charting is rarely filled in and a stored
+ * 0 used to be indistinguishable from "never looked at it", so the rule is:
+ * charting counts iff the value is > 0 OR the PM has stamped it (a
+ * manualScoredAt.charting date, written by every manual edit — so clicking
+ * "0" is an explicit, real 0). Anything else is n/a and the grade stays /6.
+ * Price vs the 200-day is reported as a note, not points — it overlaps SIA
+ * and MarketEdge on trend and Jordan asked for the base to be exactly the
+ * three feeds.
+ *
+ * Missing inputs ABSTAIN: the grade is read on the points present
+ * (minimum two feeds), normalised to a 0–10 band for the five grades. No
  * hysteresis — setup is allowed to move fast; that is the point of
  * separating it from conviction.
  *
@@ -43,7 +51,12 @@ import { marketEdgeWarning } from "./external-scoring";
 
 export type SetupGrade = "Strong" | "Constructive" | "Neutral" | "Weak" | "Broken";
 
+/** Grade bands are read on a 0–10 normalisation of the points present. */
 export const SETUP_MAX = 10;
+/** The three imported feeds — the base out-of. */
+export const SETUP_BASE_MAX = 6;
+/** Base + PM charting. */
+export const SETUP_FULL_MAX = 9;
 export const CHARTING_FRESH_DAYS = 45;
 export const CHARTING_STALE_DAYS = 90;
 /** Percentile-point drop in SIA relative strength that knocks a notch. Mirrors
@@ -53,7 +66,7 @@ export const SIA_DROP_NOTCH = 15;
 /** Fewer present inputs than this → no grade (not enough evidence). */
 export const MIN_INPUTS = 2;
 
-export type SetupInputKey = "sia" | "boostedAi" | "marketEdge" | "trend" | "charting";
+export type SetupInputKey = "sia" | "boostedAi" | "marketEdge" | "charting";
 
 export type SetupInput = {
   key: SetupInputKey;
@@ -68,18 +81,20 @@ export type SetupInput = {
 };
 
 export type SetupFlag = {
-  kind: "marketedge-deteriorating" | "sia-percentile-drop" | "marketedge-reversal-watch" | "charting-stale" | "charting-age-unknown";
+  kind: "marketedge-deteriorating" | "sia-percentile-drop" | "marketedge-reversal-watch" | "charting-stale" | "charting-age-unknown" | "charting-unscored" | "trend-below-200d" | "trend-above-200d";
   label: string;
   /** Whether this flag knocks the grade down one notch. */
   notch: boolean;
 };
 
 export type SetupResult = {
-  /** 0–SETUP_MAX, renormalized to the inputs present. null when < MIN_INPUTS. */
+  /** 0–SETUP_MAX normalisation of the points present (grade bands). null when < MIN_INPUTS. */
   score: number | null;
-  /** Points actually summed and the max of the inputs present. */
+  /** Points actually summed and the out-of: 6 (feeds only) or 9 (charting scored), less any absent feed. */
   rawPoints: number;
   availableMax: number;
+  /** Whether the PM's charting read is counted (the /9 case). */
+  chartingScored: boolean;
   /** Grade after notches. null when < MIN_INPUTS present. */
   grade: SetupGrade | null;
   /** Grade from points alone, before notches. */
@@ -121,32 +136,30 @@ function daysBetween(fromISO: string, nowMs: number): number | null {
   return Math.floor((nowMs - t) / 86400000);
 }
 
-/** Trend vote from the moving averages already on the record. */
-function trendInput(stock: Stock): SetupInput {
+/** Price vs the 200-day, as a note only (no points — see header). */
+function trendFlag(stock: Stock): SetupFlag | null {
   const price = typeof stock.price === "number" && stock.price > 0 ? stock.price : null;
   const sma50 = stock.technicals?.sma50 ?? stock.healthData?.fiftyDayAvg ?? null;
   const sma200 = stock.technicals?.sma200 ?? stock.healthData?.twoHundredDayAvg ?? null;
-  if (price == null || typeof sma200 !== "number" || !(sma200 > 0)) {
-    return { key: "trend", label: "Trend", points: null, max: 1, present: false, note: "no 200-day" };
-  }
-  const above200 = price > sma200;
+  if (price == null || typeof sma200 !== "number" || !(sma200 > 0)) return null;
+  if (price <= sma200) return { kind: "trend-below-200d", label: "Below the 200-day", notch: false };
   const rising = typeof sma50 === "number" && sma50 > 0 ? sma50 > sma200 : null;
-  if (!above200) {
-    return { key: "trend", label: "Trend", points: 0, max: 1, present: true, note: "below 200-day" };
-  }
-  if (rising === true) {
-    return { key: "trend", label: "Trend", points: 1, max: 1, present: true, note: "above rising 200-day" };
-  }
-  if (rising === false) {
-    return { key: "trend", label: "Trend", points: 0.5, max: 1, present: true, note: "above 200-day, 50 < 200" };
-  }
-  return { key: "trend", label: "Trend", points: 0.5, max: 1, present: true, note: "above 200-day (no 50-day)" };
+  return { kind: "trend-above-200d", label: rising === false ? "Above the 200-day (50 < 200)" : "Above the 200-day", notch: false };
+}
+
+/** The PM has actually scored charting: a non-zero value, or an explicit
+ *  edit stamp (so a clicked "0" is a real 0). A bare stored 0 is n/a. */
+export function chartingIsScored(stock: Pick<Stock, "scores" | "manualScoredAt">): boolean {
+  const raw = stock.scores?.charting;
+  if (typeof raw === "number" && raw > 0) return true;
+  return typeof stock.manualScoredAt?.charting === "string" && stock.manualScoredAt.charting.length > 0;
 }
 
 function chartingInput(stock: Stock, nowMs: number, flags: SetupFlag[]): SetupInput {
   const raw = stock.scores?.charting;
-  if (typeof raw !== "number") {
-    return { key: "charting", label: "Charting (PM)", points: null, max: 3, present: false, note: "not entered" };
+  if (!chartingIsScored(stock) || typeof raw !== "number") {
+    flags.push({ kind: "charting-unscored", label: "Charting not scored — grade is /6", notch: false });
+    return { key: "charting", label: "Charting (PM)", points: null, max: 3, present: false, note: "n/a — not scored" };
   }
   const value = clamp(raw, 0, 3);
   const dated = stock.manualScoredAt?.charting;
@@ -210,8 +223,10 @@ export function computeSetup(stock: Stock, ctx: SetupContext = {}): SetupResult 
     inputs.push({ key: "marketEdge", label: "MarketEdge", points: null, max: 2, present: false, note: "no power rating" });
   }
 
-  inputs.push(trendInput(stock));
-  inputs.push(chartingInput(stock, nowMs, flags));
+  const charting = chartingInput(stock, nowMs, flags);
+  inputs.push(charting);
+  const trend = trendFlag(stock);
+  if (trend) flags.push(trend);
 
   // SIA percentile drift — the drift SMAX hides.
   if (typeof ctx.siaPercentileDelta === "number" && ctx.siaPercentileDelta <= -SIA_DROP_NOTCH) {
@@ -221,14 +236,15 @@ export function computeSetup(stock: Stock, ctx: SetupContext = {}): SetupResult 
   const present = inputs.filter((i) => i.present && i.points != null);
   const rawPoints = Math.round(present.reduce((s, i) => s + (i.points as number), 0) * 10) / 10;
   const availableMax = present.reduce((s, i) => s + i.max, 0);
+  const chartingScored = charting.present && charting.points != null;
   if (present.length < MIN_INPUTS || availableMax <= 0) {
-    return { score: null, rawPoints, availableMax, grade: null, gradeBeforeNotches: null, notches: 0, inputs, flags };
+    return { score: null, rawPoints, availableMax, chartingScored, grade: null, gradeBeforeNotches: null, notches: 0, inputs, flags };
   }
   const score = Math.round((rawPoints / availableMax) * SETUP_MAX * 10) / 10;
   const gradeBeforeNotches = gradeForScore(score);
   const notches = flags.filter((f) => f.notch).length;
   const grade = knock(gradeBeforeNotches, notches);
-  return { score, rawPoints, availableMax, grade, gradeBeforeNotches, notches, inputs, flags };
+  return { score, rawPoints, availableMax, chartingScored, grade, gradeBeforeNotches, notches, inputs, flags };
 }
 
 /** Tone for a grade, matching the rating tones used elsewhere. */

@@ -11,6 +11,7 @@ import type { ScoreKey, Scores, FundData, ScoreDataPoint, ScoreDataPointSource, 
 import { groupTotal, isScoreable, normalizeSector, marketEdgeApplies, boostedAiApplies, siaApplies, ownershipTrendsApplies } from "@/app/lib/scoring";
 import { ratingLabelFor, ratingToneFor } from "@/app/lib/rating-bands";
 import { SetupChip } from "@/app/components/SetupChip";
+import { chartingIsScored } from "@/app/lib/setup-grade";
 import { computeAnalystConsensus, buildConsensusExplanation } from "@/app/lib/analyst-snapshots";
 import { displayTicker } from "@/app/lib/ticker";
 import { AnalystSnapshotPanel } from "@/app/components/AnalystSnapshotPanel";
@@ -1032,7 +1033,7 @@ export default function StockDetailPage() {
     el.addEventListener("scroll", onScroll, { passive: true });
     return () => el.removeEventListener("scroll", onScroll);
   }, []);
-  const { loading: stocksLoading, getStock, scoredStocks, marketData, updateScore, updateExplanations, updateLastScored, updatePrice, updateHealthData, updateTechnicals, updateStockFields, updateWeight, updateFundData, moveBucket, removeStock, pimModels, toggleModelEligibility, updateModelWeight, getAnalystSnapshot, updateAnalystSnapshot, getAnalystReports, uploadAnalystReport, removeAnalystReport, convertAnalystTarget, tickerCurrency, uiPrefs, setUiPref } = useStocks();
+  const { loading: stocksLoading, getStock, scoredStocks, marketData, updateScore, clearManualScore, updateExplanations, updateLastScored, updatePrice, updateHealthData, updateTechnicals, updateStockFields, updateWeight, updateFundData, moveBucket, removeStock, pimModels, toggleModelEligibility, updateModelWeight, getAnalystSnapshot, updateAnalystSnapshot, getAnalystReports, uploadAnalystReport, removeAnalystReport, convertAnalystTarget, tickerCurrency, uiPrefs, setUiPref } = useStocks();
   const { notify } = useNotifications();
   const stock = getStock(ticker);
   const [scoring, setScoring] = useState(false);
@@ -2077,20 +2078,41 @@ export default function StockDetailPage() {
                                               <span className="text-ink-faint">/{cat.max}</span>
                                             </span>
                                           ) : (
-                                            Array.from({ length: cat.max + 1 }, (_, i) => (
-                                              <button
-                                                key={i}
-                                                onClick={() => updateScore(ticker, cat.key as ScoreKey, i)}
-                                                className={`grid h-7 w-7 place-items-center rounded-control font-mono text-[12px] transition-colors ${
-                                                  i === val
-                                                    ? "bg-ink text-white"
-                                                    : "border border-line bg-surface text-ink-3 hover:bg-surface-hover hover:text-ink"
-                                                }`}
-                                                title={`Set ${cat.label} to ${i}`}
-                                              >
-                                                {i}
-                                              </button>
-                                            ))
+                                            <>
+                                              {/* Charting is n/a until the PM scores it: a bare stored 0 is
+                                                  "not looked at", a clicked 0 is a real 0 (it stamps
+                                                  manualScoredAt). The n/a button un-scores it again. */}
+                                              {cat.key === "charting" && (
+                                                <button
+                                                  onClick={() => clearManualScore(ticker, "charting")}
+                                                  className={`grid h-7 place-items-center rounded-control px-2 font-mono text-[11px] transition-colors ${
+                                                    !chartingIsScored(stock)
+                                                      ? "bg-ink text-white"
+                                                      : "border border-line bg-surface text-ink-3 hover:bg-surface-hover hover:text-ink"
+                                                  }`}
+                                                  title="Not scored — the setup grade reads out of 6 until charting is scored"
+                                                >
+                                                  n/a
+                                                </button>
+                                              )}
+                                              {Array.from({ length: cat.max + 1 }, (_, i) => {
+                                                const selected = cat.key === "charting" ? chartingIsScored(stock) && i === val : i === val;
+                                                return (
+                                                  <button
+                                                    key={i}
+                                                    onClick={() => updateScore(ticker, cat.key as ScoreKey, i)}
+                                                    className={`grid h-7 w-7 place-items-center rounded-control font-mono text-[12px] transition-colors ${
+                                                      selected
+                                                        ? "bg-ink text-white"
+                                                        : "border border-line bg-surface text-ink-3 hover:bg-surface-hover hover:text-ink"
+                                                    }`}
+                                                    title={`Set ${cat.label} to ${i}${cat.key === "charting" && i === 0 ? " (an explicit 0 — counts toward the /9 grade)" : ""}`}
+                                                  >
+                                                    {i}
+                                                  </button>
+                                                );
+                                              })}
+                                            </>
                                           )}
                                         </div>
                                       </div>

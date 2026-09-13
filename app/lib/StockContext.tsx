@@ -104,6 +104,9 @@ type StockContextType = {
   removeStock: (ticker: string) => void;
   moveBucket: (ticker: string, opts?: { skipPimModels?: boolean; eligibility?: Record<string, boolean>; assetClass?: "fixedIncome" | "equity" | "alternative" }) => void;
   updateScore: (ticker: string, key: ScoreKey, value: number) => void;
+  /** Un-score a MANUAL category: value back to 0 AND the manualScoredAt stamp
+   *  removed, so the setup grade reads it as n/a rather than a real 0. */
+  clearManualScore: (ticker: string, key: ScoreKey) => void;
   updateExplanations: (ticker: string, explanations: ScoreExplanations) => void;
   updateLastScored: (ticker: string, timestamp: string) => void;
   updatePrice: (ticker: string, price: number) => void;
@@ -979,6 +982,19 @@ export function StockProvider({ children }: { children: React.ReactNode }) {
             }
           : s
       );
+      persistStocks(next);
+      return next;
+    });
+  }, [persistStocks]);
+
+  const clearManualScore = useCallback((ticker: string, key: ScoreKey) => {
+    setStocks((prev) => {
+      const next = prev.map((s) => {
+        if (s.ticker !== ticker) return s;
+        const stamps = { ...(s.manualScoredAt ?? {}) };
+        delete stamps[key];
+        return { ...s, scores: { ...s.scores, [key]: 0 }, manualScoredAt: stamps };
+      });
       persistStocks(next);
       return next;
     });
@@ -1925,6 +1941,7 @@ export function StockProvider({ children }: { children: React.ReactNode }) {
         removeStock,
         moveBucket,
         updateScore,
+        clearManualScore,
         updateExplanations,
         updateLastScored,
         updatePrice,

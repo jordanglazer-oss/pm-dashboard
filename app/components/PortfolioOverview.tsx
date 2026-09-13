@@ -11,6 +11,7 @@ import { useNotifications } from "@/app/lib/NotificationsContext";
 import { FlashValue } from "@/app/components/FlashValue";
 import { SkeletonTable } from "@/app/components/Skeleton";
 import { SCORE_GROUPS, MAX_SCORE, INSTRUMENT_LABELS } from "@/app/lib/types";
+import { SetupChip } from "./SetupChip";
 import type { ScoredStock, ScoreKey, HealthData, FundHolding, FundSectorWeight } from "@/app/lib/types";
 import type { TechnicalIndicators, RiskAlert } from "@/app/lib/technicals";
 import { groupTotal, isScoreable, normalizeSector, computeScores } from "@/app/lib/scoring";
@@ -203,6 +204,7 @@ export function PortfolioOverview({
     flushStocks,
     livePreviousCloses,
     loading,
+    clearManualScore,
   } = useStocks();
 
   // Live CURRENT model weight per ticker, driven by the shared header Version
@@ -817,13 +819,14 @@ export function PortfolioOverview({
    *  wants a clean slate before re-evaluating. */
   const handleClearCharting = useCallback(async (bucket: "Portfolio" | "Watchlist") => {
     const source = bucket === "Portfolio" ? portfolioStocks : watchlistStocks;
-    const targets = source.filter((s) => isScoreable(s) && (s.scores?.charting ?? 0) > 0);
+    // "Clear" means un-scored (n/a for the setup grade), not an explicit 0.
+    const targets = source.filter((s) => isScoreable(s) && ((s.scores?.charting ?? 0) > 0 || s.manualScoredAt?.charting));
     if (targets.length === 0) return;
     for (const s of targets) {
-      updateScore(s.ticker, "charting", 0);
+      clearManualScore(s.ticker, "charting");
     }
     await flushStocks();
-  }, [portfolioStocks, watchlistStocks, updateScore, flushStocks]);
+  }, [portfolioStocks, watchlistStocks, clearManualScore, flushStocks]);
 
   /** Refresh *every* position — portfolio holdings, fund & ETF holdings,
    *  and watchlist — via /api/refresh-data, then re-fetch fund metadata for
@@ -2275,6 +2278,7 @@ function RankingTable({
               <th className={`${thClass} text-right`}>Day</th>
               <th className={`${thClass} hidden lg:table-cell`}>Verdict</th>
               <th className={`${thClass} text-right`} onClick={() => toggleSort("adjusted")}>Score{arrow("adjusted")}</th>
+              <th className={`${thClass} hidden md:table-cell`} title="Setup grade — SIA + BoostedAI + MarketEdge (/6), plus your charting read once scored (/9). Timing, read beside the conviction score.">Setup</th>
               <th className={thClass}>Status</th>
               <th className="w-8" aria-label="Detail"></th>
             </tr>
@@ -2421,6 +2425,10 @@ function RankingTable({
                       {adj > 0 ? "+" : ""}{adj}
                     </span>
                   </td>
+                  {/* Setup = the timing layer (rubric v3), never blended into Score */}
+                  <td className="hidden md:table-cell" onClick={(e) => e.stopPropagation()}>
+                    <SetupChip stock={s} conviction={s.ratingLabel || s.rating} size="sm" showAction={false} />
+                  </td>
                   <td>
                     {(() => {
                       // Status (canvas): thesis tripped > risk flag > value trap > stale > current.
@@ -2453,7 +2461,7 @@ function RankingTable({
                 </tr>
                 {expanded && (
                   <tr className="bg-surface-2">
-                    <td colSpan={9} className="!h-auto whitespace-normal !px-3.5 !py-3 align-top">
+                    <td colSpan={10} className="!h-auto whitespace-normal !px-3.5 !py-3 align-top">
                       <div className="grid gap-x-6 gap-y-3 md:grid-cols-2">
                         <div className="min-w-0">
                           <div className="mb-1 text-[11px] text-ink-3">What they do</div>

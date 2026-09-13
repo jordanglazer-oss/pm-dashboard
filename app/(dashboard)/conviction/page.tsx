@@ -1,6 +1,7 @@
 "use client";
 
 import { Fragment, useEffect, useMemo, useState } from "react";
+import { SetupChip } from "@/app/components/SetupChip";
 import { ZERO_SCORES as ALL_ZERO_SCORES } from "@/app/lib/types";
 import Link from "next/link";
 import { useSearchParams, useRouter, usePathname } from "next/navigation";
@@ -438,6 +439,7 @@ export default function ConvictionPage() {
                   <th>Name</th>
                   <th>Bucket</th>
                   <th className="n">Conviction</th>
+                  <th title="Setup grade — SIA + BoostedAI + MarketEdge (/6), plus your charting read once scored (/9). Timing, read beside conviction.">Setup</th>
                   <th>Signals</th>
                   <th className="n" title="Upside to the FactSet mean analyst price target — (mean target − current price) / current price. Only shown once a name has been rescored (that's when the target is pulled).">Analyst upside</th>
                   <th className="pr-3.5 text-right">Watchlist</th>
@@ -445,7 +447,7 @@ export default function ConvictionPage() {
               </thead>
               <tbody>
                 {!loaded && (
-                  <tr><td colSpan={7} className="py-6 text-center text-ink-3">Loading…</td></tr>
+                  <tr><td colSpan={8} className="py-6 text-center text-ink-3">Loading…</td></tr>
                 )}
                 {filtered.map((e, i) => {
                   const syn = synthesisByKey.get(e.key);
@@ -485,6 +487,12 @@ export default function ConvictionPage() {
                     </td>
                     <td className="text-ink-2">{e.bucket}</td>
                     <td className="n"><Total total={e.total} /></td>
+                    <td>
+                      {(() => {
+                        const st = scoredStocks.find((x) => x.ticker.toUpperCase() === e.ticker.toUpperCase());
+                        return st ? <SetupChip stock={st} conviction={st.ratingLabel || st.rating} size="sm" showAction={false} /> : <span className="text-ink-faint">—</span>;
+                      })()}
+                    </td>
                     <td className="whitespace-normal py-1.5">
                       <div className="flex flex-wrap gap-x-3 gap-y-0.5">
                         {e.signals.length === 0 ? <span className="text-ink-faint">—</span> : e.signals.map((sig, k) => <SignalText key={k} sig={sig} />)}
