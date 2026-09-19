@@ -16,6 +16,12 @@
  * Pure module — no I/O.
  */
 
+/** Which score drives the LIVE cash call. "model" while the computed score is
+ *  being compared in shadow; flip to "computed" to make the app's arithmetic
+ *  the call (the model then only classifies Newton and writes the reasoning).
+ *  The 1st–20th window backstop applies on top either way. */
+export const CASH_SCORE_LIVE_SOURCE: "model" | "computed" = "model";
+
 export const NEWTON_STATES = {
   "fresh-constructive-flip": { points: 40, label: "Fresh constructive flip (after 2+ weeks cautious)" },
   "persistent-constructive": { points: 32, label: "Persistent constructive, tone holding" },

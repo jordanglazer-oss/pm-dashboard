@@ -4,7 +4,7 @@
 
 import React from "react";
 import { usePersistedOpen } from "@/app/lib/useCollapsed";
-import type { ComputedCashScore } from "@/app/lib/cash-score";
+import { CASH_SCORE_LIVE_SOURCE, type ComputedCashScore } from "@/app/lib/cash-score";
 
 export function CashScoreWorking({ computed, modelScore }: { computed: ComputedCashScore; modelScore?: number }) {
   const [open, toggle] = usePersistedOpen("brief.cashScore.working", false);
@@ -12,7 +12,7 @@ export function CashScoreWorking({ computed, modelScore }: { computed: ComputedC
   return (
     <div className="mt-2 text-[11.5px] text-ink-2">
       <button type="button" onClick={toggle} className="text-left font-medium text-accent hover:underline">
-        App-computed score (in test): {computed.score != null ? `${computed.score} → ${label}` : "needs Newton's state"}{typeof modelScore === "number" && computed.score != null ? ` · model said ${modelScore}` : ""} · {open ? "hide" : "show"} the math
+        App-computed score{CASH_SCORE_LIVE_SOURCE === "computed" ? "" : " (in test)"}: {computed.score != null ? `${computed.score} → ${label}` : "needs Newton's state"}{typeof modelScore === "number" && computed.score != null ? ` · model said ${modelScore}` : ""} · {open ? "hide" : "show"} the math
       </button>
       {open && (
         <div className="mt-2 rounded border border-line bg-surface p-2">
@@ -41,7 +41,7 @@ export function CashScoreWorking({ computed, modelScore }: { computed: ComputedC
               </tbody>
             </table>
           </div>
-          <p className="mt-1.5 text-ink-3">Each input earns its weight × how strongly it argues for deploying (half its weight when it has no edge). 70 or more is DEPLOY, 55–69 PARTIAL, below 55 WAIT. This number is being compared with the model&apos;s own for now; the tile&apos;s call still follows the model&apos;s.</p>
+          <p className="mt-1.5 text-ink-3">Each input earns its weight × how strongly it argues for deploying (half its weight when it has no edge). 70 or more is DEPLOY, 55–69 PARTIAL, below 55 WAIT. {CASH_SCORE_LIVE_SOURCE === "computed" ? "This computed number drives the call above; the model classifies Newton&apos;s note and writes the reasoning." : "This number is being compared with the model&apos;s own for now; the call above still follows the model&apos;s."}</p>
         </div>
       )}
     </div>
