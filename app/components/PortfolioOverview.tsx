@@ -12,6 +12,8 @@ import { FlashValue } from "@/app/components/FlashValue";
 import { SkeletonTable } from "@/app/components/Skeleton";
 import { SCORE_GROUPS, MAX_SCORE, INSTRUMENT_LABELS } from "@/app/lib/types";
 import { SetupChip } from "./SetupChip";
+import { SleeveTags } from "./SleeveTags";
+import { sleevesOf, isUntagged, sleeveCounts } from "@/app/lib/sleeves";
 import type { ScoredStock, ScoreKey, HealthData, FundHolding, FundSectorWeight } from "@/app/lib/types";
 import type { TechnicalIndicators, RiskAlert } from "@/app/lib/technicals";
 import { groupTotal, isScoreable, normalizeSector, computeScores } from "@/app/lib/scoring";
@@ -1401,6 +1403,9 @@ export function PortfolioOverview({
                     <th className={fThClass} onClick={() => handleFundSort("role")}>
                       Role<FundSortIcon field="role" sortField={fundSort} sortDir={fundSortDir} />
                     </th>
+                    <th className="whitespace-nowrap" title="Alpha sleeve — Thesis (long-run hold) or Tactical (shorter-horizon). A fund sits in one sleeve only. Core holdings have no sleeve.">
+                      Sleeve
+                    </th>
                     <th className={`text-right ${fThClass}`} onClick={() => handleFundSort("price")}>
                       Price<FundSortIcon field="price" sortField={fundSort} sortDir={fundSortDir} />
                     </th>
@@ -1507,6 +1512,7 @@ export function PortfolioOverview({
                             );
                           })()}
                         </td>
+                        <td><SleeveTags stock={s} /></td>
                         <td className="n">{s.price != null ? s.price.toFixed(2) : "—"}</td>
                         <td className={`n ${fundReturnColor(perf?.ytd)}`}>{fundReturnFmt(perf?.ytd)}</td>
                         <td className={`n ${fundReturnColor(perf?.oneYear)}`}>{fundReturnFmt(perf?.oneYear)}</td>
@@ -1689,7 +1695,7 @@ function RankingTable({
   const prefPrefix = flagType === "review" ? "rankPort" : "rankWatch";
   // Canvas header state: Stale/Flagged chips + search (transient view state),
   // and the ⋯ menu holding the action cluster.
-  const [chipFilter, setChipFilter] = useState<"all" | "stale" | "flagged">("all");
+  const [chipFilter, setChipFilter] = useState<"all" | "stale" | "flagged" | "thesis" | "tactical" | "untagged">("all");
   const [query, setQuery] = useState("");
   const [menuOpen, setMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
@@ -1733,6 +1739,9 @@ function RankingTable({
     if (q && !(st.ticker.toLowerCase().includes(q) || (st.name || "").toLowerCase().includes(q) || (st.sector || "").toLowerCase().includes(q))) return false;
     if (chipFilter === "stale" && !isStaleRow(st)) return false;
     if (chipFilter === "flagged" && !isFlaggedRow(st)) return false;
+    if (chipFilter === "thesis" && !sleevesOf(st).thesis) return false;
+    if (chipFilter === "tactical" && !sleevesOf(st).tactical) return false;
+    if (chipFilter === "untagged" && !isUntagged(st)) return false;
     return true;
   });
   const sorted = [...filteredStocks].sort((a, b) => {
@@ -1988,6 +1997,28 @@ function RankingTable({
               >
                 Stale <span className="font-mono text-[11px] text-ink-3">{staleN}</span>
               </button>
+              {showWeight && (() => {
+                // Alpha sleeves — Portfolio only. Counts are names, not weight.
+                const sc = sleeveCounts(stocks);
+                const chip = (key: "thesis" | "tactical" | "untagged", label: string, n: number, title: string, warn = false) => (
+                  <button
+                    key={key}
+                    onClick={() => setChipFilter(chipFilter === key ? "all" : key)}
+                    aria-pressed={chipFilter === key}
+                    className={`inline-flex h-7 items-center gap-1.5 rounded-control border px-2.5 text-[12.5px] transition-colors ${chipFilter === key ? "border-accent-border bg-accent-soft text-accent" : warn && n > 0 ? "border-warn-soft bg-warn-soft text-warn hover:border-warn-border" : "border-line bg-surface text-ink-2 hover:bg-surface-hover"}`}
+                    title={title}
+                  >
+                    {label} <span className="font-mono text-[11px] text-ink-3">{n}</span>
+                  </button>
+                );
+                return (
+                  <>
+                    {chip("thesis", "Thesis", sc.thesis, `Only Thesis names — long-run holds${sc.both > 0 ? ` (${sc.both} also carry a tactical overweight)` : ""}`)}
+                    {chip("tactical", "Tactical", sc.tactical, "Only Tactical names — shorter-horizon positions, reviewed the first Monday of each month")}
+                    {sc.untagged > 0 && chip("untagged", "Untagged", sc.untagged, "Stocks with no Thesis/Tactical tag yet — every Alpha holding needs one before sleeve weights can go live", true)}
+                  </>
+                );
+              })()}
             </>
           );
         })()}
@@ -2274,6 +2305,7 @@ function RankingTable({
               </th>
               <th className={thClass} onClick={() => toggleSort("sector")}>Sector{arrow("sector")}</th>
               {showWeight && <th className={`${thClass} text-right`}>Wt %</th>}
+              {showWeight && <th className={`${thClass} hidden md:table-cell`} title="Alpha sleeve — Thesis (long-run hold) and/or Tactical (shorter-horizon). Both on = a Thesis name carrying a tactical overweight.">Sleeve</th>}
               <th className={`${thClass} text-right`} onClick={() => toggleSort("price")}>Price{arrow("price")}</th>
               <th className={`${thClass} text-right`}>Day</th>
               <th className={`${thClass} hidden lg:table-cell`}>Verdict</th>
@@ -2385,6 +2417,7 @@ function RankingTable({
                       })()}
                     </td>
                   )}
+                  {showWeight && <td className="hidden md:table-cell"><SleeveTags stock={s} /></td>}
                   <td className="n">
                     <FlashValue value={s.price ?? null}>{s.price != null ? s.price.toFixed(2) : "—"}</FlashValue>
                   </td>
@@ -2461,7 +2494,7 @@ function RankingTable({
                 </tr>
                 {expanded && (
                   <tr className="bg-surface-2">
-                    <td colSpan={10} className="!h-auto whitespace-normal !px-3.5 !py-3 align-top">
+                    <td colSpan={showWeight ? 11 : 9} className="!h-auto whitespace-normal !px-3.5 !py-3 align-top">
                       <div className="grid gap-x-6 gap-y-3 md:grid-cols-2">
                         <div className="min-w-0">
                           <div className="mb-1 text-[11px] text-ink-3">What they do</div>

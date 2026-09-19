@@ -53,6 +53,10 @@ export type StockContext = {
    *  Consumed by the /thesis coverage count — funds and ETFs are not
    *  underwritable, so they must not pad the "not underwritten" list. */
   instrumentType?: string | null;
+  /** Alpha sleeves (app/lib/sleeves.ts) — Portfolio holdings only. Carried so
+   *  alerts, the digest and the action queue can treat Thesis and Tactical
+   *  names differently. Nothing branches on it yet. */
+  sleeves?: { thesis: boolean; tactical: boolean };
 };
 
 /** Days until the given YYYY-MM-DD (0 = today); null when absent/past/unparseable

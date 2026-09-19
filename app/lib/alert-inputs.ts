@@ -4,6 +4,7 @@ import type { MarketRegimeData } from "@/app/lib/market-regime";
 import type { StockContext } from "@/app/lib/alerts";
 import { checkAll, trippedCount, withBaselineConditions, type KillCondition, type KillCheck, type TechnicalInput } from "@/app/lib/kill-conditions";
 import { loadKillSignalSources, killSignalExtrasFor } from "./metric-resolver";
+import { sleevesOf } from "./sleeves";
 
 /**
  * ONE loader for every input the alert engine needs, so the in-app
@@ -66,6 +67,9 @@ type StoredStock = {
   bucket?: string;
   price?: number;
   instrumentType?: string;
+  designation?: "core" | "alpha";
+  inThesis?: boolean;
+  inTactical?: boolean;
   /** YYYY-MM-DD (Yahoo calendarEvents) — feeds the catalyst-aware escalation. */
   earningsDate?: string;
   riskAlert?: { level?: string; summary?: string; signals?: Array<{ name: string; status: string }> };
@@ -168,6 +172,7 @@ export async function loadAlertInputs(): Promise<AlertInputs> {
       revDown: typeof fs?.revDown === "number" ? fs.revDown : null,
       riskLevel: s.riskAlert?.level ?? null,
       instrumentType: s.instrumentType ?? null,
+      sleeves: s.bucket === "Portfolio" ? sleevesOf(s) : undefined,
       earningsDate:
         typeof s.earningsDate === "string"
           ? s.earningsDate.slice(0, 10)

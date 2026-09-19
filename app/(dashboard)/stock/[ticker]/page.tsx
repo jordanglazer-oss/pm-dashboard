@@ -29,6 +29,8 @@ import { AppIcon } from "@/app/components/AppIcon";
 import { usePrevPage } from "@/app/lib/nav-history";
 import { ScoreDelta } from "@/app/components/ScoreDelta";
 import { CollapsibleSection } from "@/app/components/CollapsibleSection";
+import { SleeveTags } from "@/app/components/SleeveTags";
+import { isSleeveTaggable } from "@/app/lib/sleeves";
 import { colorForSector } from "@/app/lib/sectorColors";
 import { useNotifications } from "@/app/lib/NotificationsContext";
 import { EditableNumberCell, ConsensusButton } from "@/app/components/EditableScoreInputs";
@@ -1615,6 +1617,8 @@ export default function StockDetailPage() {
           </span>
         )}
         <span className="text-[12px] text-ink-3">{identityMeta}</span>
+        {/* Alpha sleeve tags — held equity Alpha only (Core / bond / alt render nothing). */}
+        {stock.bucket === "Portfolio" && isSleeveTaggable(stock) && <SleeveTags stock={stock} size="md" />}
         <div className="ml-auto flex items-center gap-2">
           {scoreable && (
             <button
