@@ -40,6 +40,7 @@ const log = createLogger("Growth-calibration");
 const F = {
   salesNtm: "FE_ESTIMATE(SALES,MEAN,NTMA,0,NOW,'')",
   salesLtm: "FF_SALES(LTM,0)",
+  salesLtmA: "FE_ESTIMATE(SALES,MEAN,LTMA,0,NOW,'')",
   epsNtm: "FE_ESTIMATE(EPS,MEAN,NTMA,0,NOW,'')",
   epsLtmA: "FE_ESTIMATE(EPS,MEAN,LTMA,0,NOW,'')",
   ltg: "FE_ESTIMATE(LTG,MEAN,ANN_ROLL,0,NOW,'')",
@@ -103,15 +104,21 @@ export async function GET(req: NextRequest) {
   const constituents: Constituent[] = [];
   const byGroup = new Map<string, Constituent[]>();
   const bySector = new Map<string, Constituent[]>();
+  const unclassified: string[] = [];
+  let salesBasisFallback = 0;
   for (const [id, ticker] of idToTicker) {
     const row = rows[id];
     if (!row) continue;
     const n = (k: keyof typeof F): number | null => { const v = row[F[k]]; return typeof v === "number" && isFinite(v) ? v : null; };
     const str = (k: keyof typeof F): string | null => { const v = row[F[k]]; return typeof v === "string" && v.trim() ? v.trim() : null; };
     const gicsSector = str("sector"), industry = str("industry");
+    // No GICS sector = FactSet no longer covers the name (acquired / taken
+    // private but still on the constituent list). Keep it out of the bands.
+    if (!gicsSector) { unclassified.push(ticker); continue; }
+    if (n("salesLtmA") == null && n("salesNtm") != null) salesBasisFallback++;
     const sector = normalizeFactsetSector(gicsSector) ?? gicsSector;
     const group = rev7Group(industry, ticker) ?? pickPlaybook(gicsSector, industry)?.label ?? `${sector ?? "Unclassified"} (no playbook)`;
-    const raw: RawGrowthRow = { salesNtm: n("salesNtm"), salesLtm: n("salesLtm"), epsNtm: n("epsNtm"), epsLtmA: n("epsLtmA"), ltg: n("ltg"), salesAnn0: n("salesAnn0"), salesAnn3: n("salesAnn3"), bpsAnn0: n("bpsAnn0"), bpsAnn3: n("bpsAnn3") };
+    const raw: RawGrowthRow = { salesNtm: n("salesNtm"), salesLtm: n("salesLtm"), salesLtmA: n("salesLtmA"), epsNtm: n("epsNtm"), epsLtmA: n("epsLtmA"), ltg: n("ltg"), salesAnn0: n("salesAnn0"), salesAnn3: n("salesAnn3"), bpsAnn0: n("bpsAnn0"), bpsAnn3: n("bpsAnn3") };
     const { inputs, excluded } = deriveGrowthInputs(raw, group);
     const round = (v: number) => Math.round(v * 10) / 10;
     const c: Constituent = { ticker, sector, industry, group, values: Object.fromEntries(Object.entries(inputs).map(([k, v]) => [k, round(v as number)])), excluded };
@@ -164,7 +171,7 @@ export async function GET(req: NextRequest) {
     mode: confirm ? "STORED" : "DRY RUN — nothing written. Add ?confirm=YES to store these bands.",
     stored, stashedTo,
     calibratedAt: bands.calibratedAt,
-    universe: { requested: ids.length, priced: constituents.length, failedChunks, listVersion: LIST_VERSION },
+    universe: { requested: ids.length, priced: constituents.length, failedChunks, listVersion: LIST_VERSION, droppedNoSector: unclassified, salesOnAsReportedBasis: salesBasisFallback },
     method: { weights: GROWTH_WEIGHTS, blendedPercentileCuts: GROWTH_CUTS, topMarkFloorPct: TOP_MARK_FLOOR_PCT, minGroupSize: MIN_GROUP_SIZE, winsorised: "2nd / 98th percentile within each group" },
     groups: groupTable,
     sectors: sectorTable,
