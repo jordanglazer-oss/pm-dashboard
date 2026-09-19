@@ -2617,7 +2617,7 @@ export function MorningBrief({
 
                     {/* 5 · Method note — the rules the model operates under */}
                     <div className="border-t border-line-soft pt-1.5 text-[11px] leading-4 text-ink-3">
-                      Method: protective SPY puts only · strikes 5–10% OTM (ATM only for acute ≤30d tail risk) · tenor 2–9M mapped to whichever horizon is Risk-Off · ADD needs Path 1 (≥2/3) or Path 2 (premium ✓ + ≥1 late-cycle sign) · skip-first philosophy — the model may override any checklist line but must name it. Percentiles rank each tenor against its own trailing ledger.
+                      Method: protective SPY puts only · strikes 5–10% OTM (ATM only for acute ≤30d tail risk) · tenor 2–9M mapped to whichever horizon is Risk-Off · ADD needs Path 1 (≥2/3) or Path 2 (premium ✓ + ≥2 of 3 late-cycle signs; long-horizon vol ✓ too while the ledger is under 250 sessions) · skip-first philosophy — the model may override any checklist line but must name it. Percentiles rank each tenor against its own trailing ledger.
                     </div>
                   </div>
                 </CollapsibleSection>

@@ -772,8 +772,8 @@ export function computeHedgeChecklist(p: HedgeChecklistInputs): HedgeChecklist {
     },
     {
       path: "cheap",
-      ok: p.fearGreed != null ? p.fearGreed >= 60 : null,
-      label: `Late-cycle: F&G ≥60${p.fearGreed != null ? ` (currently: ${p.fearGreed})` : ""}`,
+      ok: p.fearGreed != null ? p.fearGreed >= 70 : null,
+      label: `Late-cycle: F&G ≥70${p.fearGreed != null ? ` (currently: ${p.fearGreed})` : ""}`,
     },
     {
       path: "cheap",
@@ -809,8 +809,13 @@ export function computeHedgeChecklist(p: HedgeChecklistInputs): HedgeChecklist {
 
 /** Prompt rendering of the same checklist (delegates to computeHedgeChecklist
  *  so prompt and UI can never disagree). */
+/** Below this many ledger sessions the premium percentiles have not yet seen a
+ *  vol spike, so the multi-decade anchor line gates the cheap-insurance path. */
+export const LEDGER_MATURE_SESSIONS = 250;
+
 export function buildHedgeChecklistBlock(p: HedgeChecklistInputs): string {
   const cl = computeHedgeChecklist(p);
+  const youngLedger = (cl.sessions ?? 0) < LEDGER_MATURE_SESSIONS;
   const line = (i: HedgeChecklistItem): string => `  ${i.ok == null ? "?" : i.ok ? "✓" : "✗"} ${i.label}`;
   return [
     "",
@@ -818,9 +823,9 @@ export function buildHedgeChecklistBlock(p: HedgeChecklistInputs): string {
     "HEDGE-ENTRY CHECKLIST (computed from live data — evidence for hedgingAnalysis/hedgingCall, NOT the verdict; you may override any line with an explicitly stated reason):",
     "Path 1 · Classic Risk-Off:",
     ...cl.items.filter((i) => i.path === "risk-off").map(line),
-    "Path 2 · Cheap insurance (premium conditions) + late-cycle warning (need ≥1):",
+    "Path 2 · Cheap insurance (premium conditions) + late-cycle warning (need ≥2 of the 3 late-cycle signs):",
     ...cl.items.filter((i) => i.path === "cheap").map(line),
-    "Reading it: Path 1 substantially met (≥2 of 3) OR Path 2 with at least one premium condition ✓, VVIX/skew not contradicting, and ≥1 late-cycle sign → ADD is defensible. Otherwise the default is SKIP (or HOLD if protection is already on). Cite the specific ✓/✗ lines that drove your call — especially the premium percentile — and name any line you're overriding and why.",
+    `Reading it: Path 1 substantially met (≥2 of 3) OR Path 2 with at least one premium condition ✓, VVIX/skew not contradicting, and at least TWO of the three late-cycle signs ✓ → ADD is defensible.${youngLedger ? ` LEDGER GATE: the premium ledger holds only ${cl.sessions ?? 0} sessions (under ${LEDGER_MATURE_SESSIONS}), so its percentiles cannot see a vol spike yet — until it matures, Path 2 ALSO requires the "Long-horizon vol not elevated" line to be ✓.` : ""} Otherwise the default is SKIP (or HOLD if protection is already on). Cite the specific ✓/✗ lines that drove your call — especially the premium percentile — and name any line you're overriding and why.`,
   ].join("\n");
 }
 

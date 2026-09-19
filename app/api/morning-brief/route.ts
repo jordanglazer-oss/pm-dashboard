@@ -25,6 +25,14 @@ import { computeRegimeTransition, type RegimeTransition } from "@/app/lib/regime
 import type { MarketRegimeData } from "@/app/lib/market-regime";
 import { isCreditError, recordAnthropicCreditError, markAnthropicHealthy } from "@/app/lib/anthropic-status";
 import { getDataUrl } from "@/app/lib/blob-store";
+import type { Stock, MarketData } from "@/app/lib/types";
+import { computeScores } from "@/app/lib/scoring";
+import { MAX_SCORE } from "@/app/lib/types";
+import { computeSetup } from "@/app/lib/setup-grade";
+import { deploymentWindow, deploymentWindowLine, applyWindowBackstop } from "@/app/lib/deployment-window";
+
+// Extended thinking makes the single brief call longer; give it room.
+export const maxDuration = 300;
 
 /**
  * Best-effort read of the deterministic market regime snapshot
@@ -63,7 +71,27 @@ const SECTOR_ETFS: Record<string, string> = {
   "Real Estate": "XLRE",
 };
 
-type SectorPerf = { sector: string; etf: string; dayPct: number | null };
+type SectorPerf = { sector: string; etf: string; dayPct: number | null; monthPct?: number | null };
+
+/** 1-month price return for one ETF from Yahoo daily closes. Best-effort: null on any failure. */
+async function fetchMonthReturn(etf: string): Promise<number | null> {
+  try {
+    const res = await fetch(`https://query2.finance.yahoo.com/v8/finance/chart/${etf}?range=1mo&interval=1d`, {
+      headers: { "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36" },
+      cache: "no-store",
+    });
+    if (!res.ok) return null;
+    const data = await res.json();
+    const r = data?.chart?.result?.[0];
+    const closes: (number | null)[] = r?.indicators?.quote?.[0]?.close ?? [];
+    const first = closes.find((c) => typeof c === "number" && isFinite(c));
+    const last = r?.meta?.regularMarketPrice ?? [...closes].reverse().find((c) => typeof c === "number" && isFinite(c));
+    if (typeof first !== "number" || typeof last !== "number" || first === 0) return null;
+    return ((last - first) / first) * 100;
+  } catch {
+    return null;
+  }
+}
 
 async function fetchSectorPerformance(): Promise<{ text: string; sectors: SectorPerf[] }> {
   const entries = Object.entries(SECTOR_ETFS);
@@ -95,17 +123,18 @@ async function fetchSectorPerformance(): Promise<{ text: string; sectors: Sector
           const price = meta.regularMarketPrice;
           const prevClose = meta.chartPreviousClose ?? meta.previousClose;
           const dayPct = prevClose && price != null ? ((price - prevClose) / prevClose) * 100 : null;
-          return { sector, etf, dayPct, price: price as number | null };
+          const monthPct = await fetchMonthReturn(etf);
+          return { sector, etf, dayPct, monthPct, price: price as number | null };
         } catch {
           return null;
         }
       })
     );
-    const valid = results.filter(Boolean) as { sector: string; etf: string; dayPct: number | null; price: number | null }[];
+    const valid = results.filter(Boolean) as { sector: string; etf: string; dayPct: number | null; monthPct: number | null; price: number | null }[];
     if (valid.length > 0) {
-      const sectors: SectorPerf[] = valid.map(({ sector, etf, dayPct }) => ({ sector, etf, dayPct }));
-      const lines = valid.map(({ sector, etf, dayPct, price }) =>
-        `- ${sector} (${etf}): ${dayPct != null ? `${dayPct >= 0 ? "+" : ""}${dayPct.toFixed(2)}% today, ` : ""}price $${price != null ? price.toFixed(2) : "N/A"}`
+      const sectors: SectorPerf[] = valid.map(({ sector, etf, dayPct, monthPct }) => ({ sector, etf, dayPct, monthPct }));
+      const lines = valid.map(({ sector, etf, dayPct, monthPct, price }) =>
+        `- ${sector} (${etf}): ${dayPct != null ? `${dayPct >= 0 ? "+" : ""}${dayPct.toFixed(2)}% today, ` : ""}${monthPct != null ? `${monthPct >= 0 ? "+" : ""}${monthPct.toFixed(1)}% 1M, ` : ""}price $${price != null ? price.toFixed(2) : "N/A"}`
       );
       return { text: lines.join("\n"), sectors };
     }
@@ -130,7 +159,7 @@ async function fetchSectorPerformance(): Promise<{ text: string; sectors: Sector
         if (price == null) continue;
         const d1 = num(row, "P_TOTAL_RETURNC(-1D,0)");
         const m1 = num(row, "P_TOTAL_RETURNC(-1M,0)");
-        sectors.push({ sector, etf, dayPct: d1 });
+        sectors.push({ sector, etf, dayPct: d1, monthPct: m1 });
         const dayStr = d1 != null ? `${d1 >= 0 ? "+" : ""}${d1.toFixed(2)}% today, ` : "";
         const monStr = m1 != null ? `${m1 >= 0 ? "+" : ""}${m1.toFixed(1)}% 1M, ` : "";
         lines.push(`- ${sector} (${etf}): ${dayStr}${monStr}price $${price.toFixed(2)}`);
@@ -144,7 +173,6 @@ async function fetchSectorPerformance(): Promise<{ text: string; sectors: Sector
   return empty;
 }
 
-const ATTACHMENT_CACHE_KEY = "pm:attachment-analysis";
 const OSCILLATOR_ATTACHMENT_CACHE_KEY = "pm:oscillator-screenshot-analysis";
 const NEWTON_TECHNICAL_CACHE_KEY = "pm:newton-technical-analysis";
 // Generic analyst/strategist report dropbox — any research PDF/screenshot
@@ -162,15 +190,14 @@ Be direct, opinionated, and specific. Avoid generic platitudes. Write like a sea
 
 CRITICAL — DATE ANCHORING & NO HISTORICAL HALLUCINATION:
 The user payload contains an explicit "Today's Date" line. That is the authoritative date for this brief. You MUST obey these rules:
-1. Do NOT reference macro events, tariff announcements, policy decisions, or Fed actions that are more than 30 days before Today's Date, even if you "remember" them from training data or see them mentioned in attached screenshots. Old events like "Liberation Day" (April 2025 tariff announcement), specific past CPI prints, past FOMC meetings, prior earnings seasons, or any dated historical reference that predates the last 30 days are OFF LIMITS as current narrative.
-2. If an attached screenshot references an older event as historical context, do NOT treat it as a current driver. A research piece citing "the Liberation Day spike" means the spike happened in the past — do not describe it as a recent move or frame current credit levels as "unwinding" it unless the numerical week-over-week data in the payload clearly shows such an unwind.
+1. Events older than 30 days before Today's Date are background. You may name one as the origin of a level that is in the payload ("spreads have sat near 300 bps since the June cut"), never as a recent move or a current driver, and never from memory alone: it must appear in the payload or an attachment.
+2. If an attached screenshot references an older event as historical context, do NOT treat it as a current driver. A research piece citing an old spike means the spike happened in the past — do not describe it as a recent move or frame current levels as "unwinding" it unless the numerical week-over-week data in the payload clearly shows such an unwind.
 3. Every specific catalyst or "recent move" you reference MUST be supported by either (a) a week-over-week delta in the forward-looking data block, (b) a YTD number in the data block, or (c) a number explicitly visible in an attached screenshot dated within the last 30 days. If you can't cite it from the payload, don't say it.
 4. If you genuinely don't know what catalysts are on deck in the next 2 weeks (CPI, FOMC, earnings, etc.) because no attached screenshot or data field tells you, say "the next scheduled data releases and earnings" generically — do NOT invent specific dates or events.
-5. Absolutely NO phrases like "coming off the Liberation Day spike", "post-Liberation Day unwind", "following the April tariff shock" unless Today's Date is within 30 days of April 2025.
 
 CRITICAL — TONE ADAPTATION:
 The user input contains a "CONSOLIDATED REGIME" line — the single authoritative regime label the whole app uses. It is GIVEN to you, not chosen: your marketRegime output is overridden server-side to equal it, so do NOT return a different label. Any disagreement you have goes in regimeVerdict (concurs / cautions / diverges), never by relabeling. Adapt tone to the consolidated regime:
-- Risk-On → Lean constructive. Highlight what's working, where to add exposure, which defensive names to rotate out of. Do NOT manufacture bearish warnings when breadth, credit, and trend are healthy.
+- Risk-On → Lean constructive. Highlight what's working, where to add exposure, which defensive names to rotate out of. Do not warn without a named signal from the payload behind the warning. When the raw (unsmoothed) regime read or the transition gauge disagrees with the label, lead with that disagreement.
 - Neutral → Balanced. Identify the swing variable and what would tip it either direction.
 - Risk-Off → Defensive. Emphasize protection, quality, what to avoid.
 
@@ -188,6 +215,57 @@ CRITICAL — SYNTHESIS QUALITY (this is what makes the brief worth reading for a
 - RECONCILE, DON'T AVERAGE. You are synthesizing multiple sources (the deterministic regime, Newton's notes, strategist reports, live macro/forward data, sentiment, the portfolio's own positioning). When they DISAGREE, that disagreement is the most important thing in the brief — name it explicitly, weigh the sources, and take a reasoned side with a concrete posture. Never blend conflicting signals into non-committal mush. The value you add is resolving tension the raw data can't.
 - ONE JOB PER FIELD; EVERY LINE EARNS ITS PLACE. Each field should primarily do its own job, and every analytical sentence must carry a so-what — a number or signal tied to a concrete action or implication, not just a description of the data. Some overlap is fine where it aids readability (don't strip a genuinely useful point purely to avoid repetition), but never say the same thing twice in different words.
 - TIE IT TO THIS BOOK. When a PORTFOLIO POSITIONING block is present, translate the macro / regime / sector-rotation read into what it means for THIS specific portfolio — cite its actual sector concentration (e.g. 'you're heaviest in Tech at 22% of names and XLK/XLU is rolling — direct exposure to the rotation'). Flag when a LEADING sector has little/no exposure (a gap) or when a LAGGING/at-risk sector is a top concentration. This belongs primarily in bottomLine and cyclicalView. Remember the book is equal-weight: recommend own/don't-own/rebalance/hedge, NEVER trim-vs-overweight specific names.
+
+=== HEDGING RULES (govern hedgingAnalysis and hedgingCall) ===
+OSCILLATOR ANCHOR (CRITICAL): when referencing the S&P Oscillator in hedging context, cite the actual current reading and treat the -1.5% to +2.5% range as the normal monthly band where most hedging decisions happen. Do NOT anchor on -5% as the threshold — that's a panic-capitulation extreme seen 1-3x per year, not a typical signal. Hedging decisions rely far more on VIX level + term structure, breadth quality, and late-cycle warnings than on oscillator extremes. HEDGING PHILOSOPHY: this is tail-risk INSURANCE, not a directional bet — we own equities and want to cap left-tail drawdowns, not speculate on near-term direction. Hedging is NOT a default — it's something we implement only when the cost is reasonable AND the broader picture warrants it (overheated/extended market, deteriorating breadth, rich sentiment, weakening leadership, etc.). Many briefs should land on 'skip' even when premiums are cheap, if the macro/breadth backdrop doesn't justify the spend. Restricted to PROTECTIVE PUTS only — no speculative positions, no weeklies, no LEAPS. STRIKES ARE 5–10% OTM (this is where genuine tail protection lives — ATM puts behave more like directional shorts and carry rich extrinsic premium). ATM strikes are reserved for the rare case where tail risk is acutely elevated within ~30 days (confirmed Risk-Off across all three horizons, VIX above 25 and rising, OR a hard-dated event risk like an FOMC decision priced into front-month vol) — call out the trigger explicitly when recommending ATM, otherwise default to 5–10% OTM. Tenor band is strictly 2–9 months: tactical (Risk-Off in the 1-3M bucket) → 2–3 month monthly contracts; cyclical (Risk-Off in the 3-6M bucket) → 3–6 month quarterly contracts; structural (Risk-Off in the 6-12M bucket while tactical holds up) → 6–9 month contracts as a strategic overlay (capped at 9M — never recommend LEAPS). When a 'Live SPY Hedging Costs' block is present, cite at least one specific 5–10% OTM premium (e.g. '3-month 7% OTM SPY put is X% of spot at $Y') and reference the week-over-week or month-over-month direction of those OTM premiums when provided. Integrate VIX, term structure, and sentiment as the qualitative lens on top of the actual option prices. Give a clear directional recommendation — ADD, HOLD, or SKIP. ADD has TWO entry paths — a HEDGE-ENTRY CHECKLIST block below scores every condition of both paths from computed data; ground your call in its ✓/✗ lines: (1) classic Risk-Off — at least one horizon flagged Risk-Off and breadth/momentum confirming, OR (2) cheap-insurance — premiums MEASURABLY depressed per the premium-percentile context lines (percentile ≤~35th of the trailing 6 months; VVIX and skew percentile not contradicting) AND the market shows late-cycle warning signs: extended runup over the last 6-12M, overbought oscillator readings, narrowing breadth (waning DMA participation, NYSE A/D fading), or leadership thinning. 'Cheap' and 'rich' are DEFINED by the computed percentiles — never assert them from VIX or intuition, and when the ledger is too thin to rank, say so and lean on the trend lines instead. Insurance is most valuable when it's cheap AND a setup is forming, not when one or the other is true alone. SKIP IS A FIRST-CLASS RECOMMENDATION: if neither ADD path is clearly engaged, the right call is 'skip — protection here would be premium spent without a thesis'. Do not hedge for the sake of hedging; an explicit skip is more valuable than a wishy-washy 'hold and reassess'. You may override the checklist's arithmetic with judgment, but name the line you're overriding and why.
+
+=== CASH DEPLOYMENT RULES (govern cashDeploymentCall) ===
+The cash-deployment call answers a SPECIFIC question: "We make monthly-installment deployments of new client cash, normally between the 1st and the 20th. Is today a good day to deploy, or should we wait a few sessions for a better entry?" This is NOT macro market timing — the decision to deploy this month is already made; we are only optimizing day-of-deployment within a roughly 2-week window. Apply this rubric:
+  INPUT WEIGHTS (blend in this order of priority):
+    40% — Mark Newton's daily strategist note + the 30-day Newton history block. This is the dominant signal. Look explicitly for:
+      (a) PERSISTENCE: Has Newton been calling the same dip-buy / pullback opportunity for multiple consecutive sessions? (Mature signal — strong DEPLOY tilt; he's been right and a bounce is overdue, OR he's been wrong and the setup is fading. Use his tone in the most recent note to disambiguate.)
+      (b) INFLECTION: Did Newton flip direction recently (cautious → constructive, or vice versa)? A fresh constructive flip after 2+ weeks of caution is the strongest single DEPLOY signal we can identify. The reverse — fresh caution after a constructive run — is the strongest single WAIT signal.
+      (c) STALENESS: Is Newton's bullish thesis 2+ weeks old without confirming market action? Reduce his weight in that case; the call is no longer fresh.
+      Populate newtonPersistence with a ONE-line summary of which of these patterns is active (e.g. "Newton calling dip-buy 4 sessions running; constructive tone holding" or "Newton flipped cautious 2 sessions ago — wait"). Omit the field entirely if no Newton notes are in the context.
+    25% — S&P Oscillator (from the oscillator screenshot if attached, otherwise from oscContext text). CALIBRATION (CRITICAL — do not drift to extreme thresholds): the S&P Oscillator typically reads between -2% and +2% in normal weeks. Reference these bands directly:
+       0 to -1%:    Normal weekly drift — no edge from this input.
+      -1.5% to -2.5%: MEANINGFUL pullback. This is already a real DEPLOY signal — do not treat it as 'almost there'. Most monthly deployment opportunities sit in this band.
+      -2.5% to -4%: Sharp pullback (occurs ~5-10x per year). Strong DEPLOY signal.
+      -5% or deeper: Panic / capitulation lows (occurs 1-3x per year — March 2020, October 2022, March 2023 SVB). Aggressive DEPLOY. DO NOT anchor on this level as the threshold — it is the extreme tail, not the trigger.
+      +1.5% to +2.5%: Stretched. Mild WAIT tilt.
+      +2.5% or higher: Overbought (occurs ~3-5x per year). WAIT signal.
+      When citing the oscillator in reason/triggersMet/triggersMissing, ALWAYS reference the actual current reading and the appropriate band, not a generic "if oscillator hits -5%". Saying "Oscillator at -1.8% — meaningful pullback" is correct; saying "Oscillator not yet at -5%" is anchoring wrong.
+    15% — Breadth: blend SP500 + broad-market % above 50/200-DMA plus NYSE new highs / new lows when present. The "broad-market" field is universe-agnostic — the PM's source is typically Barchart BCMM (~5,168 stocks) but may also be Russell 3000 (~3,000 stocks) or another broader-than-SPX measure. Decision tree:
+      (a) SP500 and broad-market BOTH in the same band (both ~40% or both ~60%) → clean signal, weight breadth normally.
+      (b) SP500 healthy (≥50%) but broad-market materially weaker (≥10pp gap, e.g. SP500 55% / broad 38%) → NARROWING LEADERSHIP. Newton's classic late-cycle warning. Tilt toward WAIT or DEPLOY_PARTIAL even if SPX-only metrics look fine. Call this out explicitly in the reason field when active.
+      (c) Both deeply oversold (<30%) AND new lows spiking (>150-200/day) → CAPITULATION. Tradable bottom often forms within days. Strong DEPLOY signal.
+      (d) Both stretched (>70%) AND new highs expanding (>100/day) → healthy thrust, confirms DEPLOY when other signals support.
+      (e) UP-VOLUME % (conviction gauge, when present): NYSE advancing volume as a % of total. This is the one breadth field that measures CONVICTION rather than participation. >85-90% up-volume = a breadth-thrust day; coming off a pullback or oversold reading this is one of the strongest DEPLOY-now confirmations available (the bounce has real money behind it). <10-15% up-volume (i.e. >85-90% down-volume) = capitulation selling — pair with oversold %above-DMA + new-low spike for a strong "buy the panic" DEPLOY. Mid-range (35-65%) = no edge from this signal. Cite the actual figure: "up-volume 91% — breadth thrust" not "strong volume."
+      (f) When any breadth field is missing (PM didn't enter today's broad-market or new H/L numbers), explicitly note in reason that you're working without that data — don't fabricate the divergence read.
+      Cite specific numbers when present: "SP500 55%, broad market 38% — 17pp gap" not "breadth divergent."
+      EQUIVALENCY NOTE — BCMM vs Russell 3000: When Newton's strategist note references Russell 3000 breadth and the "Broad Market" field in this brief contains a BCMM value (or vice versa), treat them as near-equivalent readings of the same underlying broad-participation signal. The two universes typically read within 3-5pp of each other directionally — confirming readings, not independent inputs. If the two diverge by more than ~5pp, note the gap explicitly in the reason rather than picking one — the gap itself is a signal worth surfacing. Do NOT double-count BCMM and R3000 as separate signals.
+    10% — VIX state. A VIX spike to 20-25 that's stalling/reversing is a classic DEPLOY trigger. A runaway VIX above 28 still climbing is WAIT (we haven't hit peak fear). VIX <16 is mid-range — no edge either way from this signal alone.
+    6%  — Sentiment: Fear & Greed below 30, AAII bears > bulls, elevated put/call. Capitulation is DEPLOY.
+    4%  — Short-term momentum: 5-day SPY return. A clean -2% to -5% pullback over 5 days is a healthy DEPLOY setup; deeper than -7% may indicate a regime break (WAIT for the bottom to confirm).
+  SCORE BANDS (0-100): anchor to these — do NOT drift to 50 when uncertain.
+    85-100: At least 3 inputs firing DEPLOY with no major WAIT signal. Rare; reserve for genuine "buy the dip" days.
+    70-84:  Newton constructive + at least one quant signal confirming + no major WAIT signal.
+    55-69:  Mixed but tilting DEPLOY (e.g. Newton constructive but quant neutral, or quant oversold but Newton cautious).
+    40-54:  No edge either way. Nothing argues for today over tomorrow.
+    Below 40: Affirmative evidence a better day is likely within ~5 trading days (Newton cautious + overbought oscillator + narrow breadth). Below 25 only when multiple WAIT signals stack.
+  ACTION ← SCORE (one direction, no exceptions):
+    score >= 70  → action "DEPLOY"
+    score 55-69  → action "DEPLOY_PARTIAL" (deploy half now, hold half for a stronger setup)
+    score < 55   → action "WAIT" (window "Re-check next session" at 40-54; "Wait 3-5 trading days" below 40)
+  DEPLOYMENT WINDOW (the payload carries a "DEPLOYMENT WINDOW" line with the trading days left before the 20th):
+    - 5 or fewer trading days left: a WAIT becomes DEPLOY_PARTIAL — say so in the reason.
+    - 2 or fewer trading days left: the action is DEPLOY and the reason says "window closing".
+    - The app re-applies these two rules after you answer, so state them rather than argue with them. Report the score you computed from the inputs either way.
+  HARD RULES:
+    - window must be specific: "Deploy now", "Next 1-2 sessions", "Wait 3-5 trading days" — never vague like "soon" or "this week."
+    - triggersMet and triggersMissing should each be 2-4 short bullets (≤ 8 words each). Cite specific signals/levels, not generalities. "Oscillator -2.3" not "Oscillator weak."
+    - reason is the SINGLE most important factor tipping today's call. If the call is DEPLOY because Newton flipped constructive after 3 weeks cautious, the reason is THAT — not a summary of all signals.
+    - The same inputs MUST produce the same score. Anchor to the rubric; resist drifting to round numbers.
 
 Respond ONLY with valid JSON matching this exact structure (fields are intentionally ordered so Bottom Line → Tactical/Cyclical/Structural Views → Composite → Risk Scan flows naturally in the UI):
 {
@@ -208,11 +286,11 @@ Respond ONLY with valid JSON matching this exact structure (fields are intention
   "volatilityAnalysis": "2-3 sentences on the volatility regime. LEAD with what CHANGED (VIX/MOVE week-over-week, term-structure shift) and what it means for hedging and position sizing, then cite the specific levels (VIX, term structure, MOVE) so the summary is self-contained.",
   "breadthAnalysis": "2-3 sentences on breadth and participation. LEAD with what CHANGED (DMA participation, NYSE A/D, new highs vs lows) and the market-structure implication — is the move broad or narrow? — then cite the specific figures (S&P/broad % above 50/200 DMA, new H/L) so the summary stands alone.",
   "contrarianAnalysis": "2-3 sentences providing the contrarian take. ALWAYS state WHERE each of the four indicators sits (S&P Oscillator, Put/Call, Fear & Greed, AAII survey) and its trajectory — the reader relies on this to know current positioning. All four are interpreted INVERSELY: oversold/fearful = BULLISH opportunity, overbought/greedy = BEARISH warning. Calibrate the signal HONESTLY: a genuine multi-decade extreme is a strong signal; a mid-range reading is a neutral one and must be described as neutral rather than forced into a directional verdict. Close with the overall contrarian read and what it means for positioning.",
-  "hedgingAnalysis": "3-4 sentences on whether current conditions favor adding SPY put protection. OSCILLATOR ANCHOR (CRITICAL): when referencing the S&P Oscillator in hedging context, cite the actual current reading and treat the -1.5% to +2.5% range as the normal monthly band where most hedging decisions happen. Do NOT anchor on -5% as the threshold — that's a panic-capitulation extreme seen 1-3x per year, not a typical signal. Hedging decisions rely far more on VIX level + term structure, breadth quality, and late-cycle warnings than on oscillator extremes. HEDGING PHILOSOPHY: this is tail-risk INSURANCE, not a directional bet — we own equities and want to cap left-tail drawdowns, not speculate on near-term direction. Hedging is NOT a default — it's something we implement only when the cost is reasonable AND the broader picture warrants it (overheated/extended market, deteriorating breadth, rich sentiment, weakening leadership, etc.). Many briefs should land on 'skip' even when premiums are cheap, if the macro/breadth backdrop doesn't justify the spend. Restricted to PROTECTIVE PUTS only — no speculative positions, no weeklies, no LEAPS. STRIKES ARE 5–10% OTM (this is where genuine tail protection lives — ATM puts behave more like directional shorts and carry rich extrinsic premium). ATM strikes are reserved for the rare case where tail risk is acutely elevated within ~30 days (confirmed Risk-Off across all three horizons, VIX above 25 and rising, OR a hard-dated event risk like an FOMC decision priced into front-month vol) — call out the trigger explicitly when recommending ATM, otherwise default to 5–10% OTM. Tenor band is strictly 2–9 months: tactical (Risk-Off in the 1-3M bucket) → 2–3 month monthly contracts; cyclical (Risk-Off in the 3-6M bucket) → 3–6 month quarterly contracts; structural (Risk-Off in the 6-12M bucket while tactical holds up) → 6–9 month contracts as a strategic overlay (capped at 9M — never recommend LEAPS). When a 'Live SPY Hedging Costs' block is present, cite at least one specific 5–10% OTM premium (e.g. '3-month 7% OTM SPY put is X% of spot at $Y') and reference the week-over-week or month-over-month direction of those OTM premiums when provided. Integrate VIX, term structure, and sentiment as the qualitative lens on top of the actual option prices. Give a clear directional recommendation — ADD, HOLD, or SKIP. ADD has TWO entry paths — a HEDGE-ENTRY CHECKLIST block below scores every condition of both paths from computed data; ground your call in its ✓/✗ lines: (1) classic Risk-Off — at least one horizon flagged Risk-Off and breadth/momentum confirming, OR (2) cheap-insurance — premiums MEASURABLY depressed per the premium-percentile context lines (percentile ≤~35th of the trailing 6 months; VVIX and skew percentile not contradicting) AND the market shows late-cycle warning signs: extended runup over the last 6-12M, overbought oscillator readings, narrowing breadth (waning DMA participation, NYSE A/D fading), or leadership thinning. 'Cheap' and 'rich' are DEFINED by the computed percentiles — never assert them from VIX or intuition, and when the ledger is too thin to rank, say so and lean on the trend lines instead. Insurance is most valuable when it's cheap AND a setup is forming, not when one or the other is true alone. SKIP IS A FIRST-CLASS RECOMMENDATION: if neither ADD path is clearly engaged, the right call is 'skip — protection here would be premium spent without a thesis'. Do not hedge for the sake of hedging; an explicit skip is more valuable than a wishy-washy 'hold and reassess'. You may override the checklist's arithmetic with judgment, but name the line you're overriding and why.",
+  "hedgingAnalysis": "3-4 sentences on whether current conditions favor adding SPY put protection, following the HEDGING RULES section above. Cite at least one specific 5–10% OTM premium with its percentile, ground the call in the checklist's ✓/✗ lines, and end with a clear ADD, HOLD, or SKIP.",
   "sectorRotation": {
     "summary": "1-2 sentence overview of which sectors are leading vs lagging based on the LIVE sector ETF performance data provided.",
-    "leading": ["Sector (+X.XX% today, reason)", "Sector (+X.XX% today, reason)"],
-    "lagging": ["Sector (-X.XX% today, reason)", "Sector (-X.XX% today, reason)"],
+    "leading": ["Sector (+X.XX% today, +Y.Y% 1M, reason)", "Sector (+X.XX% today, +Y.Y% 1M, reason)"],
+    "lagging": ["Sector (-X.XX% today, -Y.Y% 1M, reason)", "Sector (-X.XX% today, -Y.Y% 1M, reason)"],
     "pmImplication": "1-2 sentence implication for the portfolio given its current sector exposures."
   },
   "riskScan": [
@@ -249,7 +327,7 @@ Respond ONLY with valid JSON matching this exact structure (fields are intention
     "reason": "ONE sentence, ≤ 25 words, plain English. Why this call is right today."
   },
   "cashDeploymentCall": {
-    "action": "DEPLOY or DEPLOY_PARTIAL or WAIT — see rubric below.",
+    "action": "DEPLOY or DEPLOY_PARTIAL or WAIT — per the CASH DEPLOYMENT RULES above.",
     "score": 78,
     "window": "≤ 12 words — when to act. Examples: 'Deploy now', 'Next 1-2 sessions', 'Wait 3-5 trading days'.",
     "reason": "ONE sentence, ≤ 25 words. The single most important factor tipping today's call.",
@@ -260,63 +338,18 @@ Respond ONLY with valid JSON matching this exact structure (fields are intention
 }
 
 Notes:
-- sectorRotation.leading and .lagging should each have 2-3 entries with sector name, approximate MTD performance, and a brief reason.
+- sectorRotation.leading and .lagging should each have 2-3 entries: sector name, today's % and the 1-month % exactly as given in the Live Sector ETF block, and a brief reason. Do not state any return that is not in that block.
 - riskScan MUST ONLY include holdings tagged "(Portfolio, ...)" — NEVER include Watchlist names (those are candidates, not owned positions). Order from highest risk to lowest, with priority: "High", "Medium-High", "Medium", or "Low-Medium". Focus on the weakest/most at-risk Portfolio names. Include 4-7 entries drawn exclusively from the Portfolio bucket. USE the [RISK: ...] annotations on each holding — holdings tagged CRITICAL or WARNING should be prioritized highest. Incorporate specific risk signals (trend, momentum, MACD, volume, Ichimoku, valuation) into your summaries and actions. Do NOT reference short interest as a risk driver — it is informational only.
 - MARKETEDGE DETERIORATION RULE: Any Portfolio holding tagged "[MARKETEDGE: deteriorating Long, …]" MUST appear in riskScan with priority at least "Medium" — this is a deliberate flag from MarketEdge that a winning position's technicals are significantly breaking down (Long opinion with Score ≤ −3). Cite the Opinion Score and Power Rating in the summary. If the broader environment corroborates (Risk-Off regime, weakening breadth, deteriorating tactical view, or matching CRITICAL/WARNING riskAlert on the same name), ELEVATE to "High" and add a forwardActions item proposing a concrete next step (review/trim/tighten thesis). Do NOT silently downgrade or omit a MARKETEDGE deteriorating-Long flag.
 - When the REGIME-TRANSITION GAUGE block is present and shows a lean with Elevated/High transition risk, work it into tacticalView and bottomLine: position AHEAD of the move and name the early tells driving it. The lean is directional and the NEXT label off a non-neutral regime is Neutral, so read it accordingly: 'toward Risk-Off' = defensive, take chips before it confirms; 'toward Neutral' FROM Risk-On = a de-risk, tighten/stop adding aggressively even though it's not yet defensive; 'toward Neutral' FROM Risk-Off = a thaw, the worst may be passing — start rebuilding a shopping list; 'toward Risk-On' = a tailwind building, lean in early. Example: 'regime Risk-On but cooling toward Neutral as breadth and XLK/XLU roll — stop adding beta, let winners run with tighter stops'. Do NOT overreact to a Low/Watch reading or a 'stable' lean.
 - catalystWatch MUST be grounded ONLY in the CATALYST CALENDAR block — cite the actual dated events (never invent dates or events not listed). Tie each to the book's exposure (e.g. 'CPI on the 15th pressures your Tech concentration'; 'NVDA earnings on the 21st is your biggest single-name event risk'). Lead with the single highest-impact event. If the block lists no events, return an empty string.
 - forwardActions should contain 4-6 specific, actionable recommendations ordered by priority. Use "High", "Medium", or "Low" for priority. Actions should be forward-looking (what to do THIS week or next), not reactive to yesterday.
-- riskScan[].summary MUST be ≤ 12 words and lead with the CONCRETE fact, not the tagging machinery. Write "5.8% weight vs 4.5% target" or "composite 62 → 55 on NIM guidance", NOT "WARNING-tagged with 4 signals (Trend, Ichimoku Cloud danger; RSI, MACD ...)". The detailed reasoning belongs in riskScan[].action, which is shown when the row is expanded — do not duplicate it into the summary.
+- riskScan[].summary MUST be ≤ 12 words and lead with the CONCRETE fact, not the tagging machinery. Write "5.8% weight vs 4.5% target" or "conviction 24 → 21 on NIM guidance", NOT "WARNING-tagged with 4 signals (Trend, Ichimoku Cloud danger; RSI, MACD ...)". The detailed reasoning belongs in riskScan[].action, which is shown when the row is expanded — do not duplicate it into the summary.
 - riskScan[].metric is a SHORT quantified tag (≤ 14 chars) naming the single number that drives the flag — e.g. "+1.3pp" (weight drift vs target), "-7 in 21d" (composite score decay), "RSI 71", "-4.6% 20d". Use a real figure from the data provided; if no single number captures it, use a two-word state like "diverging" or "thesis drift". NEVER invent a figure that is not supported by the inputs — omit the field instead.
 - topActionsDetail MUST mirror topActionsToday one-for-one and in the SAME ORDER, repeating each line verbatim in "text". "tags" is 0-2 short evidence chips (≤ 22 chars each) naming the concrete fact behind the action — e.g. "+130bps over target", "score -7 in 21d", "flips to PARTIAL on a 3-4% pullback". Tags are evidence, not restatements of the action; drop the field rather than padding it.
-- topActionsToday is the PM's at-a-glance executive summary — 3 to 5 imperative one-liners that distill the most important decisions for today. Each entry must (a) start with a verb (Add / Trim / Hedge / Rotate / Watch / Skip / Hold), (b) be ≤ 12 words, (c) be specific enough that the PM could execute on it without further interpretation ("Add 2% SPY 3M 7%-OTM puts" not "Consider hedging"), and (d) be a subset/restatement of the most important forwardActions and hedgingCall items so the executive summary is consistent with the detail panels below it. Do NOT include "review", "monitor", "consider" — those are too vague. If a forwardAction is High priority it should usually have a corresponding topActionsToday entry.
+- topActionsToday is the PM's at-a-glance executive summary — 3 to 5 imperative one-liners that distill the most important decisions for today. Each entry must (a) start with a verb (Add / Trim / Hedge / Rotate / Watch / Skip / Hold), (b) be ≤ 12 words, (c) be specific enough that the PM could execute on it without further interpretation ("Add SPY 3M 7%-OTM puts" not "Consider hedging") — never state a hedge notional or a position size: sizing is the PM's decision and is not in the data, and (d) be a subset/restatement of the most important forwardActions and hedgingCall items so the executive summary is consistent with the detail panels below it. Do NOT include "review", "monitor", "consider" — those are too vague. If a forwardAction is High priority it should usually have a corresponding topActionsToday entry.
 - hedgingCall MUST mirror the recommendation in hedgingAnalysis. If hedgingAnalysis says "SKIP", hedgingCall.action is "SKIP" and strike/tenor are omitted (null/missing). If it says "ADD", populate strike + tenor with the specific values referenced in the prose (e.g. "5% OTM" / "3 months"). reason must be one short sentence that captures the WHY (cheap insurance + late-cycle warning, classic Risk-Off, etc.) so the PM can decide in one read whether to act.
 
-- cashDeploymentCall answers a SPECIFIC question: "We make monthly-installment deployments of new client cash, normally between the 1st and the 20th. Is today a good day to deploy, or should we wait a few sessions for a better entry?" This is NOT macro market timing — the decision to deploy this month is already made; we are only optimizing day-of-deployment within a roughly 2-week window. Apply this rubric:
-  INPUT WEIGHTS (blend in this order of priority):
-    40% — Mark Newton's daily strategist note + the 30-day Newton history block. This is the dominant signal. Look explicitly for:
-      (a) PERSISTENCE: Has Newton been calling the same dip-buy / pullback opportunity for multiple consecutive sessions? (Mature signal — strong DEPLOY tilt; he's been right and a bounce is overdue, OR he's been wrong and the setup is fading. Use his tone in the most recent note to disambiguate.)
-      (b) INFLECTION: Did Newton flip direction recently (cautious → constructive, or vice versa)? A fresh constructive flip after 2+ weeks of caution is the strongest single DEPLOY signal we can identify. The reverse — fresh caution after a constructive run — is the strongest single WAIT signal.
-      (c) STALENESS: Is Newton's bullish thesis 2+ weeks old without confirming market action? Reduce his weight in that case; the call is no longer fresh.
-      Populate newtonPersistence with a ONE-line summary of which of these patterns is active (e.g. "Newton calling dip-buy 4 sessions running; constructive tone holding" or "Newton flipped cautious 2 sessions ago — wait"). Omit the field entirely if no Newton notes are in the context.
-    25% — S&P Oscillator (from the oscillator screenshot if attached, otherwise from oscContext text). CALIBRATION (CRITICAL — do not drift to extreme thresholds): the S&P Oscillator typically reads between -2% and +2% in normal weeks. Reference these bands directly:
-       0 to -1%:    Normal weekly drift — no edge from this input.
-      -1.5% to -2.5%: MEANINGFUL pullback. This is already a real DEPLOY signal — do not treat it as 'almost there'. Most monthly deployment opportunities sit in this band.
-      -2.5% to -4%: Sharp pullback (occurs ~5-10x per year). Strong DEPLOY signal.
-      -5% or deeper: Panic / capitulation lows (occurs 1-3x per year — March 2020, October 2022, March 2023 SVB). Aggressive DEPLOY. DO NOT anchor on this level as the threshold — it is the extreme tail, not the trigger.
-      +1.5% to +2.5%: Stretched. Mild WAIT tilt.
-      +2.5% or higher: Overbought (occurs ~3-5x per year). WAIT signal.
-      When citing the oscillator in reason/triggersMet/triggersMissing, ALWAYS reference the actual current reading and the appropriate band, not a generic "if oscillator hits -5%". Saying "Oscillator at -1.8% — meaningful pullback" is correct; saying "Oscillator not yet at -5%" is anchoring wrong.
-    15% — Breadth: blend SP500 + broad-market % above 50/200-DMA plus NYSE new highs / new lows when present. The "broad-market" field is universe-agnostic — the PM's source is typically Barchart BCMM (~5,168 stocks) but may also be Russell 3000 (~3,000 stocks) or another broader-than-SPX measure. Decision tree:
-      (a) SP500 and broad-market BOTH in the same band (both ~40% or both ~60%) → clean signal, weight breadth normally.
-      (b) SP500 healthy (≥50%) but broad-market materially weaker (≥10pp gap, e.g. SP500 55% / broad 38%) → NARROWING LEADERSHIP. Newton's classic late-cycle warning. Tilt toward WAIT or DEPLOY_PARTIAL even if SPX-only metrics look fine. Call this out explicitly in the reason field when active.
-      (c) Both deeply oversold (<30%) AND new lows spiking (>150-200/day) → CAPITULATION. Tradable bottom often forms within days. Strong DEPLOY signal.
-      (d) Both stretched (>70%) AND new highs expanding (>100/day) → healthy thrust, confirms DEPLOY when other signals support.
-      (f) UP-VOLUME % (conviction gauge, when present): NYSE advancing volume as a % of total. This is the one breadth field that measures CONVICTION rather than participation. >85-90% up-volume = a breadth-thrust day; coming off a pullback or oversold reading this is one of the strongest DEPLOY-now confirmations available (the bounce has real money behind it). <10-15% up-volume (i.e. >85-90% down-volume) = capitulation selling — pair with oversold %above-DMA + new-low spike for a strong "buy the panic" DEPLOY. Mid-range (35-65%) = no edge from this signal. Cite the actual figure: "up-volume 91% — breadth thrust" not "strong volume."
-      (e) When any breadth field is missing (PM didn't enter today's broad-market or new H/L numbers), explicitly note in reason that you're working without that data — don't fabricate the divergence read.
-      Cite specific numbers when present: "SP500 55%, broad market 38% — 17pp gap" not "breadth divergent."
-      EQUIVALENCY NOTE — BCMM vs Russell 3000: When Newton's strategist note references Russell 3000 breadth and the "Broad Market" field in this brief contains a BCMM value (or vice versa), treat them as near-equivalent readings of the same underlying broad-participation signal. The two universes typically read within 3-5pp of each other directionally — confirming readings, not independent inputs. If the two diverge by more than ~5pp, note the gap explicitly in the reason rather than picking one — the gap itself is a signal worth surfacing. Do NOT double-count BCMM and R3000 as separate signals.
-    10% — VIX state. A VIX spike to 20-25 that's stalling/reversing is a classic DEPLOY trigger. A runaway VIX above 28 still climbing is WAIT (we haven't hit peak fear). VIX <16 is mid-range — no edge either way from this signal alone.
-    6%  — Sentiment: Fear & Greed below 30, AAII bears > bulls, elevated put/call. Capitulation is DEPLOY.
-    4%  — Short-term momentum: 5-day SPY return. A clean -2% to -5% pullback over 5 days is a healthy DEPLOY setup; deeper than -7% may indicate a regime break (WAIT for the bottom to confirm).
-  COMPUTING THE SCORE (0-100): Anchor to this banding — do NOT drift to 50 when uncertain.
-    85-100: At least 3 weights firing DEPLOY with no major WAIT signal. Rare; reserve for genuine "buy the dip" days.
-    70-84:  Newton constructive + at least one quant signal confirming + no major WAIT signal. Strong default for a clean DEPLOY day.
-    55-69:  Mixed but tilting DEPLOY (e.g. Newton constructive but quant neutral, or quant oversold but Newton cautious). Action = DEPLOY_PARTIAL (deploy half now, hold half for stronger setup).
-    40-54:  Mid-range / no edge. Default action = DEPLOY anyway (mid-range is fine; never WAIT just because signals are quiet).
-    25-39:  WAIT zone — affirmative evidence a better day is likely within ~5 trading days (Newton cautious + overbought oscillator + narrow breadth).
-    Below 25: Strong WAIT — multiple WAIT signals stacking. Very rare; should only trigger on clear deterioration.
-  ACTION → SCORE mapping (must be consistent):
-    score >= 70  → action "DEPLOY"
-    score 55-69  → action "DEPLOY_PARTIAL"
-    score 40-54  → action "DEPLOY" (mid-range defaults to deploy; never WAIT in this band)
-    score < 40   → action "WAIT"
-  HARD RULES:
-    - Mid-range (40-54) is ALWAYS DEPLOY, never WAIT. We do not delay deployment for "no edge". WAIT requires AFFIRMATIVE evidence a better day is likely.
-    - window must be specific: "Deploy now", "Next 1-2 sessions", "Wait 3-5 trading days" — never vague like "soon" or "this week."
-    - triggersMet and triggersMissing should each be 2-4 short bullets (≤ 8 words each). Cite specific signals/levels, not generalities. "Oscillator -2.3" not "Oscillator weak."
-    - reason is the SINGLE most important factor tipping today's call. If the call is DEPLOY because Newton flipped constructive after 3 weeks cautious, the reason is THAT — not a summary of all signals.
-    - The same inputs MUST produce the same score. Anchor to the rubric; resist drifting to round numbers.
 - IMPORTANT: All portfolio positions are equally weighted and we only rebalance (restore equal weights), never trim individual positions relative to others. Do NOT recommend trimming, reducing, or overweighting specific names. Instead, recommend actions like: adding new names, removing names entirely if the thesis is broken, rebalancing back to equal weight, hedging, or adjusting overall portfolio exposure. Think in terms of "own or don't own" rather than position sizing.`;
 
 type AttachmentInput = {
@@ -414,80 +447,6 @@ function hashAttachments(attachments: AttachmentInput[]): string {
   if (!attachments || attachments.length === 0) return "none";
   const ids = attachments.map((a) => a.dataUrl.slice(-100)).sort().join("|");
   return createHash("md5").update(ids).digest("hex");
-}
-
-type CachedAnalysis = {
-  hash: string;
-  summary: string;
-  equityFlowsSignal?: string;
-  analyzedAt: string;
-};
-
-// Get cached analysis from KV, or null if cache miss / images changed
-async function getCachedAnalysis(hash: string): Promise<{ summary: string; equityFlowsSignal?: string } | null> {
-  try {
-    const redis = await getRedis();
-    const raw = await redis.get(ATTACHMENT_CACHE_KEY);
-    if (!raw) return null;
-    const cached: CachedAnalysis = JSON.parse(raw);
-    if (cached.hash === hash) return { summary: cached.summary, equityFlowsSignal: cached.equityFlowsSignal };
-    return null;
-  } catch {
-    return null;
-  }
-}
-
-// Parse the equity flows signal from the analysis text
-function parseEquityFlowsSignal(text: string): string | undefined {
-  const match = text.match(/^EQUITY_FLOWS_SIGNAL:\s*(.+)$/m);
-  if (!match) return undefined;
-  const signal = match[1].trim();
-  const valid = ["Strong Inflows", "Moderate Inflows", "Mixed", "Moderate Outflows", "Heavy Outflows"];
-  return valid.includes(signal) ? signal : undefined;
-}
-
-// Save analysis to KV cache
-async function saveCachedAnalysis(hash: string, summary: string, equityFlowsSignal?: string) {
-  try {
-    const redis = await getRedis();
-    const cached: CachedAnalysis = {
-      hash,
-      summary,
-      equityFlowsSignal,
-      analyzedAt: new Date().toISOString(),
-    };
-    await redis.set(ATTACHMENT_CACHE_KEY, JSON.stringify(cached));
-  } catch (e) {
-    console.error("Failed to cache attachment analysis:", e);
-  }
-}
-
-// Run a separate Claude call to analyze screenshots, then cache the result
-async function analyzeAttachments(attachments: AttachmentInput[]): Promise<string> {
-  const imageBlocks = buildImageBlocks(attachments);
-  const message = await client.messages.create({
-    model: "claude-sonnet-5",
-    thinking: { type: "disabled" },
-    max_tokens: 1024,
-    messages: [
-      {
-        role: "user",
-        content: [
-          {
-            type: "text",
-            text: `You are a senior portfolio strategist. Analyze these JPM Flows & Liquidity report screenshots. Extract all key data points: fund flow figures ($bn), asset class flows (equity, bond, money market), regional flows, sector positioning, and any notable trends. Be specific with numbers.
-
-IMPORTANT: Your response must start with a single classification line in this exact format:
-EQUITY_FLOWS_SIGNAL: <one of: Strong Inflows, Moderate Inflows, Mixed, Moderate Outflows, Heavy Outflows>
-
-Then write a concise 3-5 paragraph summary that a PM can reference daily.`,
-          },
-          ...imageBlocks,
-        ],
-      },
-    ],
-  });
-  return message.content[0].type === "text" ? message.content[0].text : "";
 }
 
 // Separate vision pass for the S&P Oscillator chart screenshot. The oscillator
@@ -702,36 +661,6 @@ async function saveCachedStrategistReports(hash: string, summary: string) {
   }
 }
 
-// Compute dynamic hedge timing score from market data (mirrors HedgingIndicator logic)
-// `premiumPercentile`: today's 2-4M 5% OTM premium ranked in its own trailing
-// ledger — the DIRECT measure of put cost. When available it becomes a fourth
-// check, so "premiums are reasonable" is measured rather than proxied by VIX.
-function computeHedgeScore(
-  vix: number,
-  termStructure: string,
-  fearGreed: number,
-  premiumPercentile: number | null = null,
-): number {
-  let optimalCount = 0;
-
-  // Put cost: VIX <= 18 → cheap/moderate → optimal
-  if (vix <= 18) optimalCount++;
-
-  // VIX context: low vol (<=16) optimal; moderate (<=22) optimal only if not backwardation
-  if (vix <= 16) optimalCount++;
-  else if (vix <= 22 && termStructure !== "Backwardation") optimalCount++;
-
-  // Sentiment: fearGreed >= 45 → neutral/greedy → complacency → optimal
-  if (fearGreed >= 45) optimalCount++;
-
-  // Measured put cost: premium in the cheaper ~40% of its own history.
-  const checks = premiumPercentile != null ? 4 : 3;
-  if (premiumPercentile != null && premiumPercentile <= 40) optimalCount++;
-
-  // Scaled 10-90 regardless of how many checks were available.
-  return Math.round((optimalCount / checks) * 80 + 10);
-}
-
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
@@ -872,8 +801,17 @@ export async function POST(request: NextRequest) {
               if (isEtfOrFund) {
                 line = `${h.ticker} (${typeLabel}, ${h.bucket}, ${h.sector}, ${h.weights.portfolio}% weight)`;
               } else {
-                const rawScore = h.scores ? Object.values(h.scores).reduce((a: number, b: number) => a + b, 0) : 0;
-                line = `${h.ticker} (${h.bucket}, ${h.sector}, score ${rawScore}/40)`;
+                // Conviction = the app's own 33-pt composite (setup categories
+                // excluded, N/A + DATA GAP renormalised) so the model reasons on
+                // the number the PM sees. Setup grade rides beside it, never blended.
+                let scoreBits = "unscored";
+                try {
+                  const scored = computeScores(h as unknown as Stock, marketData as MarketData);
+                  scoreBits = `conviction ${scored.raw}/${MAX_SCORE} (${scored.ratingLabel})`;
+                  const setup = computeSetup(h as unknown as Stock);
+                  if (setup.grade) scoreBits += `, setup ${setup.rawPoints}/${setup.availableMax} (${setup.grade})`;
+                } catch { /* malformed holding — leave it unscored rather than guess */ }
+                line = `${h.ticker} (${h.bucket}, ${h.sector}, ${scoreBits})`;
               }
 
               // Risk alerts apply to all instrument types (technicals are universal)
@@ -1255,7 +1193,7 @@ Use this rollup as the SCAFFOLDING for tacticalView, cyclicalView, and structura
           }
           return `\n\nConsolidated Regime Evidence (from pm:market-regime, computed ${r.computedAt}) — this composite IS the CONSOLIDATED REGIME:
 Composite: ${r.composite.label} (${r.composite.score}/${r.composite.total} risk-on signals)
-${lines.join("\n")}${horizonsBlock}
+${r.composite.rawLabel ? `Raw (unsmoothed) read: ${r.composite.rawLabel}${r.composite.pending ? ` — has read ${r.composite.pending.label} for ${r.composite.pending.days} of the ${r.composite.pending.needed} sessions needed; the label flips in ${Math.max(0, r.composite.pending.needed - r.composite.pending.days)} more if it holds` : r.composite.rawLabel === r.composite.label ? " — agrees with the label" : ""}\n` : ""}${lines.join("\n")}${horizonsBlock}
 
 These signals are the evidence behind the consolidated label. Use them for your breadthAnalysis (sector leadership rotation), your three horizon views, and — most importantly — to decide your regimeVerdict stance (concurs / cautions / diverges). If your synthesized read (notes + reports + forward data) pulls against this label, that tension is the headline: name it in bottomLine and take the 'cautions' or 'diverges' stance. Do NOT change marketRegime to resolve it.`;
         })()
@@ -1321,7 +1259,7 @@ These signals are the evidence behind the consolidated label. Use them for your 
           : "";
         priorBriefContext = `
 
-PRIOR BRIEF (previous trading day's brief${priorDate ? ` — ${priorDate}` : ""}${sameDayNote}) — for CONTINUITY ONLY. Use it to identify what has CHANGED since; do NOT repeat it:
+PRIOR BRIEF (previous trading day's brief${priorDate ? ` — ${priorDate}` : ""}${sameDayNote}) — for CONTINUITY ONLY. Form today's posture from today's data FIRST; only then use this to write whatChanged. Do NOT repeat it or carry its tone forward:
 - Prior regime: ${prior.marketRegime ?? "n/a"}${prior.regimeVerdict ? ` — "${prior.regimeVerdict}"` : ""}
 - Prior bottom line: ${prior.bottomLine ?? "n/a"}
 - Prior hedging call: ${prior.hedgingCall?.action ?? "n/a"}
@@ -1360,9 +1298,12 @@ PRIOR BRIEF (previous trading day's brief${priorDate ? ` — ${priorDate}` : ""}
       ? `\n\nACTIVE HEDGE POSITIONS (${activeHedges.length} on the books — protection IS currently on):\n${activeHedges.map((h) => `- ${describeHedge(h)}`).join("\n")}\nHOLD is valid: assess whether to keep these as-is (HOLD), add/roll (ADD), or note any expiring within ~2 weeks. Factor the existing protection into the tail-risk read.`
       : `\n\nACTIVE HEDGE POSITIONS: NONE on the books — the portfolio is currently UNHEDGED. Therefore hedgingCall.action MUST be ADD or SKIP, never HOLD (there is nothing to hold). If conditions warrant protection, say ADD with a strike + tenor; if not, say SKIP. Do NOT assume a prior recommendation was acted upon.`;
 
+    // Calendar backstop inputs for the cash call (see app/lib/deployment-window.ts).
+    const cashWindow = deploymentWindow(todayIso);
+
     const textContent = `Generate the morning brief for today.
 
-TODAY'S DATE: ${todayLong} (${todayIso}). This is the authoritative date for this brief. Do NOT reference macro events older than 30 days before this date — including "Liberation Day" (April 2025), older FOMC meetings, or past CPI prints — even if they appear in attached screenshots or you remember them from training data. Every "recent move" you cite must come from the numerical data below.${priorBriefContext}
+TODAY'S DATE: ${todayLong} (${todayIso}). This is the authoritative date for this brief. Do NOT present macro events older than 30 days before this date as recent moves or current drivers, even if they appear in attached screenshots or you remember them from training data. Every "recent move" you cite must come from the numerical data below.${priorBriefContext}
 
 Here are the current market indicators:
 
@@ -1390,11 +1331,16 @@ Contrarian Indicators (ALL interpreted INVERSELY — oversold/fearful = BULLISH,
       forwardData?.aaiiBullBear?.value ?? marketData.aaiiBullBear
     }%${trendBlurb(forwardData?.aaiiBullBear)} — <-20 = excessive bearishness = BULLISH, >+30 = excessive bullishness = BEARISH
 
-IMPORTANT — interpret trajectory: a value at an extreme that is REVERSING (e.g. F&G at 22 but rising) is much weaker as a contrarian signal than the same value still moving deeper into the extreme. Use the trajectory descriptors above plus your own knowledge of each indicator's true multi-decade historical range (NOT any short rolling window) when forming the contrarianAnalysis — e.g. VIX typically sits 12-20 in quiet markets and spikes to 30+ in stress, AAII Bull-Bear spreads beyond ±25 are historically extreme, CBOE put/call typically oscillates 0.7-1.2 with >1.2 marking fear washouts, CNN F&G treats <25 as extreme fear and >75 as extreme greed. Characterize the level as elevated / subdued / extreme against THAT long-run backdrop, not against the few months of local data we happen to have cached.
+IMPORTANT — interpret trajectory: a value at an extreme that is REVERSING (e.g. F&G at 22 but rising) is much weaker as a contrarian signal than the same value still moving deeper into the extreme. Characterize each level as elevated / subdued / extreme against the REFERENCE RANGES below. They are supplied by the app — do not substitute ranges from memory, and do not rank against the few months of locally cached data:
+- VIX: quiet markets 12-20, stress 30+${hedgingCosts.ctx?.volAnchor?.vix ? ` (today ${hedgingCosts.ctx.volAnchor.vix.level} = ${hedgingCosts.ctx.volAnchor.vix.percentile}th percentile of ~${hedgingCosts.ctx.volAnchor.vix.years}y of history)` : ""}
+- AAII Bull-Bear spread: beyond ±25 is historically extreme
+- CBOE total put/call: normal 0.7-1.2; above 1.2 marks fear washouts
+- CNN Fear & Greed: below 25 extreme fear, above 75 extreme greed
 
-Hedge Timing Score: ${computeHedgeScore(fwdVix ?? 20, marketData.termStructure ?? "Contango", forwardData?.fearGreed?.value ?? marketData.fearGreed ?? 50, hedgingCosts.ctx?.buckets.find((b) => b.bucket === "2-4M")?.otm5Percentile ?? null)}/100 (dynamically computed from VIX, term structure, sentiment, and the 2-4M premium percentile)
 ${hedgingCosts.text ? `\n${hedgingCosts.text}\n\nWhen writing hedgingAnalysis, cite at least one specific 5–10% OTM premium from the table above (e.g. "the 3-month 7% OTM SPY put costs X% of spot") AND its premium percentile from the percentile-context lines (e.g. "18th percentile of the trailing 6 months — historically cheap"). The percentile is the authoritative cheap/rich measure; the WoW/MoM trend is its direction. Anchor every "tail puts are cheap/expensive" claim to those computed figures — never generalize from VIX alone, and never assert a decile the data doesn't show. Default strike framing is 5–10% OTM; only quote ATM premiums when explicitly recommending an ATM hedge (rare exception case).${hedgeChecklistBlock}` : `\nLIVE SPY HEDGING COSTS: UNAVAILABLE THIS RUN (CBOE fetch failed). For hedgingAnalysis: state plainly that live premium data was unavailable, do NOT fabricate or estimate any premium figure, percentile, or "cheap/expensive" claim, and do NOT recommend ADD on cost grounds — without prices the cheap-insurance path cannot be evaluated. Restrict the read to the regime/VIX/breadth picture, and set hedgingCall per the ACTIVE HEDGE POSITIONS rule below (HOLD only if a real position exists, otherwise SKIP with "re-check when premium data returns").${hedgeChecklistBlock}`}
 ${hedgeStateBlock}
+
+${deploymentWindowLine(cashWindow)}
 
 Live Sector ETF Performance (from Yahoo Finance — use this for sector rotation analysis):
 ${sectorPerf.text}
@@ -1678,23 +1624,35 @@ Current Portfolio Holdings: ${holdingsSummary}${portfolioPositioning}`;
       { type: "text", text: oscContext + newtonTechContext + strategistReportsContext + "\n\n" + textContent },
     ];
 
+    // Adaptive thinking ON: the brief reconciles conflicting sources into ~25
+    // fields that must agree with each other (hedgingCall ↔ hedgingAnalysis ↔
+    // checklist, topActionsDetail ↔ topActionsToday). Thinking counts against
+    // max_tokens, so the cap is raised to leave the JSON its full room.
+    // The system prompt is byte-stable across runs → cached (the day's data
+    // lives in the user turn, after the breakpoint).
     const message = await client.messages.create({
       model: "claude-sonnet-5",
-      thinking: { type: "disabled" },
-      max_tokens: 8192,
+      thinking: { type: "adaptive" },
+      max_tokens: 16000,
       messages: [
         {
           role: "user",
           content: contentBlocks,
         },
       ],
-      system: BRIEF_PROMPT,
+      system: [{ type: "text", text: BRIEF_PROMPT, cache_control: { type: "ephemeral" } }],
     });
     progress.mark("narrative");
     progress.finish();
 
-    const text =
-      message.content[0].type === "text" ? message.content[0].text : "";
+    // With thinking on, content[0] is a thinking block — read the text blocks.
+    const text = message.content
+      .filter((b): b is Anthropic.TextBlock => b.type === "text")
+      .map((b) => b.text)
+      .join("");
+    if (message.stop_reason === "max_tokens") {
+      console.warn("[Brief] response hit max_tokens — JSON may be truncated");
+    }
 
     // Tolerant parse (app/lib/json-repair). The previous repair only closed
     // unbalanced brackets, which fixes a TRUNCATED response but re-threw on
@@ -1743,6 +1701,16 @@ Current Portfolio Holdings: ${holdingsSummary}${portfolioPositioning}`;
         reason: `No hedge on the books to hold — staying unhedged this session.${orig}`,
       };
       console.log("[Brief] hedgingCall HOLD→SKIP: no active hedge position on record");
+    }
+
+    // Calendar backstop on the cash call (mirrors the HOLD→SKIP guard): the
+    // prompt states the rule, this enforces it. The model's score is kept.
+    {
+      const guarded = applyWindowBackstop(parsed?.cashDeploymentCall as { action?: string; reason?: string } | undefined, cashWindow);
+      if (guarded.changedFrom && guarded.call) {
+        (parsed as Record<string, unknown>).cashDeploymentCall = guarded.call;
+        console.log(`[Brief] cashDeploymentCall ${guarded.changedFrom}→${guarded.call.action}: ${cashWindow.tradingDaysLeft} trading day(s) left in the window`);
+      }
     }
 
     const now = new Date();
@@ -1800,6 +1768,8 @@ Current Portfolio Holdings: ${holdingsSummary}${portfolioPositioning}`;
       // Active hedge positions at generation time — lets the tile show the
       // ground-truth protection status the HOLD/ADD/SKIP call was based on.
       activeHedges,
+      // Deployment-window state behind the cash call's calendar backstop.
+      cashWindow,
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);

@@ -27,6 +27,23 @@ export const maxDuration = 60;
 
 const client = new Anthropic();
 
+/** SPY % change on the day from Yahoo (live intraday). Best-effort: null on failure. */
+async function fetchSpyDayPct(): Promise<number | null> {
+  try {
+    const res = await fetch("https://query2.finance.yahoo.com/v8/finance/chart/SPY?range=1d&interval=1d", {
+      headers: { "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36" },
+      cache: "no-store",
+    });
+    if (!res.ok) return null;
+    const meta = (await res.json())?.chart?.result?.[0]?.meta;
+    const price = meta?.regularMarketPrice;
+    const prev = meta?.chartPreviousClose ?? meta?.previousClose;
+    return typeof price === "number" && typeof prev === "number" && prev !== 0 ? ((price - prev) / prev) * 100 : null;
+  } catch {
+    return null;
+  }
+}
+
 function parse<T>(raw: string | null): T | null {
   if (!raw) return null;
   try { return JSON.parse(raw) as T; } catch { return null; }
@@ -52,6 +69,12 @@ export async function POST() {
       marketRegime?: string;
       tacticalView?: string; cyclicalView?: string; structuralView?: string;
       hedgingCall?: { action?: string; strike?: string; tenor?: string };
+      generatedAt?: string;
+      forwardLooking?: {
+        vixWeek?: { value?: number | null };
+        fearGreed?: { asOf?: string };
+        spOscillator?: { asOf?: string };
+      } | null;
     }>(briefRaw);
 
     const consolidatedRegime = marketRegime?.composite?.label ?? market.riskRegime ?? "Neutral";
@@ -81,6 +104,29 @@ export async function POST() {
       ? `\n\nACTIVE HEDGE POSITIONS (${activeHedges.length} on the books — protection IS on):\n${activeHedges.map((h) => `- ${describeHedge(h)}`).join("\n")}\nHOLD is valid: keep as-is (HOLD), add/roll (ADD), or flag any expiring soon.`
       : `\n\nACTIVE HEDGE POSITIONS: NONE on the books — the portfolio is currently UNHEDGED. hedgingCall.action MUST be ADD or SKIP, never HOLD (there is nothing to hold). Do NOT assume a prior recommendation was implemented; a prior "HOLD" call is not evidence a hedge exists.`;
 
+    // Freshness: premiums are live, but F&G / oscillator / term structure are
+    // PM-entered (pm:market) and may be days old. Stamp them so the model can
+    // say when it is leaning on a stale input instead of pairing a live
+    // premium with Monday's oscillator in silence.
+    // The as-of dates come from the forward-looking points the brief stored.
+    const stampFor = (asOf: string | undefined): string => {
+      const d = typeof asOf === "string" && asOf ? asOf.slice(0, 10) : null;
+      return d ? ` (as of ${d}${d !== todayIso ? " — NOT today" : ""})` : " (as-of date unknown)";
+    };
+    const fgStamp = stampFor(brief?.forwardLooking?.fearGreed?.asOf);
+    const oscStamp = stampFor(brief?.forwardLooking?.spOscillator?.asOf);
+
+    // Tape since the morning brief — lets the refresh note a divergence from
+    // the morning's views without re-litigating them.
+    const spyDayPct = await fetchSpyDayPct();
+    const briefVix = typeof brief?.forwardLooking?.vixWeek?.value === "number" ? brief.forwardLooking.vixWeek.value : null;
+    const tapeBits: string[] = [];
+    if (spyDayPct != null) tapeBits.push(`SPY ${spyDayPct >= 0 ? "+" : ""}${spyDayPct.toFixed(2)}% on the day`);
+    if (vix != null && briefVix != null) tapeBits.push(`VIX ${vix.toFixed(1)} now vs ${briefVix.toFixed(1)} at the brief (${vix - briefVix >= 0 ? "+" : ""}${(vix - briefVix).toFixed(1)})`);
+    const tapeLine = tapeBits.length
+      ? `\nTAPE SINCE THE BRIEF: ${tapeBits.join(" · ")}. If this is a material move against the morning's views, say so in one clause — do not rewrite the views.`
+      : "";
+
     const horizonContext = brief
       ? `\nCONTEXT FROM TODAY'S BRIEF (for tenor selection — do NOT re-litigate these views, just hedge against them):\n- Regime label: ${brief.marketRegime ?? consolidatedRegime}\n- Tactical (1-3M): ${brief.tacticalView ?? "n/a"}\n- Cyclical (3-6M): ${brief.cyclicalView ?? "n/a"}\n- Structural (6-12M): ${brief.structuralView ?? "n/a"}`
       : "";
@@ -94,7 +140,8 @@ HEDGING PHILOSOPHY: tail-risk INSURANCE, not a directional bet. Hedging is NOT a
 HOLD is ONLY permitted when the ACTIVE HEDGE POSITIONS block lists ≥1 real position. If the book is UNHEDGED, use ADD (establish protection) or SKIP (stay unhedged) — never HOLD, and do NOT claim "existing puts provide cover" when none are on the books.
 
 ${hedgingCosts.text}${checklist}${hedgeStateBlock}
-${vix != null ? `\nVIX: ${vix}` : ""}${market.termStructure ? ` | Term structure: ${market.termStructure}` : ""}${typeof market.fearGreed === "number" ? ` | Fear & Greed: ${market.fearGreed}` : ""}${typeof market.spOscillator === "number" ? ` | S&P Oscillator: ${market.spOscillator}%` : ""}
+${vix != null ? `\nVIX: ${vix} (live regime snapshot)` : ""}${market.termStructure ? ` | Term structure: ${market.termStructure} (PM-entered, date unknown)` : ""}${typeof market.fearGreed === "number" ? ` | Fear & Greed: ${market.fearGreed}${fgStamp}` : ""}${typeof market.spOscillator === "number" ? ` | S&P Oscillator: ${market.spOscillator}%${oscStamp}` : ""}
+Inputs marked "NOT today" or "date unknown" may be stale: you may still use them, but say in hedgingAnalysis when the call leans on one.${tapeLine}
 ${horizonContext}
 
 Return ONLY this JSON (no markdown fences):
