@@ -30,6 +30,7 @@ import { computeScores } from "@/app/lib/scoring";
 import { MAX_SCORE } from "@/app/lib/types";
 import { computeSetup } from "@/app/lib/setup-grade";
 import { deploymentWindow, deploymentWindowLine, applyWindowBackstop } from "@/app/lib/deployment-window";
+import { loadDeployments, monthState, deploymentStateLine } from "@/app/lib/deployments";
 
 // Extended thinking makes the single brief call longer; give it room.
 export const maxDuration = 300;
@@ -351,6 +352,19 @@ Notes:
 - hedgingCall MUST mirror the recommendation in hedgingAnalysis. If hedgingAnalysis says "SKIP", hedgingCall.action is "SKIP" and strike/tenor are omitted (null/missing). If it says "ADD", populate strike + tenor with the specific values referenced in the prose (e.g. "5% OTM" / "3 months"). reason must be one short sentence that captures the WHY (cheap insurance + late-cycle warning, classic Risk-Off, etc.) so the PM can decide in one read whether to act.
 
 - IMPORTANT: All portfolio positions are equally weighted and we only rebalance (restore equal weights), never trim individual positions relative to others. Do NOT recommend trimming, reducing, or overweighting specific names. Instead, recommend actions like: adding new names, removing names entirely if the thesis is broken, rebalancing back to equal weight, hedging, or adjusting overall portfolio exposure. Think in terms of "own or don't own" rather than position sizing.`;
+
+/** The same prompt with the cash-deployment rules and output field removed —
+ *  used once this month's installment is logged as fully deployed, so the
+ *  brief neither spends tokens on the rubric nor re-litigates a done decision.
+ *  Derived mechanically so the two variants can never drift apart. */
+const BRIEF_PROMPT_NO_CASH = (() => {
+  const a = BRIEF_PROMPT.indexOf("=== CASH DEPLOYMENT RULES");
+  const b = BRIEF_PROMPT.indexOf("Respond ONLY with valid JSON");
+  if (a < 0 || b < 0) return BRIEF_PROMPT;
+  const withoutRules = BRIEF_PROMPT.slice(0, a) + BRIEF_PROMPT.slice(b);
+  const withoutField = withoutRules.replace(/,\n  "cashDeploymentCall": \{[\s\S]*?\n  \}\n\}/, "\n}");
+  return withoutField === withoutRules ? BRIEF_PROMPT : withoutField;
+})();
 
 type AttachmentInput = {
   section: string;
@@ -1300,6 +1314,11 @@ PRIOR BRIEF (previous trading day's brief${priorDate ? ` — ${priorDate}` : ""}
 
     // Calendar backstop inputs for the cash call (see app/lib/deployment-window.ts).
     const cashWindow = deploymentWindow(todayIso);
+    // Deployment log: once this month's installment is fully logged, no cash
+    // call is made until the 1st. Read-only vs pm:deployments.
+    const cashState = monthState(await loadDeployments(), todayIso);
+    const cashDone = cashState.status === "full" && BRIEF_PROMPT_NO_CASH !== BRIEF_PROMPT;
+    const cashLine = cashDone || cashState.status === "half" ? `${deploymentStateLine(cashState)}${cashDone ? "" : `\n${deploymentWindowLine(cashWindow)}`}` : deploymentWindowLine(cashWindow);
 
     const textContent = `Generate the morning brief for today.
 
@@ -1340,7 +1359,7 @@ IMPORTANT — interpret trajectory: a value at an extreme that is REVERSING (e.g
 ${hedgingCosts.text ? `\n${hedgingCosts.text}\n\nWhen writing hedgingAnalysis, cite at least one specific 5–10% OTM premium from the table above (e.g. "the 3-month 7% OTM SPY put costs X% of spot") AND its premium percentile from the percentile-context lines (e.g. "18th percentile of the trailing 6 months — historically cheap"). The percentile is the authoritative cheap/rich measure; the WoW/MoM trend is its direction. Anchor every "tail puts are cheap/expensive" claim to those computed figures — never generalize from VIX alone, and never assert a decile the data doesn't show. Default strike framing is 5–10% OTM; only quote ATM premiums when explicitly recommending an ATM hedge (rare exception case).${hedgeChecklistBlock}` : `\nLIVE SPY HEDGING COSTS: UNAVAILABLE THIS RUN (CBOE fetch failed). For hedgingAnalysis: state plainly that live premium data was unavailable, do NOT fabricate or estimate any premium figure, percentile, or "cheap/expensive" claim, and do NOT recommend ADD on cost grounds — without prices the cheap-insurance path cannot be evaluated. Restrict the read to the regime/VIX/breadth picture, and set hedgingCall per the ACTIVE HEDGE POSITIONS rule below (HOLD only if a real position exists, otherwise SKIP with "re-check when premium data returns").${hedgeChecklistBlock}`}
 ${hedgeStateBlock}
 
-${deploymentWindowLine(cashWindow)}
+${cashLine}
 
 Live Sector ETF Performance (from Yahoo Finance — use this for sector rotation analysis):
 ${sectorPerf.text}
@@ -1640,7 +1659,7 @@ Current Portfolio Holdings: ${holdingsSummary}${portfolioPositioning}`;
           content: contentBlocks,
         },
       ],
-      system: [{ type: "text", text: BRIEF_PROMPT, cache_control: { type: "ephemeral" } }],
+      system: [{ type: "text", text: cashDone ? BRIEF_PROMPT_NO_CASH : BRIEF_PROMPT, cache_control: { type: "ephemeral" } }],
     });
     progress.mark("narrative");
     progress.finish();
@@ -1705,7 +1724,10 @@ Current Portfolio Holdings: ${holdingsSummary}${portfolioPositioning}`;
 
     // Calendar backstop on the cash call (mirrors the HOLD→SKIP guard): the
     // prompt states the rule, this enforces it. The model's score is kept.
-    {
+    if (cashDone) {
+      // Installment already in: drop any call the model produced anyway.
+      delete (parsed as Record<string, unknown>).cashDeploymentCall;
+    } else {
       const guarded = applyWindowBackstop(parsed?.cashDeploymentCall as { action?: string; reason?: string } | undefined, cashWindow);
       if (guarded.changedFrom && guarded.call) {
         (parsed as Record<string, unknown>).cashDeploymentCall = guarded.call;
@@ -1770,6 +1792,8 @@ Current Portfolio Holdings: ${holdingsSummary}${portfolioPositioning}`;
       activeHedges,
       // Deployment-window state behind the cash call's calendar backstop.
       cashWindow,
+      // This month's logged deployments (drives the tile's "deployed" state).
+      cashDeployment: cashState,
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);

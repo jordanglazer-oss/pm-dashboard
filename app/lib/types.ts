@@ -987,6 +987,11 @@ export type MorningBrief = {
    * Optional so old briefs in pm:brief render gracefully — the UI hides
    * the card when the field is absent.
    */
+  /** Deployment-window state behind the cash call's calendar backstop (app/lib/deployment-window.ts). */
+  cashWindow?: { todayIso: string; inWindow: boolean; tradingDaysLeft: number | null; closesOn: string };
+  /** This month's logged deployments at generation time (pm:deployments). When
+   *  status is "full" the brief makes no cashDeploymentCall until the 1st. */
+  cashDeployment?: { month: string; fraction: number; status: "none" | "half" | "full"; entries: { id: string; date: string; portion: "full" | "half" }[] };
   cashDeploymentCall?: {
     action: "DEPLOY" | "DEPLOY_PARTIAL" | "WAIT";
     score: number; // 0-100; higher = better day to deploy

@@ -1,6 +1,7 @@
 "use client";
 
 import { usePersistedOpen } from "@/app/lib/useCollapsed";
+import { DeploymentLog, type LedgerStatus } from "@/app/components/DeploymentLog";
 import React, { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import type {
   MarketData,
@@ -385,6 +386,8 @@ export function MorningBrief({
   const [showHedgeForm, setShowHedgeForm] = useState(false);
   const [hedgeForm, setHedgeForm] = useState<Partial<HedgePos>>({});
   const [savingHedge, setSavingHedge] = useState(false);
+  // Live state of the deployment log (pm:deployments) — outranks a cached brief's call.
+  const [cashLedgerStatus, setCashLedgerStatus] = useState<LedgerStatus>("none");
   const todayIsoLocal = new Date().toLocaleDateString("en-CA", { timeZone: "America/New_York" });
   const activeHedgesLive = hedges.filter(
     (h) => h.status === "active" && (!h.expiry || !/^\d{4}-\d{2}-\d{2}$/.test(h.expiry) || h.expiry >= todayIsoLocal),
@@ -1869,10 +1872,10 @@ export function MorningBrief({
                   )}
                 </div>
                 <div className="flex items-baseline gap-2 mb-2 flex-wrap">
-                  <span className={`text-2xl font-semibold tracking-tight ${tone.value}`}>
-                    {action === "DEPLOY_PARTIAL" ? "PARTIAL" : action}
+                  <span className={`text-2xl font-semibold tracking-tight ${cashLedgerStatus === "full" ? "text-pos" : tone.value}`}>
+                    {cashLedgerStatus === "full" ? "DEPLOYED" : action === "DEPLOY_PARTIAL" ? "PARTIAL" : action}
                   </span>
-                  <span className="text-xs text-ink-2">{cashDeploymentCall.window}</span>
+                  <span className="text-xs text-ink-2">{cashLedgerStatus === "full" ? "this month's installment is in — no call until the 1st" : cashLedgerStatus === "half" ? `${cashDeploymentCall.window} · remaining half` : cashDeploymentCall.window}</span>
                 </div>
                 {/* Mock form: a segment per trigger the call evaluates, filled
                     for the ones met. Replaces the free-text window banner, which
@@ -1901,9 +1904,22 @@ export function MorningBrief({
                 <a href="#s-narrative" className="mt-1.5 inline-block text-[11px] font-medium text-accent hover:underline">
                   Why · triggers ↓
                 </a>
+                <DeploymentLog onStatus={setCashLedgerStatus} />
               </div>
             );
           })()}
+      {/* Installment already logged and the brief made no call: the tile still
+          shows, so the log and its timing record stay reachable. */}
+      {!cashDeploymentCall && brief?.cashDeployment?.status === "full" && (
+        <div className="flex h-full flex-col rounded-card border border-pos-border bg-pos-soft p-5">
+          <div className="mb-3 text-xs font-bold uppercase tracking-[0.22em] text-pos">Cash Deployment</div>
+          <div className="mb-2 flex flex-wrap items-baseline gap-2">
+            <span className="text-2xl font-semibold tracking-tight text-pos">DEPLOYED</span>
+            <span className="text-xs text-ink-2">this month&apos;s installment is in — no call until the 1st</span>
+          </div>
+          <DeploymentLog onStatus={setCashLedgerStatus} />
+        </div>
+      )}
       {/* Earnings tile — the mock's "next sessions" card rather than the old
           one-line strip, which rendered 37px tall and read as a rule between
           tiles instead of a peer of Hedging/Regime/Cash. Same data (portfolio
