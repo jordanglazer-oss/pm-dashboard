@@ -31,6 +31,7 @@ import { MAX_SCORE } from "@/app/lib/types";
 import { computeSetup } from "@/app/lib/setup-grade";
 import { deploymentWindow, deploymentWindowLine, applyWindowBackstop } from "@/app/lib/deployment-window";
 import { loadDeployments, monthState, deploymentStateLine } from "@/app/lib/deployments";
+import { computeCashScore, NEWTON_STATES } from "@/app/lib/cash-score";
 
 // Extended thinking makes the single brief call longer; give it room.
 export const maxDuration = 300;
@@ -248,6 +249,12 @@ The cash-deployment call answers a SPECIFIC question: "We make monthly-installme
     10% — VIX state. A VIX spike to 20-25 that's stalling/reversing is a classic DEPLOY trigger. A runaway VIX above 28 still climbing is WAIT (we haven't hit peak fear). VIX <16 is mid-range — no edge either way from this signal alone.
     6%  — Sentiment: Fear & Greed below 30, AAII bears > bulls, elevated put/call. Capitulation is DEPLOY.
     4%  — Short-term momentum: 5-day SPY return. A clean -2% to -5% pullback over 5 days is a healthy DEPLOY setup; deeper than -7% may indicate a regime break (WAIT for the bottom to confirm).
+  NEWTON STATE: besides the one-line newtonPersistence, classify Newton's 30-day pattern into EXACTLY one state and return it as newtonState (the app uses it to reproduce the 40% arithmetic):
+    fresh-constructive-flip   — turned constructive within the last few sessions after 2+ weeks of caution
+    persistent-constructive   — constructive across consecutive sessions and the tone is holding
+    neutral-or-stale          — mixed or neutral, OR a bullish call that is 2+ weeks old without confirming market action
+    persistent-cautious       — cautious across consecutive sessions
+    fresh-cautious-flip       — turned cautious within the last few sessions after a constructive run
   SCORE BANDS (0-100): anchor to these — do NOT drift to 50 when uncertain.
     85-100: At least 3 inputs firing DEPLOY with no major WAIT signal. Rare; reserve for genuine "buy the dip" days.
     70-84:  Newton constructive + at least one quant signal confirming + no major WAIT signal.
@@ -334,7 +341,8 @@ Respond ONLY with valid JSON matching this exact structure (fields are intention
     "reason": "ONE sentence, ≤ 25 words. The single most important factor tipping today's call.",
     "triggersMet": ["≤ 8 word bullets of what's working today. 0-4 entries."],
     "triggersMissing": ["≤ 8 word bullets of what's NOT yet in place. 0-4 entries."],
-    "newtonPersistence": "ONE line on Newton's 30-day pattern: persistence, inflection, or staleness. Omit if no Newton notes are in the strategist context."
+    "newtonPersistence": "ONE line on Newton's 30-day pattern: persistence, inflection, or staleness. Omit if no Newton notes are in the strategist context.",
+    "newtonState": "EXACTLY one of: fresh-constructive-flip | persistent-constructive | neutral-or-stale | persistent-cautious | fresh-cautious-flip — see NEWTON STATE in the CASH DEPLOYMENT RULES. Omit if no Newton notes are in the strategist context."
   }
 }
 
@@ -1735,6 +1743,33 @@ Current Portfolio Holdings: ${holdingsSummary}${portfolioPositioning}`;
       }
     }
 
+    // ── Computed cash score (SHADOW) — same inputs, same weights, added up by
+    // the app so the number is reproducible. Returned beside the model's score
+    // for comparison; the live action still follows the model until the two
+    // have been compared over real briefs. See app/lib/cash-score.ts.
+    const bo = (marketData as { breadthOverride?: { above50?: number; broadAbove50?: number; newLows?: number; upVolume?: number; downVolume?: number } }).breadthOverride;
+    const upVol = typeof bo?.upVolume === "number" && typeof bo?.downVolume === "number" && bo.upVolume + bo.downVolume > 0 ? (bo.upVolume / (bo.upVolume + bo.downVolume)) * 100 : null;
+    const numOrNull = (v: unknown): number | null => (typeof v === "number" && isFinite(v) ? v : null);
+    const cashScoreComputed = cashDone ? null : computeCashScore(
+      {
+        oscillator: numOrNull(forwardData?.spOscillator?.value ?? marketData.spOscillator),
+        sp500Above50: numOrNull(forwardData?.breadth50Wk?.value ?? bo?.above50),
+        broadAbove50: numOrNull(bo?.broadAbove50),
+        newLows: numOrNull(bo?.newLows),
+        upVolumePct: upVol,
+        vix: fwdVix,
+        vixWeekPct: vixWeekPctObj.value,
+        fearGreed: numOrNull(forwardData?.fearGreed?.value ?? marketData.fearGreed),
+        aaiiBullBear: numOrNull(forwardData?.aaiiBullBear?.value ?? marketData.aaiiBullBear),
+        spx5dPct: numOrNull(forwardData?.spxWeek?.value),
+      },
+      (parsed?.cashDeploymentCall as { newtonState?: unknown } | undefined)?.newtonState,
+    );
+    if (cashScoreComputed?.score != null) {
+      const modelScore = (parsed?.cashDeploymentCall as { score?: number } | undefined)?.score;
+      console.log(`[Brief] cash score — model ${modelScore ?? "?"} vs computed ${cashScoreComputed.score} (${cashScoreComputed.action}); Newton state ${cashScoreComputed.newton?.state} = ${NEWTON_STATES[cashScoreComputed.newton!.state].points}`);
+    }
+
     const now = new Date();
     // The regime label is AUTHORITATIVE from the consolidated composite — the
     // brief never sets its own. We ignore whatever Claude returned for
@@ -1794,6 +1829,8 @@ Current Portfolio Holdings: ${holdingsSummary}${portfolioPositioning}`;
       cashWindow,
       // This month's logged deployments (drives the tile's "deployed" state).
       cashDeployment: cashState,
+      // App-computed cash score, in shadow beside the model's (app/lib/cash-score.ts).
+      cashScoreComputed,
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);

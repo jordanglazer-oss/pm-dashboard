@@ -2,6 +2,7 @@
 
 import { usePersistedOpen } from "@/app/lib/useCollapsed";
 import { DeploymentLog, type LedgerStatus } from "@/app/components/DeploymentLog";
+import { CashScoreWorking } from "@/app/components/CashScoreWorking";
 import React, { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import type {
   MarketData,
@@ -1904,6 +1905,9 @@ export function MorningBrief({
                 <a href="#s-narrative" className="mt-1.5 inline-block text-[11px] font-medium text-accent hover:underline">
                   Why · triggers ↓
                 </a>
+                {brief?.cashScoreComputed && cashLedgerStatus !== "full" && (
+                  <CashScoreWorking computed={brief.cashScoreComputed} modelScore={cashDeploymentCall.score} />
+                )}
                 <DeploymentLog onStatus={setCashLedgerStatus} />
               </div>
             );

@@ -992,6 +992,8 @@ export type MorningBrief = {
   /** This month's logged deployments at generation time (pm:deployments). When
    *  status is "full" the brief makes no cashDeploymentCall until the 1st. */
   cashDeployment?: { month: string; fraction: number; status: "none" | "half" | "full"; entries: { id: string; date: string; portion: "full" | "half" }[] };
+  /** App-computed cash score, run in shadow beside the model's score (app/lib/cash-score.ts). */
+  cashScoreComputed?: import("./cash-score").ComputedCashScore | null;
   cashDeploymentCall?: {
     action: "DEPLOY" | "DEPLOY_PARTIAL" | "WAIT";
     score: number; // 0-100; higher = better day to deploy
