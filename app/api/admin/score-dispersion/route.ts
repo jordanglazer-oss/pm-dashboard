@@ -19,6 +19,8 @@ const log = createLogger("Score-dispersion");
  *   anchor  "off" → skipPriorAnchor: the PRIOR SCORE block is suppressed so
  *           repeated same-day runs measure intrinsic pipeline variance rather
  *           than dispersion-under-anchoring. Default "on" (production config).
+ *   thinking "on" → run with adaptive (extended) thinking. Default "off"
+ *           (production config). Used for the anchor × thinking 2×2 test.
  *   verify  "off" → disable web_search (isolates model sampling noise from
  *           search-result variance). Default "on" (production config).
  *
@@ -26,8 +28,8 @@ const log = createLogger("Score-dispersion");
  * compute per-category spread / modal-value share across runs.
  */
 
-// No maxDuration override — inherit the same runtime default as /api/score,
-// which this route merely wraps (a verified rescore already runs within it).
+// A thinking-on run is slower than a production rescore; give it headroom.
+export const maxDuration = 300;
 export const dynamic = "force-dynamic";
 
 export async function GET(req: NextRequest) {
@@ -36,6 +38,7 @@ export async function GET(req: NextRequest) {
   if (!ticker) return NextResponse.json({ error: "ticker query param required" }, { status: 400 });
   const anchorOff = url.searchParams.get("anchor") === "off";
   const verifyOff = url.searchParams.get("verify") === "off";
+  const thinkingOn = url.searchParams.get("thinking") === "on";
 
   const startedAt = new Date().toISOString();
   log.info(`single dispersion run for ${ticker} (anchor ${anchorOff ? "OFF" : "on"}, verify ${verifyOff ? "OFF" : "on"})`);
@@ -47,6 +50,7 @@ export async function GET(req: NextRequest) {
         ticker,
         verifyWithWebSearch: !verifyOff,
         skipPriorAnchor: anchorOff,
+        thinking: thinkingOn,
       }),
     })
   );
@@ -74,6 +78,7 @@ export async function GET(req: NextRequest) {
     ticker,
     anchor: anchorOff ? "off" : "on",
     verify: verifyOff ? "off" : "on",
+    thinking: thinkingOn ? "on" : "off",
     startedAt,
     finishedAt: new Date().toISOString(),
     scores: data.scores ?? null,

@@ -574,6 +574,12 @@ export async function POST(request: NextRequest) {
     // of dispersion-under-anchoring. Diagnostic only (score-dispersion admin
     // route); production callers never set it.
     const skipPriorAnchor: boolean = body?.skipPriorAnchor === true;
+    // Thinking-test flag: run this rescore with adaptive (extended) thinking.
+    // Diagnostic only (score-dispersion admin route) — production callers
+    // never set it, so default scoring behaviour and the rubric hash are
+    // unchanged. Exists so the anchor × thinking 2×2 can be measured before
+    // thinking is adopted inside a rubric revision.
+    const diagnosticThinking: boolean = body?.thinking === true;
     // Whether a DETERMINISTIC material-event flags block (filed 8-K 4.02 /
     // 1.03 / 3.01 or Form 25) reached the prompt. The ONLY legitimate basis
     // for a hard floor — used below to reject model-invented floors.
@@ -1161,8 +1167,9 @@ export async function POST(request: NextRequest) {
     const message = await callAnthropicWithRetry(`Score ${upperTicker}`, () =>
       client.messages.create({
         model: "claude-sonnet-5",
-        thinking: { type: "disabled" },
-        max_tokens: 8192,
+        thinking: diagnosticThinking ? { type: "adaptive" } : { type: "disabled" },
+        // Thinking tokens count against max_tokens — leave the JSON its room.
+        max_tokens: diagnosticThinking ? 16000 : 8192,
         messages: [
           {
             role: "user",
