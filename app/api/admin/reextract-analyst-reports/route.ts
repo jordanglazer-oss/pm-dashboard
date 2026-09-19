@@ -83,11 +83,18 @@ export async function GET(req: NextRequest) {
   // or was extracted after the segments schema shipped (a report can
   // legitimately have no segment discussion — the timestamp check stops
   // those from being re-extracted forever).
-  const SEGMENTS_SCHEMA_AT = "2026-08-26T22:45:00Z";
+  //
+  // Schema rev 3 (2026-09-19, rubric rev 7): `industryKpis` (the metrics the
+  // sector playbook grades on), relevance-driven key metrics, thesis by driver.
+  // Same logic: current if it carries the field or was extracted after it shipped.
+  // NOT RUN at ship time — Jordan's standing call is to upgrade the library
+  // going forward rather than pay to re-extract the archive; this only keeps
+  // the dry-run count honest if that call changes.
+  const KPI_SCHEMA_AT = "2026-09-19T21:00:00Z";
   const hasCurrentSchema = (meta: { extracted?: ExtractedReport; extractedAt?: string } | undefined) =>
     !!meta &&
-    (meta.extracted?.segments !== undefined ||
-      (!!meta.extractedAt && meta.extractedAt >= SEGMENTS_SCHEMA_AT));
+    (meta.extracted?.industryKpis !== undefined ||
+      (!!meta.extractedAt && meta.extractedAt >= KPI_SCHEMA_AT));
 
   // Work list: every (ticker, source) slot with an archived PDF whose stored
   // extraction predates the widened schema.
@@ -150,6 +157,7 @@ export async function GET(req: NextRequest) {
             result.valuationBasis ? "valuationBasis" : null,
             result.scenarios ? "scenarios" : null,
             result.segments?.length ? `segments(${result.segments.length})` : null,
+            result.industryKpis?.length ? `industryKpis(${result.industryKpis.length})` : null,
           ].filter((x): x is string => !!x);
           results.push({ ticker: w.ticker, source: w.source, status: "reextracted", newFields });
           log.info(`${w.ticker}/${w.source} re-extracted; new fields: ${newFields.join(", ") || "none present in PDF"}`);
