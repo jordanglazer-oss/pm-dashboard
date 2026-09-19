@@ -31,7 +31,7 @@ import { MAX_SCORE } from "@/app/lib/types";
 import { computeSetup } from "@/app/lib/setup-grade";
 import { deploymentWindow, deploymentWindowLine, applyWindowBackstop } from "@/app/lib/deployment-window";
 import { loadDeployments, monthState, deploymentStateLine } from "@/app/lib/deployments";
-import { computeCashScore, NEWTON_STATES } from "@/app/lib/cash-score";
+import { computeCashScore, NEWTON_STATES, CASH_SCORE_LIVE_SOURCE } from "@/app/lib/cash-score";
 
 // Extended thinking makes the single brief call longer; give it room.
 export const maxDuration = 300;
@@ -1730,19 +1730,6 @@ Current Portfolio Holdings: ${holdingsSummary}${portfolioPositioning}`;
       console.log("[Brief] hedgingCall HOLD→SKIP: no active hedge position on record");
     }
 
-    // Calendar backstop on the cash call (mirrors the HOLD→SKIP guard): the
-    // prompt states the rule, this enforces it. The model's score is kept.
-    if (cashDone) {
-      // Installment already in: drop any call the model produced anyway.
-      delete (parsed as Record<string, unknown>).cashDeploymentCall;
-    } else {
-      const guarded = applyWindowBackstop(parsed?.cashDeploymentCall as { action?: string; reason?: string } | undefined, cashWindow);
-      if (guarded.changedFrom && guarded.call) {
-        (parsed as Record<string, unknown>).cashDeploymentCall = guarded.call;
-        console.log(`[Brief] cashDeploymentCall ${guarded.changedFrom}→${guarded.call.action}: ${cashWindow.tradingDaysLeft} trading day(s) left in the window`);
-      }
-    }
-
     // ── Computed cash score (SHADOW) — same inputs, same weights, added up by
     // the app so the number is reproducible. Returned beside the model's score
     // for comparison; the live action still follows the model until the two
@@ -1768,6 +1755,34 @@ Current Portfolio Holdings: ${holdingsSummary}${portfolioPositioning}`;
     if (cashScoreComputed?.score != null) {
       const modelScore = (parsed?.cashDeploymentCall as { score?: number } | undefined)?.score;
       console.log(`[Brief] cash score — model ${modelScore ?? "?"} vs computed ${cashScoreComputed.score} (${cashScoreComputed.action}); Newton state ${cashScoreComputed.newton?.state} = ${NEWTON_STATES[cashScoreComputed.newton!.state].points}`);
+    }
+
+    // Which number drives the live call: CASH_SCORE_LIVE_SOURCE in cash-score.ts.
+    // "model" (today) keeps the model's score; "computed" swaps in the app's.
+    // Applied BEFORE the window backstop so the backstop governs either way.
+    if (CASH_SCORE_LIVE_SOURCE === "computed" && !cashDone && cashScoreComputed?.score != null && cashScoreComputed.action && parsed?.cashDeploymentCall) {
+      const call = parsed.cashDeploymentCall as { action?: string; score?: number; window?: string };
+      const modelSaid = { action: call.action, score: call.score };
+      (parsed as Record<string, unknown>).cashDeploymentCall = {
+        ...call,
+        score: cashScoreComputed.score,
+        action: cashScoreComputed.action,
+        ...(call.action !== cashScoreComputed.action ? { window: cashScoreComputed.action === "DEPLOY" ? "Deploy now" : cashScoreComputed.action === "DEPLOY_PARTIAL" ? "Deploy half now" : "Re-check next session" } : {}),
+        modelSaid,
+      };
+    }
+
+    // Calendar backstop on the cash call (mirrors the HOLD→SKIP guard): the
+    // prompt states the rule, this enforces it. The model's score is kept.
+    if (cashDone) {
+      // Installment already in: drop any call the model produced anyway.
+      delete (parsed as Record<string, unknown>).cashDeploymentCall;
+    } else {
+      const guarded = applyWindowBackstop(parsed?.cashDeploymentCall as { action?: string; reason?: string } | undefined, cashWindow);
+      if (guarded.changedFrom && guarded.call) {
+        (parsed as Record<string, unknown>).cashDeploymentCall = guarded.call;
+        console.log(`[Brief] cashDeploymentCall ${guarded.changedFrom}→${guarded.call.action}: ${cashWindow.tradingDaysLeft} trading day(s) left in the window`);
+      }
     }
 
     const now = new Date();
