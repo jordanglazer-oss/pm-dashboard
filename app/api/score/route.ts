@@ -34,6 +34,9 @@ import { getValuationBand, formatValuationBandForPrompt } from "@/app/lib/valuat
 
 const client = new Anthropic();
 
+/** Per-attempt budget for the FactSet company snapshot (see the call site). */
+const SNAPSHOT_TIMEOUT_MS = 15_000;
+
 const AI_CATEGORIES = SCORE_GROUPS.flatMap((g) =>
   g.categories
     .filter((c) => c.inputType === "auto" || c.inputType === "semi")
@@ -644,7 +647,10 @@ export async function POST(request: NextRequest) {
         : ({ source: "existing", reason: "FactSet relay not configured" } as const);
       const factsetPromise: Promise<CompanySnapshot | null> =
         fsRes.source === "factset"
-          ? relayRetry(() => companySnapshot(fsRes.id)).catch((e) => {
+          // 15s, not the relay's 7s default: the snapshot is ~100 formulas in one
+          // call and runs 6-10s when FactSet is slow (weekends, month-end). A
+          // slower rescore beats a skipped one; three attempts still bound it.
+          ? relayRetry(() => companySnapshot(fsRes.id, { timeoutMs: SNAPSHOT_TIMEOUT_MS })).catch((e) => {
               console.error(`[Score] FactSet snapshot failed for ${upperTicker} (${fsRes.id}) after retries:`, e);
               return null;
             })
