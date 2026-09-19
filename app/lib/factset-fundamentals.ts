@@ -81,6 +81,10 @@ const POINT_METRICS: ScoringFormula[] = [
   { key: "operIncLtm4", formula: "FF_OPER_INC(LTM,-4)", note: "Operating income, year-ago TTM" },
   { key: "salesLtm4", formula: "FF_SALES(LTM,-4)", note: "Revenue, year-ago TTM (incremental margin denominator)" },
   { key: "fcfLtm", formula: "FF_FREE_CF(LTM,0)", note: "Free cash flow, TTM (FCF margin)" },
+  { key: "ebitdaLtm", formula: "FF_EBITDA_OPER(LTM,0)", note: "EBITDA, TTM (EV/EBITDA denominator; falls back to the last fiscal year when null)" },
+  // Rubric rev 7 — computed growth score: delivered growth for banks / insurers is book value per share.
+  { key: "bpsAnn0", formula: "FF_BPS(ANN,0)", note: "Book value per share, latest FY" },
+  { key: "bpsAnn3", formula: "FF_BPS(ANN,-3)", note: "Book value per share, 3 fiscal years ago" },
   // Rubric v3 — forward growth anchors.
   { key: "epsNtm", formula: "FE_ESTIMATE(EPS,MEAN,NTMA,0,NOW,'')", note: "NTM EPS consensus (growth anchor)" },
   { key: "epsLtmA", formula: "FE_ESTIMATE(EPS,MEAN,LTMA,0,NOW,'')", note: "LTM actual EPS on the estimates basis (NTM growth denominator)" },
@@ -257,7 +261,7 @@ function pct(a: unknown, b: unknown, digits = 1): string {
 /** Rubric v3 — returnsMargins anchor: ROIC level + direction (annual basis),
  *  with ROE / ROA beside it for the financials the playbook points there. */
 function returnsLine(v: Record<string, number | null>): string {
-  return `Returns (returnsMargins anchor) — ROIC % FY: ${seriesRow(v, "roic", 3, "Ann")} | ROA % FY: ${seriesRow(v, "roa", 2, "Ann")} (ROE above; banks/insurers/asset managers/REITs score on ROE per the playbook — ROIC is not meaningful there. No WACC is available: judge the spread against the business-model norm and the PEER block).`;
+  return `Returns (returnsMargins anchor) — ROIC % FY: ${seriesRow(v, "roic", 3, "Ann")} | ROA % FY: ${seriesRow(v, "roa", 2, "Ann")} (ROE above. No WACC is available in the data.)`;
 }
 
 /** Rubric v3 — returnsMargins corroboration: margin trajectory on the TTM
@@ -275,6 +279,21 @@ function marginTrendLine(v: Record<string, number | null>): string {
  *  3-month revision (the FY+1 year is found by matching its NOW value to the
  *  rolling FY+1 consensus, so a fiscal-year roll can never masquerade as a
  *  revision). */
+/** % change in the FY+1 EPS consensus over the last 3 months, measured on the
+ *  SAME fiscal year (never across a fiscal-year roll). null when unavailable. */
+export function fy1RevisionPct(v: Record<string, number | null>): number | null {
+  const fy1 = v.epsEstFy1;
+  if (typeof fy1 !== "number") return null;
+  for (const y of FIXED_FY_CANDIDATES) {
+    const now = v[`epsFy${y}Now`];
+    const ago = v[`epsFy${y}Ago3m`];
+    if (typeof now === "number" && Math.abs(now - fy1) < 1e-6) {
+      return typeof ago === "number" && ago !== 0 ? ((now - ago) / Math.abs(ago)) * 100 : null;
+    }
+  }
+  return null;
+}
+
 function forwardGrowthLine(v: Record<string, number | null>): string {
   const ntmEps = pct(v.epsNtm, v.epsLtmA);
   const ntmSales = pct(v.salesNtm, v.salesLtm);
@@ -300,7 +319,10 @@ export function formatSnapshotForPrompt(snap: CompanySnapshot): string {
   // Derived valuation — inputs are all FactSet, so these count as FactSet data.
   const fwdPe = v.price != null && v.epsEstFy1 ? v.price / v.epsEstFy1 : null;
   const ev = v.mktVal != null && v.debtAnn0 != null && v.cashAnn0 != null ? v.mktVal + v.debtAnn0 - v.cashAnn0 : null;
-  const evEbitda = ev != null && v.ebitdaAnn0 ? ev / v.ebitdaAnn0 : null;
+  // TTM EBITDA where the entitlement returns it, else the last fiscal year — the label says which.
+  const ebitdaBasis = v.ebitdaLtm ? "TTM" : "last FY";
+  const ebitdaForEv = v.ebitdaLtm || v.ebitdaAnn0;
+  const evEbitda = ev != null && ebitdaForEv ? ev / ebitdaForEv : null;
   // Management guidance line — only shown when the company actually issues
   // guidance (most names won't; those render nothing rather than a row of n/a).
   const hasGuidance = [
@@ -309,11 +331,11 @@ export function formatSnapshotForPrompt(snap: CompanySnapshot): string {
     v.guidSalesAMean, v.guidEpsAMean,
   ].some((x) => typeof x === "number");
   const guidanceLine = hasGuidance
-    ? `Management guidance (FactSet, company-issued): next Q — revenue ${fmt(v.guidSalesQMean)} (${fmt(v.guidSalesQLow)}–${fmt(v.guidSalesQHigh)}), EPS ${fmt(v.guidEpsQMean, 2)} (${fmt(v.guidEpsQLow, 2)}–${fmt(v.guidEpsQHigh, 2)}) | FY+1 — revenue ${fmt(v.guidSalesAMean)}, EPS ${fmt(v.guidEpsAMean, 2)}. Compare to the consensus estimates above: guiding ABOVE the street is a positive catalyst, BELOW a warning (feeds catalysts / growth).`
+    ? `Management guidance (FactSet, company-issued): next Q — revenue ${fmt(v.guidSalesQMean)} (${fmt(v.guidSalesQLow)}–${fmt(v.guidSalesQHigh)}), EPS ${fmt(v.guidEpsQMean, 2)} (${fmt(v.guidEpsQLow, 2)}–${fmt(v.guidEpsQHigh, 2)}) | FY+1 — revenue ${fmt(v.guidSalesAMean)}, EPS ${fmt(v.guidEpsAMean, 2)}. Compare with the consensus estimates above.`
     : null;
   return [
     `=== FACTSET FUNDAMENTALS (primary source, fetched ${snap.fetchedAt.slice(0, 10)}) ===`,
-    `Classification: GICS sector ${snap.sector ?? "n/a"} | industry ${snap.industry ?? "n/a"} (use for the secular growth-trend read).`,
+    `Classification: GICS sector ${snap.sector ?? "n/a"} | industry ${snap.industry ?? "n/a"}`,
     `Series are most-recent-first: FY | FY-1 | FY-2 | FY-3 | FY-4 (annual) and Q | Q-1 | ... | Q-7 (last 8 quarters). Q-4 is the YEAR-AGO quarter, so Q vs Q-4 is the quarter-over-quarter YoY comparison — compute these from the series below; do NOT web-search for quarterly results, FactSet carries them here. Figures in USD millions unless a % is shown.`,
     `Revenue — FY: ${seriesRow(v, "sales", 5, "Ann")} | TTM ${fmt(v.salesLtm)} | last 8 Q: ${seriesRow(v, "sales", 8, "Qtr")}`,
     `EPS — FY: ${seriesRow(v, "eps", 5, "Ann", 2)} | TTM ${fmt(v.epsLtm, 2)} | last 8 Q: ${seriesRow(v, "eps", 8, "Qtr", 2)}`,
@@ -323,7 +345,7 @@ export function formatSnapshotForPrompt(snap: CompanySnapshot): string {
     `Earnings quality / persistence — OCF ÷ net income by FY: ${[0, 1, 2].map((i) => {
       const ni = v[`netIncAnn${i}`]; const ocf = v[`ocfAnn${i}`];
       return typeof ni === "number" && ni !== 0 && typeof ocf === "number" ? `${(ocf / ni).toFixed(2)}x` : "n/a";
-    }).join(" | ")} (cash conversion: a ratio persistently ≥1 means earnings are backed by real operating cash = high-quality, PERSISTENT earnings; consistently <1 or volatile signals accruals-heavy, lower-persistence earnings that tend to mean-revert — weigh into cashFlowQuality).`,
+    }).join(" | ")} (cash conversion ratio).`,
     `Gross margin % — FY: ${seriesRow(v, "grossMgn", 5, "Ann")}`,
     `Operating margin % — FY: ${seriesRow(v, "operMgn", 5, "Ann")}`,
     `ROE % — FY: ${seriesRow(v, "roe", 3, "Ann")}`,
@@ -331,11 +353,11 @@ export function formatSnapshotForPrompt(snap: CompanySnapshot): string {
     marginTrendLine(v),
     forwardGrowthLine(v),
     `Leverage — Total debt FY: ${seriesRow(v, "debt", 3, "Ann")} | EBITDA FY: ${seriesRow(v, "ebitda", 3, "Ann")} | Cash & ST ${fmt(v.cashAnn0)} | Interest exp ${fmt(v.intExpAnn0)}`,
-    `Valuation (current): P/E ${fmt(v.pe)} | Forward P/E ${fmt(fwdPe)} | EV/EBITDA ${fmt(evEbitda)} | P/B ${fmt(v.pbk)} | P/S ${fmt(v.psales)} | Div yield ${fmt(v.divYld, 2)}% | Mkt cap ${fmt(v.mktVal)} | EV ${fmt(ev)}`,
+    `Valuation (current): P/E ${fmt(v.pe)} | Forward P/E ${fmt(fwdPe)} | EV/EBITDA ${fmt(evEbitda)} (${ebitdaBasis} EBITDA) | P/B ${fmt(v.pbk)} | P/S ${fmt(v.psales)} | Div yield ${fmt(v.divYld, 2)}% | Mkt cap ${fmt(v.mktVal)} | EV ${fmt(ev)}`,
     `Price: ${fmt(v.price, 2)} | 52-week range: ${fmt(v.low52w, 2)} – ${fmt(v.high52w, 2)}`,
-    `Total return % (div+split adj): 1M ${fmt(v.ret1m)} | 3M ${fmt(v.ret3m)} | 6M ${fmt(v.ret6m)} | 1Y ${fmt(v.ret1y)} | 3Y ${fmt(v.ret3y)} (shareholder momentum / track record — supporting evidence for trackRecord).`,
-    `Estimates: EPS FY+1 ${fmt(v.epsEstFy1, 2)} → FY+2 ${fmt(v.epsEstFy2, 2)} | Revenue FY+1 ${fmt(v.salesEstFy1)} → FY+2 ${fmt(v.salesEstFy2)} | # analysts ${fmt(v.numEstFy1, 0)} (the FY+1→FY+2 ramp is the forward growth trajectory for growth/secular).`,
-    `Analyst signals: target ${fmt(v.tgtPriceMean, 2)} (range ${fmt(v.tgtLow, 2)}–${fmt(v.tgtHigh, 2)}) | EPS FY+1 est. revisions: ${fmt(v.revUp, 0)} up / ${fmt(v.revDown, 0)} down | EPS FY+1 estimate dispersion (stddev) ${fmt(v.epsDispersion, 2)} vs mean ${fmt(v.epsEstFy1, 2)} (LOW dispersion relative to the estimate = analysts agree = predictable/persistent earnings — a positive cashFlowQuality/trackRecord signal; wide dispersion = uncertain, lower-persistence earnings). (coverage breadth = # analysts above; revisions + target dispersion = track-record / catalysts signals).`,
+    `Total return % (div+split adj): 1M ${fmt(v.ret1m)} | 3M ${fmt(v.ret3m)} | 6M ${fmt(v.ret6m)} | 1Y ${fmt(v.ret1y)} | 3Y ${fmt(v.ret3y)} (context for the bearCase only — not evidence for any category).`,
+    `Estimates: EPS FY+1 ${fmt(v.epsEstFy1, 2)} → FY+2 ${fmt(v.epsEstFy2, 2)} | Revenue FY+1 ${fmt(v.salesEstFy1)} → FY+2 ${fmt(v.salesEstFy2)} | # analysts ${fmt(v.numEstFy1, 0)} (FY+1 → FY+2 consensus ramp).`,
+    `Analyst signals: target ${fmt(v.tgtPriceMean, 2)} (range ${fmt(v.tgtLow, 2)}–${fmt(v.tgtHigh, 2)}) | EPS FY+1 est. revisions: ${fmt(v.revUp, 0)} up / ${fmt(v.revDown, 0)} down | EPS FY+1 estimate dispersion (stddev) ${fmt(v.epsDispersion, 2)} vs mean ${fmt(v.epsEstFy1, 2)}.`,
     guidanceLine,
   ].filter(Boolean).join("\n");
 }

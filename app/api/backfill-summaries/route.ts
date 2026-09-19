@@ -15,6 +15,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { createLogger } from "@/app/lib/logger";
 import { callAnthropicWithRetry } from "@/app/lib/anthropic-retry";
 import { parseModelJson } from "@/app/lib/json-repair";
+import { SCORE_GROUPS, MAX_SCORE } from "@/app/lib/types";
+import { RATING_BANDS } from "@/app/lib/rating-bands";
 
 const client = new Anthropic();
 const log = createLogger("Backfill-summaries");
@@ -34,13 +36,15 @@ export async function POST(request: NextRequest) {
     contextLines.push(`Stock: ${name || ticker} (${ticker.toUpperCase()})`);
     if (sector) contextLines.push(`Sector: ${sector}`);
 
-    // Include top-line score info
+    // Top-line score on the scale the app actually shows: the conviction
+    // composite sums ONLY the categories in SCORE_GROUPS (setup-layer
+    // technicals are stored beside them but never blended in).
+    let belowHold = false;
     if (scores && typeof scores === "object") {
-      const total = Object.values(scores as Record<string, number>).reduce(
-        (s: number, v) => s + (typeof v === "number" ? v : 0),
-        0
-      );
-      contextLines.push(`Composite score: ${total.toFixed(1)}`);
+      const sc = scores as Record<string, number>;
+      const total = SCORE_GROUPS.flatMap((g) => g.categories).reduce((sum, c) => sum + (typeof sc[c.key] === "number" ? sc[c.key] : 0), 0);
+      belowHold = total < RATING_BANDS.hold;
+      contextLines.push(`Conviction score: ${total.toFixed(1)} of ${MAX_SCORE}${belowHold ? " — BELOW the hold cutoff" : ""}`);
     }
 
     // Include explanation summaries (they already contain the key data points)
@@ -57,7 +61,7 @@ export async function POST(request: NextRequest) {
       client.messages.create({
         model: "claude-sonnet-5",
         thinking: { type: "disabled" },
-        max_tokens: 512,
+        max_tokens: 700,
         messages: [
           {
             role: "user",
@@ -68,7 +72,8 @@ ${contextLines.join("\n")}
 Respond with ONLY valid JSON (no markdown):
 {
   "companySummary": "1-2 sentences: what the company does in plain language a PM can relay to clients. Focus on core business, key products/services, and revenue drivers.",
-  "investmentThesis": "1-2 sentences: why to own this stock now. Reference specific catalysts, valuation support, or thematic tailwinds. A concise elevator pitch."
+  "investmentThesis": "1-2 sentences on why to own this stock now, from the evidence above. If the conviction score is below the hold cutoff, or the evidence does not support a case, say plainly that there is no compelling thesis at the current price and name what would change that — do not manufacture a pitch.",
+  "bearCase": "1-2 sentences: the most credible way the thesis is wrong, and the specific metric or level that would confirm it. Required for every name, strong or weak."
 }`,
           },
         ],
@@ -80,7 +85,7 @@ Respond with ONLY valid JSON (no markdown):
       .map((b) => b.text)
       .join("");
 
-    const parseResult = parseModelJson<{ companySummary?: string; investmentThesis?: string }>(text);
+    const parseResult = parseModelJson<{ companySummary?: string; investmentThesis?: string; bearCase?: string }>(text);
     if (!parseResult.ok) {
       log.error("JSON parse error:", parseResult.error, parseResult.excerpt ?? "");
       return NextResponse.json({ error: `Malformed JSON in response: ${parseResult.error}` }, { status: 500 });
@@ -89,6 +94,7 @@ Respond with ONLY valid JSON (no markdown):
     return NextResponse.json({
       companySummary: parsed.companySummary || "",
       investmentThesis: parsed.investmentThesis || "",
+      bearCase: parsed.bearCase || "",
     });
   } catch (error) {
     log.error("Failed:", error);

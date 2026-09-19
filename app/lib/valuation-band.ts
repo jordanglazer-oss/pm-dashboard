@@ -147,13 +147,19 @@ export async function getValuationBand(
 }
 
 /** Prompt block. Empty string when no band. */
-export function formatValuationBandForPrompt(band: ValuationBand | null): string {
+/** `peIsPrimary` = the sector playbook grades this business on P/E. When it
+ *  grades on another multiple (P/B, P/FFO, EV/EBITDA) the P/E band is labelled
+ *  a cross-check, so the model never receives two ranks for one piece of evidence. */
+export function formatValuationBandForPrompt(band: ValuationBand | null, peIsPrimary = true): string {
   if (!band) return "";
   const f = (v: number) => v.toFixed(1);
   return [
     `=== OWN-HISTORY VALUATION BAND (FactSet time-series, ${band.years}y monthly, point-in-time) ===`,
     `${band.formula}: current ${f(band.current)}x — sits at the ${band.percentile}th percentile of its own ${band.years}-year history (${band.n} monthly points).`,
     `Band: min ${f(band.min)}x | p25 ${f(band.p25)}x | median ${f(band.median)}x | p75 ${f(band.p75)}x | max ${f(band.max)}x. Loss-making months (negative multiple) excluded.`,
-    `This block is the PRIMARY evidence for historicalValuation — grade the category from this percentile (low percentile with intact fundamentals → high score; high percentile without acceleration → low score) and cite it as source: "factset" (sourceDetail "FactSet 5y P/E band"). It supersedes model memory of where this name "usually" trades. If the sector playbook names a different primary multiple for this business (P/FFO, P/B, EV/EBITDA), treat this P/E band as a secondary cross-check and say so.`,
+    peIsPrimary
+      ? `PRIMARY evidence for historicalValuation: grade from this percentile and cite it as source: "factset" (sourceDetail "FactSet ${band.years}y P/E band"). It supersedes any recollection of where this name "usually" trades.`
+      : `CROSS-CHECK ONLY: the sector playbook grades this business on a different multiple, which this feed does not carry as a history band. Use this P/E percentile as a secondary read, say that you did, and cap confidence at "medium" (source: "factset", sourceDetail "FactSet ${band.years}y P/E band").`,
+    `Window: the last ${band.years} years of monthly readings. A window that opens on an unusual multiple (a peak or a trough) flatters or punishes the comparison — say so when it matters.`,
   ].join("\n");
 }

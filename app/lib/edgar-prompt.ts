@@ -94,11 +94,10 @@ export async function formatEdgarSnapshotForPrompt(ticker: string): Promise<stri
     }
     lines.push(``);
     lines.push(`These figures come directly from the company's 10-K and 10-Q filings,`);
-    lines.push(`normalized through the freshness-aware concept registry. PREFER these`);
-    lines.push(`numbers over Yahoo Finance for fundamental metrics (revenue, EPS, debt,`);
-    lines.push(`cash, OCF, equity, etc.) — EDGAR is the as-reported audited source.`);
-    lines.push(`Yahoo data is still useful for current price, beta, market cap, and`);
-    lines.push(`sentiment-style metrics that EDGAR doesn't carry.`);
+    lines.push(`normalized through the freshness-aware concept registry. This is the`);
+    lines.push(`as-reported audited CROSS-CHECK source: FactSet is primary when its block`);
+    lines.push(`is present (see the source hierarchy in the system prompt); use EDGAR for`);
+    lines.push(`figures FactSet does not carry, or when there is no FactSet block.`);
     lines.push(``);
     lines.push(`Format: each metric shows the concept tag used, latest filing, and`);
     lines.push(`up to 3 annual prints. Fields marked [STALE] have not been reported`);
@@ -194,12 +193,17 @@ function formatInsiderBlock(s: Form4Summary): string {
   lines.push(`  Total sold:    ${fmtUSD(s.totalSellValue)}  (${s.uniqueSellers.length} unique seller${s.uniqueSellers.length === 1 ? "" : "s"})`);
   lines.push(`  Net (buy − sell): ${s.netDollarValue >= 0 ? "+" : ""}${fmtUSD(s.netDollarValue)}`);
 
+  // A "strong" label needs size or breadth, not just a lopsided ratio: one
+  // director buying $40k against no sales is not a strong insider signal.
+  const STRONG_NET_USD = 1_000_000;
+  const strongBuy = s.totalBuyValue > s.totalSellValue * 2 && (s.netDollarValue >= STRONG_NET_USD || s.uniqueBuyers.length >= 2);
+  const strongSell = s.totalSellValue > s.totalBuyValue * 2 && (-s.netDollarValue >= STRONG_NET_USD || s.uniqueSellers.length >= 2);
   const directionalBias =
     s.totalBuyValue === 0 && s.totalSellValue === 0 ? "no activity"
-    : s.totalBuyValue > s.totalSellValue * 2 ? "STRONGLY NET BUYING (bullish insider signal)"
-    : s.totalSellValue > s.totalBuyValue * 2 ? "STRONGLY NET SELLING (caution; could be diversification but sustained selling is a yellow flag)"
-    : s.totalBuyValue > s.totalSellValue ? "modestly net buying"
-    : s.totalSellValue > s.totalBuyValue ? "modestly net selling"
+    : strongBuy ? "STRONG NET BUYING (at least $1M net, or two or more distinct insiders)"
+    : strongSell ? "STRONG NET SELLING (at least $1M net, or two or more distinct insiders; could be diversification)"
+    : s.totalBuyValue > s.totalSellValue ? "net buying — small / single insider (routine, not a cluster)"
+    : s.totalSellValue > s.totalBuyValue ? "net selling — small / single insider (routine, not a cluster)"
     : "balanced";
   lines.push(`  Directional bias: ${directionalBias}`);
   lines.push(``);

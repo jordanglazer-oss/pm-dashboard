@@ -10,6 +10,7 @@ import { RUBRIC_HASH, RUBRIC_REV } from "@/app/lib/rubric-version";
 import type { MarketData, ScoreKey, ScoreExplanations, Stock } from "@/app/lib/types";
 import { MAX_SCORE } from "@/app/lib/types";
 import type { ScoreHistoryStore, ScoreHistoryEntry } from "@/app/api/kv/score-history/route";
+import { growthHistoryField } from "@/app/lib/growth-score";
 
 /**
  * Event-driven auto-rescore — rescore a name ONLY when something material
@@ -58,9 +59,11 @@ const log = createLogger("AutoRescore");
 export const RESCORE_STATE_KEY = "pm:rescore-state";
 const DAILY_CAP = 5;
 const COOLDOWN_DAYS = 7;
+/** A name rescored to fill data gaps is not retried for this long (an unfillable gap must not loop). */
+const GAP_COOLDOWN_DAYS = 30;
 const REVISION_DELTA = 3;
 
-type TickerState = { lastAt?: string; netAtLast?: number | null };
+type TickerState = { lastAt?: string; netAtLast?: number | null; lastGapAt?: string };
 export type RescoreState = {
   /** Per-ticker baselines (UPPER key). */
   tickers: Record<string, TickerState>;
@@ -286,6 +289,24 @@ export async function autoRescoreStep(): Promise<{
     }
   }
 
+  // 3. Data gaps left by an unverified run → ONE full (web-search) rescore to
+  //    fill them from primary sources (rubric rev 7: fill first, park last).
+  //    Ranked below report-driven rescores. A 30-day per-name cooldown stops an
+  //    unfillable gap from spending the budget again and again; ownershipTrends
+  //    is ignored because for non-US listings that gap is structural.
+  for (const s of stocks) {
+    const tk = (s.ticker || "").trim().toUpperCase();
+    if (!tk || !universe.has(tk) || candidates.some((c) => c.ticker === tk)) continue;
+    const gaps = Object.entries(s.explanations ?? {}).filter(([k, e]) =>
+      k !== "ownershipTrends" && !!e && !Array.isArray(e) && typeof e === "object" && /^\s*DATA GAP/i.test((e as { summary?: string }).summary ?? "")
+    ).length;
+    if (gaps === 0) continue;
+    const ts = (state.tickers[tk] ??= {});
+    const sinceGap = ts.lastGapAt ? daysSinceUtc(ts.lastGapAt) : null;
+    if (sinceGap != null && sinceGap < GAP_COOLDOWN_DAYS) continue;
+    candidates.push({ ticker: tk, mode: "full", trigger: `${gaps} data gap${gaps === 1 ? "" : "s"} — verified rescore to fill from primary sources`, rank: 10 + gaps });
+  }
+
   if (candidates.length === 0) {
     if (seeded > 0 || stateDirty) await redis.set(RESCORE_STATE_KEY, JSON.stringify(state));
     return { status: "idle", detail: seeded ? `seeded ${seeded} baselines` : "no triggers" };
@@ -304,7 +325,7 @@ export async function autoRescoreStep(): Promise<{
   // a timed-out rescore is lost (visible in the digest by its absence) —
   // strictly better than blindly repeating it all evening.
   state.day.count += 1;
-  state.tickers[pick.ticker] = { ...(state.tickers[pick.ticker] ?? {}), lastAt: new Date().toISOString() };
+  state.tickers[pick.ticker] = { ...(state.tickers[pick.ticker] ?? {}), lastAt: new Date().toISOString(), ...(pick.trigger.includes("data gap") ? { lastGapAt: new Date().toISOString() } : {}) };
   if (state.pendingReports) delete state.pendingReports[pick.ticker];
   await redis.set(RESCORE_STATE_KEY, JSON.stringify(state));
 
@@ -386,6 +407,7 @@ export async function autoRescoreStep(): Promise<{
       raw: after ?? 0,
       adjusted: after ?? 0,
       scores: mergedScores,
+      ...growthHistoryField(data.explanations?.growth),
       // Era stamps — the KV route stamps these server-side on its own POST
       // path; this direct-append path must stamp them too or the score
       // route's rubricHash era gate would treat every auto-rescored name as

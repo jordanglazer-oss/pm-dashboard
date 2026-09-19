@@ -13,7 +13,7 @@
  * Pure string module — no I/O, no scoring math.
  */
 
-type Playbook = { label: string; body: string };
+type Playbook = { label: string; body: string; /** false when the playbook grades own-history valuation on a multiple other than P/E. */ peHistory?: boolean };
 
 const P = (label: string, body: string): Playbook => ({ label, body: body.trim() });
 
@@ -169,7 +169,49 @@ relativeValuation: EV/EBITDA and P/E vs peers at similar cycle position.
 historicalValuation: vs own history mid-cycle.
 leverageCoverage: net debt/EBITDA through-cycle, pension where material.
 cashFlowQuality: FCF conversion ≥ 90-100% of net income as the quality bar, working-capital discipline through the cycle.`),
+
+  autos: P("Autos & Components", `
+growth: unit volumes × mix / average selling price, EV and software attach, order book; cycle-aware (regional production and SAAR).
+returnsMargins: ROIC through the cycle (automakers rarely earn their cost of capital — a sustained spread is the distinction), automotive EBIT margin vs peers EXCLUDING the captive finance arm, incremental margin on volume.
+relativeValuation: P/E and EV/EBITDA on the INDUSTRIAL business (strip the captive finance arm's debt) vs auto peers; suppliers vs suppliers, manufacturers vs manufacturers.
+historicalValuation: through-cycle multiples vs own history — a low P/E at peak volumes is expensive.
+leverageCoverage: industrial net cash or debt EXCLUDING captive-finance debt; pension and warranty obligations; liquidity against a downturn cash burn.
+cashFlowQuality: automotive FCF after capex and working capital; capex and R&D intensity through the EV transition; dividend covered by industrial FCF.`),
+
+  managedcare: P("Managed Care / Health Care Services", `
+growth: membership growth by line (commercial, Medicare Advantage, Medicaid), premium yield, services / pharmacy-benefit revenue.
+returnsMargins: medical loss ratio trajectory (the margin read — lower is better, within regulatory floors), operating margin by segment, ROE / ROIC.
+relativeValuation: P/E vs managed-care peers; distributors and services on EV/EBITDA and P/E.
+historicalValuation: P/E vs own history, mindful of the rate-notice and election cycle.
+leverageCoverage: debt / capital (sector norm ~40%), dividend capacity of the regulated subsidiaries, interest coverage.
+cashFlowQuality: operating cash flow ÷ net income (≥ 1.0 is normal; the timing of government payments distorts single quarters), reserve development (days claims payable).`),
+
+  transports: P("Transportation & Logistics", `
+growth: volumes (carloads, tonne-miles, packages, passenger miles) × yield / pricing; mix.
+returnsMargins: operating ratio for railroads and truckers (lower is better; below 60% is best-in-class for a railroad), ROIC (primary), unit cost excluding fuel for airlines, incremental margin.
+relativeValuation: P/E and EV/EBITDA vs SAME-MODE peers (railroads vs railroads, airlines vs airlines); airlines lease-adjusted.
+historicalValuation: through-cycle multiples vs own history.
+leverageCoverage: net debt/EBITDA (railroads run 2-3x by design; airlines lease-adjusted), fleet and equipment commitments, fuel hedging.
+cashFlowQuality: FCF conversion after maintenance capex, capex intensity, buybacks funded from FCF rather than debt.`),
+
+  payments: P("Payments, Exchanges & Financial Data", `
+growth: payment volume or transactions × take rate; for exchanges and data providers, recurring subscription revenue growth and volumes (cycle-aware).
+returnsMargins: operating margin (networks 50%+; exchanges and data 40-60%), incremental margin; ROIC is inflated by low invested capital — use it directionally. Bank metrics (ROE vs cost of equity, NIM, CET1) do NOT apply.
+relativeValuation: P/E and EV/EBITDA vs payments / exchange / data peers — NOT vs banks; a premium must be justified by growth and recurring mix.
+historicalValuation: P/E vs own history.
+leverageCoverage: net debt/EBITDA (standard framework); settlement and clearing balances are pass-through, not leverage.
+cashFlowQuality: FCF conversion ≥ 90-100% of net income (asset-light); stock-based comp as % of revenue for fintechs.`),
 };
+
+/** Playbooks that grade own-history valuation on something other than P/E —
+ *  the P/E history band is then only a cross-check (valuation-band.ts). */
+const NON_PE_HISTORY = new Set(["bank", "insurance", "reit", "software", "biotech", "energy", "mining", "materials", "telecom", "media"]);
+
+/** GICS reports payments networks under "Financial Services" and exchanges /
+ *  data providers under "Capital Markets" at the industry level, so they cannot
+ *  be told from lenders and brokers by industry string alone. This explicit,
+ *  reviewable list routes the obvious names; anything else keeps its GICS route. */
+const PAYMENTS_TICKERS = new Set(["V", "MA", "PYPL", "FI", "FIS", "GPN", "CPAY", "JKHY", "XYZ", "ICE", "CME", "NDAQ", "CBOE", "SPGI", "MCO", "MSCI", "FDS", "X.TO", "X-T"]);
 
 /** Every playbook label+body concatenated, in stable key order — the input
  *  app/lib/rubric-version.ts hashes so playbook edits change RUBRIC_HASH. */
@@ -181,11 +223,17 @@ export const ALL_PLAYBOOK_BODIES = Object.keys(PLAYBOOKS)
 /** Regex router: FactSet GICS industry string first (most specific), then
  *  sector fallback. Returns null only when we know nothing — the prompt's
  *  generic guidance then applies unchanged. */
-export function pickPlaybook(sector: string | null, industry: string | null): Playbook | null {
+export function pickPlaybook(sector: string | null, industry: string | null, ticker?: string | null): Playbook | null {
   const ind = (industry || "").toLowerCase();
   const sec = (sector || "").toLowerCase();
 
+  if (ticker && PAYMENTS_TICKERS.has(ticker.toUpperCase())) return PLAYBOOKS.payments;
   if (ind) {
+    if (/transaction|payment processing|financial exchanges/.test(ind)) return PLAYBOOKS.payments;
+    if (/automobile|auto components|automotive/.test(ind)) return PLAYBOOKS.autos;
+    if (/health care providers|health care services|managed health|health care facilities|health care distributors/.test(ind)) return PLAYBOOKS.managedcare;
+    // Word boundaries matter: "Broadline Retail" contains "road".
+    if (/\bground transportation\b|\broad\b|\brail|air freight|airlines|\bmarine\b|transportation infrastructure/.test(ind)) return PLAYBOOKS.transports;
     if (/bank/.test(ind)) return PLAYBOOKS.bank;
     if (/insurance/.test(ind)) return PLAYBOOKS.insurance;
     if (/capital markets|financial services|consumer finance|mortgage/.test(ind)) return PLAYBOOKS.capmarkets;
@@ -230,13 +278,21 @@ export function pickPlaybook(sector: string | null, industry: string | null): Pl
 }
 
 /** Format the playbook as a prompt block. Null when no playbook applies. */
-export function sectorPlaybookBlock(sector: string | null, industry: string | null): string | null {
-  const pb = pickPlaybook(sector, industry);
+/** True when the playbook for this company grades own-history valuation on P/E (or no playbook applies). */
+export function peIsHistoryMultiple(sector: string | null, industry: string | null, ticker?: string | null): boolean {
+  const pb = pickPlaybook(sector, industry, ticker);
+  if (!pb) return true;
+  const key = Object.keys(PLAYBOOKS).find((k) => PLAYBOOKS[k] === pb);
+  return !key || !NON_PE_HISTORY.has(key);
+}
+
+export function sectorPlaybookBlock(sector: string | null, industry: string | null, ticker?: string | null): string | null {
+  const pb = pickPlaybook(sector, industry, ticker);
   if (!pb) return null;
   return [
     `=== SECTOR PLAYBOOK: ${pb.label} ===`,
     `Selected deterministically from GICS classification (sector: ${sector || "n/a"}${industry ? `, industry: ${industry}` : ""}).`,
-    `For the five fundamental categories, the metric selections below OVERRIDE any generic guidance. Grade each category on ITS listed metrics; never cite a metric this playbook marks as not meaningful for this business model. Category scales and definitions are unchanged.`,
+    `For the six fundamental categories, the metric selections below OVERRIDE any generic guidance. Grade each category on ITS listed metrics; never cite a metric this playbook marks as not meaningful for this business model. Where this playbook states a number for a category (a return bar, a conversion bar, a leverage norm), it REPLACES the generic number in the category list. Category scales (0-3, 0-2, 0-1) are unchanged. The growth line names what drives growth for this business — use it to explain the computed growth score and to judge your single adjustment.`,
     pb.body,
   ].join("\n");
 }

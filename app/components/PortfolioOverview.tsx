@@ -436,8 +436,6 @@ export function PortfolioOverview({
             // Partial passes skip web search (the targeted categories are
             // FactSet-grounded; search is for narrative/catalyst verification).
             verifyWithWebSearch: !partialCategories,
-            externalSourceNotes: s.externalSourceNotes ?? [],
-            researchCoverageNotes: s.researchCoverageNotes ?? [],
             ...(partialCategories ? { categories: partialCategories } : {}),
           }),
         });
@@ -537,6 +535,7 @@ export function PortfolioOverview({
               updateStockFields(s.ticker, {
                 ...(data.companySummary ? { companySummary: data.companySummary } : {}),
                 ...(data.investmentThesis ? { investmentThesis: data.investmentThesis } : {}),
+                ...(data.bearCase && !s.bearCase ? { bearCase: data.bearCase } : {}),
               });
             }
           }
@@ -737,6 +736,7 @@ export function PortfolioOverview({
             updateStockFields(s.ticker, {
               ...(data.companySummary ? { companySummary: data.companySummary } : {}),
               ...(data.investmentThesis ? { investmentThesis: data.investmentThesis } : {}),
+              ...(data.bearCase && !s.bearCase ? { bearCase: data.bearCase } : {}),
             });
           }
         }

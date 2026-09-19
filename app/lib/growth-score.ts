@@ -231,3 +231,17 @@ export const MODEL_ADJUSTMENT_REASONS = [
   "growth bought through acquisition",
   "a disclosed event not yet in consensus",
 ] as const;
+
+/** Compact copy of the growth working for a pm:score-history entry (additive, optional). */
+export function growthHistoryField(expl: unknown): { growth?: { computed: number | null; final: number; adj: number; rev: number; blended: number | null; group: string; n: number; m: Record<string, [number, number]> } } {
+  if (!expl || Array.isArray(expl) || typeof expl !== "object") return {};
+  const c = (expl as { growthCalc?: GrowthWorking & { modelScore: number; modelAdjustment: number } }).growthCalc;
+  if (!c) return {};
+  return {
+    growth: {
+      computed: c.computedScore, final: c.modelScore, adj: c.modelAdjustment, rev: c.revision.adjustment,
+      blended: c.blendedPercentile, group: c.rankedIn, n: c.groupSize,
+      m: Object.fromEntries(c.components.map((x) => [x.metric, [Math.round(x.value * 10) / 10, Math.round(x.percentile)] as [number, number]])),
+    },
+  };
+}

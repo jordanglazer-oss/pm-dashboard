@@ -176,6 +176,9 @@ export type ScoreCategoryExplanation = {
   /** Optional confidence rating — emitted by the model on new scores; older
    *  scores predating this field render without the confidence chip. */
   confidence?: ScoreConfidence;
+  /** Growth only (rubric rev 7): the full working behind the computed growth
+   *  score, so the stock page can show the math. Absent on older scores. */
+  growthCalc?: import("./growth-score").GrowthWorking & { modelScore: number; modelAdjustment: number; clampedFrom?: number };
 };
 
 /**

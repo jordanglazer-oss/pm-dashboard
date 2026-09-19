@@ -96,7 +96,7 @@ export async function GET(req: NextRequest) {
     const str = (k: keyof typeof F): string | null => { const v = row[F[k]]; return typeof v === "string" && v.trim() ? v.trim() : null; };
     const gicsSector = str("sector"), industry = str("industry");
     const sector = normalizeFactsetSector(gicsSector) ?? gicsSector;
-    const group = pickPlaybook(gicsSector, industry)?.label ?? `${sector ?? "Unclassified"} (no playbook)`;
+    const group = pickPlaybook(gicsSector, industry, ticker)?.label ?? `${sector ?? "Unclassified"} (no playbook)`;
     const raw: RawGrowthRow = { salesNtm: n("salesNtm"), salesLtm: n("salesLtm"), epsNtm: n("epsNtm"), epsLtmA: n("epsLtmA"), ltg: n("ltg"), salesAnn0: n("salesAnn0"), salesAnn3: n("salesAnn3"), bpsAnn0: n("bpsAnn0"), bpsAnn3: n("bpsAnn3") };
     const { inputs, excluded } = deriveGrowthInputs(raw, group);
     const round = (v: number) => Math.round(v * 10) / 10;

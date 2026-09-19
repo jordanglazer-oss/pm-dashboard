@@ -19,7 +19,7 @@
 
 /** Appended when FactSet was expected but unavailable and the caller opted
  *  into a degraded (Yahoo-graded) run via allowDegraded. */
-export const DEGRADED_RUN_NOTE = `\n\n---\n\n=== SOURCE HEALTH: DEGRADED RUN ===\nFactSet was expected for this name but was unavailable after retries — the fundamental categories below are graded from Yahoo fallback data. Cap confidence at "medium" for growth, relativeValuation, historicalValuation, leverageCoverage, and cashFlowQuality, and begin each of those explanation summaries with "YAHOO-FALLBACK RUN:" so the PM knows a FactSet-backed rescore may read differently.`;
+export const DEGRADED_RUN_NOTE = `\n\n---\n\n=== SOURCE HEALTH: DEGRADED RUN ===\nFactSet was expected for this name but was unavailable after retries — the fundamental categories below are graded from Yahoo fallback data. Cap confidence at "medium" for growth, returnsMargins, relativeValuation, historicalValuation, leverageCoverage, and cashFlowQuality, and begin each of those explanation summaries with "YAHOO-FALLBACK RUN:" so the PM knows a FactSet-backed rescore may read differently.`;
 
 /** Appended for Canadian-only listings with no EDGAR coverage. */
 export function noEdgarCanadianNote(ticker: string): string {
@@ -31,6 +31,22 @@ export function noEdgarCanadianNote(ticker: string): string {
 export function partialRescoreNote(keys: string[]): string {
   return `\n\n=== PARTIAL RESCORE MODE ===\nScore ONLY these categories: ${keys.join(", ")}.\nIn the "scores" and "explanations" JSON objects include ONLY those keys — every other category is carried forward unchanged server-side, so do NOT include them.\nSkip the narrative fields entirely: return empty strings for companySummary, investmentThesis, and bearCase (they are preserved from the last full rescore and must not be rewritten by a partial pass).\nStill return name, sector, and beta as usual.`;
 }
+
+/** Verify-mode preamble (web search ON). Search budget goes where it can
+ *  change a score: gaps first, then anything newer than the data, then the
+ *  reserved adverse-event check. Analyst opinion searches were removed —
+ *  opinions cannot move a category. */
+export function verifyPreambleText(a: { factsetUsed: boolean; isCanadianListing: boolean; ticker: string }): string {
+  return `\n\n=== Verified scoring ===\nWeb search verification is ENABLED for this rescore. Use the web_search tool, in this order:\n  1. FILL ANY DATA GAP: if a category is missing a figure the data blocks do not carry, find it from a primary source (the company's filings, IR releases, SEDAR+ or the exchange filing), cite the URL, and score the category normally with confidence "medium". Park a category as DATA GAP only when no reputable source has the figure.\n  2. ${a.factsetUsed
+    ? `Do NOT re-source figures that are already in the FACTSET block — it is current and authoritative (source:"factset"). Search only for results or guidance the company issued AFTER the FactSet data date.`
+    : `Confirm the most recent reported quarterly numbers match the data above, or supersede them if the company reported after the data was cached.`}\n  3. Check for guidance revisions / pre-announcements / 8-K filings issued in the last 90 days.\n  4. ${a.isCanadianListing
+    ? `THIS IS A CANADIAN LISTING (${a.ticker}) — no EDGAR data is available. Verify the latest quarter against the company's most recent press release / MD&A / SEDAR+ filing and cite each source URL or publication name in sourceDetail.`
+    : `Verify the latest dividend / buyback / split changes.`}\n  RESERVED — one search is for the material-adverse-event check on this issuer (fraud investigation, going-concern doubt, restatement, delisting notice, enforcement penalty, forced CFO/CEO exit, bankruptcy). It is not optional and not interchangeable with the items above. If nothing is found, say so in one dataPoint (label "Adverse-event check", value "none found", source "web"). Remember: only the MATERIAL EVENT FLAGS block can create a hard floor — anything found here is a bearCase risk.\nDo NOT search for analyst rating or price-target changes: opinions cannot move any category score.\nRespect the noise filter in the system prompt: ignore rumors, opinion blogs, and unsourced speculation. Cite source name and date in dataPoints.sourceDetail for every web-sourced fact.\nMax 4 searches — be targeted, and always keep one for the reserved check.\n=== End verified scoring ===\n`;
+}
+
+/** Instruction line that heads the INGESTED ANALYST REPORTS block. */
+export const REPORTS_BLOCK_INSTRUCTIONS =
+  "PDF-extracted content from the most recent reports the PM filed. FACTS from these reports (segment figures, company-reported industry KPIs, dated catalysts, guidance quotes, the capital-allocation record) are admissible evidence, tagged source: \"report\" with the firm and report date in sourceDetail. OPINIONS (ratings, price targets, star ratings, the analyst's own estimates) never move a category score — directional analyst view is counted once, deterministically, in analystConsensus. Routing: 'Dated catalysts' are the evidence the catalysts 3-pt bar demands; 'Industry KPIs' marked COMPANY-REPORTED feed the sector playbook's categories, those marked as the analyst's estimate are context only; 'Segments' inform secular, competitiveMoat and the growth explanation; 'Valuation basis' frames which multiple the street prices this name on but is never a directional vote; 'Scenario targets' ground the bearCase in the analyst's own published downside. Keep companySummary and investmentThesis to 1-2 sentences each.";
 
 // ── Prior-score anchor ─────────────────────────────────────────────────────
 //
@@ -99,4 +115,7 @@ export const SCORE_ROUTE_FRAGMENTS_HASH_INPUT = [
   }),
   buildPriorAnchorBlock({ ageLabel: "<age>", ageDays: ANCHOR_MAX_AGE_DAYS + 1, lines: [] }),
   RUBRIC_CHANGED_NOTE,
+  verifyPreambleText({ factsetUsed: true, isCanadianListing: true, ticker: "<TICKER>" }),
+  verifyPreambleText({ factsetUsed: false, isCanadianListing: false, ticker: "<TICKER>" }),
+  REPORTS_BLOCK_INSTRUCTIONS,
 ].join("\n===\n");
