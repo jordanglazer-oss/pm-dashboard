@@ -147,6 +147,22 @@ function balancedObjects(text: string): string[] {
  * Extract the outermost JSON object from a model response and parse it,
  * repairing the known malformations if needed.
  */
+/**
+ * Repair a collapsed key/value separator before a value that starts with ">".
+ *
+ * Seen in production (AVGO, 2026-09-19): for a value such as ">$30B multiyear
+ * deal" the model emits  "value">$30B multiyear deal"  (or  "value">">$30B …")
+ * instead of  "value": ">$30B multiyear deal"  — the  ": "  between the key's
+ * closing quote and the value's opening quote is swallowed. It is deterministic
+ * for a given figure, so the same name fails on every rescore until repaired.
+ * Only fires directly after a quoted key that follows { or , — never inside prose.
+ */
+function fixCollapsedGtValue(src: string): string {
+  return src
+    .replace(/([{,]\s*"[A-Za-z_][\w]*")>">/g, '$1: ">')
+    .replace(/([{,]\s*"[A-Za-z_][\w]*")>(?!")/g, '$1: ">');
+}
+
 export function parseModelJson<T = unknown>(text: string): ModelJsonResult<T> {
   const spans = balancedObjects(text);
   const greedy = text.match(/\{[\s\S]*\}/)?.[0];
@@ -165,6 +181,8 @@ export function parseModelJson<T = unknown>(text: string): ModelJsonResult<T> {
   }
 
   const attempts = candidates.flatMap((c) => [
+    fixCollapsedGtValue(c),
+    escapeInsideStrings(fixCollapsedGtValue(c)),
     escapeInsideStrings(c),
     stripTrailingCommas(escapeInsideStrings(c)),
     closeOpenBrackets(stripTrailingCommas(escapeInsideStrings(c))),
