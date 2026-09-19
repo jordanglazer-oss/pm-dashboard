@@ -83,7 +83,7 @@ export default function MethodologyPage() {
           </p>
           <p>
             Then one automatic adjustment: if analysts have raised next year&rsquo;s earnings estimate by more than 3%
-            in three months the score moves up one; if they have cut it by more than 3% it moves down one. Finally
+            in three months the score moves up one; if they have cut it by more than 3% it moves down one. An upward revision can only produce the top mark of 3 when the growth is broad-based (no measure below the group&rsquo;s middle) and clears the 5% floor. Finally
             the AI may move the result by <b>at most one point</b>, and only for a stated reason from a short list:
             growth flattered by a one-off, peak-cycle earnings, growth bought through acquisition, or a disclosed
             event analysts have not yet absorbed. Anything further is rejected by the app.

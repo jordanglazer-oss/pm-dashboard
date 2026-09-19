@@ -240,7 +240,13 @@ export function computeGrowthScore(args: {
     blendedPercentile: Math.round(blended * 10) / 10,
     baseScore: score,
     topMark: { inTopBand, noMetricBelowMedian, clearsFloor, primaryForwardGrowth: primary },
-    computedScore: Math.max(0, Math.min(3, score + revAdj)),
+    // A revision can lift a 2 to a 3 only when the growth is broad-based and
+    // clears the floor — the top mark stays reserved for outstanding growth,
+    // not for an average grower whose estimates happened to be raised.
+    computedScore: (() => {
+      const adjusted = Math.max(0, Math.min(3, score + revAdj));
+      return adjusted === 3 && score < 3 && !(noMetricBelowMedian && clearsFloor) ? 2 : adjusted;
+    })(),
   };
 }
 

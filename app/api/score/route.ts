@@ -848,6 +848,7 @@ export async function POST(request: NextRequest) {
                 `Blended percentile: ${w.blendedPercentile} → base score ${w.baseScore}/3.`,
                 `Top-mark tests: top ~15% of group ${w.topMark!.inTopBand ? "PASS" : "fail"} · no metric below the group median ${w.topMark!.noMetricBelowMedian ? "PASS" : "fail"} · forward growth of at least 5% ${w.topMark!.clearsFloor ? "PASS" : "fail"}.`,
                 `FY+1 consensus revision over 3 months (same fiscal year): ${w.revision.pct != null ? f1(w.revision.pct) : "n/a"} → adjustment ${w.revision.adjustment > 0 ? "+1" : w.revision.adjustment < 0 ? "-1" : "0"}.`,
+                ...(w.baseScore === 2 && w.revision.adjustment > 0 && w.computedScore === 2 ? ["The upward revision did not lift this to 3: a revision can only produce the top mark when no metric is below the group median and the 5% floor is cleared."] : []),
                 `COMPUTED SCORE: ${w.computedScore}/3. Return this, or move it by at most one point for a named reason.`,
               );
             }

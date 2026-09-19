@@ -82,6 +82,9 @@ export function GrowthMath({ calc }: { calc: Calc }) {
                   <tbody>
                     <tr><td className="py-0.5 pr-4">Base score from the blend</td><td className="text-right tabular-nums text-ink">{calc.baseScore}</td></tr>
                     <tr><td className="py-0.5 pr-4">Estimate revisions: next-year consensus moved {pct(calc.revision.pct)} in 3 months (more than ±3% moves the score one point)</td><td className="text-right tabular-nums text-ink">{calc.revision.adjustment > 0 ? "+1" : calc.revision.adjustment < 0 ? "−1" : "0"}</td></tr>
+                    {calc.baseScore === 2 && calc.revision.adjustment > 0 && calc.computedScore === 2 && (
+                      <tr><td className="py-0.5 pr-4 text-ink-3" colSpan={2}>The upward revision did not lift this to 3: a revision can only produce the top mark when no metric is below the group median and the 5% floor is cleared.</td></tr>
+                    )}
                     <tr className="border-t border-line"><td className="py-0.5 pr-4 font-medium text-ink">Computed score</td><td className="text-right tabular-nums font-medium text-ink">{calc.computedScore}</td></tr>
                     <tr><td className="py-0.5 pr-4">Model&apos;s adjustment (at most one point, reason stated in the summary above)</td><td className="text-right tabular-nums text-ink">{calc.modelAdjustment > 0 ? "+1" : calc.modelAdjustment < 0 ? "−1" : "0"}</td></tr>
                     <tr className="border-t border-line"><td className="py-0.5 pr-4 font-medium text-ink">Final growth score</td><td className="text-right tabular-nums font-medium text-ink">{calc.modelScore} / 3</td></tr>

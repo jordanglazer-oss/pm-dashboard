@@ -102,12 +102,13 @@ export async function getValuationBand(
   try {
     const LONG_YEARS = 10;
     const ymd = (d: Date) => d.toISOString().slice(0, 10).replace(/-/g, "");
+    let timedOut = false;
     const pull = async (yrs: number): Promise<number[] | null> => {
       const end = new Date();
       const start = new Date(end);
       start.setFullYear(start.getFullYear() - yrs);
       const out = await timeSeriesBatch(factsetId, formula, ymd(start), ymd(end), "M", { maxWaitMs: MAX_WAIT_MS });
-      if (out.status !== "SUCCESS") { log.warn(`${ticker}: ${formula} ${yrs}y batch status ${out.status}`); return null; }
+      if (out.status !== "SUCCESS") { timedOut = true; log.warn(`${ticker}: ${formula} ${yrs}y batch status ${out.status}`); return null; }
       const got = extractSeries(out.result);
       if (!got) log.warn(`${ticker}: ${formula} ${yrs}y unusable — payload snippet: ${JSON.stringify(out.result).slice(0, 400)}`);
       return got;
@@ -116,7 +117,10 @@ export async function getValuationBand(
     // original 5-year pull so the band never gets worse than it was.
     let longSeries = await pull(LONG_YEARS).catch(() => null);
     if (!longSeries || longSeries.length < MIN_POINTS) longSeries = null;
-    const series = longSeries ? longSeries.slice(-years * 12) : await pull(years);
+    // Fall back to the 5-year pull only when the long pull came back but was
+    // unusable. If it TIMED OUT, FactSet is slow and a second pull would just
+    // double the wait inside the rescore's parallel stage.
+    const series = longSeries ? longSeries.slice(-years * 12) : timedOut ? null : await pull(years);
     if (!series || series.length < MIN_POINTS) {
       log.warn(`${ticker}: ${formula} unusable series (${series?.length ?? 0} points) — no band this run`);
       return null;
