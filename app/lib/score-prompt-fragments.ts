@@ -48,6 +48,14 @@ export function verifyPreambleText(a: { factsetUsed: boolean; isCanadianListing:
 export const REPORTS_BLOCK_INSTRUCTIONS =
   "PDF-extracted content from the most recent reports the PM filed. FACTS from these reports (segment figures, company-reported industry KPIs, dated catalysts, guidance quotes, the capital-allocation record) are admissible evidence, tagged source: \"report\" with the firm and report date in sourceDetail. OPINIONS (ratings, price targets, star ratings, the analyst's own estimates) never move a category score — directional analyst view is counted once, deterministically, in analystConsensus. Routing: 'Dated catalysts' are the evidence the catalysts 3-pt bar demands; 'Industry KPIs' marked COMPANY-REPORTED feed the sector playbook's categories, those marked as the analyst's estimate are context only; 'Segments' inform secular, competitiveMoat and the growth explanation; 'Valuation basis' frames which multiple the street prices this name on but is never a directional vote; 'Scenario targets' ground the bearCase in the analyst's own published downside. Keep companySummary and investmentThesis to 1-2 sentences each.";
 
+// NOTE (rev 7, 2026-09-19): the anchor × thinking test on production (5 names,
+// 2 passes, 4 set-ups) found scoring exactly as steady WITHOUT the anchor
+// (0.4-pt average swing, 4% of categories moved, either way). Case (c) used to
+// ADOPT the prior on ambiguity — a status-quo bias with no measured benefit —
+// so it now keeps the fresh score. The prior remains as change-explanation
+// context. The same test found adaptive thinking no steadier, ~2x slower and
+// ~1.3 pts more generous, so scoring keeps thinking disabled.
+//
 // ── Prior-score anchor ─────────────────────────────────────────────────────
 //
 // Replaces the 2026-05 "treat these as your prior / AFFIRM unless something
@@ -91,7 +99,7 @@ export function buildPriorAnchorBlock(args: {
   if (stale) {
     return `${header}\nThis prior is over ${ANCHOR_MAX_AGE_DAYS} days old — treat it as CONTEXT ONLY. Derive every category fresh from the rubric bands and the data above. Where your score differs from the stale prior, briefly note the difference in the explanation summary, but do NOT retain a prior value merely because the evidence is ambiguous.`;
   }
-  return `${header}\nRECONCILIATION PROTOCOL:\n1. FIRST, score each category from the rubric bands and the data above WITHOUT reference to the prior.\n2. THEN compare each category to the prior and classify any difference in the explanation summary:\n   (a) NEW DATA — the facts changed since the prior; keep your new score and name the specific change (e.g. "Q3 revenue growth decelerated to 8% YoY from 14%").\n   (b) PRIOR MISREAD — the facts are unchanged but the prior misapplied the bands; keep your new score and say so explicitly.\n   (c) BAND AMBIGUITY — the evidence genuinely supports either value; ADOPT THE PRIOR score and note "prior retained (band-ambiguous)".\nDefault to the prior ONLY in case (c). Never retain a prior score you cannot defend from the evidence in front of you, and never move a score without classifying the difference.`;
+  return `${header}\nRECONCILIATION PROTOCOL:\n1. FIRST, score each category from the rubric bands and the data above WITHOUT reference to the prior.\n2. THEN compare each category to the prior and classify any difference in the explanation summary:\n   (a) NEW DATA — the facts changed since the prior; keep your new score and name the specific change (e.g. "Q3 revenue growth decelerated to 8% YoY from 14%").\n   (b) PRIOR MISREAD — the facts are unchanged but the prior misapplied the bands; keep your new score and say so explicitly.\n   (c) BAND AMBIGUITY — the evidence genuinely supports either value; KEEP YOUR FRESH SCORE and note "band-ambiguous vs prior".\nThe prior is CONTEXT for explaining changes, never a reason to hold a score: never retain a prior value you did not re-derive from the evidence in front of you, and never move a score without classifying the difference.`;
 }
 
 /** Appended instead of the anchor when the last score predates the current
