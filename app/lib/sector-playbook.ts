@@ -278,12 +278,17 @@ export function pickPlaybook(sector: string | null, industry: string | null, tic
 }
 
 /** Format the playbook as a prompt block. Null when no playbook applies. */
-/** True when the playbook for this company grades own-history valuation on P/E (or no playbook applies). */
-export function peIsHistoryMultiple(sector: string | null, industry: string | null, ticker?: string | null): boolean {
+/** The FactSet multiple the playbook grades own-history valuation on, WHEN the
+ *  feed can band it: P/B for banks and insurers, P/S for software (the closest
+ *  banded read to EV/Sales), P/E otherwise. null = the playbook's multiple
+ *  (P/FFO, EV/EBITDA) has no history band, so P/E is sent as a cross-check. */
+export function historyBandFormula(sector: string | null, industry: string | null, ticker?: string | null): "FG_PE" | "FG_PBK" | "FG_PSALES" | null {
   const pb = pickPlaybook(sector, industry, ticker);
-  if (!pb) return true;
+  if (!pb) return "FG_PE";
   const key = Object.keys(PLAYBOOKS).find((k) => PLAYBOOKS[k] === pb);
-  return !key || !NON_PE_HISTORY.has(key);
+  if (key === "bank" || key === "insurance") return "FG_PBK";
+  if (key === "software") return "FG_PSALES";
+  return key && NON_PE_HISTORY.has(key) ? null : "FG_PE";
 }
 
 export function sectorPlaybookBlock(sector: string | null, industry: string | null, ticker?: string | null): string | null {

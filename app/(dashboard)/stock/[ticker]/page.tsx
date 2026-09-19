@@ -1770,6 +1770,30 @@ export default function StockDetailPage() {
                 <div className="flex min-w-0 flex-1 flex-col gap-1.5">
                   {/* Setup grade — the timing layer read beside conviction (rubric v3). */}
                   <SetupChip stock={stock} conviction={stock.ratingLabel || stock.rating} />
+                  {/* How many categories the composite actually rests on (rev 7):
+                      structural N/A and parked data gaps are left out of the total,
+                      so the reader should see how much of the 33 is evidence. */}
+                  {(() => {
+                    const cats = SCORE_GROUPS.flatMap((g) => g.categories);
+                    const na = cats.filter((c) => c.key === "ownershipTrends" && !ownershipTrendsApplies(stock)).length;
+                    const gaps = cats.filter((c) => stock.gapExcluded?.includes(c.key as ScoreKey));
+                    const scoredOn = cats.length - na - gaps.length;
+                    if (gaps.length === 0 && na === 0) return null;
+                    return (
+                      <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[12px] text-ink-2">
+                        <span>Scored on <span className="font-mono text-ink">{scoredOn}</span> of {cats.length} categories</span>
+                        {gaps.length > 0 && (
+                          <>
+                            <span className="text-warn">· {gaps.length} data gap{gaps.length === 1 ? "" : "s"}: {gaps.map((c) => c.label).join(", ")}</span>
+                            <button type="button" onClick={handleRescore} disabled={scoring} className="rounded border border-line bg-surface px-1.5 py-0.5 text-[11px] font-medium text-ink hover:bg-surface-hover disabled:opacity-50" title="Runs a verified rescore: web search goes to the missing figures first">
+                              Rescore to fill
+                            </button>
+                          </>
+                        )}
+                        {na > 0 && <span className="text-ink-3">· insider filings not available for this listing</span>}
+                      </div>
+                    );
+                  })()}
                   {/* Regime-adjustment caption: how much the current market
                       regime is helping or hurting this name's rating. */}
                   {(() => {

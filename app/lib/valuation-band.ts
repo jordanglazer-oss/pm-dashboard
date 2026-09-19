@@ -33,7 +33,11 @@ export type ValuationBand = {
   p75: number;
   max: number;
   current: number;       // latest point in the series
-  percentile: number;    // 0-100: where current sits in the full history
+  percentile: number;    // 0-100: where current sits in the 5-year history
+  /** Rev 7 (S-18): the same read over the longest window fetched (up to 10y). */
+  percentileLong?: number;
+  yearsLong?: number;
+  nLong?: number;
   fetchedAt: string;
 };
 
@@ -83,7 +87,8 @@ export async function getValuationBand(
   formula = "FG_PE",
   years = 5,
 ): Promise<ValuationBand | null> {
-  const key = `pm:factset-valband:${ticker.toUpperCase()}`;
+  // FG_PE keeps the original key; other multiples (P/B, P/S — rev 7, S-17) get their own.
+  const key = `pm:factset-valband:${ticker.toUpperCase()}${formula === "FG_PE" ? "" : `:${formula}`}`;
   let redis: Awaited<ReturnType<typeof getRedis>> | null = null;
   try {
     redis = await getRedis();
@@ -95,22 +100,25 @@ export async function getValuationBand(
   } catch { /* cache miss path */ }
 
   try {
-    const end = new Date();
-    const start = new Date(end);
-    start.setFullYear(start.getFullYear() - years);
+    const LONG_YEARS = 10;
     const ymd = (d: Date) => d.toISOString().slice(0, 10).replace(/-/g, "");
-    const out = await timeSeriesBatch(factsetId, formula, ymd(start), ymd(end), "M", {
-      maxWaitMs: MAX_WAIT_MS,
-    });
-    if (out.status !== "SUCCESS") {
-      log.warn(`${ticker}: batch status ${out.status} — no band this run`);
-      return null;
-    }
-    const series = extractSeries(out.result);
+    const pull = async (yrs: number): Promise<number[] | null> => {
+      const end = new Date();
+      const start = new Date(end);
+      start.setFullYear(start.getFullYear() - yrs);
+      const out = await timeSeriesBatch(factsetId, formula, ymd(start), ymd(end), "M", { maxWaitMs: MAX_WAIT_MS });
+      if (out.status !== "SUCCESS") { log.warn(`${ticker}: ${formula} ${yrs}y batch status ${out.status}`); return null; }
+      const got = extractSeries(out.result);
+      if (!got) log.warn(`${ticker}: ${formula} ${yrs}y unusable — payload snippet: ${JSON.stringify(out.result).slice(0, 400)}`);
+      return got;
+    };
+    // One 10-year pull serves both windows; if it fails, fall back to the
+    // original 5-year pull so the band never gets worse than it was.
+    let longSeries = await pull(LONG_YEARS).catch(() => null);
+    if (!longSeries || longSeries.length < MIN_POINTS) longSeries = null;
+    const series = longSeries ? longSeries.slice(-years * 12) : await pull(years);
     if (!series || series.length < MIN_POINTS) {
-      log.warn(
-        `${ticker}: unusable series (${series?.length ?? 0} points) — payload snippet: ${JSON.stringify(out.result).slice(0, 400)}`,
-      );
+      log.warn(`${ticker}: ${formula} unusable series (${series?.length ?? 0} points) — no band this run`);
       return null;
     }
     // Negative P/E months (loss periods) are excluded from the band — a
@@ -136,6 +144,12 @@ export async function getValuationBand(
       percentile: Math.round((below / sorted.length) * 100),
       fetchedAt: new Date().toISOString(),
     };
+    const longPositive = (longSeries ?? []).filter((v) => v > 0);
+    if (longPositive.length > positive.length + 12) {
+      band.percentileLong = Math.round((longPositive.filter((v) => v <= current).length / longPositive.length) * 100);
+      band.nLong = longPositive.length;
+      band.yearsLong = Math.round(longPositive.length / 12);
+    }
     try {
       await redis?.set(key, JSON.stringify(band), { EX: CACHE_TTL_SEC });
     } catch { /* cache write is best-effort */ }
@@ -146,20 +160,24 @@ export async function getValuationBand(
   }
 }
 
-/** Prompt block. Empty string when no band. */
-/** `peIsPrimary` = the sector playbook grades this business on P/E. When it
- *  grades on another multiple (P/B, P/FFO, EV/EBITDA) the P/E band is labelled
- *  a cross-check, so the model never receives two ranks for one piece of evidence. */
-export function formatValuationBandForPrompt(band: ValuationBand | null, peIsPrimary = true): string {
+const MULTIPLE_LABEL: Record<string, string> = { FG_PE: "P/E", FG_PBK: "P/B (price to book)", FG_PSALES: "P/S (price to sales)" };
+
+/** `isPlaybookMultiple` = this band is on the multiple the sector playbook
+ *  grades own-history valuation on. When the playbook's multiple is not
+ *  available as a history band (P/FFO, EV/EBITDA) the P/E band is sent as a
+ *  cross-check, so the model never receives two ranks for one piece of evidence. */
+export function formatValuationBandForPrompt(band: ValuationBand | null, isPlaybookMultiple = true): string {
   if (!band) return "";
   const f = (v: number) => v.toFixed(1);
+  const label = MULTIPLE_LABEL[band.formula] ?? band.formula;
+  const long = band.percentileLong != null && band.yearsLong ? ` Over the longer ~${band.yearsLong}-year window (${band.nLong} points) it sits at the ${band.percentileLong}th percentile.` : "";
   return [
-    `=== OWN-HISTORY VALUATION BAND (FactSet time-series, ${band.years}y monthly, point-in-time) ===`,
-    `${band.formula}: current ${f(band.current)}x — sits at the ${band.percentile}th percentile of its own ${band.years}-year history (${band.n} monthly points).`,
-    `Band: min ${f(band.min)}x | p25 ${f(band.p25)}x | median ${f(band.median)}x | p75 ${f(band.p75)}x | max ${f(band.max)}x. Loss-making months (negative multiple) excluded.`,
-    peIsPrimary
-      ? `PRIMARY evidence for historicalValuation: grade from this percentile and cite it as source: "factset" (sourceDetail "FactSet ${band.years}y P/E band"). It supersedes any recollection of where this name "usually" trades.`
-      : `CROSS-CHECK ONLY: the sector playbook grades this business on a different multiple, which this feed does not carry as a history band. Use this P/E percentile as a secondary read, say that you did, and cap confidence at "medium" (source: "factset", sourceDetail "FactSet ${band.years}y P/E band").`,
-    `Window: the last ${band.years} years of monthly readings. A window that opens on an unusual multiple (a peak or a trough) flatters or punishes the comparison — say so when it matters.`,
+    `=== OWN-HISTORY VALUATION BAND (FactSet time-series, monthly, point-in-time) ===`,
+    `${label}: current ${f(band.current)}x — the ${band.percentile}th percentile of its own ${band.years}-year history (${band.n} monthly points).${long}`,
+    `${band.years}-year band: min ${f(band.min)}x | p25 ${f(band.p25)}x | median ${f(band.median)}x | p75 ${f(band.p75)}x | max ${f(band.max)}x. Loss-making months (negative multiple) excluded.`,
+    isPlaybookMultiple
+      ? `PRIMARY evidence for historicalValuation: grade from the ${band.years}-year percentile and cite it as source: "factset" (sourceDetail "FactSet ${band.years}y ${label} band"). It supersedes any recollection of where this name "usually" trades.`
+      : `CROSS-CHECK ONLY: the sector playbook grades this business on a different multiple, which this feed does not carry as a history band. Use this ${label} percentile as a secondary read, say that you did, and cap confidence at "medium" (source: "factset", sourceDetail "FactSet ${band.years}y ${label} band").`,
+    `When the two windows disagree, say so: a ${band.years}-year window that opens on an unusual multiple (a peak or a trough) flatters or punishes the comparison, and the longer window is the check on that.`,
   ].join("\n");
 }

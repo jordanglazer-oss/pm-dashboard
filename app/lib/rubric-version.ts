@@ -29,7 +29,7 @@ import { GROWTH_WEIGHTS, GROWTH_CUTS, TOP_MARK_FLOOR_PCT, MIN_GROUP_SIZE, REVISI
  *  route, so non-route writers (auto-rescore) can stamp it too. */
 export const RUBRIC_REV = 7;
 
-const SENTINEL_BAND = { formula: "FG_PE", years: 5, n: 60, current: 1, percentile: 50, min: 1, p25: 1, median: 1, p75: 1, max: 1 } as unknown as Parameters<typeof formatValuationBandForPrompt>[0];
+const SENTINEL_BAND = { formula: "FG_PE", years: 5, n: 60, current: 1, percentile: 50, min: 1, p25: 1, median: 1, p75: 1, max: 1, percentileLong: 50, yearsLong: 10, nLong: 120 } as unknown as Parameters<typeof formatValuationBandForPrompt>[0];
 const FORMATTER_HASH_INPUT = [
   sectorPlaybookBlock("Industrials", "Machinery", null)?.split("\n").slice(0, 3).join("\n") ?? "",
   formatValuationBandForPrompt(SENTINEL_BAND, true),

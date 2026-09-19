@@ -15,7 +15,7 @@ import { getRedis } from "@/app/lib/redis";
 import { readStockPool, findInPool } from "@/app/lib/stock-pool";
 import { resolveFactsetId } from "@/app/lib/factset-symbols";
 import { factsetConfigured, relayRetry } from "@/app/lib/factset";
-import { sectorPlaybookBlock, pickPlaybook, peIsHistoryMultiple } from "@/app/lib/sector-playbook";
+import { sectorPlaybookBlock, pickPlaybook, historyBandFormula } from "@/app/lib/sector-playbook";
 import { computeGrowthScore, GROWTH_BANDS_KEY, GROWTH_METRIC_LABEL, type GrowthBands, type GrowthWorking } from "@/app/lib/growth-score";
 import { loadStreetTakeawaysFor, formatStreetTakeawaysForPrompt } from "@/app/lib/street-takeaways";
 import { companySnapshot, formatSnapshotForPrompt, factsetPeerBlock, namesMatch, normalizeFactsetSector, fy1RevisionPct, type CompanySnapshot } from "@/app/lib/factset-fundamentals";
@@ -664,8 +664,19 @@ export async function POST(request: NextRequest) {
         fsRes.source === "factset"
           ? getValuationBand(upperTicker, fsRes.id).catch(() => null)
           : Promise.resolve(null);
+      // Rev 7 (S-17): banks / insurers are graded on P/B and software on P/S,
+      // but the industry is only known once the snapshot returns — so for the
+      // two sectors where it can matter, the alternative band is fetched in
+      // the same parallel stage (cached 7 days) and the right one is chosen below.
+      let preSector = "";
+      try { preSector = (findInPool(await readStockPool(), upperTicker)?.sector ?? "").toLowerCase(); } catch { /* unknown → P/E only */ }
+      const altFormula = /financ/.test(preSector) ? "FG_PBK" : /tech/.test(preSector) ? "FG_PSALES" : null;
+      const altBandPromise =
+        fsRes.source === "factset" && altFormula
+          ? getValuationBand(upperTicker, fsRes.id, altFormula).catch(() => null)
+          : Promise.resolve(null);
 
-      const [factsetSnap, financialResult, priceHistory, edgarBlock, valBand] = await Promise.all([
+      const [factsetSnap, financialResult, priceHistory, edgarBlock, valBand, altBand] = await Promise.all([
         factsetPromise,
         fetchFinancialData(upperTicker),
         fetchPriceHistory(upperTicker).catch(() => [] as OHLCVBar[]),
@@ -674,6 +685,7 @@ export async function POST(request: NextRequest) {
           return null;
         }),
         valBandPromise,
+        altBandPromise,
       ]);
 
       stockPrice = financialResult.price;
@@ -763,9 +775,9 @@ export async function POST(request: NextRequest) {
       // The band block rides directly behind the FactSet snapshot so the
       // historicalValuation evidence sits beside the current multiples. Only
       // meaningful when FactSet is the graded source (factsetUsed).
-      const valBandBlock = factsetUsed
-        ? formatValuationBandForPrompt(valBand, peIsHistoryMultiple(factsetSnap?.sector ?? null, factsetSnap?.industry ?? null, upperTicker))
-        : "";
+      const wantBand = historyBandFormula(factsetSnap?.sector ?? null, factsetSnap?.industry ?? null, upperTicker);
+      const chosenBand = wantBand && altBand && altBand.formula === wantBand ? altBand : valBand;
+      const valBandBlock = factsetUsed ? formatValuationBandForPrompt(chosenBand, !!chosenBand && chosenBand.formula === wantBand) : "";
       financialContext = [factsetBlock, valBandBlock, peerBlock, yahooContext].filter(Boolean).join("\n\n---\n\n");
 
       // ── Sector playbook: deterministic metric selection by GICS class ──
