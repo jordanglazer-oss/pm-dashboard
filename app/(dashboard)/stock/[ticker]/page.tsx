@@ -7,6 +7,8 @@ import Link from "next/link";
 import { useStocks } from "@/app/lib/StockContext";
 import { resolveUsEquityPct } from "@/app/lib/us-equity-exposure";
 import { SCORE_GROUPS, ALL_GROUPS, SETUP_GROUP, MAX_SCORE, INSTRUMENT_LABELS } from "@/app/lib/types";
+import { GrowthMath } from "@/app/components/GrowthMath";
+import { growthHistoryField } from "@/app/lib/growth-score";
 import type { ScoreKey, Scores, FundData, ScoreDataPoint, ScoreDataPointSource, ExternalSourceNote } from "@/app/lib/types";
 import { groupTotal, isScoreable, normalizeSector, marketEdgeApplies, boostedAiApplies, siaApplies, ownershipTrendsApplies } from "@/app/lib/scoring";
 import { ratingLabelFor, ratingToneFor } from "@/app/lib/rating-bands";
@@ -314,7 +316,7 @@ function ExternalSourcesEditor({ notes, onChange, headerLabel = "External Source
     <div className="flex flex-col gap-2">
       <p className="text-[11px] text-ink-3">{headerLabel}</p>
       {local.length === 0 && (
-        <p className="text-[11.5px] text-ink-3">{emptyHint ?? "No sources logged. Click “Add source” to track analyst reports, news, podcasts, or other external research feeding this score."}</p>
+        <p className="text-[11.5px] text-ink-3">{emptyHint ?? "No notes. Click “Add source” to keep a record of analyst reports, news or other research. These notes are a notebook: they are not sent to the scoring model."}</p>
       )}
       <div className="flex flex-col gap-1.5">
         {local.map((note) => (
@@ -1170,6 +1172,7 @@ export default function StockDetailPage() {
         raw: stock.raw,
         adjusted: stock.adjusted,
         scores: stock.scores,
+        ...growthHistoryField(stock.explanations?.growth),
         ...(vmeta
           ? {
               verifiedSearch: vmeta.verifiedSearch,
@@ -1372,15 +1375,11 @@ export default function StockDetailPage() {
         // pre-announcements, analyst changes, and (for Canadian listings)
         // any fundamentals at all since EDGAR is US-only.
         //
-        // PM-logged notes are passed through so the scoring prompt can
-        // factor them into researchCoverage and catalysts. They're stored
-        // on the Stock blob in pm:stocks via the External Sources / Research
-        // Coverage notes editors on this page.
+        // PM-logged notes are NOT sent (rubric rev 7): the notes editors below
+        // are a plain notebook now and stored notes are untouched.
         body: JSON.stringify({
           ticker: stock.ticker,
           verifyWithWebSearch: true,
-          externalSourceNotes: stock.externalSourceNotes ?? [],
-          researchCoverageNotes: stock.researchCoverageNotes ?? [],
         }),
       });
       if (!res.ok) {
@@ -1771,6 +1770,30 @@ export default function StockDetailPage() {
                 <div className="flex min-w-0 flex-1 flex-col gap-1.5">
                   {/* Setup grade — the timing layer read beside conviction (rubric v3). */}
                   <SetupChip stock={stock} conviction={stock.ratingLabel || stock.rating} />
+                  {/* How many categories the composite actually rests on (rev 7):
+                      structural N/A and parked data gaps are left out of the total,
+                      so the reader should see how much of the 33 is evidence. */}
+                  {(() => {
+                    const cats = SCORE_GROUPS.flatMap((g) => g.categories);
+                    const na = cats.filter((c) => c.key === "ownershipTrends" && !ownershipTrendsApplies(stock)).length;
+                    const gaps = cats.filter((c) => stock.gapExcluded?.includes(c.key as ScoreKey));
+                    const scoredOn = cats.length - na - gaps.length;
+                    if (gaps.length === 0 && na === 0) return null;
+                    return (
+                      <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[12px] text-ink-2">
+                        <span>Scored on <span className="font-mono text-ink">{scoredOn}</span> of {cats.length} categories</span>
+                        {gaps.length > 0 && (
+                          <>
+                            <span className="text-warn">· {gaps.length} data gap{gaps.length === 1 ? "" : "s"}: {gaps.map((c) => c.label).join(", ")}</span>
+                            <button type="button" onClick={handleRescore} disabled={scoring} className="rounded border border-line bg-surface px-1.5 py-0.5 text-[11px] font-medium text-ink hover:bg-surface-hover disabled:opacity-50" title="Runs a verified rescore: web search goes to the missing figures first">
+                              Rescore to fill
+                            </button>
+                          </>
+                        )}
+                        {na > 0 && <span className="text-ink-3">· insider filings not available for this listing</span>}
+                      </div>
+                    );
+                  })()}
                   {/* Regime-adjustment caption: how much the current market
                       regime is helping or hurting this name's rating. */}
                   {(() => {
@@ -2120,10 +2143,10 @@ export default function StockDetailPage() {
                                         <ExternalSourcesEditor
                                           notes={notesForThis}
                                           onChange={(next) => updateStockFields(ticker, isExternalSources ? { externalSourceNotes: next } : { researchCoverageNotes: next })}
-                                          headerLabel={isExternalSources ? "External sources log" : "Research coverage log (feeds catalysts)"}
+                                          headerLabel={isExternalSources ? "External sources — notes (not used in scoring)" : "Research coverage — notes (not used in scoring)"}
                                           emptyHint={isExternalSources
-                                            ? "No sources logged. Click “Add source” to track analyst reports, news, podcasts, or other external research feeding this score."
-                                            : "No coverage logged. Log named-firm activity (Morgan Stanley initiation, Goldman PT change, etc.) here as evidence of an active information environment. RBC and JPM go in the Analyst consensus panel; this is for everyone else."}
+                                            ? "No notes. Click “Add source” to keep a record of analyst reports, news or other research. These notes are a notebook: they are not sent to the scoring model."
+                                            : "No notes. Log named-firm activity (an initiation, a target change) here for your own record. These notes are not sent to the scoring model; RBC and JPM go in the Analyst consensus panel."}
                                           placeholder={isExternalSources
                                             ? "Source (e.g. RBC Capital Markets — Upgraded to Outperform, PT $245)"
                                             : "Coverage event (e.g. Wells Fargo initiated Buy, PT $52, Apr 18)"}
@@ -2133,6 +2156,9 @@ export default function StockDetailPage() {
                                         <div className="flex flex-col gap-2.5">
                                           {summary && (
                                             <p className="text-[12.5px] leading-[1.5] text-ink-2">{summary}</p>
+                                          )}
+                                          {cat.key === "growth" && rawExp && !Array.isArray(rawExp) && rawExp.growthCalc && (
+                                            <GrowthMath calc={rawExp.growthCalc} />
                                           )}
                                           {dataPoints.length > 0 && (
                                             <div>

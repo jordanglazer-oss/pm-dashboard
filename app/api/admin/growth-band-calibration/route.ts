@@ -55,20 +55,6 @@ const CHUNK = 40;
 const PARALLEL = 3;
 const METRICS: GrowthMetricKey[] = ["fwdSales", "fwdEps", "ltg", "delivered"];
 
-/** The four peer groups rubric revision 7 adds (staged on branch rubric-rev7).
- *  Mirrored here so bands calibrated from main already carry those groups;
- *  the labels must match the rev-7 playbook labels exactly. Removed when rev 7
- *  merges (its pickPlaybook routes these itself). */
-const REV7_PAYMENTS = new Set(["V", "MA", "PYPL", "FI", "FIS", "GPN", "CPAY", "JKHY", "XYZ", "ICE", "CME", "NDAQ", "CBOE", "SPGI", "MCO", "MSCI", "FDS", "X.TO", "X-T"]);
-function rev7Group(industry: string | null, ticker: string): string | null {
-  const ind = (industry || "").toLowerCase();
-  if (REV7_PAYMENTS.has(ticker.toUpperCase()) || /transaction|payment processing|financial exchanges/.test(ind)) return "Payments, Exchanges & Financial Data";
-  if (/automobile|auto components|automotive/.test(ind)) return "Autos & Components";
-  if (/health care providers|health care services|managed health|health care facilities|health care distributors/.test(ind)) return "Managed Care / Health Care Services";
-  if (/\bground transportation\b|\broad\b|\brail|air freight|airlines|\bmarine\b|transportation infrastructure/.test(ind)) return "Transportation & Logistics";
-  return null;
-}
-
 export async function GET(req: NextRequest) {
   const url = new URL(req.url);
   const redis = await getRedis();
@@ -117,7 +103,7 @@ export async function GET(req: NextRequest) {
     if (!gicsSector) { unclassified.push(ticker); continue; }
     if (n("salesLtmA") == null && n("salesNtm") != null) salesBasisFallback++;
     const sector = normalizeFactsetSector(gicsSector) ?? gicsSector;
-    const group = rev7Group(industry, ticker) ?? pickPlaybook(gicsSector, industry)?.label ?? `${sector ?? "Unclassified"} (no playbook)`;
+    const group = pickPlaybook(gicsSector, industry, ticker)?.label ?? `${sector ?? "Unclassified"} (no playbook)`;
     const raw: RawGrowthRow = { salesNtm: n("salesNtm"), salesLtm: n("salesLtm"), salesLtmA: n("salesLtmA"), epsNtm: n("epsNtm"), epsLtmA: n("epsLtmA"), ltg: n("ltg"), salesAnn0: n("salesAnn0"), salesAnn3: n("salesAnn3"), bpsAnn0: n("bpsAnn0"), bpsAnn3: n("bpsAnn3") };
     const { inputs, excluded } = deriveGrowthInputs(raw, group);
     const round = (v: number) => Math.round(v * 10) / 10;

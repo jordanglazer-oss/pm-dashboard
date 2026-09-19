@@ -15,6 +15,8 @@ import { createHash } from "crypto";
 import { getRedis } from "./redis";
 import type { ExtractedReport, AnalystRating } from "./analyst-snapshots";
 import { parseModelJson } from "./json-repair";
+import { readStockPool, findInPool } from "./stock-pool";
+import { pickPlaybook } from "./sector-playbook";
 
 const CACHE_KEY = "pm:analyst-report-extract-cache";
 const client = new Anthropic();
@@ -48,7 +50,7 @@ async function writeCache(blob: CacheBlob) {
   }
 }
 
-const PROMPT_TEMPLATE = (ticker: string, source: AnalystSource) => `You are extracting structured data from a ${source.toUpperCase()} sell-side equity research PDF on ${ticker}. Output STRICT JSON only — no prose, no markdown fences, nothing outside the JSON object.
+const PROMPT_TEMPLATE = (ticker: string, source: AnalystSource, playbook: { label: string; body: string } | null) => `You are extracting structured data from a ${source.toUpperCase()} sell-side equity research PDF on ${ticker}. Output STRICT JSON only — no prose, no markdown fences, nothing outside the JSON object.
 
 Schema:
 {
@@ -56,10 +58,11 @@ Schema:
   "target": <number>,                                       // 12-month price target, numeric, no currency symbol. Omit if not stated.
   "targetCurrency": "USD" | "CAD" | "<ISO 4217 code>",       // ISO 4217 currency of the price target. Look for currency symbols (C$, CA$, US$, $, kr, €, £, ¥), disclaimers, or the exchange the report references. Use "USD" for US-listed stocks, "CAD" for TSX-listed, "DKK" for Copenhagen, "SEK" for Stockholm, "GBP"/"GBp" for London, etc. Always emit the standard ISO code (e.g. DKK not "Danish Krone"). Omit only if target is omitted.
   "asOf": "YYYY-MM-DD",                                     // publication date of THIS report. Omit if not clearly stated.
-  "thesis": ["bullet 1", "bullet 2", ...],                  // 3-5 dense bullets capturing the analyst's investment thesis (bull case if Outperform, bear case if Underperform, sideways thesis if Neutral). Each bullet ≤ 25 words.
-  "risks": ["risk 1", "risk 2", ...],                       // 2-4 bullets capturing key downside risks the report flags. ≤ 25 words each.
+  "thesis": ["bullet 1", "bullet 2", ...],                  // 3-5 dense bullets: the DRIVERS the analyst names and the numbers behind them, whatever the rating. Do not shape them to fit the rating. Each bullet ≤ 25 words.
+  "risks": ["risk 1", "risk 2", ...],                       // 3-5 bullets capturing the downside risks the report flags, with the same weight as the thesis. ≤ 25 words each.
   "sectorView": "one sentence",                             // the analyst's sector / industry outlook if it's mentioned in this report. Omit if absent.
-  "keyMetrics": [{"label": "...", "value": "..."}, ...],    // 3-6 named numeric data points the analyst uses to support their thesis (e.g. {"label": "FY27 EPS estimate", "value": "$12.40"}). Omit if none.
+  "keyMetrics": [{"label": "...", "value": "..."}, ...],    // up to 10 figures most relevant to judging the BUSINESS, whether or not they support the rating. Look for: reported segment results, leverage and coverage, free cash flow, buybacks and dividends, and the analyst's own estimates WHERE THEY DIFFER from consensus (label those "analyst est."). Put the period in the label (e.g. {"label": "FY27 EPS (analyst est.)", "value": "$12.40 vs consensus $11.90"}). Omit if none.
+  "industryKpis": [{"metric": "...", "value": "...", "period": "...", "reported": true}, ...],  // the industry metrics THIS business is graded on${playbook ? ` — it is graded as "${playbook.label}"; look for the metrics named here:\n${playbook.body.split("\n").map((l) => "      " + l).join("\n")}\n   ` : " (backlog / book-to-bill, net revenue retention, same-store sales, occupancy and leasing spreads, CET1, combined ratio, all-in sustaining cost, reserve replacement, and the like)"}. 0-10 entries, values verbatim from the report with units, each with its period. "reported": true ONLY for a figure the company itself reported or guided; false for the analyst's own estimate or forecast. Omit any the report does not state — NEVER estimate one. Omit the field if none.
   "catalysts": [{"date": "YYYY-MM-DD or a period like Q4 FY26 / 2H26", "event": "...", "detail": "expected impact in <=15 words"}, ...],  // 0-5 DATED, company-specific upcoming events the report names (product launches, capital markets days, regulatory decisions, contract awards, guidance events). ONLY events with a stated date or period — a generic "continued execution" is NOT a catalyst. Omit if none.
   "valuationBasis": "...",                                  // one short phrase: how the analyst derives the price target (e.g. "18x FY27 EPS", "DCF at 9% WACC", "SOTP", "1.6x P/B on 14% ROE"). Omit if not stated.
   "scenarios": {"bull": <number>, "base": <number>, "bear": <number>}  // the report's published scenario price targets (RBC upside/downside scenarios, JPM bull/bear cases), numeric, same currency as target. Include only the scenarios actually stated; omit the field entirely if none.
@@ -161,6 +164,19 @@ function parseExtraction(text: string): ExtractedReport | null {
       .slice(0, 5);
     if (out.segments.length === 0) delete out.segments;
   }
+  if (Array.isArray(parsed.industryKpis)) {
+    out.industryKpis = parsed.industryKpis
+      .filter((x): x is Record<string, unknown> => !!x && typeof x === "object")
+      .map((x) => ({
+        metric: typeof x.metric === "string" ? x.metric.trim() : "",
+        value: typeof x.value === "string" ? x.value.trim() : String(x.value ?? "").trim(),
+        ...(typeof x.period === "string" && x.period.trim() ? { period: x.period.trim() } : {}),
+        reported: x.reported === true,
+      }))
+      .filter((x) => x.metric && x.value)
+      .slice(0, 10);
+    if (out.industryKpis.length === 0) delete out.industryKpis;
+  }
   if (typeof parsed.valuationBasis === "string" && parsed.valuationBasis.trim()) {
     out.valuationBasis = parsed.valuationBasis.trim();
   }
@@ -203,6 +219,15 @@ export async function extractAnalystReport(opts: {
     }
   }
 
+  // Playbook-aware extraction: tell the extractor which industry metrics this
+  // business is graded on, so it pulls the numbers FactSet's fundamentals lack.
+  // Sector comes from the stored stock record (read-only); unknown → generic list.
+  let playbook: { label: string; body: string } | null = null;
+  try {
+    const sector = findInPool(await readStockPool(), ticker)?.sector ?? null;
+    playbook = pickPlaybook(sector, null, ticker);
+  } catch { /* generic KPI list */ }
+
   const pdfBlocks = buildPdfBlocks(dataUrl);
   if (pdfBlocks.length === 0) {
     throw new Error("Failed to decode PDF dataUrl");
@@ -214,13 +239,13 @@ export async function extractAnalystReport(opts: {
     // (400 if sent). Extraction consistency comes from the strict JSON schema
     // in PROMPT_TEMPLATE and the hash-gated cache, not from a temperature knob.
     thinking: { type: "disabled" },
-    max_tokens: 2048,
+    max_tokens: 3000,
     messages: [
       {
         role: "user",
         content: [
           ...pdfBlocks,
-          { type: "text", text: PROMPT_TEMPLATE(ticker.toUpperCase(), source) },
+          { type: "text", text: PROMPT_TEMPLATE(ticker.toUpperCase(), source, playbook) },
         ],
       },
     ],

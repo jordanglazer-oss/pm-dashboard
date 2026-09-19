@@ -97,6 +97,13 @@ export type ScoreHistoryEntry = {
    * retired, returnsMargins (2 pts, ROIC level/trend + margin trajectory)
    * joins Fundamental, growth is scored forward (NTM consensus, fixed-year
    * revisions, LTG), and the cutoffs are recalibrated (26.5/23.5/19.5/16).
+   * 7 = the 2026-09 prompt-audit revision: growth is COMPUTED by the app
+   * (four metrics ranked in the peer group, top mark needs top ~15% + breadth
+   * + a 5% floor; the model may move it one point for a named reason),
+   * estimate revisions live only in growth + analystConsensus, the DATA GAP
+   * rule is fill-first and direction-neutral, PM notes left the prompt, report
+   * opinions no longer move moat / track record, four playbooks added, the
+   * search budget goes to gaps, and data-block instruction text joined the hash.
    */
   rubricRev?: number;
   /**
@@ -107,6 +114,14 @@ export type ScoreHistoryEntry = {
    * not compare across different scales — a re-base is not a score move.
    */
   scaleMax?: number;
+  /**
+   * Rev 7+: compact working behind the computed growth score at this rescore,
+   * so a later reader can see WHICH metric moved growth, not just that it moved.
+   * Optional and additive — entries written before rev 7 simply lack it.
+   * { computed, final, adj (model's ±1), rev (revision ±1), blended, group, n,
+   *   m: { metric: [value %, percentile] } }
+   */
+  growth?: { computed: number | null; final: number; adj: number; rev: number; blended: number | null; group: string; n: number; m: Record<string, [number, number]> };
   /**
    * Content-derived rubric fingerprint (sha256 of the master scoring prompt +
    * playbook bodies, first 8 chars — see app/lib/rubric-version.ts). Stamped

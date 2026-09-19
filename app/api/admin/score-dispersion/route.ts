@@ -39,6 +39,8 @@ export async function GET(req: NextRequest) {
   const anchorOff = url.searchParams.get("anchor") === "off";
   const verifyOff = url.searchParams.get("verify") === "off";
   const thinkingOn = url.searchParams.get("thinking") === "on";
+  // debug=1 → also return the rev-7 diagnostics (growth working, gaps, summaries) for smoke-testing a deploy.
+  const debug = url.searchParams.get("debug") === "1";
 
   const startedAt = new Date().toISOString();
   log.info(`single dispersion run for ${ticker} (anchor ${anchorOff ? "OFF" : "on"}, verify ${verifyOff ? "OFF" : "on"})`);
@@ -65,6 +67,8 @@ export async function GET(req: NextRequest) {
     scores?: Record<string, number>;
     explanations?: Record<string, { summary?: string; confidence?: string }>;
     verifiedSearch?: boolean;
+    growthCalc?: unknown; dataGaps?: string[]; scoredOn?: unknown; sourceHealth?: string; missingCategories?: string[];
+    companySummary?: string; investmentThesis?: string; bearCase?: string;
   };
 
   // Compact projection: scores + per-category confidence only. Explanation
@@ -84,5 +88,11 @@ export async function GET(req: NextRequest) {
     scores: data.scores ?? null,
     confidence,
     persisted: false,
+    ...(debug ? {
+      growthCalc: data.growthCalc ?? null, dataGaps: data.dataGaps ?? null, scoredOn: data.scoredOn ?? null,
+      sourceHealth: data.sourceHealth ?? null, missingCategories: data.missingCategories ?? null,
+      summaries: Object.fromEntries(Object.entries(data.explanations ?? {}).map(([k, v]) => [k, v?.summary ?? null])),
+      narrative: { companySummary: data.companySummary, investmentThesis: data.investmentThesis, bearCase: data.bearCase },
+    } : {}),
   });
 }

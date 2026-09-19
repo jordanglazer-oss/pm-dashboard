@@ -124,6 +124,11 @@ export type ExtractedReport = {
    *  size/growth/margin read on each. Feeds the synthesis screen's
    *  "what they do" primer with report-grounded segment economics. */
   segments?: { name: string; detail: string }[];
+  /** Industry metrics the sector playbook grades on (backlog, NRR, same-store
+   *  sales, occupancy, CET1, combined ratio…) — the numbers FactSet's
+   *  fundamentals do not carry. `reported` = a company-reported figure (may
+   *  move a score); otherwise the analyst's own estimate (context only). */
+  industryKpis?: { metric: string; value: string; period?: string; reported: boolean }[];
   /** Morningstar-only structured ratings — populated when source === "morningstar". */
   stars?: number;
   fairValue?: number;

@@ -2,11 +2,12 @@
 
 import React from "react";
 import Link from "next/link";
+import { GrowthBandsTable } from "@/app/components/GrowthBandsTable";
 
 /**
  * /methodology — plain-language reference for how the selection & discipline
- * stack fits together (boss-readable, no jargon). Static content, no data
- * fetches, nothing to go stale except the prose — update it when the process
+ * stack fits together (boss-readable, no jargon). Static prose plus ONE live,
+ * read-only table (the calibrated growth bands); nothing else to go stale except the prose — update it when the process
  * genuinely changes, not per release.
  */
 
@@ -60,6 +61,68 @@ export default function MethodologyPage() {
           <p className="text-ink-3">
             Where you see it: the Rankings table and each stock page. The score is the house view of the stock.
           </p>
+        </Sect>
+
+        <section id="growth-score" className="scroll-mt-4">
+        <Sect title="How the growth score is calculated (shown on every stock page)">
+          <p>
+            Growth is the one fundamental category the app <b>computes</b> rather than asks the AI to judge. Four
+            numbers are pulled from FactSet for the company: <b>forward sales growth</b> and <b>forward earnings
+            growth</b> (what analysts expect over the next twelve months against the last twelve), the
+            analysts&rsquo; <b>three-to-five-year growth estimate</b>, and <b>delivered growth</b> over the last three
+            years. Each is ranked against the company&rsquo;s own kind of business &mdash; a bank against banks, a
+            semiconductor maker against semiconductor makers &mdash; using the S&amp;P 500 and TSX 60 as the peer pool.
+          </p>
+          <p>
+            The four rankings are blended (30% forward sales, 30% forward earnings, 20% long-term estimate, 20%
+            delivered). A blend in the bottom fifth of the group scores 0, below the middle scores 1, and above
+            the middle scores 2. The top mark of 3 is deliberately hard to get: the blend must be in the top 15%
+            of the group, <b>no single measure may be below the group&rsquo;s middle</b>, and forward growth must be at
+            least 5% in absolute terms &mdash; being the fastest grower in a no-growth industry is not an outstanding
+            growth story. Shrinking sales score 0 outright.
+          </p>
+          <p>
+            Then one automatic adjustment: if analysts have raised next year&rsquo;s earnings estimate by more than 3%
+            in three months the score moves up one; if they have cut it by more than 3% it moves down one. Finally
+            the AI may move the result by <b>at most one point</b>, and only for a stated reason from a short list:
+            growth flattered by a one-off, peak-cycle earnings, growth bought through acquisition, or a disclosed
+            event analysts have not yet absorbed. Anything further is rejected by the app.
+          </p>
+          <p>
+            Where a measure does not mean anything for a business it is left out and the others carry more weight
+            &mdash; revenue for a bank (book value growth is used for delivered growth instead), accounting earnings
+            for a real-estate trust. With fewer than two usable measures no score is given: growth is marked as a
+            data gap and left out of the total rather than guessed. One limit to keep in mind: the peer pool is
+            large companies, so a smaller holding is being ranked against large-cap peers.
+          </p>
+          <p className="text-ink-3">
+            Where you see it: open the Growth row on any stock page and choose &ldquo;Show the math&rdquo; &mdash; every
+            figure, ranking, test and adjustment behind that company&rsquo;s score is listed, enough to redo it by hand.
+            Each rescore also saves that working with the score history.
+          </p>
+          <GrowthBandsTable />
+        </Sect>
+        </section>
+
+        <Sect title="How the cash-deployment call is decided (Brief)">
+          <p>
+            New client cash is deployed in monthly installments between the 1st and the 20th. The Brief does not
+            decide <i>whether</i> to deploy &mdash; only whether today is a good day within that window. It weighs
+            Mark Newton&rsquo;s daily technical note (40%), the S&amp;P oscillator (25%), market breadth (15%), the
+            VIX (10%), sentiment (6%) and the five-day move in the S&amp;P (4%) into a score from 0 to 100.
+          </p>
+          <p>
+            The score maps one way: <b>70 or more is DEPLOY, 55 to 69 is PARTIAL</b> (half now, half held back),
+            <b> below 55 is WAIT</b>. Because a quiet month could otherwise say WAIT every day, a calendar backstop
+            applies: with five or fewer trading days left before the 20th a WAIT becomes PARTIAL, and with two or
+            fewer the call is DEPLOY. The app enforces that backstop itself after the AI answers.
+          </p>
+          <p>
+            When you log that the cash has actually gone in, the Brief stops making the call until the 1st of the
+            next month, and the log keeps a timing record: the S&amp;P&rsquo;s close on your day against the average
+            close across that month&rsquo;s window, which is what spreading the cash evenly would have paid.
+          </p>
+          <p className="text-ink-3">Where you see it: the Cash Deployment tile on the Brief.</p>
         </Sect>
 
         <Sect n="2" title="Factor screen — the independent second opinion">

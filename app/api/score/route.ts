@@ -15,14 +15,17 @@ import { getRedis } from "@/app/lib/redis";
 import { readStockPool, findInPool } from "@/app/lib/stock-pool";
 import { resolveFactsetId } from "@/app/lib/factset-symbols";
 import { factsetConfigured, relayRetry } from "@/app/lib/factset";
-import { sectorPlaybookBlock } from "@/app/lib/sector-playbook";
+import { sectorPlaybookBlock, pickPlaybook, historyBandFormula } from "@/app/lib/sector-playbook";
+import { computeGrowthScore, GROWTH_BANDS_KEY, GROWTH_METRIC_LABEL, type GrowthBands, type GrowthWorking } from "@/app/lib/growth-score";
 import { loadStreetTakeawaysFor, formatStreetTakeawaysForPrompt } from "@/app/lib/street-takeaways";
-import { companySnapshot, formatSnapshotForPrompt, factsetPeerBlock, namesMatch, normalizeFactsetSector, type CompanySnapshot } from "@/app/lib/factset-fundamentals";
+import { companySnapshot, formatSnapshotForPrompt, factsetPeerBlock, namesMatch, normalizeFactsetSector, fy1RevisionPct, type CompanySnapshot } from "@/app/lib/factset-fundamentals";
 import { parseModelJson } from "@/app/lib/json-repair";
 import { SCORING_PROMPT } from "@/app/lib/scoring-prompt";
 import { RUBRIC_HASH } from "@/app/lib/rubric-version";
 import {
   DEGRADED_RUN_NOTE,
+  verifyPreambleText,
+  REPORTS_BLOCK_INSTRUCTIONS,
   noEdgarCanadianNote,
   partialRescoreNote,
   buildPriorAnchorBlock,
@@ -523,7 +526,7 @@ async function fmpPeerTickers(ticker: string): Promise<string[]> {
     if (!res.ok) return [];
     const data = await res.json();
     return Array.isArray(data)
-      ? data.slice(0, 3).map((p: Record<string, unknown>) => p.symbol as string).filter(Boolean)
+      ? data.slice(0, 6).map((p: Record<string, unknown>) => p.symbol as string).filter(Boolean)
       : [];
   } catch {
     return [];
@@ -534,13 +537,8 @@ export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
     const { ticker } = body;
-    // Optional PM-logged notes (External Sources + Research Coverage). The
-    // stock page passes these in so the scoring prompt can factor user-
-    // captured analyst reports / article references into researchCoverage
-    // and catalysts. Both are arrays of { id, date, text } — see
-    // ExternalSourceNote in app/lib/types.ts.
-    const externalSourceNotes = Array.isArray(body?.externalSourceNotes) ? body.externalSourceNotes : [];
-    const researchCoverageNotes = Array.isArray(body?.researchCoverageNotes) ? body.researchCoverageNotes : [];
+    // (PM-logged notes are no longer sent to the model — rubric rev 7. The
+    //  stock page keeps the editor as a plain notebook; stored notes are untouched.)
     // Optional flag: when true, the API call enables Anthropic's
     // web_search tool so the model can verify cached fundamentals against
     // the company's most recent press releases / filings / named analyst
@@ -587,6 +585,10 @@ export async function POST(request: NextRequest) {
     // 1.03 / 3.01 or Form 25) reached the prompt. The ONLY legitimate basis
     // for a hard floor — used below to reject model-invented floors.
     let hadAdverseFlags = false;
+    // Rubric rev 7: the app computes the growth score; the model may move it one point.
+    let growthWorking: GrowthWorking | null = null;
+    // Which dated-event feeds exist for this name (catalysts evidence ceiling).
+    const evidence = { guidance: false, alerts: false, report: false, form4: false };
 
     if (!ticker || typeof ticker !== "string") {
       return NextResponse.json(
@@ -668,8 +670,19 @@ export async function POST(request: NextRequest) {
         fsRes.source === "factset"
           ? getValuationBand(upperTicker, fsRes.id).catch(() => null)
           : Promise.resolve(null);
+      // Rev 7 (S-17): banks / insurers are graded on P/B and software on P/S,
+      // but the industry is only known once the snapshot returns — so for the
+      // two sectors where it can matter, the alternative band is fetched in
+      // the same parallel stage (cached 7 days) and the right one is chosen below.
+      let preSector = "";
+      try { preSector = (findInPool(await readStockPool(), upperTicker)?.sector ?? "").toLowerCase(); } catch { /* unknown → P/E only */ }
+      const altFormula = /financ/.test(preSector) ? "FG_PBK" : /tech/.test(preSector) ? "FG_PSALES" : null;
+      const altBandPromise =
+        fsRes.source === "factset" && altFormula
+          ? getValuationBand(upperTicker, fsRes.id, altFormula).catch(() => null)
+          : Promise.resolve(null);
 
-      const [factsetSnap, financialResult, priceHistory, edgarBlock, valBand] = await Promise.all([
+      const [factsetSnap, financialResult, priceHistory, edgarBlock, valBand, altBand] = await Promise.all([
         factsetPromise,
         fetchFinancialData(upperTicker),
         fetchPriceHistory(upperTicker).catch(() => [] as OHLCVBar[]),
@@ -678,6 +691,7 @@ export async function POST(request: NextRequest) {
           return null;
         }),
         valBandPromise,
+        altBandPromise,
       ]);
 
       stockPrice = financialResult.price;
@@ -767,7 +781,9 @@ export async function POST(request: NextRequest) {
       // The band block rides directly behind the FactSet snapshot so the
       // historicalValuation evidence sits beside the current multiples. Only
       // meaningful when FactSet is the graded source (factsetUsed).
-      const valBandBlock = factsetUsed ? formatValuationBandForPrompt(valBand) : "";
+      const wantBand = historyBandFormula(factsetSnap?.sector ?? null, factsetSnap?.industry ?? null, upperTicker);
+      const chosenBand = wantBand && altBand && altBand.formula === wantBand ? altBand : valBand;
+      const valBandBlock = factsetUsed ? formatValuationBandForPrompt(chosenBand, !!chosenBand && chosenBand.formula === wantBand) : "";
       financialContext = [factsetBlock, valBandBlock, peerBlock, yahooContext].filter(Boolean).join("\n\n---\n\n");
 
       // ── Sector playbook: deterministic metric selection by GICS class ──
@@ -783,15 +799,70 @@ export async function POST(request: NextRequest) {
       const playbook = sectorPlaybookBlock(
         factsetUsed ? (factsetSnap?.sector ?? null) : storedSector,
         factsetUsed ? (factsetSnap?.industry ?? null) : null,
+        upperTicker,
       );
       if (playbook) financialContext += `\n\n---\n\n${playbook}`;
+
+      // ── Computed growth score (rubric rev 7) ─────────────────────────────
+      // Four metrics ranked inside the company's peer group (pm:growth-bands,
+      // written only by the calibration admin route — read-only here).
+      {
+        let growthBlock = "=== COMPUTED GROWTH SCORE ===\nNot computed for this run";
+        if (factsetUsed && factsetSnap) {
+          const gv = factsetSnap.values;
+          evidence.guidance = [gv.guidSalesQMean, gv.guidEpsQMean, gv.guidSalesAMean, gv.guidEpsAMean].some((x) => typeof x === "number");
+        }
+        if (!factsetUsed || !factsetSnap) {
+          growthBlock += ": FactSet did not supply this company's estimates. Apply the DATA GAP rule to growth.";
+        } else {
+          let bands: GrowthBands | null = null;
+          try {
+            const rawBands = await (await getRedis()).get(GROWTH_BANDS_KEY);
+            bands = rawBands ? (JSON.parse(rawBands) as GrowthBands) : null;
+          } catch { /* bands stay null */ }
+          if (!bands) {
+            growthBlock += ": the peer-group growth bands have not been calibrated yet. Apply the DATA GAP rule to growth.";
+          } else {
+            const v = factsetSnap.values;
+            const group = pickPlaybook(factsetSnap.sector ?? null, factsetSnap.industry ?? null, upperTicker)?.label ?? null;
+            growthWorking = computeGrowthScore({
+              raw: { salesNtm: v.salesNtm, salesLtm: v.salesLtm, salesLtmA: v.salesLtmA, epsNtm: v.epsNtm, epsLtmA: v.epsLtmA, ltg: v.ltg, salesAnn0: v.salesAnn0, salesAnn3: v.salesAnn3, bpsAnn0: v.bpsAnn0, bpsAnn3: v.bpsAnn3 },
+              playbookGroup: group,
+              sector: normalizeFactsetSector(factsetSnap.sector),
+              bands,
+              revisionPct: fy1RevisionPct(v),
+            });
+            const w = growthWorking;
+            const f1 = (n: number) => `${n >= 0 ? "+" : ""}${n.toFixed(1)}%`;
+            const lines = [
+              "=== COMPUTED GROWTH SCORE ===",
+              `Ranked in: ${w.rankedIn} (${w.groupSize} names)${w.foldedFrom ? ` — the ${w.foldedFrom} group is too small to rank in, so its GICS sector is used` : ""}. Bands calibrated ${w.calibratedAt.slice(0, 10)}.`,
+              ...(w.groupNote ? [`Group rule: ${w.groupNote}`] : []),
+              ...w.components.map((c) => `- ${GROWTH_METRIC_LABEL[c.metric]}: ${f1(c.value)} → ${c.percentile.toFixed(0)}th percentile (group median ${c.groupMedian != null ? f1(c.groupMedian) : "n/a"}); weight ${(c.weight * 100).toFixed(0)}%`),
+              ...w.excluded.map((e) => `- ${GROWTH_METRIC_LABEL[e.metric]}: not used — ${e.reason}`),
+            ];
+            if (w.computedScore == null) {
+              lines.push("Fewer than two usable metrics — the score could NOT be computed. Apply the DATA GAP rule to growth.");
+            } else {
+              lines.push(
+                `Blended percentile: ${w.blendedPercentile} → base score ${w.baseScore}/3.`,
+                `Top-mark tests: top ~15% of group ${w.topMark!.inTopBand ? "PASS" : "fail"} · no metric below the group median ${w.topMark!.noMetricBelowMedian ? "PASS" : "fail"} · forward growth of at least 5% ${w.topMark!.clearsFloor ? "PASS" : "fail"}.`,
+                `FY+1 consensus revision over 3 months (same fiscal year): ${w.revision.pct != null ? f1(w.revision.pct) : "n/a"} → adjustment ${w.revision.adjustment > 0 ? "+1" : w.revision.adjustment < 0 ? "-1" : "0"}.`,
+                `COMPUTED SCORE: ${w.computedScore}/3. Return this, or move it by at most one point for a named reason.`,
+              );
+            }
+            growthBlock = lines.join("\n");
+          }
+        }
+        financialContext += `\n\n---\n\n${growthBlock}`;
+      }
 
       // ── Sector mismatch: FactSet GICS vs the sector stored on pm:stocks ──
       // The response's `sector` self-heals the stored value; this makes the
       // correction visible (response field + prompt note) instead of silent.
       if (factsetUsed && factsetSectorOut && storedSector && factsetSectorOut !== storedSector) {
         sectorCorrectedOut = { from: storedSector, to: factsetSectorOut };
-        financialContext += `\n\n---\n\n=== SECTOR CORRECTION ===\nThe dashboard had this name stored as sector "${storedSector}", but FactSet's GICS classification is "${factsetSectorOut}" (authoritative — this response updates the stored value). Grade using the ${factsetSectorOut} lens and the sector playbook above; briefly note the reclassification in the companySummary.`;
+        financialContext += `\n\n---\n\n=== SECTOR CORRECTION ===\nThe dashboard had this name stored as sector "${storedSector}", but FactSet's GICS classification is "${factsetSectorOut}" (authoritative — this response updates the stored value). Grade using the ${factsetSectorOut} lens and the sector playbook above.`;
         console.log(`[Score] ${upperTicker} sector corrected: "${storedSector}" → "${factsetSectorOut}"`);
       }
 
@@ -863,9 +934,11 @@ export async function POST(request: NextRequest) {
           // richer as-reported block). Keep ONLY the Form 4 insider sub-section,
           // which FactSet doesn't provide (the agreed insider carve-out).
           const insiderIdx = edgarBlock.indexOf("=== INSIDER ACTIVITY");
+          evidence.form4 = insiderIdx >= 0;
           if (insiderIdx >= 0) financialContext += `\n\n---\n\n${edgarBlock.slice(insiderIdx)}`;
         } else {
           financialContext += `\n\n---\n\n${edgarBlock}`;
+          evidence.form4 = edgarBlock.includes("=== INSIDER ACTIVITY");
         }
       } else if (isCanadianListing) {
         financialContext += noEdgarCanadianNote(upperTicker);
@@ -892,23 +965,6 @@ export async function POST(request: NextRequest) {
         }
       }
 
-      // Append PM-logged notes if any. Each note is rendered as a single
-      // line so the prompt stays compact; Claude can still extract the
-      // source name + date for citation in dataPoints.
-      type NoteRow = { id?: string; date?: string; text?: string };
-      const fmtNotes = (notes: NoteRow[]) =>
-        notes
-          .filter((n) => typeof n?.text === "string" && n.text.trim().length > 0)
-          .map((n) => `  - [${n.date || "no date"}] ${(n.text || "").trim()}`)
-          .join("\n");
-      const extBlock = fmtNotes(externalSourceNotes as NoteRow[]);
-      if (extBlock) {
-        financialContext += `\n\n---\n\n=== PM-LOGGED EXTERNAL SOURCES ===\nThe PM has manually logged the following external research / news / analyst items for this stock. Treat these as TIER-1 input for the catalysts category (and as supporting context elsewhere):\n${extBlock}`;
-      }
-      const rcBlock = fmtNotes(researchCoverageNotes as NoteRow[]);
-      if (rcBlock) {
-        financialContext += `\n\n---\n\n=== PM-LOGGED RESEARCH COVERAGE NOTES ===\nThe PM has manually logged the following sell-side analyst coverage items for this stock. Treat these as TIER-1 input for the researchCoverage category:\n${rcBlock}`;
-      }
 
       // Street Takeaways — FactSet post-earnings analyst roundups ingested via
       // the Gmail inbox. Covers the institutions OUTSIDE the RBC/JPM PDF flow
@@ -917,7 +973,7 @@ export async function POST(request: NextRequest) {
       try {
         const takeaways = await loadStreetTakeawaysFor(upperTicker);
         const stBlock = formatStreetTakeawaysForPrompt(takeaways);
-        if (stBlock) financialContext += `\n\n---\n\n${stBlock}`;
+        if (stBlock) { financialContext += `\n\n---\n\n${stBlock}`; evidence.alerts = true; }
       } catch (e) {
         console.warn(`[Score] street-takeaways load failed for ${upperTicker}:`, e instanceof Error ? e.message : e);
       }
@@ -940,7 +996,8 @@ export async function POST(request: NextRequest) {
           const tickerReports = reportsBlob[canonical];
           if (tickerReports?.rbc?.extracted || tickerReports?.jpm?.extracted || tickerReports?.morningstar?.extracted) {
             const lines: string[] = ["=== INGESTED ANALYST REPORTS (RBC / JPM / MORNINGSTAR) ==="];
-            lines.push("PDF-extracted thesis, risks, and sector view from the most recent reports stored in pm:analyst-reports. Use these to ground the companySummary and investmentThesis fields in the analysts' actual rationale (not your paraphrase). DO NOT extend the length of those fields beyond 1-2 sentences each — the rule still applies. Per the SCORING DISCIPLINE rules: FACTS from these reports are admissible evidence in catalysts, competitiveMoat, trackRecord, and secular; OPINIONS (ratings, targets, stars) never move a category score. Structured routing for the extracted fields: 'Dated catalysts' lines are exactly the evidence the catalysts 3-pt bar demands (a dated, company-specific event) — cite the report as sourceDetail; 'Valuation basis' is fact evidence about the analyst's methodology, usable to FRAME relativeValuation/historicalValuation (which multiple the street prices this name on) but never as a directional vote; 'Scenario targets' ground the bearCase field in the analyst's own published downside math — quote the bear value there. None of these three lift or lower a score merely because an analyst is bullish or bearish.");
+            lines.push(REPORTS_BLOCK_INSTRUCTIONS);
+            evidence.report = true;
             for (const src of ["rbc", "jpm", "morningstar"] as const) {
               const r = tickerReports[src]?.extracted;
               if (!r) continue;
@@ -960,13 +1017,23 @@ export async function POST(request: NextRequest) {
               }
               if (Array.isArray(r.keyMetrics) && r.keyMetrics.length > 0) {
                 lines.push("Key metrics cited:");
-                for (const m of r.keyMetrics.slice(0, 6)) lines.push(`  - ${m.label}: ${m.value}`);
+                for (const m of r.keyMetrics.slice(0, 10)) lines.push(`  - ${m.label}: ${m.value}`);
               }
               if (Array.isArray(r.catalysts) && r.catalysts.length > 0) {
                 lines.push("Dated catalysts (report-named upcoming events):");
                 for (const c of r.catalysts.slice(0, 5)) {
                   lines.push(`  - ${c.date ? `[${c.date}] ` : ""}${c.event}${c.detail ? ` — ${c.detail}` : ""}`);
                 }
+              }
+              if (Array.isArray(r.industryKpis) && r.industryKpis.length > 0) {
+                lines.push("Industry KPIs (the metrics this business is graded on):");
+                for (const k of r.industryKpis.slice(0, 10)) {
+                  lines.push(`  - ${k.metric}: ${k.value}${k.period ? ` (${k.period})` : ""} — ${k.reported ? "COMPANY-REPORTED" : "analyst's estimate, context only"}`);
+                }
+              }
+              if (Array.isArray(r.segments) && r.segments.length > 0) {
+                lines.push("Segments the report breaks out:");
+                for (const sg of r.segments.slice(0, 5)) lines.push(`  - ${sg.name}: ${sg.detail}`);
               }
               if (r.valuationBasis) lines.push(`Valuation basis (how the target is derived): ${r.valuationBasis}`);
               if (r.scenarios && (r.scenarios.bull != null || r.scenarios.bear != null || r.scenarios.base != null)) {
@@ -996,6 +1063,10 @@ export async function POST(request: NextRequest) {
       console.error("Failed to fetch financial data:", e);
       financialContext = "Financial data API unavailable. Use your best knowledge but note that data should be verified.";
     }
+
+    // ── Evidence inventory (S-03) — lets the catalysts ceiling rule fire on a
+    // coverage gap instead of scoring the absence as a judgment.
+    financialContext += `\n\n---\n\nEVIDENCE AVAILABLE FOR THIS NAME: FactSet company guidance: ${evidence.guidance ? "yes" : "no"} · FactSet alerts on file: ${evidence.alerts ? "yes" : "no"} · Analyst report on file: ${evidence.report ? "yes" : "no"} · Form 4 insider feed: ${evidence.form4 ? "yes" : "no"}`;
 
     // ── Prior-score anchor (rev 4) ──────────────────────────────────
     // Reconciliation, not affirmation: the model derives every category
@@ -1078,13 +1149,7 @@ export async function POST(request: NextRequest) {
     // it should use the tool aggressively for the items listed in the
     // WEB SEARCH VERIFICATION section of the system prompt (and especially
     // hard for Canadian listings, which have no EDGAR fallback).
-    const verifyPreamble = verifyWithWebSearch
-      ? `\n\n=== Verified scoring ===\nWeb search verification is ENABLED for this rescore. You MUST use the web_search tool to:\n  1. ${factsetUsed
-            ? `Do NOT re-source fundamentals via web — the FACTSET block is current and authoritative, so cite those figures as source:"factset". Use web ONLY to surface a number the company reported AFTER the FactSet data date, or a material event; do not add web dataPoints that merely restate a figure already in the FactSet block.`
-            : `Confirm the most recent reported quarterly numbers match what's in the data above (or supersede them if the company reported AFTER the data was cached).`}\n  2. Check for guidance revisions / pre-announcements / 8-K filings issued in the last 90 days.\n  3. Find any analyst rating or price-target changes from named firms in the last 30 days.\n  4. ${isCanadianListing
-            ? `THIS IS A CANADIAN LISTING (${upperTicker}) — no EDGAR data is available. Use web_search as the PRIMARY financial verification: look up the company's most recent quarterly press release / MD&A / SEDAR+ filing and use those numbers in your dataPoints. Cite each source URL or publication name in sourceDetail.`
-            : `Verify the latest dividend / buyback / split changes.`}\n  5. RESERVED FOR HARD FLOORS — spend one search on the material-adverse-event list in the system prompt for this issuer (fraud investigation, going-concern doubt, restatement, delisting notice, enforcement penalty, forced CFO/CEO exit, bankruptcy). This search is not optional and is not interchangeable with items 1-4. If nothing is found, say so in one dataPoint (label "Adverse-event check", value "none found", source "web") and move on.\nRespect the noise filter in the system prompt: ignore rumors, opinion blogs, and unsourced speculation. Cite source name and date in dataPoints.sourceDetail for every web-sourced fact.\nMax 4 searches — be targeted, and always keep one for item 5.\n=== End verified scoring ===\n`
-      : "";
+    const verifyPreamble = verifyWithWebSearch ? verifyPreambleText({ factsetUsed, isCanadianListing, ticker: upperTicker }) : "";
 
     // ── Input health check ────────────────────────────────────────────
     // Before paying Anthropic ~$0.18 to score this stock, make sure we
@@ -1277,10 +1342,13 @@ export async function POST(request: NextRequest) {
 
     // Clamp each AI-scored category to its max
     const scores: Partial<Record<ScoreKey, number>> = {};
+    const notReturned = new Set<string>(missingCategories);
     for (const key of activeAiKeys) {
       const raw = parsed.scores?.[key];
       const max = maxLookup[key] || 3;
-      scores[key as ScoreKey] = clamp(raw, max);
+      // Placeholder (not 0) for a category lost to truncation — it is parked
+      // as a DATA GAP below and excluded from the composite, never penalised.
+      scores[key as ScoreKey] = notReturned.has(key) ? (max >= 2 ? 1 : 0) : clamp(raw, max);
     }
 
     // Deterministic categories ("computed" inputType) are NOT in AI_KEYS — the
@@ -1404,6 +1472,27 @@ export async function POST(request: NextRequest) {
         } else if (typeof val === "string") {
           explanations[key as ScoreKey] = { summary: val, dataPoints: [] };
         }
+      }
+    }
+
+    // S-28: park what the model failed to return.
+    for (const key of notReturned) {
+      explanations[key as ScoreKey] = { summary: "DATA GAP: not returned by the model on this run — rerun to score it.", dataPoints: [], confidence: "low" };
+    }
+
+    // ── Computed growth: enforce the one-point rule and attach the working ──
+    if (growthWorking && activeAiKeys.includes("growth")) {
+      const g = explanations.growth;
+      const rich = g && !Array.isArray(g) ? g : null;
+      if (growthWorking.computedScore == null) {
+        if (rich) rich.growthCalc = { ...growthWorking, modelScore: scores.growth ?? 0, modelAdjustment: 0 };
+      } else {
+        const model = scores.growth ?? growthWorking.computedScore;
+        const bounded = Math.max(growthWorking.computedScore - 1, Math.min(growthWorking.computedScore + 1, model));
+        const final = Math.max(0, Math.min(3, bounded));
+        if (final !== model) console.warn(`[Score] ${upperTicker}: growth ${model} was more than one point from the computed ${growthWorking.computedScore} — held to ${final}`);
+        scores.growth = final;
+        if (rich) rich.growthCalc = { ...growthWorking, modelScore: final, modelAdjustment: final - growthWorking.computedScore, ...(final !== model ? { clampedFrom: model } : {}) };
       }
     }
 
@@ -1565,6 +1654,11 @@ export async function POST(request: NextRequest) {
       // Truncation audit — lets callers detect incomplete responses and
       // trigger gap-fill passes automatically.
       missingCategories,
+      // Categories parked as DATA GAP this run, and how many of the model's
+      // categories the composite actually rests on.
+      dataGaps: activeAiKeys.filter((k) => { const e = explanations[k as ScoreKey]; return !!e && !Array.isArray(e) && /^\s*DATA GAP/i.test(e.summary); }),
+      scoredOn: { of: activeAiKeys.length, scored: activeAiKeys.filter((k) => { const e = explanations[k as ScoreKey]; return !(!!e && !Array.isArray(e) && /^\s*DATA GAP/i.test(e.summary)); }).length },
+      growthCalc: growthWorking,
       truncated: missingCategories.length > 0 || !parsed.companySummary || !parsed.investmentThesis,
     });
   } catch (error) {
