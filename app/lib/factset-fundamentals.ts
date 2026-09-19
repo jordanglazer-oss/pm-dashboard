@@ -89,6 +89,7 @@ const POINT_METRICS: ScoringFormula[] = [
   { key: "epsNtm", formula: "FE_ESTIMATE(EPS,MEAN,NTMA,0,NOW,'')", note: "NTM EPS consensus (growth anchor)" },
   { key: "epsLtmA", formula: "FE_ESTIMATE(EPS,MEAN,LTMA,0,NOW,'')", note: "LTM actual EPS on the estimates basis (NTM growth denominator)" },
   { key: "salesNtm", formula: "FE_ESTIMATE(SALES,MEAN,NTMA,0,NOW,'')", note: "NTM sales consensus (growth anchor)" },
+  { key: "salesLtmA", formula: "FE_ESTIMATE(SALES,MEAN,LTMA,0,NOW,'')", note: "LTM sales on the ESTIMATES basis — same basis as salesNtm, so net-vs-gross revenue cannot distort forward growth" },
   { key: "ltg", formula: "FE_ESTIMATE(LTG,MEAN,ANN_ROLL,0,NOW,'')", note: "Long-term (3-5y) EPS growth consensus %" },
   ...FIXED_FY_METRICS,
   { key: "epsLtm", formula: "FF_EPS(LTM,0)", note: "EPS, trailing 12m" },
@@ -296,7 +297,11 @@ export function fy1RevisionPct(v: Record<string, number | null>): number | null 
 
 function forwardGrowthLine(v: Record<string, number | null>): string {
   const ntmEps = pct(v.epsNtm, v.epsLtmA);
-  const ntmSales = pct(v.salesNtm, v.salesLtm);
+  // Same basis on both sides: consensus NTM over the estimates-basis LTM
+  // (as-reported FF_SALES is gross for brokers/exchanges and pre-spin for
+  // recent spin-offs — Goldman read -46% that way).
+  const salesBase = typeof v.salesLtmA === "number" && v.salesLtmA > 0 ? v.salesLtmA : v.salesLtm;
+  const ntmSales = pct(v.salesNtm, salesBase);
   const fy1 = v.epsEstFy1;
   let rev = "n/a";
   let fyLabel = "";
@@ -311,7 +316,7 @@ function forwardGrowthLine(v: Record<string, number | null>): string {
       }
     }
   }
-  return `Forward growth (growth anchor) — NTM EPS growth ${ntmEps} (NTM ${fmt(v.epsNtm, 2)} vs LTM actual ${fmt(v.epsLtmA, 2)}) | NTM sales growth ${ntmSales} (NTM ${fmt(v.salesNtm)} vs TTM ${fmt(v.salesLtm)}) | LTG (3-5y EPS) ${fmt(v.ltg)}% | FY+1 consensus revision, last 3 months on the SAME fiscal year${fyLabel ? ` (${fyLabel})` : ""}: ${rev} — this is the revision MAGNITUDE; the up/down counts below are its breadth.`;
+  return `Forward growth (growth anchor) — NTM EPS growth ${ntmEps} (NTM ${fmt(v.epsNtm, 2)} vs LTM actual ${fmt(v.epsLtmA, 2)}) | NTM sales growth ${ntmSales} (NTM ${fmt(v.salesNtm)} vs LTM ${fmt(salesBase)}${salesBase === v.salesLtm ? ", as-reported basis" : ", estimates basis"}) | LTG (3-5y EPS) ${fmt(v.ltg)}% | FY+1 consensus revision, last 3 months on the SAME fiscal year${fyLabel ? ` (${fyLabel})` : ""}: ${rev} — this is the revision MAGNITUDE; the up/down counts below are its breadth.`;
 }
 
 export function formatSnapshotForPrompt(snap: CompanySnapshot): string {

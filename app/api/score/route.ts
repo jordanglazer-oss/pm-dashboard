@@ -820,7 +820,7 @@ export async function POST(request: NextRequest) {
             const v = factsetSnap.values;
             const group = pickPlaybook(factsetSnap.sector ?? null, factsetSnap.industry ?? null, upperTicker)?.label ?? null;
             growthWorking = computeGrowthScore({
-              raw: { salesNtm: v.salesNtm, salesLtm: v.salesLtm, epsNtm: v.epsNtm, epsLtmA: v.epsLtmA, ltg: v.ltg, salesAnn0: v.salesAnn0, salesAnn3: v.salesAnn3, bpsAnn0: v.bpsAnn0, bpsAnn3: v.bpsAnn3 },
+              raw: { salesNtm: v.salesNtm, salesLtm: v.salesLtm, salesLtmA: v.salesLtmA, epsNtm: v.epsNtm, epsLtmA: v.epsLtmA, ltg: v.ltg, salesAnn0: v.salesAnn0, salesAnn3: v.salesAnn3, bpsAnn0: v.bpsAnn0, bpsAnn3: v.bpsAnn3 },
               playbookGroup: group,
               sector: normalizeFactsetSector(factsetSnap.sector),
               bands,

@@ -39,8 +39,16 @@ export const GROWTH_WEIGHTS: Record<GrowthMetricKey, number> = { fwdSales: 0.3, 
 export const GROWTH_CUTS = { one: 20, two: 50, three: 85 };
 /** A 3 also needs forward growth on the primary metric of at least this (%). */
 export const TOP_MARK_FLOOR_PCT = 5;
-/** A playbook group smaller than this is ranked inside its GICS sector instead. */
-export const MIN_GROUP_SIZE = 12;
+/** A playbook group smaller than this is ranked inside its GICS sector instead.
+ *  7, not 12: telecom (7 names), pharma (7) and biotech (8) would otherwise fold
+ *  into their whole sector — telecom ranked against Meta and Alphabet is exactly
+ *  the mismatch peer groups exist to avoid. Coarser percentiles are the lesser evil. */
+export const MIN_GROUP_SIZE = 7;
+/** Forward sales at or below this (%) while forward EPS is flat or rising is a
+ *  REPORTING-BASIS BREAK, not a shrinking business: consensus is net revenue or
+ *  post-spin-off while the trailing figure is gross or pre-spin (Goldman read
+ *  -46%, Honeywell -48% in the first calibration). The metric is dropped. */
+export const BASIS_BREAK_SALES_PCT = -10;
 /** FY+1 consensus moved more than this (%) in 3 months → ±1. Symmetric. */
 export const REVISION_TRIGGER_PCT = 3;
 /** Forward EPS growth is undefined off a tiny or negative base. */
@@ -57,6 +65,10 @@ export const GROUP_METRIC_RULES: Record<string, { drop?: GrowthMetricKey[]; deli
 
 export type RawGrowthRow = {
   salesNtm?: number | null; salesLtm?: number | null;
+  /** Trailing-12-month sales ON THE ESTIMATES BASIS (FE_ESTIMATE … LTMA) — the
+   *  same basis as salesNtm, so net-vs-gross revenue cannot distort the growth
+   *  rate. Preferred over salesLtm (as-reported) whenever it is available. */
+  salesLtmA?: number | null;
   epsNtm?: number | null; epsLtmA?: number | null;
   ltg?: number | null;
   salesAnn0?: number | null; salesAnn3?: number | null;
@@ -77,8 +89,9 @@ export function deriveGrowthInputs(raw: RawGrowthRow, group: string | null): { i
   const excluded: GrowthExclusion[] = [];
   const skip = (metric: GrowthMetricKey, reason: string) => excluded.push({ metric, reason });
 
+  const salesBase = num(raw.salesLtmA) && raw.salesLtmA > 0 ? raw.salesLtmA : raw.salesLtm;
   if (dropped.has("fwdSales")) skip("fwdSales", "not meaningful for this business model");
-  else if (num(raw.salesNtm) && num(raw.salesLtm) && raw.salesLtm > 0) inputs.fwdSales = ((raw.salesNtm - raw.salesLtm) / raw.salesLtm) * 100;
+  else if (num(raw.salesNtm) && num(salesBase) && salesBase > 0) inputs.fwdSales = ((raw.salesNtm - salesBase) / salesBase) * 100;
   else skip("fwdSales", "no next-12-month sales consensus or no trailing sales");
 
   if (dropped.has("fwdEps")) skip("fwdEps", "not meaningful for this business model");
@@ -86,6 +99,13 @@ export function deriveGrowthInputs(raw: RawGrowthRow, group: string | null): { i
     if (raw.epsLtmA >= MIN_EPS_BASE) inputs.fwdEps = ((raw.epsNtm - raw.epsLtmA) / raw.epsLtmA) * 100;
     else skip("fwdEps", `trailing EPS base of ${raw.epsLtmA.toFixed(2)} is negative or too small to grow from`);
   } else skip("fwdEps", "no next-12-month EPS consensus or no trailing actual");
+
+  // Reporting-basis break: sales "collapsing" while earnings grow.
+  if (inputs.fwdSales != null && inputs.fwdSales <= BASIS_BREAK_SALES_PCT && inputs.fwdEps != null && inputs.fwdEps >= 0) {
+    const was = inputs.fwdSales;
+    delete inputs.fwdSales;
+    skip("fwdSales", `forward and trailing revenue are on different bases (a spin-off, divestiture, or net-versus-gross reporting): it read ${was.toFixed(0)}% while forward EPS is growing`);
+  }
 
   if (dropped.has("ltg")) skip("ltg", "not meaningful for this business model");
   else if (num(raw.ltg)) inputs.ltg = raw.ltg;
