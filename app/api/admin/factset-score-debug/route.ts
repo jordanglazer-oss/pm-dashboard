@@ -41,7 +41,13 @@ export async function GET(req: NextRequest) {
   }
 
   try {
-    const snap = await companySnapshot(resolved.id);
+    // &timeout=<ms> (max 25000) measures how long the snapshot really takes;
+    // default is the relay's own 7s so the route still replays the old limit.
+    const tParam = Number(new URL(req.url).searchParams.get("timeout"));
+    const timeoutMs = isFinite(tParam) && tParam > 0 ? Math.min(25_000, tParam) : undefined;
+    const tStart = Date.now();
+    const snap = await companySnapshot(resolved.id, timeoutMs ? { timeoutMs } : undefined);
+    console.log(`[FactSet-debug] ${ticker} snapshot took ${Date.now() - tStart}ms`);
     const block = snap.hasData ? formatSnapshotForPrompt(snap) : null;
 
     // Peer preview: FMP-selected tickers, FactSet-priced — lets us confirm the
