@@ -16,7 +16,10 @@
 import { getRedis } from "./redis";
 import { createLogger } from "./logger";
 import { canonicalTicker, crossListingRoot } from "./ticker";
-import { evaluateEntry, type EntrySignal } from "./entry-conditions";
+import { evaluateEntry, evaluateEntryLegacy, type EntrySignal, type EntryInputs } from "./entry-conditions";
+import { computeSetup } from "./setup-grade";
+import { readStockPool, findInPool } from "./stock-pool";
+import type { Stock } from "./types";
 import { loadKillSignalSources, killSignalExtrasFor } from "./metric-resolver";
 import { siaPercentileDrift } from "./sia-history";
 import { loadRankedResearch } from "./research-ranked-server";
@@ -42,6 +45,10 @@ export type EntryRow = {
   readySince?: string;
   /** "Why I'm watching" captured at Advance time (pm:entry-cases). */
   why?: string;
+  /** Pre-unification readiness (five separate technical signals) — TEMPORARY,
+   *  feeds /api/admin/entry-unification-diff; remove with evaluateEntryLegacy. */
+  legacyReady?: boolean;
+  legacyStrength?: "ready" | "building" | "early";
 };
 
 export type EntryScan = {
@@ -98,6 +105,10 @@ export async function buildEntryScan(): Promise<EntryScan> {
     readJson<Record<string, EntryCase>>(ENTRY_CASES_KEY, {}),
     readEntryScan(),
   ]);
+  // Full Stock records (book + Suggested staging) for the setup grade: the
+  // narrow StockRow above is enough for the case signals, but computeSetup
+  // needs scores / provider fields / manualScoredAt.
+  const pool = await readStockPool().catch(() => [] as Stock[]);
   const windowStart = Date.now() - 14 * 86_400_000;
   const rankedByRoot = new Map(ranked.rows.map((r) => [r.key, r]));
 
@@ -114,7 +125,10 @@ export async function buildEntryScan(): Promise<EntryScan> {
     // the Synthesis page; here we only discount an entry older than 45 days.
     const synthStale = entry ? Date.now() - Date.parse(entry.generatedAt) > 45 * 86_400_000 : false;
     const price = typeof stock?.price === "number" ? stock.price : stock?.healthData?.currentPrice ?? null;
-    const ev = evaluateEntry({
+    const full = findInPool(pool, ticker);
+    const setup = full ? computeSetup(full, { siaPercentileDelta: drift ? Math.round(drift.delta) : null }) : null;
+    const inputs: EntryInputs = {
+      setup: setup ? { grade: setup.grade, rawPoints: setup.rawPoints, availableMax: setup.availableMax, notches: setup.notches } : undefined,
       price,
       ma200: stock?.healthData?.twoHundredDayAvg ?? null,
       dmaSignal: stock?.technicals?.dmaSignal ?? null,
@@ -131,7 +145,9 @@ export async function buildEntryScan(): Promise<EntryScan> {
       catalystDate: stock?.earningsDate ?? stock?.healthData?.earningsDate ?? entry?.result.catalysts?.find((c) => c.date)?.date ?? null,
       listCount,
       listDelta,
-    }, today);
+    };
+    const ev = evaluateEntry(inputs, today);
+    const legacy = evaluateEntryLegacy(inputs, today);
     const rankedRow = rankedByRoot.get(root);
     return {
       ticker: tk,
@@ -140,6 +156,8 @@ export async function buildEntryScan(): Promise<EntryScan> {
       bucket,
       ...ev,
       why: cases[tk]?.why ?? cases[root]?.why,
+      legacyReady: legacy.ready,
+      legacyStrength: legacy.strength,
     };
   };
 
