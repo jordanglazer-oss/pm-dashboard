@@ -19,14 +19,14 @@ const log = createLogger("Alerts");
 
 export async function GET() {
   try {
-    const { thesis, transition, risk, context, watchlist, killWatch, tacticalWatch } = await loadAlertInputs();
+    const { thesis, transition, risk, context, watchlist, killWatch, tacticalWatch, thesisVerdicts } = await loadAlertInputs();
 
     // Entry scorecard (cached 6h): newly-ready names are HIGH alerts (the push),
     // every ready name is an opportunity.
     const scan = await getEntryScan().catch(() => null);
     const ready = scan ? scan.rows.filter((r) => r.ready) : [];
     const fresh = scan ? newlyReady(scan) : [];
-    const alerts = [...computeAlerts({ thesis, transition, risk, context, killWatch, tacticalWatch }), ...entryAlerts(fresh)];
+    const alerts = [...computeAlerts({ thesis, transition, risk, context, killWatch, tacticalWatch, thesisVerdicts }), ...entryAlerts(fresh)];
     // A toward-Risk-On lean is a tailwind, not an alert — surfaced green.
     const regimeTailwind = computeRegimeTailwind(transition);
     const seen = new Set(ready.map((r) => r.ticker));

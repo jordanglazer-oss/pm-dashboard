@@ -105,7 +105,7 @@ export async function runAlertDigest(opts?: {
 }> {
   try {
     const redis = await getRedis();
-    const { thesis, transition, risk, context, killWatch, tacticalWatch } = await loadAlertInputs();
+    const { thesis, transition, risk, context, killWatch, tacticalWatch, thesisVerdicts } = await loadAlertInputs();
 
     // Entry scorecard flips (Watchlist / Suggested names newly reading ready)
     // ride along as HIGH so the email carries the push. Scan is rebuilt by
@@ -115,7 +115,7 @@ export async function runAlertDigest(opts?: {
       const scan = await getEntryScan();
       entry = entryAlerts(newlyReady(scan));
     } catch { /* no entry push tonight */ }
-    const alerts = [...computeAlerts({ thesis, transition, risk, context, killWatch, tacticalWatch }), ...entry];
+    const alerts = [...computeAlerts({ thesis, transition, risk, context, killWatch, tacticalWatch, thesisVerdicts }), ...entry];
     const counts = alertCounts(alerts);
     const today = new Date().toISOString().slice(0, 10);
 

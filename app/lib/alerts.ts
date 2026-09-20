@@ -146,11 +146,36 @@ export function computeAlerts(input: {
     /** YYYY-MM-DD the quarterly re-underwrite is due (90d from underwrite). */
     reUnderwriteBy?: string;
   }>;
+  /** Thesis-sleeve holdings whose latest pillar review reads challenged / broken. */
+  thesisVerdicts?: Array<{ ticker: string; verdict: "intact" | "challenged" | "broken"; pillars: Array<{ title: string; status: string; reading?: string }>; summary: string; generatedAt: string }>;
   /** Tactical-sleeve positions with a live plan flag (app/lib/tactical-plan). */
   tacticalWatch?: Array<{ ticker: string; flags: Array<{ kind: string; severity: "high" | "medium" | "info"; text: string }> }>;
 }): Alert[] {
   const alerts: Alert[] = [];
   const ctxFor = (tk: string) => input.context?.[tk];
+
+  // ── Thesis verdicts — a Thesis name is sold on a broken thesis and on
+  // nothing else, so a pillar read against new evidence outranks every
+  // generic signal. Broken is HIGH (it emails); challenged is MEDIUM.
+  for (const tv of input.thesisVerdicts ?? []) {
+    if (tv.verdict === "intact") continue;
+    const ctx = ctxFor(tv.ticker);
+    const hit = tv.pillars.filter((p) => p.status === "broken" || p.status === "contested");
+    alerts.push({
+      id: `verdict-${tv.ticker}`,
+      priority: tv.verdict === "broken" ? "high" : "medium",
+      category: "thesis",
+      ticker: tv.ticker,
+      name: ctx?.name,
+      title: `${tv.ticker} — thesis ${tv.verdict}: ${hit.map((p) => p.title).join(", ") || "pillar read changed"}`,
+      detail: [tv.summary, ...hit.map((p) => `${p.title} (${p.status})${p.reading ? `: ${p.reading}` : ""}`)].filter(Boolean).join(" · "),
+      metrics: [ctx?.composite != null ? `composite ${ctx.composite}` : null, tv.generatedAt ? `read ${tv.generatedAt.slice(0, 10)}` : null].filter((m): m is string => m != null),
+      action:
+        tv.verdict === "broken"
+          ? "A pillar of the long-run thesis reads broken against the latest evidence. Open the stock page, read the review, and decide: exit, or re-underwrite with a reason. This is the one trigger a Thesis name is sold on."
+          : "A pillar of the long-run thesis is contested by new evidence. Open the stock page and work through the review — accept or reject its proposed changes and re-sign.",
+    });
+  }
 
   // ── Tactical plans — the terms the PM set for a Tactical position ──
   // A stop or target hit is HIGH (it emails): a tactical trade is only worth

@@ -8,6 +8,7 @@ import { sleevesOf } from "./sleeves";
 import { checkTacticalPlan, type PlanFlag, type TacticalPlan } from "./tactical-plan";
 import { computeSetup } from "./setup-grade";
 import type { Stock } from "./types";
+import { thesisVerdictOf, type PillarRead, type ThesisVerdict } from "./thesis-verdict";
 
 /**
  * ONE loader for every input the alert engine needs, so the in-app
@@ -51,7 +52,13 @@ export type AlertInputs = {
   /** Tactical-sleeve positions whose plan has a live flag (stop / target /
    *  review due / setup deteriorated). Same evaluator as the stock-page tile. */
   tacticalWatch: TacticalWatchRow[];
+  thesisVerdicts: ThesisVerdictRow[];
 };
+
+/** Latest pillar-by-pillar review of a Thesis-sleeve holding (intact included,
+ *  so the desk can show it). Reviews the PM already applied / re-signed are
+ *  left out — the next review speaks for the re-signed thesis. */
+export type ThesisVerdictRow = { ticker: string; verdict: ThesisVerdict; pillars: PillarRead[]; summary: string; generatedAt: string };
 
 export type TacticalWatchRow = { ticker: string; flags: PlanFlag[]; reviewBy?: string };
 
@@ -257,5 +264,25 @@ export async function loadAlertInputs(): Promise<AlertInputs> {
   }
   tacticalWatch.sort((a, b) => a.ticker.localeCompare(b.ticker));
 
-  return { thesis, transition, risk, context, watchlist, killWatch, tacticalWatch };
+  // ── Thesis verdicts: the cached review (pm:thesis-review:{TICKER}) of every
+  //    underwritten Thesis-sleeve holding. Read-only; zero model spend. ──
+  const thesisVerdicts: ThesisVerdictRow[] = [];
+  const verdictTickers = killWatch
+    .map((k) => k.ticker)
+    .filter((tk) => {
+      const st = stockByTicker.get(tk);
+      return st?.bucket === "Portfolio" && sleevesOf(st).thesis;
+    });
+  const reviewRaws = await Promise.all(
+    verdictTickers.map((tk) => redis.get(`pm:thesis-review:${tk}`).catch(() => null)),
+  );
+  verdictTickers.forEach((tk, i) => {
+    const r = parse<{ pillars?: PillarRead[]; summary?: string; generatedAt?: string; appliedAt?: string } | null>(reviewRaws[i], null);
+    if (!r || r.appliedAt) return;
+    const verdict = thesisVerdictOf(r.pillars);
+    if (!verdict) return;
+    thesisVerdicts.push({ ticker: tk, verdict, pillars: r.pillars ?? [], summary: r.summary ?? "", generatedAt: r.generatedAt ?? "" });
+  });
+
+  return { thesis, transition, risk, context, watchlist, killWatch, tacticalWatch, thesisVerdicts };
 }

@@ -39,7 +39,7 @@ type CoverageRow = {
 
 export async function GET() {
   try {
-    const { killWatch, context } = await loadAlertInputs();
+    const { killWatch, context, thesisVerdicts } = await loadAlertInputs();
 
     // Thesis keys include prose-only entries, which killWatch drops.
     let theses: Record<string, { why?: string; killConditions?: unknown[]; tacticalPlan?: unknown }> = {};
@@ -81,6 +81,9 @@ export async function GET() {
     return NextResponse.json({
       holdings: killWatch,
       coverage: { portfolioCount, underwritten: portfolioCount - missing.length, missing, planMissing },
+      // Thesis-sleeve holdings only: the roll-up of the latest pillar review.
+      verdicts: Object.fromEntries(thesisVerdicts.map((v) => [v.ticker, { verdict: v.verdict, generatedAt: v.generatedAt }])),
+      sleeves: Object.fromEntries(killWatch.map((k) => [k.ticker, context[k.ticker]?.sleeves ?? null])),
     });
   } catch (e) {
     console.error("thesis-watch failed:", e);
