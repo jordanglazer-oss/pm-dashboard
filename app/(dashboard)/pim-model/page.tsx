@@ -5,6 +5,7 @@ import { useStocks } from "@/app/lib/StockContext";
 import { PimModel } from "@/app/components/PimModel";
 import { ModelScenarios } from "@/app/components/ModelScenarios";
 import { ModelEligibilityMatrix } from "@/app/components/ModelEligibilityMatrix";
+import { SleeveWeightsPanel } from "@/app/components/SleeveWeightsPanel";
 import { AppIcon } from "@/app/components/AppIcon";
 
 export default function PimModelPage() {
@@ -31,6 +32,9 @@ export default function PimModelPage() {
       {/* Page title lives in the top bar. The page's first row is the model
           toolbar, rendered by PimModel — the Scenarios launcher sits in it. */}
       <PimModel groups={pimModels.groups} onOpenScenarios={() => setScenariosOpen(true)} />
+
+      {/* Thesis / Tactical sleeve weights — read-only preview of the proposed rule. */}
+      <SleeveWeightsPanel />
 
       {/* Eligibility matrix — moved here from the individual stock pages. */}
       <ModelEligibilityMatrix />
