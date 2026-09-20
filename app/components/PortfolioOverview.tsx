@@ -13,6 +13,7 @@ import { SkeletonTable } from "@/app/components/Skeleton";
 import { SCORE_GROUPS, MAX_SCORE, INSTRUMENT_LABELS } from "@/app/lib/types";
 import { SetupChip } from "./SetupChip";
 import { SleeveTags } from "./SleeveTags";
+import { LegVerdictChips, useSleeveVerdicts } from "./LegVerdicts";
 import { sleevesOf, isUntagged, sleeveCounts } from "@/app/lib/sleeves";
 import type { ScoredStock, ScoreKey, HealthData, FundHolding, FundSectorWeight } from "@/app/lib/types";
 import type { TechnicalIndicators, RiskAlert } from "@/app/lib/technicals";
@@ -1696,6 +1697,8 @@ function RankingTable({
   // Canvas header state: Stale/Flagged chips + search (transient view state),
   // and the ⋯ menu holding the action cluster.
   const [chipFilter, setChipFilter] = useState<"all" | "stale" | "flagged" | "thesis" | "tactical" | "untagged">("all");
+  // Per-leg verdicts (Thesis: pillars · Tactical: plan) for held Alpha names.
+  const legVerdicts = useSleeveVerdicts();
   const [query, setQuery] = useState("");
   const [menuOpen, setMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
@@ -2430,9 +2433,13 @@ function RankingTable({
                     })()}
                   </td>
                   <td className="hidden lg:table-cell">
+                    {/* Per-leg verdicts first (tagged holdings), then the synthesis chip as before. */}
+                    {showWeight && legVerdicts[s.ticker.toUpperCase()] && (
+                      <span className="mr-1 inline-flex flex-wrap items-center gap-1 align-middle"><LegVerdictChips legs={legVerdicts[s.ticker.toUpperCase()]} /></span>
+                    )}
                     {(() => {
                       const sv = synthesisByTicker?.get(canonicalTicker(s.ticker));
-                      if (!sv) return <span className="text-ink-faint">—</span>;
+                      if (!sv) return showWeight && legVerdicts[s.ticker.toUpperCase()] ? null : <span className="text-ink-faint">—</span>;
                       const tone =
                         sv.verdict === "advance" || sv.verdict === "thesis-intact" ? "bg-pos-soft text-pos"
                         : sv.verdict === "pass" || sv.verdict === "exit-watch" ? "bg-neg-soft text-neg"

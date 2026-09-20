@@ -49,8 +49,9 @@ export type AlertInputs = {
   /** Kill-condition evaluation per underwritten holding (thesis discipline).
    *  Deterministic — same evaluator as the stock-page tile, run fleet-wide. */
   killWatch: KillWatchRow[];
-  /** Tactical-sleeve positions whose plan has a live flag (stop / target /
-   *  review due / setup deteriorated). Same evaluator as the stock-page tile. */
+  /** Every held Tactical-sleeve position that has a plan, with its live flags
+   *  (stop / target / review due / setup deteriorated) — `flags` is empty when
+   *  the position is within plan. Same evaluator as the stock-page tile. */
   tacticalWatch: TacticalWatchRow[];
   thesisVerdicts: ThesisVerdictRow[];
 };
@@ -260,7 +261,7 @@ export async function loadAlertInputs(): Promise<AlertInputs> {
       setupGrade,
       earningsDate: context[tk]?.earningsDate ?? null,
     }).filter((f) => f.severity !== "info");
-    if (flags.length) tacticalWatch.push({ ticker: tk, flags, reviewBy: t.tacticalPlan.reviewBy });
+    tacticalWatch.push({ ticker: tk, flags, reviewBy: t.tacticalPlan.reviewBy });
   }
   tacticalWatch.sort((a, b) => a.ticker.localeCompare(b.ticker));
 

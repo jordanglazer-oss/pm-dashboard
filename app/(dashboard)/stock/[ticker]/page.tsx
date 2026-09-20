@@ -32,6 +32,7 @@ import { CollapsibleSection } from "@/app/components/CollapsibleSection";
 import { SleeveTags } from "@/app/components/SleeveTags";
 import { isSleeveTaggable, sleevesOf } from "@/app/lib/sleeves";
 import { TacticalPlanTile } from "@/app/components/TacticalPlanTile";
+import { LegVerdictChips, useSleeveVerdicts } from "@/app/components/LegVerdicts";
 import { colorForSector } from "@/app/lib/sectorColors";
 import { useNotifications } from "@/app/lib/NotificationsContext";
 import { EditableNumberCell, ConsensusButton } from "@/app/components/EditableScoreInputs";
@@ -1114,6 +1115,7 @@ export default function StockDetailPage() {
   }, [menuOpen]);
 
   const scoreable = stock ? isScoreable(stock) : true;
+  const legVerdicts = useSleeveVerdicts();
 
   // ?action=rescore (from the command palette): kick off the same rescore the
   // Score button runs, once, then strip the param so refresh/back can't
@@ -1620,6 +1622,7 @@ export default function StockDetailPage() {
         <span className="text-[12px] text-ink-3">{identityMeta}</span>
         {/* Alpha sleeve tags — held equity Alpha only (Core / bond / alt render nothing). */}
         {stock.bucket === "Portfolio" && isSleeveTaggable(stock) && <SleeveTags stock={stock} size="md" />}
+        {stock.bucket === "Portfolio" && <LegVerdictChips legs={legVerdicts[stock.ticker.toUpperCase()]} />}
         <div className="ml-auto flex items-center gap-2">
           {scoreable && (
             <button

@@ -104,3 +104,40 @@ export function checkTacticalPlan(plan: TacticalPlan, s: PlanSignals): PlanFlag[
   }
   return flags;
 }
+
+/* ─── Tactical verdict: the one-word read of a Tactical leg ───
+ *
+ * Deterministic — no model call. A tactical trade is judged against the terms
+ * the PM wrote for it, so the verdict is a function of the plan's own flags:
+ *
+ *   exit         at/below the stop, the setup is Broken, or the synthesis has
+ *                the name on exit-watch (fundamentals are a floor, not a driver)
+ *   take-profit  the target has been reached
+ *   hold-trade   within plan
+ *
+ * Exit outranks take-profit: a position cannot be both, and if a stale plan
+ * says both, the conservative read wins. */
+
+export type TacticalVerdict = "hold-trade" | "take-profit" | "exit";
+
+export const TACTICAL_VERDICT_LABEL: Record<TacticalVerdict, string> = {
+  "hold-trade": "Hold trade",
+  "take-profit": "Take profit",
+  exit: "Exit",
+};
+
+export function tacticalVerdictOf(input: { flags: PlanFlag[]; synthesisVerdict?: string | null }): { verdict: TacticalVerdict; reasons: string[] } {
+  const by = (k: PlanFlagKind) => input.flags.find((f) => f.kind === k);
+  const exitReasons: string[] = [];
+  const stop = by("stop");
+  if (stop) exitReasons.push(stop.text);
+  // checkTacticalPlan raises the setup flag as "high" only for a Broken grade.
+  const setup = by("setup");
+  if (setup?.severity === "high") exitReasons.push(setup.text);
+  if (input.synthesisVerdict === "exit-watch") exitReasons.push("Synthesis has the name on exit-watch");
+  if (exitReasons.length) return { verdict: "exit", reasons: exitReasons };
+  const target = by("target");
+  if (target) return { verdict: "take-profit", reasons: [target.text] };
+  const notes = input.flags.filter((f) => f.kind === "review" || f.kind === "setup").map((f) => f.text);
+  return { verdict: "hold-trade", reasons: notes };
+}
