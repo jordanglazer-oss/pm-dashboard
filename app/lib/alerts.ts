@@ -146,9 +146,36 @@ export function computeAlerts(input: {
     /** YYYY-MM-DD the quarterly re-underwrite is due (90d from underwrite). */
     reUnderwriteBy?: string;
   }>;
+  /** Tactical-sleeve positions with a live plan flag (app/lib/tactical-plan). */
+  tacticalWatch?: Array<{ ticker: string; flags: Array<{ kind: string; severity: "high" | "medium" | "info"; text: string }> }>;
 }): Alert[] {
   const alerts: Alert[] = [];
   const ctxFor = (tk: string) => input.context?.[tk];
+
+  // ── Tactical plans — the terms the PM set for a Tactical position ──
+  // A stop or target hit is HIGH (it emails): a tactical trade is only worth
+  // having if its exits are acted on. A due review or a Weak setup is MEDIUM.
+  for (const tw of input.tacticalWatch ?? []) {
+    if (!tw.flags.length) continue;
+    const ctx = ctxFor(tw.ticker);
+    const high = tw.flags.some((f) => f.severity === "high");
+    const kinds = new Set(tw.flags.map((f) => f.kind));
+    alerts.push({
+      id: `tactical-${tw.ticker}`,
+      priority: high ? "high" : "medium",
+      category: "thesis",
+      ticker: tw.ticker,
+      name: ctx?.name,
+      title: `${tw.ticker} — tactical plan: ${kinds.has("stop") ? "stop hit" : kinds.has("target") ? "target reached" : kinds.has("setup") ? "setup deteriorated" : "review due"}`,
+      detail: tw.flags.map((f) => f.text).join(" · "),
+      metrics: [ctx?.price != null ? `price ${ctx.price}` : null, ctx?.composite != null ? `composite ${ctx.composite}` : null].filter((m): m is string => m != null),
+      action: kinds.has("stop")
+        ? "The position is at the level you said would prove the trade wrong. Exit, or rewrite the plan with a reason — do not let it drift."
+        : kinds.has("target")
+          ? "The trade has done what you set out for it. Take profit, or raise the target and stop deliberately and re-date the review."
+          : "Open the stock page and review the tactical plan: keep, exit, or roll it with a new review date.",
+    });
+  }
 
   // ── Kill conditions — pre-registered exits, checked deterministically ──
   // These lead the list: unlike thesis-health (generic deterioration), a trip

@@ -5,6 +5,9 @@ import type { StockContext } from "@/app/lib/alerts";
 import { checkAll, trippedCount, withBaselineConditions, type KillCondition, type KillCheck, type TechnicalInput } from "@/app/lib/kill-conditions";
 import { loadKillSignalSources, killSignalExtrasFor } from "./metric-resolver";
 import { sleevesOf } from "./sleeves";
+import { checkTacticalPlan, type PlanFlag, type TacticalPlan } from "./tactical-plan";
+import { computeSetup } from "./setup-grade";
+import type { Stock } from "./types";
 
 /**
  * ONE loader for every input the alert engine needs, so the in-app
@@ -45,7 +48,12 @@ export type AlertInputs = {
   /** Kill-condition evaluation per underwritten holding (thesis discipline).
    *  Deterministic — same evaluator as the stock-page tile, run fleet-wide. */
   killWatch: KillWatchRow[];
+  /** Tactical-sleeve positions whose plan has a live flag (stop / target /
+   *  review due / setup deteriorated). Same evaluator as the stock-page tile. */
+  tacticalWatch: TacticalWatchRow[];
 };
+
+export type TacticalWatchRow = { ticker: string; flags: PlanFlag[]; reviewBy?: string };
 
 export type KillWatchRow = {
   ticker: string;
@@ -191,7 +199,7 @@ export async function loadAlertInputs(): Promise<AlertInputs> {
 
   // ── Kill-condition sweep: every underwritten name, evaluated with the SAME
   //    pure checker the stock-page tile uses, from the signals loaded above. ──
-  const posTheses = parse<Record<string, { why?: string; killConditions?: KillCondition[]; underwrittenAt?: string; reUnderwriteBy?: string; aiDrafted?: boolean }>>(posThesesRaw, {});
+  const posTheses = parse<Record<string, { why?: string; killConditions?: KillCondition[]; underwrittenAt?: string; reUnderwriteBy?: string; aiDrafted?: boolean; tacticalPlan?: TacticalPlan }>>(posThesesRaw, {});
   const stockByTicker = new Map<string, StoredStock>();
   for (const s of stocks) if (s.ticker) stockByTicker.set(s.ticker.toUpperCase(), s);
   const killWatch: KillWatchRow[] = [];
@@ -225,5 +233,29 @@ export async function loadAlertInputs(): Promise<AlertInputs> {
   }
   killWatch.sort((a, b) => b.tripped - a.tripped || a.ticker.localeCompare(b.ticker));
 
-  return { thesis, transition, risk, context, watchlist, killWatch };
+  // ── Tactical-plan sweep: only names still held AND still tagged Tactical —
+  //    a plan left behind on a sold or re-tagged name never alerts. ──
+  const tacticalWatch: TacticalWatchRow[] = [];
+  for (const [rawTk, t] of Object.entries(posTheses)) {
+    if (!t?.tacticalPlan) continue;
+    const tk = rawTk.toUpperCase();
+    const st = stockByTicker.get(tk);
+    if (!st || st.bucket !== "Portfolio" || !sleevesOf(st).tactical) continue;
+    let setupGrade: string | null = null;
+    try {
+      // The stored record IS a full Stock; StoredStock is just the slice this file types.
+      setupGrade = computeSetup(st as unknown as Stock).grade ?? null;
+    } catch {
+      setupGrade = null;
+    }
+    const flags = checkTacticalPlan(t.tacticalPlan, {
+      price: typeof st.price === "number" ? st.price : st.healthData?.currentPrice ?? null,
+      setupGrade,
+      earningsDate: context[tk]?.earningsDate ?? null,
+    }).filter((f) => f.severity !== "info");
+    if (flags.length) tacticalWatch.push({ ticker: tk, flags, reviewBy: t.tacticalPlan.reviewBy });
+  }
+  tacticalWatch.sort((a, b) => a.ticker.localeCompare(b.ticker));
+
+  return { thesis, transition, risk, context, watchlist, killWatch, tacticalWatch };
 }

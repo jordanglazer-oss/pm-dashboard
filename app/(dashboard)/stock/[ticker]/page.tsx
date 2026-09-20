@@ -30,7 +30,8 @@ import { usePrevPage } from "@/app/lib/nav-history";
 import { ScoreDelta } from "@/app/components/ScoreDelta";
 import { CollapsibleSection } from "@/app/components/CollapsibleSection";
 import { SleeveTags } from "@/app/components/SleeveTags";
-import { isSleeveTaggable } from "@/app/lib/sleeves";
+import { isSleeveTaggable, sleevesOf } from "@/app/lib/sleeves";
+import { TacticalPlanTile } from "@/app/components/TacticalPlanTile";
 import { colorForSector } from "@/app/lib/sectorColors";
 import { useNotifications } from "@/app/lib/NotificationsContext";
 import { EditableNumberCell, ConsensusButton } from "@/app/components/EditableScoreInputs";
@@ -2531,6 +2532,10 @@ export default function StockDetailPage() {
         {/* RIGHT */}
         <div className="flex min-w-0 flex-col gap-3.5">
           {scoreable && <StockSynthesisTile ticker={stock.ticker} />}
+          {/* Tactical plan — terms of a Tactical-sleeve position (stocks and funds). */}
+          {stock.bucket === "Portfolio" && sleevesOf(stock).tactical && (
+            <TacticalPlanTile stock={stock} alsoThesis={sleevesOf(stock).thesis} />
+          )}
           {/* Thesis & kill conditions — pre-registered exit criteria, checked
               deterministically from data already on this page. */}
           {scoreable && (() => {
