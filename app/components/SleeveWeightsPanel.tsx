@@ -8,7 +8,7 @@ import { displayTicker } from "@/app/lib/ticker";
 import {
   CORE_SHARE,
   DEFAULT_THESIS_SHARE,
-  MAX_STOCK_WEIGHT,
+  MAX_STOCK_PORTFOLIO_WEIGHT,
   computeSleeveLegs,
   proposeGroupWeights,
   type SleeveRole,
@@ -202,7 +202,7 @@ export function SleeveWeightsPanel() {
             CORE_SHARE,
             result.totals.core,
             result.currentTotals.core,
-            "The residual: whatever the Alpha sleeves do not use, spread across the Core holdings in today's proportions.",
+            "The residual: whatever the Alpha sleeves do not use. The 50% keeps today's Core proportions; anything above it is split equally.",
           )}
           {cell(
             "Thesis",
@@ -221,7 +221,8 @@ export function SleeveWeightsPanel() {
         </div>
         <div className="text-[11.5px] text-ink-3">
           Alpha today {pct(result.currentTotals.alpha, 1)} of equity → proposed {pct(result.totals.thesis + result.totals.tactical + result.totals.untagged, 1)}.
-          A single stock is capped at {pct(MAX_STOCK_WEIGHT, 0)} of equity; funds are not capped.
+          A single stock is capped at {pct(MAX_STOCK_PORTFOLIO_WEIGHT, 0)} of the whole portfolio — {pct(result.stockCap, 1)} of equity in this model&apos;s
+          most equity-heavy profile; funds are not capped. Core above its {pct(CORE_SHARE, 0)} target is split equally across the Core holdings.
         </div>
 
         {warnings.length > 0 && (

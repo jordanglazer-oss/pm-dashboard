@@ -20,8 +20,14 @@
  * A stock tagged in BOTH sleeves carries a Thesis leg plus a full Tactical leg.
  * Leg sizes are set by the PIM group and reused verbatim in every other model;
  * a name a model does not hold simply leaves that weight in the model's Core.
- * A single STOCK is capped at MAX_STOCK_WEIGHT of the equity class (funds are
- * not capped); the excess goes to Core. */
+ * A single STOCK is capped at MAX_STOCK_PORTFOLIO_WEIGHT of the WHOLE portfolio
+ * (funds are not capped). weightInClass is stored once and shared by every
+ * profile, so the cap binds on the model's most equity-heavy profile:
+ * in-class cap = 10% ÷ that profile's equity allocation. The excess goes to Core.
+ *
+ * Core above its 50% target — a sleeve that is not full, a capped stock, a name
+ * this model does not hold — is split EQUALLY across the Core holdings; the 50%
+ * itself keeps the Core holdings' current proportions. */
 
 import type { PimHolding, PimModelGroup } from "./pim-types";
 import { canonicalTicker } from "./ticker";
@@ -29,7 +35,7 @@ import { isCoreDesignated, isFund, sleevesOf } from "./sleeves";
 
 export const CORE_SHARE = 0.5;
 export const DEFAULT_THESIS_SHARE = 2 / 3;
-export const MAX_STOCK_WEIGHT = 0.1;
+export const MAX_STOCK_PORTFOLIO_WEIGHT = 0.1;
 
 type StockLite = {
   ticker: string;
@@ -72,7 +78,20 @@ export type ProposedGroup = {
   totals: { core: number; thesis: number; tactical: number; untagged: number };
   currentTotals: { core: number; alpha: number };
   warnings: string[];
+  /** In-class cap for one stock in this model (10% of portfolio ÷ max equity allocation). */
+  stockCap: number;
 };
+
+/** Largest equity allocation among the model's real profiles (the alpha / core
+ *  views are 100%-equity slices, not portfolios a client holds). */
+export function maxEquityAllocation(group: PimModelGroup): number {
+  let max = 0;
+  for (const [k, p] of Object.entries(group.profiles)) {
+    if (k === "alpha" || k === "core" || !p) continue;
+    if (p.equity > max) max = p.equity;
+  }
+  return max > 0 ? max : 1;
+}
 
 function indexStocks(stocks: StockLite[]): Map<string, StockLite> {
   const m = new Map<string, StockLite>();
@@ -158,6 +177,7 @@ export function proposeGroupWeights(group: PimModelGroup, stocks: StockLite[], l
   const totals = { core: 0, thesis: 0, tactical: 0, untagged: 0 };
   const currentTotals = { core: 0, alpha: 0 };
 
+  const stockCap = MAX_STOCK_PORTFOLIO_WEIGHT / maxEquityAllocation(group);
   const coreHoldings: PimHolding[] = [];
   for (const h of equity) {
     const s = idx.get(canonicalTicker(h.symbol));
@@ -185,11 +205,11 @@ export function proposeGroupWeights(group: PimModelGroup, stocks: StockLite[], l
       const t = role === "thesis" || role === "both" ? legs.thesisLeg : 0;
       const k = role === "tactical" || role === "both" ? legs.tacticalLeg : 0;
       proposed = t + k;
-      if (proposed > MAX_STOCK_WEIGHT) {
-        const scale = MAX_STOCK_WEIGHT / proposed;
+      if (proposed > stockCap) {
+        const scale = stockCap / proposed;
         totals.thesis += t * scale;
         totals.tactical += k * scale;
-        proposed = MAX_STOCK_WEIGHT;
+        proposed = stockCap;
         capped = true;
       } else {
         totals.thesis += t;
@@ -199,18 +219,20 @@ export function proposeGroupWeights(group: PimModelGroup, stocks: StockLite[], l
     rows.push({ symbol: h.symbol, name: h.name, kind, role, current: h.weightInClass, proposed, capped });
   }
 
-  // Core is the residual, spread across the Core holdings in their current
-  // proportions (today's rule — relative Core weights are preserved).
+  // Core is the residual. Up to the 50% target it keeps the Core holdings'
+  // current proportions; anything above the target is split equally.
   const alphaTotal = totals.thesis + totals.tactical + totals.untagged;
   const coreTotal = Math.max(0, 1 - alphaTotal);
   if (alphaTotal > 1 + 1e-6) warnings.push(`Alpha weights sum to ${(alphaTotal * 100).toFixed(2)}% — more than the whole equity class.`);
   const coreCurrent = coreHoldings.reduce((a, h) => a + h.weightInClass, 0);
   if (coreHoldings.length === 0 && coreTotal > 1e-6) warnings.push(`No Core holdings in this model — ${(coreTotal * 100).toFixed(2)}% has nowhere to go.`);
+  const coreBase = Math.min(coreTotal, CORE_SHARE);
+  const coreExtraEach = coreHoldings.length > 0 ? (coreTotal - coreBase) / coreHoldings.length : 0;
   for (const h of coreHoldings) {
     const ratio = coreCurrent > 0 ? h.weightInClass / coreCurrent : 1 / coreHoldings.length;
-    rows.push({ symbol: h.symbol, name: h.name, kind: "fund", role: "core", current: h.weightInClass, proposed: ratio * coreTotal, capped: false });
+    rows.push({ symbol: h.symbol, name: h.name, kind: "fund", role: "core", current: h.weightInClass, proposed: ratio * coreBase + coreExtraEach, capped: false });
   }
   totals.core = coreHoldings.length > 0 ? coreTotal : 0;
 
-  return { groupId: group.id, rows, totals, currentTotals, warnings };
+  return { groupId: group.id, rows, totals, currentTotals, warnings, stockCap };
 }
