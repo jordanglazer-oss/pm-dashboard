@@ -219,7 +219,7 @@ export async function loadAlertInputs(): Promise<AlertInputs> {
       price: typeof st?.price === "number" ? st.price : st?.healthData?.currentPrice ?? null,
       ma200: st?.healthData?.twoHundredDayAvg ?? null,
       technicals: st?.technicals ?? null,
-    });
+    }, { ma200Informational: st?.bucket === "Portfolio" && sleevesOf(st).thesis });
     const { tripped, auto } = trippedCount(checks);
     killWatch.push({ ticker: tk, why: t?.why, checks, tripped, auto, underwrittenAt: t?.underwrittenAt, reUnderwriteBy: t?.reUnderwriteBy, aiDrafted: t?.aiDrafted });
   }

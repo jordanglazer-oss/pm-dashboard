@@ -315,7 +315,11 @@ export type KillCondition = {
   rewrittenAt?: string;
 };
 
-export type KillStatus = "ok" | "tripped" | "unknown" | "manual";
+/** "info" = the condition's trigger is met but it is INFORMATIONAL for this
+ *  holding — it is shown, never counted as a trip and never alerted. Today
+ *  that is the 200-day breaker on a Thesis-sleeve name (a long-run hold is
+ *  sold on a broken thesis, not on trend). */
+export type KillStatus = "ok" | "tripped" | "unknown" | "manual" | "info";
 
 export type KillCheck = {
   condition: KillCondition;
@@ -546,13 +550,22 @@ export function checkCondition(c: KillCondition, s: KillSignals): KillCheck {
   }
 }
 
-export function checkAll(conditions: KillCondition[], s: KillSignals): KillCheck[] {
-  return conditions.map((c) => checkCondition(c, s));
+export type CheckOptions = {
+  /** Thesis-sleeve name: a met 200-day condition reads "info", not "tripped". */
+  ma200Informational?: boolean;
+};
+
+export function checkAll(conditions: KillCondition[], s: KillSignals, opts?: CheckOptions): KillCheck[] {
+  return conditions.map((c) => {
+    const k = checkCondition(c, s);
+    if (opts?.ma200Informational && k.status === "tripped" && guardsMa200(c)) return { ...k, status: "info" as const };
+    return k;
+  });
 }
 
-/** Tripped count over auto-checkable conditions only (manual excluded). */
+/** Tripped count over auto-checkable conditions only (manual and informational excluded). */
 export function trippedCount(checks: KillCheck[]): { tripped: number; auto: number } {
-  const auto = checks.filter((k) => k.status !== "manual");
+  const auto = checks.filter((k) => k.status !== "manual" && k.status !== "info");
   return { tripped: auto.filter((k) => k.status === "tripped").length, auto: auto.length };
 }
 
@@ -577,8 +590,9 @@ export const BASELINE_MA200_ID = "baseline-ma200";
  *  offers no remove button. */
 export const isBaselineCondition = (c: KillCondition): boolean => c.id === BASELINE_MA200_ID;
 
-const guardsMa200 = (c: KillCondition): boolean =>
-  c.kind === "ma200" || (c.kind === "technical" && c.technical?.metric === "price_vs_sma200");
+function guardsMa200(c: KillCondition): boolean {
+  return c.kind === "ma200" || (c.kind === "technical" && c.technical?.metric === "price_vs_sma200");
+}
 
 /**
  * `conds` with the baseline 200DMA condition appended when nothing in the
