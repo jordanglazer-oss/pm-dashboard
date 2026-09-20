@@ -53,7 +53,8 @@ export function GrowthBandsTable() {
     <div className="max-w-none">
       <p>
         Bands last calibrated <b>{data.calibratedAt?.slice(0, 10)}</b> from <b>{data.universeSize}</b> companies.{" "}
-        <button type="button" onClick={toggle} className="text-accent hover:underline">{open ? "Hide" : "Show"} every group&rsquo;s cut points</button>
+        <button type="button" onClick={toggle} className="text-accent hover:underline">{open ? "Hide" : "Show"} every group&rsquo;s cut points</button>{" · "}
+        <a href="/methodology/growth-data" className="text-accent hover:underline">See every company&rsquo;s numbers, the FactSet formulas and the arithmetic</a>
       </p>
       {open && (
         <div className="mt-2 flex flex-col gap-4">

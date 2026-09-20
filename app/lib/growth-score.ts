@@ -25,6 +25,43 @@
 /** Redis key holding the calibrated peer-group distributions (regenerable cache). */
 export const GROWTH_BANDS_KEY = "pm:growth-bands";
 
+/** Redis key holding the per-company inputs behind the bands (regenerable
+ *  cache, written with the bands by the calibration route) — the audit trail
+ *  the Methodology data page reads. */
+export const GROWTH_DETAIL_KEY = "pm:growth-bands-detail";
+
+/** Every raw FactSet field the growth score uses: the exact formula sent to
+ *  FactSet and what it means. One list drives the calibration pull, the data
+ *  page's "where it comes from" panel and the stock page's working. */
+export const GROWTH_SOURCE_FIELDS = [
+  { key: "salesNtm", formula: "FE_ESTIMATE(SALES,MEAN,NTMA,0,NOW,'')", label: "Sales, next 12 months", meaning: "FactSet Estimates: mean analyst consensus for sales over the next twelve months.", unit: "millions, reporting currency" },
+  { key: "salesLtmA", formula: "FE_ESTIMATE(SALES,MEAN,LTMA,0,NOW,'')", label: "Sales, last 12 months (estimates basis)", meaning: "FactSet Estimates: actual sales for the last twelve months on the SAME basis analysts forecast on (net revenue for brokers and exchanges). Used as the denominator so the growth rate compares like with like.", unit: "millions, reporting currency" },
+  { key: "salesLtm", formula: "FF_SALES(LTM,0)", label: "Sales, last 12 months (as reported)", meaning: "FactSet Fundamentals: as-reported trailing sales. Fallback denominator only when the estimates-basis figure is missing.", unit: "millions, reporting currency" },
+  { key: "epsNtm", formula: "FE_ESTIMATE(EPS,MEAN,NTMA,0,NOW,'')", label: "EPS, next 12 months", meaning: "FactSet Estimates: mean analyst consensus for earnings per share over the next twelve months.", unit: "per share" },
+  { key: "epsLtmA", formula: "FE_ESTIMATE(EPS,MEAN,LTMA,0,NOW,'')", label: "EPS, last 12 months (estimates basis)", meaning: "FactSet Estimates: actual EPS for the last twelve months on the analysts' basis.", unit: "per share" },
+  { key: "ltg", formula: "FE_ESTIMATE(LTG,MEAN,ANN_ROLL,0,NOW,'')", label: "Long-term growth estimate", meaning: "FactSet Estimates: mean analyst estimate of annual EPS growth over the next three to five years.", unit: "% per year" },
+  { key: "salesAnn0", formula: "FF_SALES(ANN,0)", label: "Sales, latest fiscal year", meaning: "FactSet Fundamentals: reported sales for the most recent completed fiscal year.", unit: "millions, reporting currency" },
+  { key: "salesAnn3", formula: "FF_SALES(ANN,-3)", label: "Sales, three fiscal years earlier", meaning: "FactSet Fundamentals: reported sales three fiscal years before the latest.", unit: "millions, reporting currency" },
+  { key: "bpsAnn0", formula: "FF_BPS(ANN,0)", label: "Book value per share, latest fiscal year", meaning: "FactSet Fundamentals. Used for delivered growth at banks and insurers only.", unit: "per share" },
+  { key: "bpsAnn3", formula: "FF_BPS(ANN,-3)", label: "Book value per share, three fiscal years earlier", meaning: "FactSet Fundamentals. Banks and insurers only.", unit: "per share" },
+] as const;
+
+/** How each of the four metrics is derived from the raw fields, in words. */
+export const GROWTH_DERIVATIONS: Record<"fwdSales" | "fwdEps" | "ltg" | "delivered", string> = {
+  fwdSales: "(Sales next 12 months − Sales last 12 months) ÷ Sales last 12 months. The last-12-months figure is on the estimates basis; the as-reported figure is used only if that is missing. Dropped for banks and insurers, and dropped when it reads −10% or worse while forward EPS is growing (a spin-off or net-versus-gross reporting break).",
+  fwdEps: "(EPS next 12 months − EPS last 12 months) ÷ EPS last 12 months. Not formed when trailing EPS is below 0.10 (nothing meaningful to grow from). Dropped for REITs.",
+  ltg: "Taken directly from FactSet: the consensus 3–5 year annual EPS growth estimate. Dropped for REITs.",
+  delivered: "Annual growth rate over three fiscal years: (latest ÷ three years earlier) ^ (1/3) − 1, on sales. For banks and insurers, on book value per share.",
+};
+
+export type GrowthDetailRow = {
+  ticker: string; sector: string | null; industry: string | null; group: string;
+  raw: RawGrowthRow;
+  values: Partial<Record<"fwdSales" | "fwdEps" | "ltg" | "delivered", number>>;
+  excluded: { metric: string; reason: string }[];
+};
+export type GrowthDetail = { calibratedAt: string; rows: GrowthDetailRow[]; droppedNoSector: string[] };
+
 export type GrowthMetricKey = "fwdSales" | "fwdEps" | "ltg" | "delivered";
 
 export const GROWTH_METRIC_LABEL: Record<GrowthMetricKey, string> = {
