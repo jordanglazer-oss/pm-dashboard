@@ -20,7 +20,7 @@ import { buildCatalystCalendar, type CatalystCalendar } from "@/app/lib/catalyst
 import { shapeNotesForPrompt, FULL_TEXT_SESSIONS } from "@/app/lib/strategist-note-prompt";
 import { easternToday, easternLongDate, relativeDayLabel } from "@/app/lib/date-eastern";
 import { loadHedges, isActiveHedge, describeHedge } from "@/app/lib/hedges";
-import { parseModelJson } from "@/app/lib/json-repair";
+import { parseModelJson, type ModelJsonResult } from "@/app/lib/json-repair";
 import { computeRegimeTransition, type RegimeTransition } from "@/app/lib/regime-transition";
 import type { MarketRegimeData } from "@/app/lib/market-regime";
 import { isCreditError, recordAnthropicCreditError, markAnthropicHealthy } from "@/app/lib/anthropic-status";
@@ -57,6 +57,72 @@ async function readMarketRegime(): Promise<MarketRegimeData | null> {
 }
 
 const client = new Anthropic();
+
+// ── The brief's model call ────────────────────────────────────────────────
+// Sept 2026: the brief stopped generating right after adaptive thinking was
+// turned on. Every run ended with stop_reason "max_tokens" and NO text block:
+// on this prompt (~60k+ tokens of notes, holdings and evidence) the model at
+// default effort spent the whole 16,000-token cap thinking and never reached
+// the JSON. Thinking counts against max_tokens, so the JSON was starved, not
+// truncated. Three guards now hold, in order:
+//   1. effort "medium" — thinking on Sonnet 5 is only ever adaptive (no
+//      budget_tokens), so effort is the one knob that bounds how much it
+//      thinks before answering; medium keeps the reconciliation the audit
+//      wanted without the open-ended deliberation that ate the cap.
+//   2. A streamed call (streaming is what lets max_tokens sit above the
+//      SDK's non-streaming ceiling) with a bigger cap, aborted at a wall-clock
+//      deadline measured from the START of the request so the fallback still
+//      fits inside Vercel's maxDuration.
+//   3. If the thinking run is cut off, hits max_tokens, or yields no JSON, ONE
+//      retry with thinking off at the pre-audit cap (8,192) — the exact
+//      configuration that produced every brief before Sept 19.
+const BRIEF_MODEL = "claude-sonnet-5";
+const BRIEF_THINKING_EFFORT = "medium" as const;
+const BRIEF_MAX_TOKENS_THINKING = 24_000;
+const BRIEF_MAX_TOKENS_FALLBACK = 8_192;
+// Wall-clock deadlines from request start. maxDuration is 300s: the thinking
+// run gets up to 195s, the fallback the rest minus headroom for parse + reply.
+const BRIEF_PRIMARY_DEADLINE_MS = 195_000;
+const BRIEF_FALLBACK_DEADLINE_MS = 285_000;
+
+async function callBriefModel(
+  params: {
+    content: Anthropic.Messages.ContentBlockParam[];
+    system: string;
+    thinking: boolean;
+    maxTokens: number;
+  },
+  deadlineAt: number,
+): Promise<Anthropic.Message> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), Math.max(1_000, deadlineAt - Date.now()));
+  try {
+    // The system prompt is byte-stable across runs → cached (the day's data
+    // lives in the user turn, after the breakpoint).
+    const stream = client.messages.stream(
+      {
+        model: BRIEF_MODEL,
+        max_tokens: params.maxTokens,
+        thinking: params.thinking ? { type: "adaptive" } : { type: "disabled" },
+        ...(params.thinking ? { output_config: { effort: BRIEF_THINKING_EFFORT } } : {}),
+        messages: [{ role: "user", content: params.content }],
+        system: [{ type: "text", text: params.system, cache_control: { type: "ephemeral" } }],
+      },
+      { signal: controller.signal },
+    );
+    return await stream.finalMessage();
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/** Text blocks only — with thinking on, content[0] is a thinking block. */
+function briefText(message: Anthropic.Message): string {
+  return message.content
+    .filter((b): b is Anthropic.TextBlock => b.type === "text")
+    .map((b) => b.text)
+    .join("");
+}
 
 // Fetch live sector ETF performance from Yahoo Finance
 const SECTOR_ETFS: Record<string, string> = {
@@ -684,6 +750,9 @@ async function saveCachedStrategistReports(hash: string, summary: string) {
 }
 
 export async function POST(request: NextRequest) {
+  // Anchors the model-call deadlines (see callBriefModel) to the request, not
+  // to whenever the pre-work happened to finish.
+  const routeStartedAt = Date.now();
   try {
     const body = await request.json();
     const { marketData, holdings } = body;
@@ -1651,35 +1720,23 @@ Current Portfolio Holdings: ${holdingsSummary}${portfolioPositioning}`;
       { type: "text", text: oscContext + newtonTechContext + strategistReportsContext + "\n\n" + textContent },
     ];
 
-    // Adaptive thinking ON: the brief reconciles conflicting sources into ~25
-    // fields that must agree with each other (hedgingCall ↔ hedgingAnalysis ↔
-    // checklist, topActionsDetail ↔ topActionsToday). Thinking counts against
-    // max_tokens, so the cap is raised to leave the JSON its full room.
-    // The system prompt is byte-stable across runs → cached (the day's data
-    // lives in the user turn, after the breakpoint).
-    const message = await client.messages.create({
-      model: "claude-sonnet-5",
-      thinking: { type: "adaptive" },
-      max_tokens: 16000,
-      messages: [
-        {
-          role: "user",
-          content: contentBlocks,
-        },
-      ],
-      system: [{ type: "text", text: cashDone ? BRIEF_PROMPT_NO_CASH : BRIEF_PROMPT, cache_control: { type: "ephemeral" } }],
-    });
-    progress.mark("narrative");
-    progress.finish();
-
-    // With thinking on, content[0] is a thinking block — read the text blocks.
-    const text = message.content
-      .filter((b): b is Anthropic.TextBlock => b.type === "text")
-      .map((b) => b.text)
-      .join("");
-    if (message.stop_reason === "max_tokens") {
-      console.warn("[Brief] response hit max_tokens — JSON may be truncated");
-    }
+    // Adaptive thinking ON (bounded — see callBriefModel): the brief reconciles
+    // conflicting sources into ~25 fields that must agree with each other
+    // (hedgingCall ↔ hedgingAnalysis ↔ checklist, topActionsDetail ↔
+    // topActionsToday). If that run can't deliver JSON inside its budget, the
+    // brief is regenerated once with thinking off rather than failing the day.
+    type BriefJson = {
+      hedgingCall?: { action?: string; reason?: string; strike?: unknown; tenor?: unknown };
+      [key: string]: unknown;
+    };
+    const systemPrompt = cashDone ? BRIEF_PROMPT_NO_CASH : BRIEF_PROMPT;
+    const secondsIn = () => ((Date.now() - routeStartedAt) / 1000).toFixed(0);
+    const logCall = (label: string, message: Anthropic.Message) =>
+      console.log(
+        `[Brief] ${label} call: stop=${message.stop_reason} output_tokens=${message.usage.output_tokens} ` +
+          `input_tokens=${message.usage.input_tokens} cache_read=${message.usage.cache_read_input_tokens ?? 0} ` +
+          `at ${secondsIn()}s`,
+      );
 
     // Tolerant parse (app/lib/json-repair). The previous repair only closed
     // unbalanced brackets, which fixes a TRUNCATED response but re-threw on
@@ -1687,24 +1744,69 @@ Current Portfolio Holdings: ${holdingsSummary}${portfolioPositioning}`;
     // for longer" stance"), reported as `Expected ',' or '}' after property
     // value`. parseModelJson tries a plain JSON.parse first, so a well-formed
     // response takes exactly the path it always did.
-    type BriefJson = {
-      hedgingCall?: { action?: string; reason?: string; strike?: unknown; tenor?: unknown };
-      [key: string]: unknown;
-    };
-    const parseResult = parseModelJson<BriefJson>(text);
-    if (!parseResult.ok) {
-      // Log the failing region — the raw response is otherwise lost, and this
-      // error is only reproducible by regenerating.
-      console.error(
-        "[Brief] JSON parse failed:",
-        parseResult.error,
-        parseResult.excerpt ? `\n…${parseResult.excerpt}…` : ""
+    let parseResult: ModelJsonResult<BriefJson>;
+    let primaryFailure: string | null = null;
+    try {
+      const message = await callBriefModel(
+        { content: contentBlocks, system: systemPrompt, thinking: true, maxTokens: BRIEF_MAX_TOKENS_THINKING },
+        routeStartedAt + BRIEF_PRIMARY_DEADLINE_MS,
       );
-      return NextResponse.json(
-        { error: `Failed to parse brief response: ${parseResult.error}` },
-        { status: 500 }
-      );
+      logCall("thinking", message);
+      if (message.stop_reason === "max_tokens") {
+        console.warn("[Brief] thinking run hit max_tokens — JSON may be truncated or missing");
+      }
+      parseResult = parseModelJson<BriefJson>(briefText(message));
+      if (!parseResult.ok) {
+        primaryFailure = `${parseResult.error} (stop_reason ${message.stop_reason})`;
+      }
+    } catch (e) {
+      // Only OUR deadline abort is retried here. Anything else (credit
+      // exhaustion, a 400 from a bad attachment, auth) would fail the same way
+      // again and is reported by the outer catch exactly as before.
+      if (!(e instanceof Anthropic.APIUserAbortError)) throw e;
+      primaryFailure = `cut off at the ${BRIEF_PRIMARY_DEADLINE_MS / 1000}s deadline`;
+      parseResult = { ok: false, error: primaryFailure };
     }
+
+    if (!parseResult.ok) {
+      const primaryReason = primaryFailure ?? parseResult.error;
+      console.warn(
+        `[Brief] thinking run produced no usable JSON (${primaryReason}) — ` +
+          `retrying once with thinking off at ${secondsIn()}s`,
+      );
+      const message = await callBriefModel(
+        { content: contentBlocks, system: systemPrompt, thinking: false, maxTokens: BRIEF_MAX_TOKENS_FALLBACK },
+        routeStartedAt + BRIEF_FALLBACK_DEADLINE_MS,
+      ).catch((e) => {
+        if (e instanceof Anthropic.APIUserAbortError) {
+          throw new Error(
+            `the brief could not be generated within the ${BRIEF_FALLBACK_DEADLINE_MS / 1000}s budget ` +
+              `(thinking run: ${primaryReason}; retry without thinking was cut off too)`,
+          );
+        }
+        throw e;
+      });
+      logCall("fallback (thinking off)", message);
+      if (message.stop_reason === "max_tokens") {
+        console.warn("[Brief] fallback response hit max_tokens — JSON may be truncated");
+      }
+      parseResult = parseModelJson<BriefJson>(briefText(message));
+      if (!parseResult.ok) {
+        // Log the failing region — the raw response is otherwise lost, and this
+        // error is only reproducible by regenerating.
+        console.error(
+          "[Brief] JSON parse failed on the fallback run too:",
+          parseResult.error,
+          parseResult.excerpt ? `\n…${parseResult.excerpt}…` : ""
+        );
+        return NextResponse.json(
+          { error: `Failed to parse brief response: ${parseResult.error}` },
+          { status: 500 }
+        );
+      }
+    }
+    progress.mark("narrative");
+    progress.finish();
     if (parseResult.repaired) console.log("[Brief] repaired malformed JSON from the model");
     const parsed = parseResult.value;
 
