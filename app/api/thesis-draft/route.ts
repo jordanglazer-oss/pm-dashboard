@@ -199,6 +199,14 @@ export async function POST(req: NextRequest) {
       ticker?: string; investmentThesis?: string; bearCase?: string; companySummary?: string;
       healthData?: { currentPrice?: number; twoHundredDayAvg?: number }; price?: number;
       sia?: number; marketEdge?: { opinion?: string; powerRating?: number };
+      instrumentType?: string; name?: string;
+      fundData?: {
+        category?: string; fundFamily?: string; expenseRatio?: number;
+        topHoldings?: Array<{ symbol?: string; name?: string; weight?: number }>;
+        sectorWeightings?: Array<{ sector?: string; weight?: number }>;
+        performance?: Record<string, number | undefined>;
+        categoryPerformance?: Record<string, number | undefined>;
+      };
     };
     const stocks: StoredStock[] = stocksRaw ? JSON.parse(stocksRaw) : [];
     const stock = stocks.find((s) => (s.ticker || "").toUpperCase() === tk);
@@ -255,10 +263,28 @@ export async function POST(req: NextRequest) {
       if (c?.why) watchingWhy = `${c.why}${c.addedAt ? ` (captured ${c.addedAt.slice(0, 10)})` : ""}`;
     } catch { /* none */ }
 
-    const prompt = `You are drafting a portfolio manager's pre-registered investment thesis for a holding. The PM will edit and sign it. Structure it as PILLARS: the 2-4 things the case actually rests on, each guarded by one or two conditions that would tell the PM that pillar has failed. Make every claim FALSIFIABLE — the point is that a future version of the PM cannot rationalize past their own exit criteria.
+    // Thesis-sleeve FUND: the case is a mandate, not a company. Give the model
+    // what the fund actually holds and tell it to write conditions it can
+    // verify — relative performance, the exposure the fund exists for — and
+    // never "metric" (no earnings recap) or company-specific customs.
+    const isFund = Boolean(stock?.instrumentType && stock.instrumentType !== "stock");
+    const fd = stock?.fundData;
+    const fundBlock = isFund
+      ? [
+          `THIS IS A FUND / ETF, held as a long-run THESIS position. The thesis is the MANDATE — the exposure this fund exists to deliver — not a single company.`,
+          fd?.category ? `Category: ${fd.category}${fd.fundFamily ? ` · ${fd.fundFamily}` : ""}${typeof fd.expenseRatio === "number" ? ` · MER ${fd.expenseRatio}%` : ""}` : null,
+          fd?.topHoldings?.length ? `Top holdings: ${fd.topHoldings.slice(0, 10).map((h) => `${h.symbol ?? h.name}${typeof h.weight === "number" ? ` ${h.weight.toFixed(1)}%` : ""}`).join(", ")}` : "Top holdings: not on file",
+          fd?.sectorWeightings?.length ? `Sectors: ${fd.sectorWeightings.slice(0, 6).map((w) => `${w.sector} ${typeof w.weight === "number" ? w.weight.toFixed(0) : "?"}%`).join(", ")}` : null,
+          fd?.performance ? `Fund returns: ${Object.entries(fd.performance).filter(([, v]) => typeof v === "number").map(([k, v]) => `${k} ${(v as number).toFixed(1)}%`).join(" · ")}` : null,
+          fd?.categoryPerformance ? `Category returns: ${Object.entries(fd.categoryPerformance).filter(([, v]) => typeof v === "number").map(([k, v]) => `${k} ${(v as number).toFixed(1)}%`).join(" · ")}` : null,
+          `FUND RULES: pillars are about the mandate (why this exposure, why this vehicle, what it must keep delivering). Conditions must be verifiable from public fund data: relative performance vs its category or a named benchmark over a stated window, a change of mandate / manager / fee, the exposure drifting away from what it was bought for. Use "custom" (and "technical" / "ma200" for trend) only — never "metric", "revisions" or company-earnings tests.`,
+        ].filter(Boolean).join("\n")
+      : "";
+
+    const prompt = `You are drafting a portfolio manager's pre-registered investment thesis for a ${isFund ? "fund held as a long-run position" : "holding"}. The PM will edit and sign it. Structure it as PILLARS: the 2-4 things the case actually rests on, each guarded by one or two conditions that would tell the PM that pillar has failed. Make every claim FALSIFIABLE — the point is that a future version of the PM cannot rationalize past their own exit criteria.
 
 TICKER: ${tk} — ${ctx.name || ""}${ctx.sector ? ` (${ctx.sector})` : ""}
-
+${fundBlock ? `\n${fundBlock}\n` : ""}
 ${synthBlock}
 
 ${evidence ? `INGESTED ANALYST & FACTSET EVIDENCE (dated, attributable — prefer these figures when they conflict with the synthesis):\n${evidence}\n` : ""}

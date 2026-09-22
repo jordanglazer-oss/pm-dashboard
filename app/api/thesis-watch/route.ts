@@ -61,8 +61,9 @@ export async function GET() {
       // A Tactical-ONLY name is governed by its plan, not a long-run thesis —
       // it is not part of the underwriting denominator.
       if (c.sleeves?.tactical && !c.sleeves.thesis) continue;
-      // Mirrors isScoreable(): undefined instrumentType means a stock.
-      if (c.instrumentType && c.instrumentType !== "stock") continue;
+      // Mirrors isScoreable(): undefined instrumentType means a stock. A FUND
+      // is in the denominator only when it is a Thesis-sleeve holding.
+      if (c.instrumentType && c.instrumentType !== "stock" && !c.sleeves?.thesis) continue;
       portfolioCount++;
       const t = thesisFor(tk);
       const conds = Array.isArray(t?.killConditions) ? t.killConditions : [];

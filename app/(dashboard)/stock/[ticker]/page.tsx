@@ -1601,7 +1601,7 @@ export default function StockDetailPage() {
         {railGroup("WL funds & ETFs", watchlistFundTickers)}
       </div>
 
-      {stock.bucket === "Portfolio" && scoreable && (
+      {stock.bucket === "Portfolio" && (scoreable || sleevesOf(stock).thesis || sleevesOf(stock).tactical) && (
         <ThesisRequiredBanner ticker={stock.ticker} />
       )}
 
@@ -2541,7 +2541,10 @@ export default function StockDetailPage() {
           )}
           {/* Thesis & kill conditions — pre-registered exit criteria, checked
               deterministically from data already on this page. */}
-          {scoreable && (() => {
+          {(scoreable || (stock.bucket === "Portfolio" && sleevesOf(stock).thesis)) && (() => {
+            // Thesis-sleeve FUNDS are underwritten too (a fund held for the long
+            // run has a case that can break). Their composite / revisions are
+            // n/a, so those signals read "unknown" — never a fabricated OK.
             const snap = getAnalystSnapshot(stock.ticker)?.factset;
             const revUp = typeof snap?.revUp === "number" ? snap.revUp : null;
             const revDown = typeof snap?.revDown === "number" ? snap.revDown : null;
@@ -2550,7 +2553,7 @@ export default function StockDetailPage() {
                 ticker={stock.ticker}
                 earningsDate={stock.healthData?.earningsDate ?? null}
                 signals={{
-                  score: typeof stock.adjusted === "number" ? stock.adjusted : null,
+                  score: scoreable && typeof stock.adjusted === "number" ? stock.adjusted : null,
                   netRevisions: revUp != null || revDown != null ? (revUp ?? 0) - (revDown ?? 0) : null,
                   revUp,
                   revDown,
