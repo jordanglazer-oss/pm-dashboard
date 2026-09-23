@@ -39,6 +39,7 @@ export const NAV_GROUPS: NavGroup[] = [
     items: [
       { key: "holdings", label: "Holdings", href: "/", icon: "table", match: (p) => p === "/scoring" || p.startsWith("/stock/") },
       { key: "positioning", label: "Positioning", href: "/portfolio", icon: "pie", match: (p) => p.startsWith("/portfolio") },
+      { key: "review", label: "Review", href: "/review", icon: "calendar" },
       { key: "models", label: "Models", href: "/pim-model", icon: "layers" },
       { key: "performance", label: "Performance", href: "/aa-performance", icon: "trend", match: (p) => p === "/attribution" },
       { key: "risk", label: "Risk", href: "/risk", icon: "shield" },

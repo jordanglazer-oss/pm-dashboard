@@ -43,7 +43,7 @@ export function isBondOrAltFund(s: Pick<SleeveFields, "name" | "sector">): boole
   const sl = (s.sector || "").toLowerCase();
   return sl.includes("bond") || sl.includes("fixed") || nl.includes("bond") || nl.includes("fixed income")
     || sl.includes("alternative") || nl.includes("alternative") || nl.includes("premium yield") || nl.includes("premium incom")
-    || nl.includes("hedge") || nl.includes("option income") || nl.includes("option writing") || nl.includes("covered call");
+    || (nl.includes("hedge") && !nl.includes("hedged")) || nl.includes("option income") || nl.includes("option writing") || nl.includes("covered call");
 }
 
 /** Can this holding carry a Thesis/Tactical tag at all? Equity Alpha only. */

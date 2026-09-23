@@ -12,6 +12,7 @@ import { usePathname, useRouter } from "next/navigation";
 export const PORTFOLIO_SEGMENTS: { label: string; href: string }[] = [
   { label: "Holdings", href: "/" },
   { label: "Positioning", href: "/portfolio" },
+  { label: "Review", href: "/review" },
   { label: "Models", href: "/pim-model" },
   { label: "Performance", href: "/aa-performance" },
   { label: "Risk", href: "/risk" },
@@ -33,7 +34,8 @@ export function PortfolioTabs() {
     pathname === "/attribution" ||
     pathname === "/risk" ||
     pathname === "/thesis" ||
-    pathname === "/journal";
+    pathname === "/journal" ||
+    pathname === "/review";
 
   const activeHref =
     pathname === "/pim-model" ? "/pim-model"
@@ -42,6 +44,7 @@ export function PortfolioTabs() {
     : pathname === "/risk" ? "/risk"
     : pathname === "/thesis" ? "/thesis"
     : pathname === "/journal" ? "/journal"
+    : pathname === "/review" ? "/review"
     : pathname.startsWith("/portfolio") ? "/portfolio"
     : "/";
 

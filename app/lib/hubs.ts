@@ -19,6 +19,7 @@ const ALIASES: Record<string, Hub> = {
   "/risk": "Portfolio",
   "/thesis": "Portfolio",
   "/journal": "Portfolio",
+  "/review": "Portfolio",
   // Ideas segments
   "/synthesis": "Ideas",
   "/funnel": "Ideas",
