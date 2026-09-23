@@ -25,6 +25,7 @@ import { ThesisRequiredBanner } from "@/app/components/ThesisRequiredBanner";
 import StreetTakeawaysTile from "@/app/components/StreetTakeawaysTile";
 import { StockSynthesisTile } from "@/app/components/StockSynthesisTile";
 import { LaneTile } from "@/app/components/LaneTile";
+import { StockSummaryCard } from "@/app/components/StockSummaryCard";
 import { AppIcon } from "@/app/components/AppIcon";
 import { usePrevPage } from "@/app/lib/nav-history";
 import { ScoreDelta } from "@/app/components/ScoreDelta";
@@ -1751,6 +1752,9 @@ export default function StockDetailPage() {
           )}
         </div>
       )}
+
+      {/* ── Summary card: sleeve · thesis/plan status · score · setup · synthesis · evidence, each with its source. ── */}
+      <StockSummaryCard stock={stock} />
 
       {/* ── Two columns: the decision material left, the context right. ── */}
       <div className="grid grid-cols-1 items-start gap-3.5 lg:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)]">
