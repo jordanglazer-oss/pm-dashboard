@@ -25,6 +25,7 @@ import { ThesisRequiredBanner } from "@/app/components/ThesisRequiredBanner";
 import FactorLensTile from "@/app/components/FactorLensTile";
 import StreetTakeawaysTile from "@/app/components/StreetTakeawaysTile";
 import { StockSynthesisTile } from "@/app/components/StockSynthesisTile";
+import { LaneTile } from "@/app/components/LaneTile";
 import { AppIcon } from "@/app/components/AppIcon";
 import { usePrevPage } from "@/app/lib/nav-history";
 import { ScoreDelta } from "@/app/components/ScoreDelta";
@@ -2535,6 +2536,8 @@ export default function StockDetailPage() {
         {/* RIGHT */}
         <div className="flex min-w-0 flex-col gap-3.5">
           {scoreable && <StockSynthesisTile ticker={stock.ticker} />}
+          {/* Unowned names: the Thesis / Tactical lane read and its checklist. */}
+          {scoreable && stock.bucket !== "Portfolio" && <LaneTile ticker={stock.ticker} />}
           {/* Tactical plan — terms of a Tactical-sleeve position (stocks and funds). */}
           {stock.bucket === "Portfolio" && sleevesOf(stock).tactical && (
             <TacticalPlanTile stock={stock} alsoThesis={sleevesOf(stock).thesis} />
