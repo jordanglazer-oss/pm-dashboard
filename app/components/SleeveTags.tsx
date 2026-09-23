@@ -3,6 +3,7 @@
 import { useStocks } from "@/app/lib/StockContext";
 import type { Stock } from "@/app/lib/types";
 import { isFund, isSleeveTaggable, sleevesOf, toggleSleeveFields, type AlphaSleeve } from "@/app/lib/sleeves";
+import { ensurePlanSkeleton } from "@/app/lib/plan-skeleton";
 
 /* Thesis / Tactical toggle pills for one holding. Stocks toggle each sleeve
  * independently (both = a Thesis name with a tactical overweight); on a fund,
@@ -20,7 +21,11 @@ export function SleeveTags({ stock, size = "sm" }: { stock: Stock; size?: "sm" |
       aria-pressed={active}
       onClick={(e) => {
         e.stopPropagation();
-        updateStockFields(stock.ticker, toggleSleeveFields(stock, sleeve));
+        const next = toggleSleeveFields(stock, sleeve);
+        updateStockFields(stock.ticker, next);
+        // Turning Tactical ON for a held name pre-fills its plan (entry = now).
+        // Fire-and-forget — the tag never waits on it.
+        if (sleeve === "tactical" && next.inTactical && stock.bucket === "Portfolio") void ensurePlanSkeleton(stock.ticker, stock.price);
       }}
       title={title}
       className={`inline-flex items-center rounded-md border font-medium transition-colors ${box} ${

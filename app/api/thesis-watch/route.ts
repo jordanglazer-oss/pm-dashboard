@@ -1,3 +1,4 @@
+import { isPlanComplete, type TacticalPlan } from "@/app/lib/tactical-plan";
 import { NextResponse } from "next/server";
 import { getRedis } from "@/app/lib/redis";
 import { loadAlertInputs } from "@/app/lib/alert-inputs";
@@ -53,11 +54,14 @@ export async function GET() {
 
     const missing: CoverageRow[] = [];
     // Tactical-sleeve holdings (stocks AND funds) with no tactical plan on file.
-    const planMissing: Array<{ ticker: string; name?: string }> = [];
+    const planMissing: Array<{ ticker: string; name?: string; incomplete?: boolean }> = [];
     let portfolioCount = 0;
     for (const [tk, c] of Object.entries(context)) {
       if (c.bucket !== "Portfolio") continue;
-      if (c.sleeves?.tactical && !thesisFor(tk)?.tacticalPlan) planMissing.push({ ticker: tk, name: c.name });
+      if (c.sleeves?.tactical) {
+        const plan = thesisFor(tk)?.tacticalPlan as TacticalPlan | undefined;
+        if (!isPlanComplete(plan)) planMissing.push({ ticker: tk, name: c.name, incomplete: Boolean(plan) });
+      }
       // A Tactical-ONLY name is governed by its plan, not a long-run thesis —
       // it is not part of the underwriting denominator.
       if (c.sleeves?.tactical && !c.sleeves.thesis) continue;

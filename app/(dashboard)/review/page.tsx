@@ -11,6 +11,7 @@ import { applyDecisions, inheritDecisions, monthKey, reconcile, WEIGHT_COMMIT_EN
 import { LegVerdictChips, useSleeveVerdicts } from "@/app/components/LegVerdicts";
 import { CollapsibleSection } from "@/app/components/CollapsibleSection";
 import { TacticalBench } from "@/app/components/TacticalBench";
+import { SleeveConcentration } from "@/app/components/SleeveConcentration";
 import { AppIcon } from "@/app/components/AppIcon";
 import { THESIS_VERDICT_LABEL, type ThesisVerdict } from "@/app/lib/thesis-verdict";
 import type { PimProfileType } from "@/app/lib/pim-types";
@@ -392,6 +393,8 @@ export default function ReviewPage() {
           </div>
         )}
       </CollapsibleSection>
+
+      <SleeveConcentration />
 
       <TacticalBench />
     </main>

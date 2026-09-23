@@ -29,7 +29,7 @@ const BADGE = "inline-flex h-6 items-center gap-1 rounded-control border border-
 export function ThesisRequiredBanner({ ticker, className }: { ticker?: string; className?: string }) {
   const [missing, setMissing] = useState<MissingRow[] | null>(null);
   // Tactical-sleeve holdings with no tactical plan (additive field on the route).
-  const [planMissing, setPlanMissing] = useState<Array<{ ticker: string; name?: string }>>([]);
+  const [planMissing, setPlanMissing] = useState<Array<{ ticker: string; name?: string; incomplete?: boolean }>>([]);
   const pathname = usePathname();
 
   useEffect(() => {
@@ -49,22 +49,24 @@ export function ThesisRequiredBanner({ ticker, className }: { ticker?: string; c
 
   if (!missing) return null;
 
-  const planBanner = (rows: Array<{ ticker: string; name?: string }>, single: boolean) => (
+  const planBanner = (rows: Array<{ ticker: string; name?: string; incomplete?: boolean }>, single: boolean) => (
     <div className={`flex flex-wrap items-center gap-2 rounded-card border border-violet-border bg-violet-soft px-3.5 py-2 ${className ?? ""}`}>
       <span className="inline-flex items-center gap-1.5 text-[12.5px] font-medium text-violet">
-        <span className="dot bg-violet" /> Tactical plan required
+        <span className="dot bg-violet" /> {single && rows[0].incomplete ? "Tactical plan incomplete" : "Tactical plan required"}
       </span>
       <span className="text-[12.5px] text-ink-2">
         {single
-          ? `${displayTicker(rows[0].ticker)} is a Tactical position with no plan — no target, stop or review date is being watched.`
-          : `${rows.length} Tactical position${rows.length === 1 ? " has" : "s have"} no plan — no target, stop or review date is being watched.`}
+          ? rows[0].incomplete
+            ? `${displayTicker(rows[0].ticker)} has its entry on file but no why-now, target or stop yet — nothing is watching it until they are in.`
+            : `${displayTicker(rows[0].ticker)} is a Tactical position with no plan — no target, stop or review date is being watched.`
+          : `${rows.length} Tactical position${rows.length === 1 ? " has" : "s have"} an incomplete or missing plan — no target, stop or review date is being watched.`}
       </span>
       {single ? (
         <button
           onClick={() => document.getElementById("tactical-plan-tile")?.scrollIntoView({ behavior: "smooth", block: "center" })}
           className="ml-auto inline-flex h-7 items-center rounded-control border border-violet-border bg-surface px-2.5 text-[12.5px] text-violet hover:bg-surface-hover transition-colors"
         >
-          Write plan
+          {rows[0].incomplete ? "Complete plan" : "Write plan"}
         </button>
       ) : (
         <span className="flex flex-wrap items-center gap-1.5">
@@ -83,8 +85,12 @@ export function ThesisRequiredBanner({ ticker, className }: { ticker?: string; c
     const me = missing.find((m) => canonicalTicker(m.ticker) === canonicalTicker(ticker));
     const myPlan = planMissing.filter((m) => canonicalTicker(m.ticker) === canonicalTicker(ticker));
     if (!me) return myPlan.length ? planBanner(myPlan, true) : null;
+    // A name in both sleeves can owe both: the thesis banner AND the plan reminder.
+    const planToo = myPlan.length ? planBanner(myPlan, true) : null;
     const scrollToTile = () => document.getElementById("thesis-tile")?.scrollIntoView({ behavior: "smooth", block: "start" });
     return (
+      <>
+      {planToo}
       <div className={`flex flex-wrap items-center gap-3 rounded-card border border-warn-border bg-warn-soft px-3.5 py-2 ${className ?? ""}`}>
         <span className="inline-flex items-center gap-1.5 text-[12.5px] font-medium text-warn">
           <span className="dot bg-warn" /> Thesis required
@@ -106,6 +112,7 @@ export function ThesisRequiredBanner({ ticker, className }: { ticker?: string; c
           </button>
         </span>
       </div>
+      </>
     );
   }
 

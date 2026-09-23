@@ -77,6 +77,12 @@ export function sanitizePlan(raw: unknown): TacticalPlan | null {
   return empty ? null : plan;
 }
 
+/** A plan is complete once it says why, where it is done, where it is wrong
+ *  and when it is next looked at. A pre-filled skeleton (entry only) is not. */
+export function isPlanComplete(plan: TacticalPlan | null | undefined): boolean {
+  return Boolean(plan && plan.catalyst.trim() && plan.target != null && plan.stop != null && plan.reviewBy);
+}
+
 /** Return since entry, as a fraction; null when entry or price is missing. */
 export function planReturn(plan: TacticalPlan, price: number | null | undefined): number | null {
   if (!plan.entryPrice || price == null || !(price > 0)) return null;

@@ -1,5 +1,7 @@
 "use client";
 
+import { sleevesOf } from "@/app/lib/sleeves";
+import { ensurePlanSkeleton } from "@/app/lib/plan-skeleton";
 import React, { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { ZERO_SCORES as ALL_ZERO_SCORES } from "@/app/lib/types";
 import { useSearchParams } from "next/navigation";
@@ -2263,6 +2265,11 @@ export function PimPortfolio({ groups }: Props) {
         // needs to land on the stock for stock-page consistency.)
         if (excludedSet.size > 0) {
           updateStockFields(buyTicker, { modelEligibility: eligibilityMap });
+        }
+        // A Buy that opens a Tactical position pre-fills its plan with the
+        // trade's price and date (non-blocking; never overwrites a plan).
+        if (sleevesOf(existingStock).tactical) {
+          void ensurePlanSkeleton(existingStock.ticker, buyPrice, new Date().toISOString().slice(0, 10));
         }
         // Promote Watchlist → Portfolio. Synchronously flips bucket on
         // pm:stocks; the atomic swap below then overrides the pim-models
