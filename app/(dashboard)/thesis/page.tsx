@@ -1,6 +1,7 @@
 "use client";
 
 import { THESIS_VERDICT_LABEL } from "@/app/lib/thesis-verdict";
+import { TacticalPlansSection } from "@/app/components/TacticalPlansSection";
 import React, { useEffect, useMemo, useState } from "react";
 import { useStocks } from "@/app/lib/StockContext";
 import Link from "next/link";
@@ -638,14 +639,11 @@ export default function ThesisDeskPage() {
                     );
                   })()}
                   {r.aiDrafted && <span className="text-[11.5px] text-ink-3">AI draft</span>}
-                  <span className="ml-auto font-mono text-[11px] text-ink-3">
-                    {r.underwrittenAt ? `underwritten ${r.underwrittenAt}` : ""}
-                    {r.reUnderwriteBy ? (
-                      <span className={overdue ? "text-warn" : ""}>
-                        {" · re-underwrite "}
-                        {overdue ? "overdue" : "due"} {r.reUnderwriteBy}
-                      </span>
-                    ) : null}
+                  <span
+                    className={`ml-auto text-[11px] ${overdue ? "text-warn" : "text-ink-faint"}`}
+                    title={`${r.underwrittenAt ? `Underwritten ${r.underwrittenAt}` : "Underwrite date unknown"}${r.reUnderwriteBy ? ` · re-underwrite ${overdue ? "overdue since" : "due"} ${r.reUnderwriteBy}` : ""}`}
+                  >
+                    {overdue ? "re-underwrite overdue" : r.reUnderwriteBy ? `review ${r.reUnderwriteBy.slice(5)}` : ""}
                   </span>
                 </div>
 
@@ -735,6 +733,9 @@ export default function ThesisDeskPage() {
           })}
         </div>
       )}
+
+      {/* Tactical half of the desk — every held Tactical name against its plan. */}
+      {!loading && <TacticalPlansSection />}
 
       {/* Coverage gap — the actionable part: what you own but haven't underwritten */}
       {!loading && cov && cov.missing.length > 0 && (

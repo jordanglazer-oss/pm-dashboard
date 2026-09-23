@@ -5,7 +5,6 @@ import { ZERO_SCORES as ALL_ZERO_SCORES } from "@/app/lib/types";
 import Link from "next/link";
 import { useStocks } from "@/app/lib/StockContext";
 import { computeScores } from "@/app/lib/scoring";
-import { usePersistedOpen } from "@/app/lib/useCollapsed";
 import { displayTicker } from "@/app/lib/ticker";
 import TickerLink from "@/app/components/TickerLink";
 import { AppIcon } from "@/app/components/AppIcon";
@@ -14,18 +13,12 @@ import { useTableSort } from "@/app/lib/useTableSort";
 import { SUGGESTED_MIN_LISTS } from "@/app/lib/research-ranked";
 import type { SuggestedRow, SuggestedDecision } from "@/app/lib/suggested-watchlist";
 import type { SynthesisVerdict } from "@/app/lib/synthesis-screen-display";
-import { VERDICT_LABEL } from "@/app/lib/synthesis-screen-display";
-import type { Stock, ScoreKey, ScoreExplanations } from "@/app/lib/types";
-import type { SuggestedAiView, PositionTier } from "@/app/lib/suggested-ai";
+import { skewWord, SKEW_TONE } from "@/app/lib/synthesis-screen-display";
+import type { Stock, ScoreExplanations } from "@/app/lib/types";
+import { LaneChip } from "@/app/components/LaneChecklist";
+import type { LaneRead } from "@/app/lib/lanes";
+import { computeSetup } from "@/app/lib/setup-grade";
 
-/** AI tier → status dot + word. Colour by job: positioned / neutral / against. */
-const TIER_DOT: Record<PositionTier, { dot: string; text: string; word: string }> = {
-  positioned: { dot: "bg-pos", text: "text-pos", word: "Positioned" },
-  neutral: { dot: "bg-ink-faint", text: "text-ink-3", word: "Neutral" },
-  against: { dot: "bg-neg", text: "text-neg", word: "Against" },
-};
-
-/** Decision memory → status dot + word. */
 const DECISION_DOT: Record<SuggestedDecision, { dot: string; text: string; word: string }> = {
   advance: { dot: "bg-pos", text: "text-pos", word: "Advance" },
   watch: { dot: "bg-warn", text: "text-warn", word: "Watch" },
@@ -43,11 +36,10 @@ type Payload = {
   updatedAt: string | null;
 };
 
-type SynthesisMeta = { verdict: SynthesisVerdict; stale: boolean; generatedAt: string };
+type SynthesisMeta = { verdict: SynthesisVerdict; skew: number; stale: boolean; generatedAt: string };
 
 /* Control vocabulary: 28px toolbar controls; in-row buttons follow the Ideas
    canvas (22px, 11.5px) so they sit inside a 34px row. */
-const BTN = "inline-flex h-7 items-center gap-1.5 rounded-control border border-line bg-surface px-2.5 text-[12.5px] text-ink-2 hover:bg-surface-hover hover:text-ink disabled:opacity-50 transition-colors";
 const BTN_PRI = "inline-flex h-7 items-center gap-1.5 rounded-control bg-ink px-2.5 text-[12.5px] font-medium text-white hover:bg-ink-2 disabled:opacity-50 transition-colors";
 const ROW_BTN = "inline-flex h-[22px] items-center gap-1 rounded border border-line bg-surface px-1.5 text-[11.5px] text-ink-2 hover:bg-surface-hover hover:text-ink disabled:opacity-50 transition-colors";
 const TH_SORT = "cursor-pointer select-none hover:text-ink";
@@ -151,45 +143,17 @@ export function SuggestedFunnel({ onCountChange }: { onCountChange?: (n: number)
   const [showPassed, setShowPassed] = useState(false);
   const [ccy, setCcy] = useState<"All" | "CAD" | "USD">("All");
   const [synthesis, setSynthesis] = useState<Map<string, SynthesisMeta>>(new Map());
-  // AI-positioned view (pm:suggested-ai): tier + reason per name, sector backdrops.
-  const [ai, setAi] = useState<{ view: SuggestedAiView | null; stale: boolean; regimeLabel: string | null } | null>(null);
-  const [positioning, setPositioning] = useState(false);
-  const [aiErr, setAiErr] = useState<string | null>(null);
-  const [tierFilter, setTierFilter] = useState<"all" | "positioned" | "not-against">("all");
-  // The "AI adds & sector backdrops" fold persists (site rule) — closed by default.
-  const [showAdds, toggleAdds] = usePersistedOpen("holdings.suggested.aiAdds.open", false);
-  const loadAi = useCallback(async () => {
-    try {
-      const r = await fetch("/api/suggested-ai", { cache: "no-store" });
-      if (r.ok) setAi(await r.json());
-    } catch { /* leave as is */ }
-  }, []);
-  useEffect(() => { void loadAi(); }, [loadAi]);
-  const positionWithAi = async () => {
-    setPositioning(true);
-    setAiErr(null);
-    try {
-      const r = await fetch("/api/suggested-ai", { method: "POST" });
-      const j = await r.json().catch(() => ({}));
-      if (!r.ok) setAiErr(j.error ?? "positioning failed");
-      else if (j.view?.error) setAiErr(j.view.error);
-      await loadAi();
-    } finally {
-      setPositioning(false);
-    }
-  };
-
-  // Entry scorecard (met/known + ready) per name, read-only from the cached scan.
-  const [setup, setSetup] = useState<Map<string, { met: number; known: number; ready: boolean; signals: string[] }>>(new Map());
+  // Thesis / Tactical lane per name, read-only from the cached entry scan.
+  const [lanes, setLanes] = useState<Map<string, LaneRead>>(new Map());
   useEffect(() => {
     let alive = true;
     fetch("/api/entry-scan")
       .then((r) => (r.ok ? r.json() : null))
       .then((d) => {
         if (!alive || !Array.isArray(d?.rows)) return;
-        const m = new Map<string, { met: number; known: number; ready: boolean; signals: string[] }>();
-        for (const row of d.rows) m.set(String(row.ticker).toUpperCase(), { met: row.met, known: row.known, ready: row.ready, signals: (row.signals ?? []).filter((x: { status: string }) => x.status === "met").map((x: { label: string }) => x.label) });
-        setSetup(m);
+        const m = new Map<string, LaneRead>();
+        for (const row of d.rows) if (row?.lane) m.set(String(row.ticker).toUpperCase(), row.lane as LaneRead);
+        setLanes(m);
       })
       .catch(() => {});
     return () => { alive = false; };
@@ -231,7 +195,7 @@ export function SuggestedFunnel({ onCountChange }: { onCountChange?: (n: number)
         const m = new Map<string, SynthesisMeta>();
         for (const row of d.rows) {
           const v = row?.entry?.result?.verdict;
-          if (row?.ticker && v) m.set(String(row.ticker).toUpperCase(), { verdict: v, stale: Array.isArray(row.stale) && row.stale.length > 0, generatedAt: row.entry.generatedAt });
+          if (row?.ticker && v) m.set(String(row.ticker).toUpperCase(), { verdict: v, skew: Number(row.entry.result.skew ?? 0), stale: Array.isArray(row.stale) && row.stale.length > 0, generatedAt: row.entry.generatedAt });
         }
         setSynthesis(m);
       })
@@ -313,13 +277,7 @@ export function SuggestedFunnel({ onCountChange }: { onCountChange?: (n: number)
   };
 
   const base = data ? (showPassed ? data.passed : data.rows) : [];
-  const tierOf = (r: SuggestedRow): PositionTier | undefined => ai?.view?.names[r.ticker.toUpperCase()]?.tier ?? ai?.view?.names[`${r.key.toUpperCase()}.TO`]?.tier ?? ai?.view?.names[r.key.toUpperCase()]?.tier;
-  const byTier = tierFilter === "all" ? base : base.filter((r) => { const t = tierOf(r); return tierFilter === "positioned" ? t === "positioned" : t !== "against"; });
-  const all = ccy === "All" ? byTier : byTier.filter((r) => r.currency === ccy);
-  // "AI adds": names the model calls positioned that sit on only ONE list —
-  // the widening move the pure count can't make. Shown below the table.
-  const suggestedSet = new Set(base.map((r) => r.ticker.toUpperCase()));
-  const aiAdds = ai?.view ? Object.entries(ai.view.names).filter(([t, v]) => v.tier === "positioned" && !suggestedSet.has(t)).sort((x, y) => y[1].listCount - x[1].listCount) : [];
+  const all = ccy === "All" ? base : base.filter((r) => r.currency === ccy);
   const { sorted, toggle, key: sortKey, dir: sortDir } = useTableSort(
     all,
     {
@@ -334,7 +292,6 @@ export function SuggestedFunnel({ onCountChange }: { onCountChange?: (n: number)
 
   const cadCount = base.filter((r) => r.currency === "CAD").length;
   const usdCount = base.length - cadCount;
-  const positionedCount = ai?.view ? Object.values(ai.view.names).filter((n) => n.tier === "positioned").length : 0;
 
   return (
     <section className="panel">
@@ -362,23 +319,6 @@ export function SuggestedFunnel({ onCountChange }: { onCountChange?: (n: number)
               Passed <span className="c">{data?.passed.length ?? 0}</span>
             </button>
           </div>
-          <div className="seg" title="Filter by the AI positioning tier">
-            {([["all", "All"], ["not-against", "Not against"], ["positioned", "Positioned"]] as const).map(([k, label]) => (
-              <button key={k} type="button" onClick={() => setTierFilter(k)} disabled={!ai?.view} className={`${tierFilter === k ? "on" : ""} disabled:cursor-default disabled:opacity-40`}>
-                {label}
-              </button>
-            ))}
-          </div>
-          <button
-            type="button"
-            onClick={positionWithAi}
-            disabled={positioning}
-            className={BTN}
-            title="Tier every ranked research name (positioned / neutral / against) given the regime, the brief, sector & industry leadership and each name's own reads. About one model call per sector."
-          >
-            <AppIcon name="spark" size={13} />
-            {positioning ? "Positioning…" : "Position with AI"}
-          </button>
           <button type="button" onClick={refresh} disabled={refreshing} className={BTN_PRI}>
             <AppIcon name="refresh" size={13} strokeWidth={2} className={refreshing ? "animate-spin" : ""} />
             {refreshing ? "Refreshing…" : "Refresh"}
@@ -386,25 +326,13 @@ export function SuggestedFunnel({ onCountChange }: { onCountChange?: (n: number)
         </div>
       </div>
 
-      {/* Meta strip: where the list comes from, the AI view's vintage, the last refresh's result. */}
+      {/* Meta strip: where the list comes from and the last refresh's result. */}
       <div className="flex min-h-8 flex-wrap items-center gap-x-3 gap-y-1 border-b border-line-soft px-3.5 py-1.5 text-[11.5px] text-ink-3">
         <span>
           From the <Link href="/research" className="!text-accent hover:underline">ranked Research table</Link>
           {" "}· next: <Link href="/synthesis" className="!text-accent hover:underline">Synthesis › Suggested</Link>
         </span>
-        {ai?.view ? (
-          <span className="inline-flex items-center gap-1.5">
-            AI view {ai.view.generatedAt.slice(0, 10)}{ai.view.regimeLabel ? ` · regime ${ai.view.regimeLabel}` : ""}{ai.view.briefDate ? ` · brief ${ai.view.briefDate}` : ""} ·{" "}
-            <span className="text-pos">{positionedCount} positioned</span> of {ai.view.namesConsidered}
-            {ai.stale && (
-              <span className="inline-flex items-center gap-1.5 text-warn"><span className="dot bg-warn" />Stale</span>
-            )}
-          </span>
-        ) : (
-          <span>No AI positioning yet — &ldquo;Position with AI&rdquo; tiers every ranked name against today&apos;s backdrop (≈ one call per sector).</span>
-        )}
         {status && <span className="text-ink-2">{status}</span>}
-        {aiErr && <span className="text-neg">{aiErr}</span>}
         {scoreErr && <span className="text-neg">{scoreErr}</span>}
         {scoringTicker && <span className="text-ink-2">Scoring {displayTicker(scoringTicker)}…</span>}
       </div>
@@ -419,19 +347,15 @@ export function SuggestedFunnel({ onCountChange }: { onCountChange?: (n: number)
         />
       ) : (
         <div className="overflow-x-auto">
-          <table className="data-table min-w-[900px]">
+          <table className="data-table min-w-[820px]">
             <thead>
               <tr>
-                <th className={`!pl-3.5 ${TH_SORT}`} onClick={() => toggle("ticker")}>Ticker<SortIcon col="ticker" sortKey={sortKey} dir={sortDir} /></th>
-                <th className={TH_SORT} onClick={() => toggle("name")}>Name<SortIcon col="name" sortKey={sortKey} dir={sortDir} /></th>
-                <th className={TH_SORT} onClick={() => toggle("sector")}>Sector<SortIcon col="sector" sortKey={sortKey} dir={sortDir} /></th>
-                <th className={`n ${TH_SORT}`} onClick={() => toggle("lists")}>Lists<SortIcon col="lists" sortKey={sortKey} dir={sortDir} /></th>
-                <th className="n" title="Conviction composite, scored on demand. The chips show which provider data has landed on this name: M = MarketEdge, S = SIA, B = BoostedAI.">Score</th>
-                <th title="AI positioning vs today's backdrop">AI view</th>
-                <th>Sources</th>
-                <th title="Entry setup (signals met / known) and improving reads">Setup</th>
-                <th>Synthesis</th>
-                <th title="Analyst reports on file (arrivals) and when coverage was requested">Coverage</th>
+                <th className={`!pl-3.5 ${TH_SORT}`} onClick={() => toggle("ticker")}>Name<SortIcon col="ticker" sortKey={sortKey} dir={sortDir} /></th>
+                <th className={`n ${TH_SORT}`} onClick={() => toggle("lists")} title="How many research lists carry the name (sources on hover)">Lists<SortIcon col="lists" sortKey={sortKey} dir={sortDir} /></th>
+                <th className="n" title="Conviction composite, scored on demand — nothing is scored automatically">Score</th>
+                <th title="Analyst reports (RBC / JPM / Morningstar) and FactSet alert emails on file — the evidence a synthesis and a thesis are built from">Reports &amp; FactSet</th>
+                <th title="Latest synthesis: Bull / Neutral / Bear, when it was generated, and whether a newer report has made it stale">Synthesis</th>
+                <th title="Thesis or Tactical readiness — hover for the checklist">Lane</th>
                 <th className="!text-right">Action</th>
               </tr>
             </thead>
@@ -439,92 +363,59 @@ export function SuggestedFunnel({ onCountChange }: { onCountChange?: (n: number)
               {sorted.map((r) => {
                 const h = held(r);
                 const syn = synthesis.get(r.ticker.toUpperCase()) ?? synthesis.get(r.key.toUpperCase());
-                const tier = ai?.view?.names[r.ticker.toUpperCase()] ?? ai?.view?.names[r.key.toUpperCase()];
-                const st = setup.get(r.ticker.toUpperCase()) ?? setup.get(r.key.toUpperCase());
+                const lane = lanes.get(r.ticker.toUpperCase()) ?? lanes.get(r.key.toUpperCase());
+                const rec = recordFor(r);
+                const scored = rec?.lastScored ? computeScores(rec, marketData) : null;
+                const setupGrade = rec ? computeSetup(rec).grade : null;
+                const word = syn ? skewWord(syn.skew) : null;
+                const reportsOn = (["rbc", "jpm", "morningstar"] as const).filter((src) => r.reports?.[src]);
                 return (
                   <tr key={r.key}>
                     <td className="!pl-3.5">
                       <TickerLink ticker={r.heldTicker ?? r.ticker} className="font-mono font-medium text-ink hover:underline">{displayTicker(r.ticker)}</TickerLink>
+                      <span className="ml-2 hidden max-w-[180px] truncate text-[11.5px] text-ink-3 md:inline" title={r.name}>{r.name}</span>
                       {r.isNew && <span className="ml-2 text-[11px] text-pos">New</span>}
                       {r.bearish.length > 0 && (
                         <span className="ml-2 text-[11px] text-neg" title={`Bearish view: ${r.bearish.map((b) => b.label).join(", ")}`}>Bearish</span>
                       )}
                     </td>
-                    <td className="max-w-[200px] truncate" title={r.name}><span className="text-ink-2">{r.name || "—"}</span></td>
-                    <td><span className="text-ink-2">{r.sector || "—"}</span></td>
-                    <td className="n">
+                    <td className="n" title={r.lists.map((l) => l.label).join(" · ")}>
                       {r.listCount}
                       {r.listDelta !== 0 && <span className={`ml-1 text-[11px] ${r.listDelta > 0 ? "text-pos" : "text-neg"}`}>{r.listDelta > 0 ? "+" : ""}{r.listDelta}</span>}
                     </td>
                     <td className="n">
-                      {(() => {
-                        const rec = recordFor(r);
-                        if (!rec) return <span className="text-ink-faint" title="No staging record yet — the next Suggested refresh creates one.">—</span>;
-                        const scored = rec.lastScored ? computeScores(rec, marketData) : null;
-                        const data = [
-                          rec.marketEdge?.powerRating != null || rec.marketEdge?.opinion ? "M" : null,
-                          typeof rec.sia === "number" ? "S" : null,
-                          typeof rec.boostedAi === "number" ? "B" : null,
-                        ].filter(Boolean) as string[];
-                        return (
-                          <span className="inline-flex items-center justify-end gap-1.5">
-                            {scored ? (
-                              <span className="font-mono text-ink" title={`${scored.ratingLabel} · scored ${rec.lastScored?.slice(0, 10)}`}>{scored.adjusted.toFixed(1)}</span>
-                            ) : (
-                              <span className="text-ink-faint">—</span>
-                            )}
-                            {data.length > 0 && (
-                              <span className="font-sans text-[11px] text-ink-3" title={`Provider data on file: ${data.map((d) => (d === "M" ? "MarketEdge" : d === "S" ? "SIA" : "BoostedAI")).join(", ")}`}>{data.join("")}</span>
-                            )}
-                            {!h && (
-                              <button
-                                type="button"
-                                onClick={() => scoreOne(r)}
-                                disabled={scoringTicker != null}
-                                className={ROW_BTN}
-                                title={rec.lastScored ? "Re-score this name (full composite pass)" : "Score this name now (full composite pass) — nothing is scored automatically"}
-                              >
-                                {scoringTicker === r.ticker ? "…" : rec.lastScored ? "Re-score" : "Score"}
-                              </button>
-                            )}
-                          </span>
-                        );
-                      })()}
-                    </td>
-                    <td>
-                      {tier ? (
-                        <span className="inline-flex items-center gap-1.5" title={tier.reason}>
-                          <span className={`dot ${TIER_DOT[tier.tier].dot}`} />
-                          <span className={`text-[12px] ${TIER_DOT[tier.tier].text}`}>{TIER_DOT[tier.tier].word}</span>
-                        </span>
-                      ) : (
-                        <span className="text-ink-faint">—</span>
-                      )}
-                    </td>
-                    <td>
-                      <span className="inline-flex flex-wrap items-center gap-x-1.5 text-[12px]">
-                        {r.lists.map((l, i) => (
-                          <React.Fragment key={l.key}>
-                            {i > 0 && <span className="text-ink-faint">·</span>}
-                            <Link href={`/research/sources#${l.railKey}`} className="!text-accent hover:underline" title={l.label}>{l.short}</Link>
-                          </React.Fragment>
-                        ))}
+                      <span className="inline-flex items-center justify-end gap-1.5">
+                        {scored ? (
+                          <span className="font-mono text-ink" title={`${scored.ratingLabel} · scored ${rec?.lastScored?.slice(0, 10)}${setupGrade ? ` · setup ${setupGrade}` : ""}`}>{scored.adjusted.toFixed(1)}</span>
+                        ) : (
+                          <span className="text-ink-faint">—</span>
+                        )}
+                        {!h && rec && (
+                          <button type="button" onClick={() => scoreOne(r)} disabled={scoringTicker != null} className={ROW_BTN} title={rec.lastScored ? "Re-score this name (full composite pass)" : "Score this name now (full composite pass)"}>
+                            {scoringTicker === r.ticker ? "…" : rec.lastScored ? "Re-score" : "Score"}
+                          </button>
+                        )}
                       </span>
                     </td>
                     <td>
-                      {st && (
-                        <span
-                          className="font-mono text-[12px] text-ink"
-                          title={`Entry setup: ${st.met} of ${st.known} signals met${st.signals.length ? ` — ${st.signals.join(", ")}` : ""}${st.ready ? " · READY" : ""}`}
-                        >
-                          {st.met}<span className="text-ink-faint">/{st.known}</span>
-                          {st.ready && <span className="ml-1.5 font-sans text-[11px] text-pos">Ready</span>}
-                        </span>
-                      )}
-                      {r.improving.length > 0 && (
-                        <span className={`text-[11px] text-pos ${st ? "ml-1.5" : ""}`} title={r.improving.join(" · ")}>Improving</span>
-                      )}
-                      {!st && r.improving.length === 0 && <span className="text-ink-faint">—</span>}
+                      <span className="inline-flex items-center gap-2 text-[11px]">
+                        {(["rbc", "jpm", "morningstar"] as const).map((src) => {
+                          const on = r.reports?.[src];
+                          const label = src === "rbc" ? "RBC" : src === "jpm" ? "JPM" : "MS";
+                          return (
+                            <span key={src} className={on ? "inline-flex items-center gap-0.5 text-pos" : "text-ink-faint"} title={on ? `${label} report on file (${on})` : `${label} report not received`}>
+                              {label}{on && <AppIcon name="check" size={11} strokeWidth={2.25} />}
+                            </span>
+                          );
+                        })}
+                        <span className={r.factset ? "text-ink-2" : "text-ink-faint"} title="FactSet alert emails on file (Street Takeaways / Metrics Recap / news)">FS {r.factset ?? 0}</span>
+                        {reportsOn.length === 0 && !r.coverageRequestedAt && !h && (
+                          <button type="button" onClick={() => requestCov(r)} disabled={requesting === r.ticker} className={ROW_BTN} title="Queue the RBC/JPM coverage-request email to the desk">
+                            {requesting === r.ticker ? "…" : "Request"}
+                          </button>
+                        )}
+                        {r.coverageRequestedAt && reportsOn.length === 0 && <span className="text-ink-3" title={`Coverage requested ${r.coverageRequestedAt.slice(0, 10)}`}>req {r.coverageRequestedAt.slice(5, 10)}</span>}
+                      </span>
                     </td>
                     <td>
                       {r.decision ? (
@@ -532,11 +423,12 @@ export function SuggestedFunnel({ onCountChange }: { onCountChange?: (n: number)
                           <span className={`dot ${DECISION_DOT[r.decision.verdict].dot}`} />
                           <span className={`text-[12px] ${DECISION_DOT[r.decision.verdict].text}`}>{DECISION_DOT[r.decision.verdict].word}</span>
                         </span>
-                      ) : syn ? (
-                        <Link href={`/synthesis#syn-${r.ticker.toUpperCase()}`} className="text-[12px] !text-accent hover:underline" title={`${VERDICT_LABEL[syn.verdict]} · ${syn.generatedAt.slice(0, 10)}${syn.stale ? " · stale" : ""}`}>
-                          {VERDICT_LABEL[syn.verdict]}{syn.stale ? <span className="text-warn"> · stale</span> : null}
+                      ) : syn && word ? (
+                        <Link href={`/synthesis#syn-${r.ticker.toUpperCase()}`} className="inline-flex items-center gap-1.5" title={`Generated ${syn.generatedAt.slice(0, 10)}${syn.stale ? " — stale: regenerate" : ""}`}>
+                          <span className={`inline-flex h-[18px] items-center rounded px-1.5 text-[11px] font-medium ${SKEW_TONE[word]}`}>{word}</span>
+                          <span className="text-[11px] text-ink-3">{syn.generatedAt.slice(0, 10)}{syn.stale ? <span className="text-warn"> · stale</span> : null}</span>
                         </Link>
-                      ) : r.reports ? (
+                      ) : reportsOn.length > 0 ? (
                         <Link href={`/synthesis?ticker=${encodeURIComponent(r.ticker)}`} className="inline-flex items-center gap-1 text-[12px] !text-accent hover:underline" title="Reports on file, no synthesis yet — generate one on the Synthesis page">
                           Needs synthesis<AppIcon name="arrowR" size={11} />
                         </Link>
@@ -544,31 +436,7 @@ export function SuggestedFunnel({ onCountChange }: { onCountChange?: (n: number)
                         <span className="text-[12px] text-ink-faint" title="No analyst report on file yet — a synthesis would run on thin evidence. Request coverage first.">Awaiting reports</span>
                       )}
                     </td>
-                    <td>
-                      <span className="inline-flex items-center gap-2 text-[11px]">
-                        {/* Arrivals first: the reply-to-feed loop's visible end. */}
-                        {(["rbc", "jpm", "morningstar"] as const).map((src) => {
-                          const on = r.reports?.[src];
-                          const label = src === "rbc" ? "RBC" : src === "jpm" ? "JPM" : "MS";
-                          return (
-                            <span
-                              key={src}
-                              className={on ? "inline-flex items-center gap-0.5 text-pos" : "text-ink-faint"}
-                              title={on ? `${label} report on file (${on})` : `${label} report not received`}
-                            >
-                              {label}{on && <AppIcon name="check" size={11} strokeWidth={2.25} />}
-                            </span>
-                          );
-                        })}
-                        {r.coverageRequestedAt ? (
-                          <span className="text-ink-3" title={`Coverage requested ${r.coverageRequestedAt.slice(0, 10)}`}>req {r.coverageRequestedAt.slice(5, 10)}</span>
-                        ) : h ? null : (
-                          <button type="button" onClick={() => requestCov(r)} disabled={requesting === r.ticker} className={ROW_BTN} title="Queue the RBC/JPM coverage-request email to the desk">
-                            {requesting === r.ticker ? "…" : "Request"}
-                          </button>
-                        )}
-                      </span>
-                    </td>
+                    <td>{lane ? <LaneChip lane={lane} /> : <span className="text-ink-faint">—</span>}</td>
                     <td className="!text-right">
                       {showPassed ? (
                         <button type="button" onClick={() => restore(r)} className={ROW_BTN}>Restore</button>
@@ -586,38 +454,6 @@ export function SuggestedFunnel({ onCountChange }: { onCountChange?: (n: number)
               })}
             </tbody>
           </table>
-        </div>
-      )}
-
-      {/* AI adds & sector backdrops — folded one click away, persisted. */}
-      {ai?.view && (aiAdds.length > 0 || Object.keys(ai.view.sectorBackdrops).length > 0) && (
-        <div className="border-t border-line-soft">
-          <button type="button" onClick={toggleAdds} aria-expanded={showAdds} className="flex h-8 w-full items-center gap-1.5 px-3.5 text-[12px] text-ink-2 hover:text-ink">
-            <AppIcon name={showAdds ? "chevD" : "chevR"} size={12} strokeWidth={2} className="text-ink-3" />
-            AI adds <span className="font-mono text-[11px] text-ink-3">{aiAdds.length}</span>
-            <span className="text-ink-3">· sector backdrops</span>
-          </button>
-          {showAdds && (
-            <div className="flex flex-col gap-2 px-3.5 pb-3">
-              {aiAdds.length > 0 && (
-                <div>
-                  <p className="text-[11px] text-ink-3">Positioned names on fewer than {SUGGESTED_MIN_LISTS} lists — the model widening the funnel. Not on the Suggested list unless you add them.</p>
-                  <div className="mt-1.5 flex flex-wrap gap-x-4 gap-y-1">
-                    {aiAdds.map(([t, v]) => (
-                      <span key={t} className="inline-flex items-center gap-1.5 text-[12px]" title={v.reason}>
-                        <span className="dot bg-pos" />
-                        <TickerLink ticker={t} className="font-mono font-medium text-ink hover:underline">{displayTicker(t)}</TickerLink>
-                        <span className="text-ink-3">{v.listCount} list · {v.sector || "—"}</span>
-                      </span>
-                    ))}
-                  </div>
-                </div>
-              )}
-              {Object.entries(ai.view.sectorBackdrops).map(([sector, text]) => (
-                <p key={sector} className="text-[12px] leading-5 text-ink-2"><span className="font-medium text-ink">{sector}:</span> {text}</p>
-              ))}
-            </div>
-          )}
         </div>
       )}
 

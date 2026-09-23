@@ -7,7 +7,8 @@ import { useStocks } from "@/app/lib/StockContext";
 import { SCORE_GROUPS, ALL_GROUPS, SETUP_GROUP, MAX_SCORE, type ScoreKey } from "@/app/lib/types";
 import { groupTotal } from "@/app/lib/scoring";
 import { canonicalTicker, displayTicker } from "@/app/lib/ticker";
-import { VERDICT_LABEL, type SynthesisResult, type StaleReason } from "@/app/lib/synthesis-screen-display";
+import { skewWord, SKEW_TONE, type SynthesisResult, type StaleReason } from "@/app/lib/synthesis-screen-display";
+import { LegVerdictChips, useSleeveVerdicts } from "./LegVerdicts";
 import { describeCondition, type KillCondition } from "@/app/lib/kill-conditions";
 import { AppIcon } from "./AppIcon";
 import { SetupChip } from "./SetupChip";
@@ -32,12 +33,6 @@ type Takeaway = { id: string; date: string; kind?: string; headline?: string; ov
 const TABS = ["Overview", "Scores", "Thesis", "Alerts"] as const;
 type Tab = (typeof TABS)[number];
 
-function verdictTone(v: string | undefined): string {
-  if (v === "advance" || v === "thesis-intact") return "bg-pos-soft text-pos";
-  if (v === "pass" || v === "exit-watch") return "bg-neg-soft text-neg";
-  if (!v) return "bg-surface-2 text-ink-3";
-  return "bg-warn-soft text-warn";
-}
 
 function Section({ title, meta, children }: { title: string; meta?: React.ReactNode; children: React.ReactNode }) {
   return (
@@ -76,6 +71,7 @@ export function HoldingInspector({
 
   // Loaded data is keyed by ticker so switching names shows fresh state
   // without a synchronous reset inside the effect.
+  const legVerdicts = useSleeveVerdicts();
   const [synthBy, setSynth] = useState<{ t: string; v: SynthRow | null } | null>(null);
   const [thesisBy, setThesis] = useState<{ t: string; v: ThesisEntry | null } | null>(null);
   const [checkBy, setCheck] = useState<{ t: string; v: ThesisCheck | null } | null>(null);
@@ -125,7 +121,8 @@ export function HoldingInspector({
   if (!s) return null;
 
   const res = synth?.entry?.result;
-  const verdict = res?.verdict as string | undefined;
+  const word = res ? skewWord(res.skew) : null;
+  const legs = legVerdicts[ticker.toUpperCase()];
   const conditions = thesis?.killConditions ?? [];
   const trippedIds = new Set(conditions.filter((c) => c.trippedAt).map((c) => c.id));
   const currency = tickerCurrency(ticker);
@@ -137,9 +134,10 @@ export function HoldingInspector({
       title="Synthesis"
       meta={
         <span className="inline-flex items-center gap-2">
-          <span className={`inline-flex h-[18px] items-center rounded px-1.5 text-[11px] font-medium ${verdictTone(verdict)}`}>
-            {verdict ? VERDICT_LABEL[verdict as keyof typeof VERDICT_LABEL] ?? verdict : "Not generated"}
+          <span className={`inline-flex h-[18px] items-center rounded px-1.5 text-[11px] font-medium ${word ? SKEW_TONE[word] : "bg-surface-2 text-ink-2"}`} title="Risk/reward lean of the latest synthesis">
+            {word ?? "Not generated"}
           </span>
+          {legs && <LegVerdictChips legs={legs} />}
           {synth?.entry?.generatedAt && <span>{fmtDate(synth.entry.generatedAt)}{synth.stale.length > 0 ? " · stale" : ""}</span>}
         </span>
       }

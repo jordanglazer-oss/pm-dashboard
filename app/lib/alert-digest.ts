@@ -1,7 +1,6 @@
 import { getRedis } from "@/app/lib/redis";
 import { createLogger } from "@/app/lib/logger";
-import { computeAlerts, alertCounts, entryAlerts, type Alert } from "@/app/lib/alerts";
-import { getEntryScan, newlyReady } from "@/app/lib/entry-scan";
+import { computeAlerts, alertCounts, type Alert } from "@/app/lib/alerts";
 import { loadAlertInputs } from "@/app/lib/alert-inputs";
 import { enqueueMail } from "@/app/lib/mail-outbox";
 import { isTradingWeekdayET } from "@/app/lib/market-calendar";
@@ -107,15 +106,8 @@ export async function runAlertDigest(opts?: {
     const redis = await getRedis();
     const { thesis, transition, risk, context, killWatch, tacticalWatch, thesisVerdicts } = await loadAlertInputs();
 
-    // Entry scorecard flips (Watchlist / Suggested names newly reading ready)
-    // ride along as HIGH so the email carries the push. Scan is rebuilt by
-    // the cron just before this runs; cached read here.
-    let entry: Alert[] = [];
-    try {
-      const scan = await getEntryScan();
-      entry = entryAlerts(newlyReady(scan));
-    } catch { /* no entry push tonight */ }
-    const alerts = [...computeAlerts({ thesis, transition, risk, context, killWatch, tacticalWatch, thesisVerdicts }), ...entry];
+    // Entry-ready pushes retired 2026-09-23 (the lanes replaced them).
+    const alerts = computeAlerts({ thesis, transition, risk, context, killWatch, tacticalWatch, thesisVerdicts });
     const counts = alertCounts(alerts);
     const today = new Date().toISOString().slice(0, 10);
 

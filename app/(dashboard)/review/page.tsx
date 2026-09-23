@@ -149,14 +149,17 @@ export default function ReviewPage() {
   const saveDecision = useCallback(async (symbol: string, d: WeightDecision | null) => {
     setSaving(symbol);
     try {
-      const r = await fetch("/api/kv/weight-decisions", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ month, groupId, profile, decisions: { [symbol]: d } }) });
+      const body = symbol === "__all__"
+        ? { month, groupId, profile, decisions: Object.fromEntries(Object.keys(decisions).map((k) => [k, null])) }
+        : { month, groupId, profile, decisions: { [symbol]: d } };
+      const r = await fetch("/api/kv/weight-decisions", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
       const j = await r.json();
       if (r.ok && j.review) setStore((s) => ({ months: { ...(s?.months ?? {}), [month]: j.review } }));
       else setCommitMsg(j.error ?? "save failed");
     } finally {
       setSaving(null);
     }
-  }, [month, profile]);
+  }, [month, profile, decisions]);
 
   const setAction = (r: Row, action: DecisionAction) => {
     if (action === "keep") return saveDecision(r.symbol, { action: "keep", liveInClass: r.liveInClass, at: "" });
@@ -321,7 +324,7 @@ export default function ReviewPage() {
                       <button type="button" disabled={committed || busy || r.live == null} className={d?.action === "adopt" ? "on" : ""} onClick={() => setAction(r, "adopt")} title={r.live == null ? "No live weight — save positions first" : "Let it ride — the live weight becomes the new target, no trade"}>Adopt live</button>
                       <button type="button" disabled={committed || busy} className={d?.action === "set" ? "on" : ""} onClick={() => setAction(r, "set")} title="An explicit trim or add — type the new target">Set</button>
                     </div>
-                    {d && !committed && <button type="button" onClick={() => saveDecision(r.symbol, null)} className="ml-1 text-[10.5px] text-ink-faint hover:text-ink-2" title="Clear this decision">×</button>}
+                    {d && !committed && <button type="button" onClick={() => saveDecision(r.symbol, null)} className="ml-1.5 inline-flex h-6 items-center rounded-control border border-line bg-surface px-1.5 text-[11px] text-ink-2 hover:bg-surface-hover" title="Undo — remove this decision; the current target stands">Undo</button>}
                   </td>
                   <td className="hidden xl:table-cell">
                     {d && !committed ? (
@@ -337,6 +340,9 @@ export default function ReviewPage() {
         <div className="flex flex-wrap items-center gap-3 border-t border-line-soft px-3 py-2 text-[11.5px] text-ink-3">
           <span>Rule: stocks {pct(legs.thesisLeg * eqAlloc)} Thesis leg · {pct(legs.tacticalLeg * eqAlloc)} Tactical leg (equal legs, {(DEFAULT_THESIS_SHARE * 100).toFixed(0)}/{((1 - DEFAULT_THESIS_SHARE) * 100).toFixed(0)} split) — targets above are what the models hold today.</span>
           <span className="flex-grow" />
+          {decided > 0 && !committed && (
+            <button type="button" onClick={() => { if (window.confirm(`Clear all ${decided} decisions for ${month}? Targets are unchanged either way.`)) void saveDecision("__all__", null); }} className="inline-flex h-7 items-center rounded-control border border-line bg-surface px-2.5 text-[12px] text-ink-2 hover:bg-surface-hover" title="Remove every decision drafted this month">Clear all</button>
+          )}
           <button type="button" onClick={() => setShowDiff((v) => !v)} className="inline-flex h-7 items-center rounded-control border border-line bg-surface px-2.5 text-[12px] text-ink-2 hover:bg-surface-hover">{showDiff ? "Hide diff" : "Preview diff — every model"}</button>
           <button
             type="button"

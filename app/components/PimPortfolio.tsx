@@ -3135,7 +3135,8 @@ export function PimPortfolio({ groups }: Props) {
   const showAcb = editMode || posView !== "drift";
   const showGain = hasPositions && (editMode || posView !== "drift");
   const showGainCad = hasPositions && posView === "gain";
-  const showBar = hasPositions && posView === "drift";
+  // Drift bar column removed 2026-09-23 (the drift figure stays).
+  const showBar = false as boolean;
   // The positions table now owns the FULL content width in every view, so there
   // is no narrow/wide variant to switch on — Drift is reachable without any
   // sideways scrolling regardless of which money columns are showing.

@@ -182,44 +182,6 @@ export default function FunnelPage() {
         </Panel>
       </div>
 
-      {/* ── Ready to buy: the entry scorecard's push ── */}
-      <Panel prefKey="funnel.readyToBuy.open" mark={readyRows.length > 0 ? "bg-pos" : ""} title="Ready to buy" count={readyRows.length} sub={`Watchlist and Suggested names where ${5}+ entry signals are met (200-day, 50/200, no critical alert, SIA level/trend, Equate, MarketEdge, revisions, synthesis Advance, catalyst, list confluence). A flip into ready raises a HIGH alert in the digest.${entry ? ` Scanned ${entry.builtAt.slice(0, 16).replace("T", " ")}.` : ""}`}>
-        {readyRows.length === 0 ? <Empty text="Nothing reads ready yet." icon="clock" /> : (
-          <div className="tbl-wrap">
-            <table className="data-table">
-              <thead><tr><th className="pl-3.5">Name</th><th>Stage</th><th>Signals</th><th>Why</th><th>Ready since</th><th className="text-right pr-3.5">Action</th></tr></thead>
-              <tbody>
-                {readyRows.map((r) => (
-                  <tr key={r.ticker}>
-                    <NameCell ticker={r.ticker} name={r.name} />
-                    <td className="text-ink-2">{r.bucket}</td>
-                    <td className="whitespace-normal py-2"><Signals r={r} /></td>
-                    <td className="whitespace-normal py-2 text-[12px] text-ink-2">{r.why ?? <span className="text-ink-faint">—</span>}</td>
-                    <td className="text-[12px] text-ink-3">
-                      {r.readySince ?? "—"}{r.readySince && entry?.newlyReady.includes(r.ticker) ? <span className="ml-1 text-pos">new</span> : null}
-                    </td>
-                    <td className="pr-3.5 text-right">
-                      <span className="inline-flex gap-1">
-                        <Link href={`/synthesis?ticker=${encodeURIComponent(r.ticker)}`} className={BTN22}>Synthesis</Link>
-                        {r.bucket === "Watchlist" ? (
-                          <Link href="/portfolio" className={BTN22}>Buy / Sell</Link>
-                        ) : (
-                          <Link href="/?bucket=Suggested" className={BTN22}>Advance</Link>
-                        )}
-                      </span>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-        {buildingRows.length > 0 && (
-          <div className="flex min-h-8 items-center border-t border-line-soft px-3.5 py-1.5 text-[11.5px] text-ink-3">
-            Building: {buildingRows.map((r) => `${displayTicker(r.ticker)} ${r.met}/${r.known}`).join(" · ")}
-          </div>
-        )}
-      </Panel>
 
       <div className="grid grid-cols-1 items-start gap-3.5 lg:grid-cols-2">
         {/* ── Thesis required ── */}

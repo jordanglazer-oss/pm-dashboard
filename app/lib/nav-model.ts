@@ -53,7 +53,6 @@ export const NAV_GROUPS: NavGroup[] = [
     items: [
       { key: "synthesis", label: "Synthesis", href: "/synthesis", icon: "spark" },
       { key: "pipeline", label: "Pipeline", href: "/funnel", icon: "branch", match: (p) => p === "/conviction" },
-      { key: "screen", label: "Screen", href: "/screener", icon: "filter", match: (p) => p === "/radar" || p === "/setups" || p === "/factor-lab" || p.startsWith("/screener/") },
     ],
   },
   {

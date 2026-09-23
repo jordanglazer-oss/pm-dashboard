@@ -16,7 +16,7 @@
 import { getRedis } from "./redis";
 import { createLogger } from "./logger";
 import { canonicalTicker, crossListingRoot } from "./ticker";
-import { evaluateEntry, evaluateEntryLegacy, type EntrySignal, type EntryInputs } from "./entry-conditions";
+import { evaluateEntry, type EntrySignal, type EntryInputs } from "./entry-conditions";
 import { computeSetup } from "./setup-grade";
 import { readStockPool, findInPool } from "./stock-pool";
 import type { Stock } from "./types";
@@ -49,10 +49,6 @@ export type EntryRow = {
   readySince?: string;
   /** "Why I'm watching" captured at Advance time (pm:entry-cases). */
   why?: string;
-  /** Pre-unification readiness (five separate technical signals) — TEMPORARY,
-   *  feeds /api/admin/entry-unification-diff; remove with evaluateEntryLegacy. */
-  legacyReady?: boolean;
-  legacyStrength?: "ready" | "building" | "early";
   /** Thesis / Tactical lane read (app/lib/lanes) — additive. */
   lane?: LaneRead;
 };
@@ -159,7 +155,6 @@ export async function buildEntryScan(): Promise<EntryScan> {
       listDelta,
     };
     const ev = evaluateEntry(inputs, today);
-    const legacy = evaluateEntryLegacy(inputs, today);
     let lane: LaneRead | undefined;
     try {
       const tr = getReportsForTicker(reports, ticker);
@@ -186,8 +181,6 @@ export async function buildEntryScan(): Promise<EntryScan> {
       bucket,
       ...ev,
       why: cases[tk]?.why ?? cases[root]?.why,
-      legacyReady: legacy.ready,
-      legacyStrength: legacy.strength,
       lane,
     };
   };

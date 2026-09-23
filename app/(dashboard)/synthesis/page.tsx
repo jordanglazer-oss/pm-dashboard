@@ -13,13 +13,13 @@ import { MAX_SCORE, type Stock, type ScoreKey, ZERO_SCORES as ALL_ZERO_SCORES } 
 import type { SuggestedDecision } from "@/app/lib/suggested-watchlist";
 import TickerLink from "@/app/components/TickerLink";
 import {
-  VERDICT_LABEL,
   STALE_LABEL,
   type SynthesisEntry,
   type SynthesisBullet,
   type StaleReason,
   type SynthesisHistoryRow,
-  type SynthesisVerdict,
+  skewWord,
+  SKEW_TONE,
 } from "@/app/lib/synthesis-screen-display";
 import type { SectorLeadership, LeadershipRow } from "@/app/lib/sector-leadership";
 
@@ -98,15 +98,6 @@ const FILTER_LABELS: { mode: FilterMode; label: string; title: string }[] = [
 type ScreenData = { rows: Row[]; leadership: SectorLeadership };
 
 /** Verdict word pill — the one place a pill is still allowed. */
-const VERDICT_PILL: Record<string, string> = {
-  advance: "bg-pos-soft text-pos",
-  watch: "bg-warn-soft text-warn",
-  pass: "bg-surface-2 text-ink-2",
-  "thesis-intact": "bg-pos-soft text-pos",
-  review: "bg-warn-soft text-warn",
-  "exit-watch": "bg-neg-soft text-neg",
-};
-
 /** Sort weight: most actionable verdicts first within a section. */
 const VERDICT_ORDER: Record<string, number> = {
   advance: 0,
@@ -121,44 +112,14 @@ const BTN22 = "inline-flex h-[22px] items-center gap-1 rounded-control border bo
 const BTN = "inline-flex h-7 items-center gap-1.5 rounded-control border border-line bg-surface px-2.5 text-[12.5px] text-ink-2 hover:bg-surface-hover disabled:opacity-40";
 const LABEL = "text-[11px] text-ink-3";
 
-function VerdictChip({ entry }: { entry: SynthesisEntry }) {
-  const v = entry.result.verdict;
-  return (
-    <span className={`inline-flex h-[18px] items-center rounded px-1.5 text-[11px] font-medium ${VERDICT_PILL[v] ?? "bg-surface-2 text-ink-2"}`}>
-      {VERDICT_LABEL[v] ?? v}
-    </span>
-  );
-}
 
 function SkewText({ skew }: { skew: number }) {
-  const cls = skew > 0 ? "text-pos" : skew < 0 ? "text-neg" : "text-ink-3";
-  const label = skew > 0 ? `Bull +${skew}` : skew < 0 ? `Bear ${skew}` : "Balanced";
-  return <span className={`font-mono text-[11px] ${cls}`} title="Risk/reward skew (−2 bear-heavy … +2 bull-heavy)">{label}</span>;
+  // The one word a synthesis shows: the sign of its risk/reward skew.
+  const word = skewWord(skew) ?? "Neutral";
+  return <span className={`inline-flex h-[18px] items-center rounded px-1.5 text-[11px] font-medium ${SKEW_TONE[word]}`} title="Risk/reward lean of the latest synthesis">{word}</span>;
 }
 
 /** Higher = better outcome, per bucket. Drives the change-marker arrow. */
-const VERDICT_GOODNESS: Record<string, number> = {
-  pass: 0,
-  watch: 1,
-  advance: 2,
-  "exit-watch": 0,
-  review: 1,
-  "thesis-intact": 2,
-};
-
-function VerdictChangeMarker({ current, previous }: { current: SynthesisVerdict; previous: SynthesisHistoryRow }) {
-  if (previous.verdict === current) return null;
-  const improved = (VERDICT_GOODNESS[current] ?? 1) > (VERDICT_GOODNESS[previous.verdict] ?? 1);
-  return (
-    <span
-      className={`inline-flex items-center gap-0.5 text-[11px] ${improved ? "text-pos" : "text-neg"}`}
-      title={`Was ${VERDICT_LABEL[previous.verdict] ?? previous.verdict} on ${previous.date}`}
-    >
-      <AppIcon name={improved ? "chevU" : "chevD"} size={11} strokeWidth={2.25} />
-      was {VERDICT_LABEL[previous.verdict] ?? previous.verdict}
-    </span>
-  );
-}
 
 function EvidenceIcons({ evidence }: { evidence: Evidence }) {
   const chip = (label: string, on: boolean, title: string) => (
@@ -904,9 +865,7 @@ export default function SynthesisPage() {
                           <td>
                             {row.entry && r ? (
                               <span className="inline-flex flex-wrap items-center gap-x-2 gap-y-0.5">
-                                <VerdictChip entry={row.entry} />
                                 <SkewText skew={r.skew} />
-                                {row.previous && <VerdictChangeMarker current={r.verdict} previous={row.previous} />}
                               </span>
                             ) : (
                               <span className="text-ink-faint">—</span>

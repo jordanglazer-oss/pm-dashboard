@@ -233,7 +233,6 @@ export function ReadyToActPanel({ pipeline }: { pipeline: PipelineData }) {
 export function IdeasRail({ pipeline }: { pipeline: PipelineData }) {
   return (
     <div className="flex min-w-0 flex-col gap-3.5">
-      <ScreenPanel />
       <ReadyToActPanel pipeline={pipeline} />
     </div>
   );

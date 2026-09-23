@@ -40,6 +40,11 @@ export function SetupChip({
         <span>Setup</span>
         <span>{r.grade ?? "n/a"}</span>
         {r.score != null && <span className="font-mono opacity-80">{r.rawPoints}/{r.availableMax}</span>}
+        {r.score != null && (() => {
+          // A small denominator means a feed is missing for this name — say which.
+          const missing = r.inputs.filter((i) => !i.present && i.key !== "charting").map((i) => i.label);
+          return missing.length ? <span className="font-normal opacity-70">· no {missing.join(" / ")}</span> : null;
+        })()}
         {r.notches > 0 && <span aria-label={`${r.notches} notch${r.notches === 1 ? "" : "es"} down`}>{"▼".repeat(r.notches)}</span>}
       </span>
       {showAction && conviction && r.grade && (

@@ -109,3 +109,13 @@ export type SynthesisHistoryRow = {
 };
 
 export type SynthesisHistory = Record<string, SynthesisHistoryRow[]>;
+
+/** The one word the tables show for a synthesis: the sign of its risk/reward
+ *  skew. The verdict vocabulary (advance / pass / exit-watch …) stays internal
+ *  — the lanes and the tactical exit rule read it; nothing displays it. */
+export type SkewWord = "Bull" | "Neutral" | "Bear";
+export function skewWord(skew: number | null | undefined): SkewWord | null {
+  if (skew == null || !Number.isFinite(skew)) return null;
+  return skew > 0 ? "Bull" : skew < 0 ? "Bear" : "Neutral";
+}
+export const SKEW_TONE: Record<SkewWord, string> = { Bull: "bg-pos-soft text-pos", Neutral: "bg-line-soft text-ink-2", Bear: "bg-neg-soft text-neg" };

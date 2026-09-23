@@ -22,7 +22,6 @@ import RiskAlertPanel from "@/app/components/RiskAlertPanel";
 import ScoreHistory from "@/app/components/ScoreHistory";
 import ThesisTile from "@/app/components/ThesisTile";
 import { ThesisRequiredBanner } from "@/app/components/ThesisRequiredBanner";
-import FactorLensTile from "@/app/components/FactorLensTile";
 import StreetTakeawaysTile from "@/app/components/StreetTakeawaysTile";
 import { StockSynthesisTile } from "@/app/components/StockSynthesisTile";
 import { LaneTile } from "@/app/components/LaneTile";
@@ -2585,9 +2584,6 @@ export default function StockDetailPage() {
                 )}
                 {stock.healthData && (
                   <StockHealthMonitor healthData={stock.healthData} technicals={stock.technicals} className="px-3.5 py-3" />
-                )}
-                {scoreable && (
-                  <FactorLensTile ticker={stock.ticker} adjusted={stock.adjusted} className="px-3.5 py-3" />
                 )}
               </div>
             </section>

@@ -8,8 +8,6 @@ import { HoldingInspector } from "@/app/components/HoldingInspector";
 import { AppIcon } from "@/app/components/AppIcon";
 import { usePersistedOpen } from "@/app/lib/useCollapsed";
 import { CockpitBand } from "@/app/components/CockpitBand";
-import { AttentionPanel } from "@/app/components/AttentionPanel";
-import { ChangeMonitor } from "@/app/components/ChangeMonitor";
 import { ScoreCalibration } from "@/app/components/ScoreCalibration";
 import { ForwardScorePanel } from "@/app/components/ForwardScorePanel";
 import { regimeMultiplier, normalizeSector } from "@/app/lib/scoring";
@@ -86,9 +84,7 @@ export default function DashboardPage() {
     <main className="min-h-screen bg-ground text-ink overflow-x-hidden">
       <div className="flex flex-col gap-3.5">
 
-        {/* Proactive "needs your attention" digest (Phase 07) — renders only
-            when there's something actionable, so calm days stay clean. */}
-        <AttentionPanel />
+        {/* Attention lives in ONE place — the Brief action queue (2026-09-23). */}
 
         {/* Holdings + docked inspector (canvas Main.dc.html). The inspector
             docks at lg+ beside the table AND the two-up band; below lg it
@@ -96,7 +92,6 @@ export default function DashboardPage() {
         <div className="flex flex-col gap-3.5 lg:flex-row lg:items-start">
           <div className="min-w-0 flex-1">
             <PortfolioOverview
-              sidebar={<ChangeMonitor />}
               selectedTicker={selectedTicker}
               onSelectTicker={(t) => setSelectedTicker((cur) => (cur && cur.toUpperCase() === t.toUpperCase() ? null : t))}
             />
