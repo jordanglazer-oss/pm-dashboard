@@ -3,7 +3,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useStocks } from "@/app/lib/StockContext";
-import { computeSetup, actionFor } from "@/app/lib/setup-grade";
+import { computeSetup } from "@/app/lib/setup-grade";
 import { sleevesOf, isCoreDesignated } from "@/app/lib/sleeves";
 import { isScoreable } from "@/app/lib/scoring";
 import { displayTicker } from "@/app/lib/ticker";
@@ -18,6 +18,19 @@ import type { EntryScan } from "@/app/lib/entry-scan";
  * Read-only. The Tactical ENTRY FLOOR (a minimum conviction band / no critical
  * alert to open a Tactical position) is deliberately not enforced yet — the PM
  * deferred it; the columns it would gate on are all shown. */
+
+/** Entry-framed read for a name that is NOT owned. actionFor() is the
+ *  hold/trim/exit grid for held names and says "Exit on strength" for a
+ *  low-conviction watchlist name — meaningless when there is nothing to exit. */
+function benchAction(conviction: string | undefined, grade: string | null, ready: boolean | undefined): string {
+  const strongCase = conviction === "Strong Buy" || conviction === "Moderate Buy";
+  const setupOk = grade === "Strong" || grade === "Constructive";
+  if (ready && strongCase) return "Enter";
+  if (strongCase && setupOk) return "Enter — scorecard not yet ready";
+  if (strongCase) return grade === "Neutral" ? "Wait for setup" : grade ? "Setup against it — wait" : "Wait for setup";
+  if (conviction === "Hold") return setupOk ? "Tactical only — needs a plan" : "Not a candidate now";
+  return "Not a candidate";
+}
 
 const GRADE_ORDER: Record<string, number> = { Strong: 0, Constructive: 1, Neutral: 2, Weak: 3, Broken: 4 };
 const gradeCls = (g: string | null) => (g === "Strong" || g === "Constructive" ? "text-pos" : g === "Weak" || g === "Broken" ? "text-neg" : "text-ink-3");
@@ -37,7 +50,7 @@ export function TacticalBench() {
     .map((s) => {
       const setup = computeSetup(s);
       const e = scanBy.get(s.ticker.toUpperCase());
-      return { s, setup, e, action: actionFor(s.ratingLabel || s.rating, setup.grade ?? "Neutral") };
+      return { s, setup, e, action: benchAction(s.ratingLabel || s.rating, setup.grade, e?.ready) };
     })
     .sort((a, b) => Number(b.e?.ready ?? false) - Number(a.e?.ready ?? false) || (b.e?.met ?? 0) - (a.e?.met ?? 0) || (GRADE_ORDER[a.setup.grade ?? "Neutral"] - GRADE_ORDER[b.setup.grade ?? "Neutral"]) || b.s.adjusted - a.s.adjusted), [scoredStocks, scanBy]);
 
@@ -60,7 +73,7 @@ export function TacticalBench() {
         <div>
           <div className="mb-1 text-[11.5px] font-medium text-ink-2">Watchlist · {watch.length} · ready {watch.filter((w) => w.e?.ready).length}</div>
           <div className="overflow-auto"><table className="data-table">
-            <thead><tr><th>Name</th><th>Entry</th><th>Setup</th><th className="text-right">Score</th><th className="text-right">Action</th></tr></thead>
+            <thead><tr><th>Name</th><th>Entry</th><th>Setup</th><th className="text-right">Score</th><th className="text-right" title="Entry read: the conviction rating × setup grade × entry scorecard. Enter = Strong/Moderate Buy with the scorecard ready.">Entry read</th></tr></thead>
             <tbody>
               {watch.slice(0, 15).map(({ s, setup, e, action }) => row(s.ticker, s.name, [
                 <span key="e" className={e?.ready ? "text-pos" : "text-ink-3"}>{e ? `${e.strength} · ${e.met}/${e.known}` : "—"}</span>,
