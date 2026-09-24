@@ -26,6 +26,7 @@ import type { ResearchRemovalStore } from "./research-removals";
 import { siaPercentileDrift, type SiaHistoryStore } from "./sia-history";
 import { isScoreable, marketEdgeApplies } from "./scoring";
 import { ratingLabelFor, ratingTierFor } from "./rating-bands";
+import { sleevesOf } from "./sleeves";
 
 // ── Tunable thresholds ──────────────────────────────────────────────
 export const THRESHOLDS = {
@@ -33,6 +34,9 @@ export const THRESHOLDS = {
   compositeMove: 2,
   /** Min absolute weekly price move (%) to surface a "price" event. */
   priceMovePct: 7,
+  /** Tighter price threshold for Tactical-sleeve holdings — a tactical trade
+   *  lives on the tape, so a smaller move is already worth a look. */
+  priceMovePctTactical: 5,
   /** A source value not refreshed in this many days reads as "going stale". */
   staleDays: 21,
   /**
@@ -59,6 +63,11 @@ export type ChangeEvent = {
   ticker: string;
   name?: string;
   bucket?: "Portfolio" | "Watchlist";
+  /** Alpha sleeve of a held name (app/lib/sleeves). Tape events (price, SIA
+   *  relative strength, vendor-signal split) on a Thesis-ONLY name are
+   *  downgraded to "info": a Thesis name is judged on its pillars, not the
+   *  tape. Tactical names keep the full severity and a tighter price bar. */
+  sleeve?: "thesis" | "tactical" | "both";
   type: ChangeType;
   severity: Severity;
   headline: string;
@@ -142,6 +151,19 @@ export function computeChangeEvents(input: ComputeInput): ChangeEvent[] {
   for (const s of stocks) byTicker.set(s.ticker.toUpperCase(), s);
   const nameFor = (t: string) => byTicker.get(t.toUpperCase())?.name;
   const bucketFor = (t: string) => byTicker.get(t.toUpperCase())?.bucket as "Portfolio" | "Watchlist" | undefined;
+  const sleeveFor = (s: Stock | undefined): ChangeEvent["sleeve"] => {
+    if (!s || s.bucket !== "Portfolio") return undefined;
+    const { thesis, tactical } = sleevesOf(s);
+    return thesis && tactical ? "both" : thesis ? "thesis" : tactical ? "tactical" : undefined;
+  };
+  // Tape severity: informational on a Thesis-only holding, unchanged otherwise.
+  const tapeSeverity = (s: Stock, sev: Severity): Severity => (sleeveFor(s) === "thesis" ? "info" : sev);
+  const tapeNote = (s: Stock): string => {
+    const sl = sleeveFor(s);
+    if (sl === "thesis") return " — informational: a Thesis name is judged on its pillars, not the tape";
+    if (sl === "tactical" || sl === "both") return " — Tactical: check the plan (stop / target / review)";
+    return "";
+  };
 
   // ── 1. Rating / composite changes from score-history ──────────────
   for (const [ticker, entriesRaw] of Object.entries(scoreHistory)) {
@@ -299,14 +321,16 @@ export function computeChangeEvents(input: ComputeInput): ChangeEvent[] {
     const base = priceBaseline[T];
     if (typeof base === "number" && base > 0 && typeof s.price === "number" && s.price > 0) {
       const pct = ((s.price - base) / base) * 100;
-      if (Math.abs(pct) >= THRESHOLDS.priceMovePct) {
+      const sl = sleeveFor(s);
+      const bar = sl === "tactical" || sl === "both" ? THRESHOLDS.priceMovePctTactical : THRESHOLDS.priceMovePct;
+      if (Math.abs(pct) >= bar) {
         events.push({
           id: `${T}:price:${todayIso}`,
-          ticker: s.ticker, name: s.name, bucket: s.bucket as "Portfolio" | "Watchlist",
+          ticker: s.ticker, name: s.name, bucket: s.bucket as "Portfolio" | "Watchlist", sleeve: sl,
           type: "price",
-          severity: pct >= 0 ? "up" : "down",
+          severity: tapeSeverity(s, pct >= 0 ? "up" : "down"),
           headline: `${fmtSigned(pct)}% this week`,
-          detail: pct < 0 ? "Price fell — thesis check / possible add" : "Up sharply",
+          detail: (pct < 0 ? "Price fell — thesis check / possible add" : "Up sharply") + tapeNote(s),
           delta: `${fmtSigned(pct)}%`,
           at: todayIso,
         });
@@ -324,11 +348,11 @@ export function computeChangeEvents(input: ComputeInput): ChangeEvent[] {
       if (hi.v - lo.v >= 2) {
         events.push({
           id: `${T}:signal:${hi.label}-${lo.label}`,
-          ticker: s.ticker, name: s.name, bucket: s.bucket as "Portfolio" | "Watchlist",
+          ticker: s.ticker, name: s.name, bucket: s.bucket as "Portfolio" | "Watchlist", sleeve: sleeveFor(s),
           type: "signal",
-          severity: "warn",
+          severity: tapeSeverity(s, "warn"),
           headline: `${hi.label} strong, ${lo.label} weak`,
-          detail: "Independent signals disagree — worth a look",
+          detail: "Independent signals disagree — worth a look" + tapeNote(s),
           at: todayIso,
         });
       }
@@ -367,13 +391,13 @@ export function computeChangeEvents(input: ComputeInput): ChangeEvent[] {
       const smaxFlat = drift.smaxFrom != null && drift.smaxFrom === drift.smaxTo;
       events.push({
         id: `${T}:relative-strength:${drift.fromDate}-${drift.toDate}`,
-        ticker: s.ticker, name: s.name, bucket: s.bucket as "Portfolio" | "Watchlist",
+        ticker: s.ticker, name: s.name, bucket: s.bucket as "Portfolio" | "Watchlist", sleeve: sleeveFor(s),
         type: "relative-strength",
-        severity: "down",
+        severity: tapeSeverity(s, "down"),
         headline: `SIA relative strength falling${smaxFlat ? ` (SMAX still ${drift.smaxTo})` : ""}`,
-        detail: smaxFlat
+        detail: (smaxFlat
           ? `SIA percentile ${drift.from.toFixed(0)} → ${drift.to.toFixed(0)} since ${drift.fromDate}, with no change in SMAX — the score won't show this yet`
-          : `SIA percentile ${drift.from.toFixed(0)} → ${drift.to.toFixed(0)} since ${drift.fromDate}`,
+          : `SIA percentile ${drift.from.toFixed(0)} → ${drift.to.toFixed(0)} since ${drift.fromDate}`) + tapeNote(s),
         delta: fmtSigned(drift.delta, 0),
         at: todayIso,
       });

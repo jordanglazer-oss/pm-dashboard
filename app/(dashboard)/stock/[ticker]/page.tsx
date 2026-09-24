@@ -22,13 +22,18 @@ import RiskAlertPanel from "@/app/components/RiskAlertPanel";
 import ScoreHistory from "@/app/components/ScoreHistory";
 import ThesisTile from "@/app/components/ThesisTile";
 import { ThesisRequiredBanner } from "@/app/components/ThesisRequiredBanner";
-import FactorLensTile from "@/app/components/FactorLensTile";
 import StreetTakeawaysTile from "@/app/components/StreetTakeawaysTile";
 import { StockSynthesisTile } from "@/app/components/StockSynthesisTile";
+import { LaneTile } from "@/app/components/LaneTile";
+import { StockSummaryCard } from "@/app/components/StockSummaryCard";
 import { AppIcon } from "@/app/components/AppIcon";
 import { usePrevPage } from "@/app/lib/nav-history";
 import { ScoreDelta } from "@/app/components/ScoreDelta";
 import { CollapsibleSection } from "@/app/components/CollapsibleSection";
+import { SleeveTags } from "@/app/components/SleeveTags";
+import { isSleeveTaggable, sleevesOf } from "@/app/lib/sleeves";
+import { TacticalPlanTile } from "@/app/components/TacticalPlanTile";
+import { LegVerdictChips, useSleeveVerdicts } from "@/app/components/LegVerdicts";
 import { colorForSector } from "@/app/lib/sectorColors";
 import { useNotifications } from "@/app/lib/NotificationsContext";
 import { EditableNumberCell, ConsensusButton } from "@/app/components/EditableScoreInputs";
@@ -1111,6 +1116,7 @@ export default function StockDetailPage() {
   }, [menuOpen]);
 
   const scoreable = stock ? isScoreable(stock) : true;
+  const legVerdicts = useSleeveVerdicts();
 
   // ?action=rescore (from the command palette): kick off the same rescore the
   // Score button runs, once, then strip the param so refresh/back can't
@@ -1596,7 +1602,7 @@ export default function StockDetailPage() {
         {railGroup("WL funds & ETFs", watchlistFundTickers)}
       </div>
 
-      {stock.bucket === "Portfolio" && scoreable && (
+      {stock.bucket === "Portfolio" && (scoreable || sleevesOf(stock).thesis || sleevesOf(stock).tactical) && (
         <ThesisRequiredBanner ticker={stock.ticker} />
       )}
 
@@ -1615,6 +1621,9 @@ export default function StockDetailPage() {
           </span>
         )}
         <span className="text-[12px] text-ink-3">{identityMeta}</span>
+        {/* Alpha sleeve tags — held equity Alpha only (Core / bond / alt render nothing). */}
+        {stock.bucket === "Portfolio" && isSleeveTaggable(stock) && <SleeveTags stock={stock} size="md" />}
+        {stock.bucket === "Portfolio" && <LegVerdictChips legs={legVerdicts[stock.ticker.toUpperCase()]} />}
         <div className="ml-auto flex items-center gap-2">
           {scoreable && (
             <button
@@ -1743,6 +1752,9 @@ export default function StockDetailPage() {
           )}
         </div>
       )}
+
+      {/* ── Summary card: sleeve · thesis/plan status · score · setup · synthesis · evidence, each with its source. ── */}
+      <StockSummaryCard stock={stock} />
 
       {/* ── Two columns: the decision material left, the context right. ── */}
       <div className="grid grid-cols-1 items-start gap-3.5 lg:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)]">
@@ -2527,9 +2539,18 @@ export default function StockDetailPage() {
         {/* RIGHT */}
         <div className="flex min-w-0 flex-col gap-3.5">
           {scoreable && <StockSynthesisTile ticker={stock.ticker} />}
+          {/* Unowned names: the Thesis / Tactical lane read and its checklist. */}
+          {scoreable && stock.bucket !== "Portfolio" && <LaneTile ticker={stock.ticker} />}
+          {/* Tactical plan — terms of a Tactical-sleeve position (stocks and funds). */}
+          {stock.bucket === "Portfolio" && sleevesOf(stock).tactical && (
+            <TacticalPlanTile stock={stock} alsoThesis={sleevesOf(stock).thesis} />
+          )}
           {/* Thesis & kill conditions — pre-registered exit criteria, checked
               deterministically from data already on this page. */}
-          {scoreable && (() => {
+          {(scoreable || (stock.bucket === "Portfolio" && sleevesOf(stock).thesis)) && (() => {
+            // Thesis-sleeve FUNDS are underwritten too (a fund held for the long
+            // run has a case that can break). Their composite / revisions are
+            // n/a, so those signals read "unknown" — never a fabricated OK.
             const snap = getAnalystSnapshot(stock.ticker)?.factset;
             const revUp = typeof snap?.revUp === "number" ? snap.revUp : null;
             const revDown = typeof snap?.revDown === "number" ? snap.revDown : null;
@@ -2538,7 +2559,7 @@ export default function StockDetailPage() {
                 ticker={stock.ticker}
                 earningsDate={stock.healthData?.earningsDate ?? null}
                 signals={{
-                  score: typeof stock.adjusted === "number" ? stock.adjusted : null,
+                  score: scoreable && typeof stock.adjusted === "number" ? stock.adjusted : null,
                   netRevisions: revUp != null || revDown != null ? (revUp ?? 0) - (revDown ?? 0) : null,
                   revUp,
                   revDown,
@@ -2568,9 +2589,6 @@ export default function StockDetailPage() {
                 {stock.healthData && (
                   <StockHealthMonitor healthData={stock.healthData} technicals={stock.technicals} className="px-3.5 py-3" />
                 )}
-                {scoreable && (
-                  <FactorLensTile ticker={stock.ticker} adjusted={stock.adjusted} className="px-3.5 py-3" />
-                )}
               </div>
             </section>
           )}
@@ -2581,7 +2599,7 @@ export default function StockDetailPage() {
             const nameLower = (stock.name || "").toLowerCase();
             const sectorLower = (stock.sector || "").toLowerCase();
             const isBondOrAlt = sectorLower.includes("bond") || sectorLower.includes("fixed") || nameLower.includes("bond") || nameLower.includes("fixed income")
-              || sectorLower.includes("alternative") || nameLower.includes("alternative") || nameLower.includes("premium yield") || nameLower.includes("premium incom") || nameLower.includes("hedge") || nameLower.includes("option income") || nameLower.includes("option writing") || nameLower.includes("covered call");
+              || sectorLower.includes("alternative") || nameLower.includes("alternative") || nameLower.includes("premium yield") || nameLower.includes("premium incom") || (nameLower.includes("hedge") && !nameLower.includes("hedged")) || nameLower.includes("option income") || nameLower.includes("option writing") || nameLower.includes("covered call");
             if (isBondOrAlt) return null;
             return (
               <CollapsibleSection

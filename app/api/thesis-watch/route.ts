@@ -1,3 +1,4 @@
+import { isPlanComplete, type TacticalPlan } from "@/app/lib/tactical-plan";
 import { NextResponse } from "next/server";
 import { getRedis } from "@/app/lib/redis";
 import { loadAlertInputs } from "@/app/lib/alert-inputs";
@@ -39,10 +40,10 @@ type CoverageRow = {
 
 export async function GET() {
   try {
-    const { killWatch, context } = await loadAlertInputs();
+    const { killWatch, context, thesisVerdicts } = await loadAlertInputs();
 
     // Thesis keys include prose-only entries, which killWatch drops.
-    let theses: Record<string, { why?: string; killConditions?: unknown[] }> = {};
+    let theses: Record<string, { why?: string; killConditions?: unknown[]; tacticalPlan?: unknown }> = {};
     try {
       const raw = await (await getRedis()).get("pm:position-theses");
       if (raw) theses = JSON.parse(raw);
@@ -52,11 +53,21 @@ export async function GET() {
     const thesisFor = (tk: string) => theses[tk] ?? theses[tk.toUpperCase()];
 
     const missing: CoverageRow[] = [];
+    // Tactical-sleeve holdings (stocks AND funds) with no tactical plan on file.
+    const planMissing: Array<{ ticker: string; name?: string; incomplete?: boolean }> = [];
     let portfolioCount = 0;
     for (const [tk, c] of Object.entries(context)) {
       if (c.bucket !== "Portfolio") continue;
-      // Mirrors isScoreable(): undefined instrumentType means a stock.
-      if (c.instrumentType && c.instrumentType !== "stock") continue;
+      if (c.sleeves?.tactical) {
+        const plan = thesisFor(tk)?.tacticalPlan as TacticalPlan | undefined;
+        if (!isPlanComplete(plan)) planMissing.push({ ticker: tk, name: c.name, incomplete: Boolean(plan) });
+      }
+      // A Tactical-ONLY name is governed by its plan, not a long-run thesis —
+      // it is not part of the underwriting denominator.
+      if (c.sleeves?.tactical && !c.sleeves.thesis) continue;
+      // Mirrors isScoreable(): undefined instrumentType means a stock. A FUND
+      // is in the denominator only when it is a Thesis-sleeve holding.
+      if (c.instrumentType && c.instrumentType !== "stock" && !c.sleeves?.thesis) continue;
       portfolioCount++;
       const t = thesisFor(tk);
       const conds = Array.isArray(t?.killConditions) ? t.killConditions : [];
@@ -70,10 +81,14 @@ export async function GET() {
       });
     }
     missing.sort((a, b) => a.ticker.localeCompare(b.ticker));
+    planMissing.sort((a, b) => a.ticker.localeCompare(b.ticker));
 
     return NextResponse.json({
       holdings: killWatch,
-      coverage: { portfolioCount, underwritten: portfolioCount - missing.length, missing },
+      coverage: { portfolioCount, underwritten: portfolioCount - missing.length, missing, planMissing },
+      // Thesis-sleeve holdings only: the roll-up of the latest pillar review.
+      verdicts: Object.fromEntries(thesisVerdicts.map((v) => [v.ticker, { verdict: v.verdict, generatedAt: v.generatedAt }])),
+      sleeves: Object.fromEntries(killWatch.map((k) => [k.ticker, context[k.ticker]?.sleeves ?? null])),
     });
   } catch (e) {
     console.error("thesis-watch failed:", e);

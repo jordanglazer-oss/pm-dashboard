@@ -533,6 +533,12 @@ export type Stock = {
   modelEligibility?: Record<string, boolean>; // PIM model group id → eligible (default all true)
   modelWeights?: Record<string, number>; // PIM model group id → weight% in Balanced (overrides weights.portfolio)
   designation?: "core" | "alpha"; // Core = indexed/passive, Alpha = active picks (default alpha)
+  /** Alpha sleeve tags (app/lib/sleeves.ts). Thesis = long-run hold; Tactical =
+   *  shorter-horizon. A stock may carry both (Thesis name with a tactical
+   *  overweight); a fund carries at most one. Tags only — no weight math reads
+   *  them yet. Read through sleevesOf(), never directly. */
+  inThesis?: boolean;
+  inTactical?: boolean;
   /** Trading currency from Yahoo Finance (e.g. "USD", "CAD", "DKK").
    *  Auto-populated from /api/prices response on price fetches. Used by
    *  analyst-report FX conversion to convert PDF targets to the stock's

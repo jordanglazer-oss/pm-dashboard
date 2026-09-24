@@ -1,5 +1,7 @@
 "use client";
 
+import { THESIS_VERDICT_LABEL } from "@/app/lib/thesis-verdict";
+import { TacticalPlansSection } from "@/app/components/TacticalPlansSection";
 import React, { useEffect, useMemo, useState } from "react";
 import { useStocks } from "@/app/lib/StockContext";
 import Link from "next/link";
@@ -41,6 +43,9 @@ type CoverageRow = { ticker: string; name?: string; sector?: string; hasProse: b
 type Payload = {
   holdings: Row[];
   coverage?: { portfolioCount: number; underwritten: number; missing: CoverageRow[] };
+  /** Thesis-sleeve holdings: roll-up of the latest pillar review (additive). */
+  verdicts?: Record<string, { verdict: "intact" | "challenged" | "broken"; generatedAt: string }>;
+  sleeves?: Record<string, { thesis: boolean; tactical: boolean } | null>;
 };
 
 /** Status = dot + word (no pill): colour carries the meaning, the word names it. */
@@ -49,6 +54,8 @@ const STATUS_STYLE: Record<KillStatus, { dot: string; label: string }> = {
   tripped: { dot: "bg-neg", label: "Tripped" },
   unknown: { dot: "bg-ink-faint", label: "No data" },
   manual: { dot: "bg-ink-faint", label: "Manual" },
+  // 200-day breaker on a Thesis-sleeve name: shown, never counted as a trip.
+  info: { dot: "bg-ink-faint", label: "Informational" },
 };
 
 const todayIso = () => new Date().toISOString().slice(0, 10);
@@ -378,16 +385,27 @@ export default function ThesisDeskPage() {
    *                  edits, so it is confirmed explicitly first — the same bar
    *                  CLAUDE.md sets for anything that overwrites user data.
    */
-  const draftBulk = async (mode: "missing" | "all") => {
+  // Multi-select: checked cards feed "Redraft selected" (like Score selected on Holdings).
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const toggleSelected = (tk: string) => setSelected((prev) => { const n = new Set(prev); if (n.has(tk)) n.delete(tk); else n.add(tk); return n; });
+  const draftBulk = async (mode: "missing" | "all" | "selected") => {
     const missing = cov?.missing ?? [];
     const targets =
       mode === "missing"
         ? missing
-        : [...rows.map((r) => ({ ticker: r.ticker, price: null as number | null })), ...missing];
+        : mode === "selected"
+          ? rows.filter((r) => selected.has(r.ticker)).map((r) => ({ ticker: r.ticker, price: null as number | null }))
+          : [...rows.map((r) => ({ ticker: r.ticker, price: null as number | null })), ...missing];
     if (targets.length === 0 || bulk) return;
     if (mode === "all" && rows.length > 0) {
       const ok = window.confirm(
-        `Redraft ALL ${targets.length} theses?\n\nThis OVERWRITES the ${rows.length} thesis${rows.length === 1 ? "" : "es"} already saved, including any wording or conditions you edited by hand. Trip history and re-underwrite dates are rewritten too. This cannot be undone.`,
+        `Redraft ALL ${targets.length} theses?\n\nThis OVERWRITES the ${rows.length} thesis${rows.length === 1 ? "" : "es"} already saved, including any wording or conditions you edited by hand. The previous version is kept in each thesis's history.`,
+      );
+      if (!ok) return;
+    }
+    if (mode === "selected") {
+      const ok = window.confirm(
+        `Redraft ${targets.length} selected — ${targets.map((t) => t.ticker).join(", ")}?\n\nEach thesis is regenerated from the evidence on file and SAVED over the current one (pillars and conditions too). The previous version is kept in the thesis's history; the re-underwrite clock resets.`,
       );
       if (!ok) return;
     }
@@ -410,6 +428,9 @@ export default function ThesisDeskPage() {
           body: JSON.stringify({
             ticker: t.ticker,
             why: d.draft.why,
+            ...(Array.isArray(d.draft.pillars) ? { pillars: d.draft.pillars } : {}),
+            // Versions the previous signed state (route keeps up to 12).
+            versionReason: mode === "selected" ? "redraft (selected)" : "bulk draft",
             killConditions: (
               d.draft.conditions as { kind: string; threshold?: number; note?: string; theme?: string }[]
             ).map((c, n) => ({
@@ -440,6 +461,7 @@ export default function ThesisDeskPage() {
       /* the page still shows the pre-run state; a refresh picks it up */
     }
     setBulk((b) => (b ? { ...b, done: b.total } : b));
+    if (mode === "selected") setSelected(new Set());
   };
 
   const btnSecondary =
@@ -511,6 +533,16 @@ export default function ThesisDeskPage() {
               </span>
             ) : (
               <>
+                {selected.size > 0 && (
+                  <button
+                    onClick={() => draftBulk("selected")}
+                    title={`Regenerates and SAVES the thesis for the ${selected.size} checked name${selected.size === 1 ? "" : "s"}. The previous version is kept in history.`}
+                    className={`${btnSecondary} border-accent-border bg-accent-soft text-accent`}
+                  >
+                    <AppIcon name="refresh" size={13} />
+                    Redraft {selected.size} selected
+                  </button>
+                )}
                 {cov && cov.missing.length > 0 && (
                   <button
                     onClick={() => draftBulk("missing")}
@@ -532,6 +564,15 @@ export default function ThesisDeskPage() {
                   </button>
                 )}
               </>
+            )}
+            {rows.length > 0 && !bulk && (
+              <button
+                onClick={() => setSelected(selected.size === rows.length ? new Set() : new Set(rows.map((r) => r.ticker)))}
+                className={btnSecondary}
+                title="Select every card / clear the selection"
+              >
+                {selected.size === rows.length ? "Select none" : "Select all"}
+              </button>
             )}
             {rows.length > 0 && (
               <button onClick={() => setAll(!anyOpen)} className={btnSecondary}>
@@ -587,6 +628,14 @@ export default function ThesisDeskPage() {
                 <div
                   className={`flex min-h-[38px] flex-wrap items-center gap-2.5 px-3.5 py-1.5 ${open ? "border-b border-line-soft" : ""}`}
                 >
+                  <input
+                    type="checkbox"
+                    checked={selected.has(r.ticker)}
+                    onChange={() => toggleSelected(r.ticker)}
+                    onClick={(e) => e.stopPropagation()}
+                    className="h-3.5 w-3.5 shrink-0 cursor-pointer accent-accent"
+                    title={`Select ${displayTicker(r.ticker)} for Redraft selected`}
+                  />
                   <button
                     onClick={() => toggle(r.ticker)}
                     aria-expanded={open}
@@ -610,15 +659,33 @@ export default function ThesisDeskPage() {
                       {r.tripped > 0 ? `${r.tripped} of ${r.auto} tripped` : `${r.auto} conditions OK`}
                     </span>
                   )}
+                  {(() => {
+                    // Sleeve + the thesis-level verdict (Thesis names only).
+                    const sl = data?.sleeves?.[r.ticker];
+                    const v = data?.verdicts?.[r.ticker];
+                    return (
+                      <>
+                        {sl && (sl.thesis || sl.tactical) && (
+                          <span className="text-[11.5px] text-ink-3">{sl.thesis && sl.tactical ? "Thesis + Tactical" : sl.thesis ? "Thesis" : "Tactical"}</span>
+                        )}
+                        {v && (
+                          <span
+                            className={`inline-flex items-center gap-1.5 text-[12px] ${v.verdict === "broken" ? "text-neg" : v.verdict === "challenged" ? "text-warn" : "text-ink-2"}`}
+                            title={`Roll-up of the pillar review generated ${v.generatedAt.slice(0, 10)} — open the stock page to read it`}
+                          >
+                            <span className={`dot ${v.verdict === "broken" ? "bg-neg" : v.verdict === "challenged" ? "bg-warn" : "bg-pos"}`} />
+                            {THESIS_VERDICT_LABEL[v.verdict]}
+                          </span>
+                        )}
+                      </>
+                    );
+                  })()}
                   {r.aiDrafted && <span className="text-[11.5px] text-ink-3">AI draft</span>}
-                  <span className="ml-auto font-mono text-[11px] text-ink-3">
-                    {r.underwrittenAt ? `underwritten ${r.underwrittenAt}` : ""}
-                    {r.reUnderwriteBy ? (
-                      <span className={overdue ? "text-warn" : ""}>
-                        {" · re-underwrite "}
-                        {overdue ? "overdue" : "due"} {r.reUnderwriteBy}
-                      </span>
-                    ) : null}
+                  <span
+                    className={`ml-auto text-[11px] ${overdue ? "text-warn" : "text-ink-faint"}`}
+                    title={`${r.underwrittenAt ? `Underwritten ${r.underwrittenAt}` : "Underwrite date unknown"}${r.reUnderwriteBy ? ` · re-underwrite ${overdue ? "overdue since" : "due"} ${r.reUnderwriteBy}` : ""}`}
+                  >
+                    {overdue ? "re-underwrite overdue" : r.reUnderwriteBy ? `review ${r.reUnderwriteBy.slice(5)}` : ""}
                   </span>
                 </div>
 
@@ -708,6 +775,9 @@ export default function ThesisDeskPage() {
           })}
         </div>
       )}
+
+      {/* Tactical half of the desk — every held Tactical name against its plan. */}
+      {!loading && <TacticalPlansSection />}
 
       {/* Coverage gap — the actionable part: what you own but haven't underwritten */}
       {!loading && cov && cov.missing.length > 0 && (

@@ -30,7 +30,7 @@ const UA = "Mozilla/5.0 (pm-dashboard journal attribution)";
 const CACHE_KEY = "pm:journal-attribution";
 export const ATTRIB_TTL_MS = 6 * 60 * 60 * 1000;
 
-const SECTOR_ETFS: Record<string, string> = {
+export const SECTOR_ETFS: Record<string, string> = {
   Technology: "XLK",
   "Health Care": "XLV",
   Healthcare: "XLV",
@@ -79,13 +79,13 @@ export type JournalAttribution = {
   };
 };
 
-function toYahoo(ticker: string): string {
+export function toYahoo(ticker: string): string {
   if (ticker.endsWith(".U")) return ticker.replace(/\.U$/, "-U.TO");
   if (ticker.endsWith("-T")) return ticker.replace(/-T$/, ".TO");
   return ticker;
 }
 
-async function fetchCloses(ticker: string): Promise<Map<string, number> | null> {
+export async function fetchCloses(ticker: string): Promise<Map<string, number> | null> {
   try {
     const res = await fetch(`${YAHOO}/${encodeURIComponent(toYahoo(ticker))}?range=2y&interval=1d`, {
       cache: "no-store",

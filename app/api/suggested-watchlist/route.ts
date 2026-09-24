@@ -19,6 +19,7 @@ import { requestCoverage } from "@/app/lib/coverage-request";
 import { crossListingRoot } from "@/app/lib/ticker";
 import type { CandidateStore } from "@/app/lib/watchlist-candidates";
 import { getReportsForTicker, type AnalystReports } from "@/app/lib/analyst-snapshots";
+import { loadStreetTakeaways } from "@/app/lib/street-takeaways";
 import {
   SUGGESTED_STOCKS_KEY,
   syncSuggestedStocks,
@@ -132,19 +133,26 @@ async function improvingFn(): Promise<(row: RankedRow) => string[]> {
 
 export async function GET() {
   try {
-    const [{ rows: ranked }, store, decisions, notified, improving, reports] = await Promise.all([
+    const [{ rows: ranked }, store, decisions, notified, improving, reports, takeaways] = await Promise.all([
       loadRankedResearch(),
       readStore(),
       readDecisions(),
       readWatchlistNotifiedMap(),
       improvingFn(),
       readReports(),
+      loadStreetTakeaways().catch(() => ({}) as Awaited<ReturnType<typeof loadStreetTakeaways>>),
     ]);
+    const factsetCount = (r: { ticker: string; key: string }) => {
+      const t = r.ticker.toUpperCase();
+      const k = r.key.toUpperCase();
+      return (takeaways[t] ?? takeaways[`${k}.TO`] ?? takeaways[k] ?? []).length;
+    };
     const { rows, passed } = buildSuggestedRows(ranked, store, decisions, improving);
     const withCoverage = (r: (typeof rows)[number]) => ({
       ...r,
       coverageRequestedAt: r.coverageRequestedAt ?? notified[r.ticker.toUpperCase()] ?? notified[r.key.toUpperCase()],
       reports: reportsFor(reports, r),
+      factset: factsetCount(r),
     });
     return NextResponse.json({
       rows: rows.map(withCoverage),

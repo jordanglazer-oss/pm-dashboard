@@ -10,6 +10,8 @@ import { describeCondition, type KillCondition, type KillConditionKind, type Met
 import { parseModelJson } from "./json-repair";
 import { canonicalTicker } from "./ticker";
 import type { SynthesisScreenCache, SynthesisEntry } from "./synthesis-screen-display";
+import { thesisVerdictOf, VERDICT_LOG_KEY, VERDICT_LOG_MAX_PER_TICKER, type VerdictLog } from "./thesis-verdict";
+import { sleevesOf } from "./sleeves";
 
 /**
  * Post-earnings thesis review — the "regenerate after each report" answer that
@@ -285,6 +287,7 @@ Rules:
       changes,
     };
     await (await getRedis()).set(keyFor(tk), JSON.stringify(review));
+    await appendVerdictLog(tk, review).catch((e) => log.warn(`${tk} verdict log failed:`, e));
     return { review, cached: false };
   } catch (e) {
     log.error(`${tk} failed:`, e);
@@ -293,12 +296,39 @@ Rules:
 }
 
 /**
+ * pm:thesis-verdict-log — append-only history of pillar reads, one row per
+ * ticker per UTC day. Written ONLY here, server-side, when a review is actually
+ * generated; a same-day regeneration replaces today's row, past rows are never
+ * touched. It is what lets the monthly review show how a thesis has read over
+ * time instead of only its latest state.
+ */
+async function appendVerdictLog(tk: string, review: ThesisReview): Promise<void> {
+  const redis = await getRedis();
+  const raw = await redis.get(VERDICT_LOG_KEY);
+  let logBlob: VerdictLog = {};
+  try { logBlob = raw ? (JSON.parse(raw) as VerdictLog) : {}; } catch { return; } // unreadable blob: never overwrite it
+  const date = review.generatedAt.slice(0, 10);
+  const row = {
+    date,
+    generatedAt: review.generatedAt,
+    evidenceAt: review.evidenceAt,
+    verdict: thesisVerdictOf(review.pillars),
+    pillars: review.pillars.map((p) => ({ pillarId: p.pillarId, title: p.title, status: p.status })),
+    summary: review.summary,
+  };
+  const key = tk.toUpperCase();
+  const rows = (Array.isArray(logBlob[key]) ? logBlob[key] : []).filter((r) => r.date !== date);
+  logBlob[key] = [...rows, row].slice(-VERDICT_LOG_MAX_PER_TICKER);
+  await redis.set(VERDICT_LOG_KEY, JSON.stringify(logBlob));
+}
+
+/**
  * Nightly: review every underwritten Portfolio name whose evidence or synthesis
  * is newer than its last review. Bounded by count and wall clock.
  */
 export async function runThesisReviews(opts: { deadlineAt?: number } = {}): Promise<{ reviewed: string[]; skipped: number; errors: number }> {
   const redis = await getRedis();
-  const [thesesRaw, synthRaw] = await Promise.all([redis.get("pm:position-theses"), redis.get("pm:synthesis-screen-cache")]);
+  const [thesesRaw, synthRaw, stocksRaw] = await Promise.all([redis.get("pm:position-theses"), redis.get("pm:synthesis-screen-cache"), redis.get("pm:stocks")]);
   let theses: ThesisStore = {};
   try { theses = thesesRaw ? (JSON.parse(thesesRaw) as ThesisStore) : {}; } catch { theses = {}; }
   let synthCache: SynthesisScreenCache = {};
@@ -307,7 +337,17 @@ export async function runThesisReviews(opts: { deadlineAt?: number } = {}): Prom
   const reviewed: string[] = [];
   let skipped = 0;
   let errors = 0;
-  for (const rawTk of Object.keys(theses)) {
+  // Thesis-sleeve names go first: the nightly cap is small, and they are the
+  // holdings whose only exit trigger IS this read.
+  const thesisSleeve = new Set<string>();
+  try {
+    const parsed = stocksRaw ? JSON.parse(stocksRaw) : [];
+    for (const s of Array.isArray(parsed) ? parsed : []) {
+      if (s?.bucket === "Portfolio" && typeof s.ticker === "string" && sleevesOf(s).thesis) thesisSleeve.add(s.ticker.toUpperCase());
+    }
+  } catch { /* ordering only — fall back to store order */ }
+  const ordered = Object.keys(theses).sort((a, b) => Number(thesisSleeve.has(b.toUpperCase())) - Number(thesisSleeve.has(a.toUpperCase())));
+  for (const rawTk of ordered) {
     const tk = rawTk.toUpperCase();
     const t = theses[rawTk];
     if (!t?.why?.trim() || !(t.killConditions?.length)) { skipped++; continue; }

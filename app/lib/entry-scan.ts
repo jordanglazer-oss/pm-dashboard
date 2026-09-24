@@ -16,7 +16,7 @@
 import { getRedis } from "./redis";
 import { createLogger } from "./logger";
 import { canonicalTicker, crossListingRoot } from "./ticker";
-import { evaluateEntry, evaluateEntryLegacy, type EntrySignal, type EntryInputs } from "./entry-conditions";
+import { evaluateEntry, type EntrySignal, type EntryInputs } from "./entry-conditions";
 import { computeSetup } from "./setup-grade";
 import { readStockPool, findInPool } from "./stock-pool";
 import type { Stock } from "./types";
@@ -25,6 +25,10 @@ import { siaPercentileDrift } from "./sia-history";
 import { loadRankedResearch } from "./research-ranked-server";
 import { qualifyingRows, activeDecision, emptySuggestedStore, SUGGESTED_STORE_KEY, DECISIONS_KEY, type SuggestedStore, type DecisionStore } from "./suggested-watchlist";
 import type { SynthesisScreenCache } from "./synthesis-screen-display";
+import { computeLane, type LaneRead } from "./lanes";
+import { computeScores } from "./scoring";
+import type { MarketData } from "./types";
+import { getReportsForTicker, type AnalystReports } from "./analyst-snapshots";
 
 const log = createLogger("EntryScan");
 export const ENTRY_SCAN_KEY = "pm:entry-scan";
@@ -45,10 +49,8 @@ export type EntryRow = {
   readySince?: string;
   /** "Why I'm watching" captured at Advance time (pm:entry-cases). */
   why?: string;
-  /** Pre-unification readiness (five separate technical signals) — TEMPORARY,
-   *  feeds /api/admin/entry-unification-diff; remove with evaluateEntryLegacy. */
-  legacyReady?: boolean;
-  legacyStrength?: "ready" | "building" | "early";
+  /** Thesis / Tactical lane read (app/lib/lanes) — additive. */
+  lane?: LaneRead;
 };
 
 export type EntryScan = {
@@ -105,6 +107,12 @@ export async function buildEntryScan(): Promise<EntryScan> {
     readJson<Record<string, EntryCase>>(ENTRY_CASES_KEY, {}),
     readEntryScan(),
   ]);
+  // Lane inputs the scorecard does not need: the reports manifest (Thesis
+  // requires reports on file) and market data for the composite.
+  const [reports, market] = await Promise.all([
+    readJson<AnalystReports>("pm:analyst-reports", {}),
+    readJson<MarketData>("pm:market", { riskRegime: "Neutral" } as MarketData),
+  ]);
   // Full Stock records (book + Suggested staging) for the setup grade: the
   // narrow StockRow above is enough for the case signals, but computeSetup
   // needs scores / provider fields / manualScoredAt.
@@ -147,7 +155,24 @@ export async function buildEntryScan(): Promise<EntryScan> {
       listDelta,
     };
     const ev = evaluateEntry(inputs, today);
-    const legacy = evaluateEntryLegacy(inputs, today);
+    let lane: LaneRead | undefined;
+    try {
+      const tr = getReportsForTicker(reports, ticker);
+      const stamps = [tr?.rbc, tr?.jpm, tr?.morningstar].map((m) => m?.extractedAt || m?.uploadedAt).filter((x): x is string => Boolean(x)).sort();
+      const conviction = full && (!full.instrumentType || full.instrumentType === "stock") && full.lastScored ? computeScores(full, market).adjusted : null;
+      lane = computeLane({
+        latestReportAt: stamps.length ? stamps[stamps.length - 1] : null,
+        synthesis: entry ? { verdict: entry.result.verdict, generatedAt: entry.generatedAt, earningsDateAtGeneration: entry.earningsDateAtGeneration ?? null } : null,
+        conviction,
+        setupGrade: setup?.grade ?? null,
+        riskLevel: inputs.riskLevel,
+        siaDrift: inputs.siaDrift ?? null,
+        marketEdgeOpinion: inputs.marketEdgeOpinion ?? null,
+        netRevisions: netRev,
+        catalystDate: inputs.catalystDate ?? null,
+        today,
+      });
+    } catch { lane = undefined; }
     const rankedRow = rankedByRoot.get(root);
     return {
       ticker: tk,
@@ -156,8 +181,7 @@ export async function buildEntryScan(): Promise<EntryScan> {
       bucket,
       ...ev,
       why: cases[tk]?.why ?? cases[root]?.why,
-      legacyReady: legacy.ready,
-      legacyStrength: legacy.strength,
+      lane,
     };
   };
 

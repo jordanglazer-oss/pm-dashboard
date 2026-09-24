@@ -691,7 +691,7 @@ export default function ClientReportPage() {
   const profile = VALID_PROFILES.includes(profileParam) ? profileParam : "balanced";
 
   const { data, loading, error, refetch } = useReportData(groupId, profile);
-  const { stocks } = useStocks();
+  const { stocks, pimModels } = useStocks();
 
   // ── Client portfolio comparison state ──
   const [clientInputMode, setClientInputMode] = useState<ClientInputMode>("units");
@@ -1813,6 +1813,29 @@ export default function ClientReportPage() {
           ← Back
         </button>
         <div className="text-sm font-semibold text-slate-800">Client Report Preview</div>
+        {/* Model + profile pickers — the report used to inherit whatever
+            Positioning last had selected; switch here without a round-trip.
+            Only the URL changes, so a bookmark still carries the choice. */}
+        <select
+          value={groupId}
+          onChange={(e) => router.replace(`/client-report?group=${encodeURIComponent(e.target.value)}&profile=${encodeURIComponent(profile)}`)}
+          className="h-7 rounded border border-slate-300 bg-white px-2 text-xs text-slate-800"
+          aria-label="Model"
+        >
+          {pimModels.groups.map((g) => (
+            <option key={g.id} value={g.id}>{g.name}</option>
+          ))}
+        </select>
+        <select
+          value={profile}
+          onChange={(e) => router.replace(`/client-report?group=${encodeURIComponent(groupId)}&profile=${encodeURIComponent(e.target.value)}`)}
+          className="h-7 rounded border border-slate-300 bg-white px-2 text-xs text-slate-800"
+          aria-label="Profile"
+        >
+          {VALID_PROFILES.filter((p) => pimModels.groups.find((g) => g.id === groupId)?.profiles[p]).map((p) => (
+            <option key={p} value={p}>{p === "allEquity" ? "All-Equity" : p[0].toUpperCase() + p.slice(1)}</option>
+          ))}
+        </select>
         {data && (
           <span
             className="text-[10px] rounded px-1.5 py-0.5 font-semibold uppercase tracking-wider"

@@ -359,7 +359,6 @@ function digestParts(s: DailySummary): string[] {
   else if (c.cash.prevScore != null && c.cash.nowScore != null && c.cash.prevScore !== c.cash.nowScore) out.push(`Cash score ${c.cash.prevScore} → ${c.cash.nowScore}`);
   if (c.alphaSpread1d != null) out.push(`Alpha vs core ${c.alphaSpread1d > 0 ? "+" : ""}${c.alphaSpread1d.toFixed(2)}pp`);
   if (c.newTrips > 0) out.push(`${c.newTrips} kill condition${c.newTrips === 1 ? "" : "s"} tripped`);
-  if (c.newlyReady.length > 0) out.push(`Entry ready: ${c.newlyReady.join(", ")}`);
   const a = s.actions;
   if (a && (a.counts.open > 0 || a.counts.cleared > 0)) out.push(`${a.counts.open} open action${a.counts.open === 1 ? "" : "s"}, ${a.counts.cleared} cleared`);
   return out;

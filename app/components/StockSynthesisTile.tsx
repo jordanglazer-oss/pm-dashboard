@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { VERDICT_LABEL, type SynthesisVerdict, type SynthesisResult, type StaleReason } from "@/app/lib/synthesis-screen-display";
+import { skewWord, SKEW_TONE, type SynthesisResult, type StaleReason } from "@/app/lib/synthesis-screen-display";
 import { canonicalTicker } from "@/app/lib/ticker";
 import { AppIcon } from "@/app/components/AppIcon";
 
@@ -22,15 +22,6 @@ type Row = {
 };
 
 // Verdict words are the one place a pill survives: 18px, soft tint.
-const VERDICT_TONE: Record<string, string> = {
-  advance: "bg-pos-soft text-pos",
-  "thesis-intact": "bg-pos-soft text-pos",
-  watch: "bg-warn-soft text-warn",
-  review: "bg-warn-soft text-warn",
-  pass: "bg-neg-soft text-neg",
-  "exit-watch": "bg-neg-soft text-neg",
-};
-
 export function StockSynthesisTile({ ticker, className }: { ticker: string; className?: string }) {
   const [row, setRow] = useState<Row | null>(null);
   const [checked, setChecked] = useState(false);
@@ -53,7 +44,7 @@ export function StockSynthesisTile({ ticker, className }: { ticker: string; clas
 
   if (!checked || !row?.entry?.result) return null;
   const res = row.entry.result;
-  const verdict = res.verdict as SynthesisVerdict;
+  const word = skewWord(res.skew) ?? "Neutral";
   const stale = row.stale.length > 0;
   const updated = row.entry.generatedAt
     ? new Date(row.entry.generatedAt).toLocaleDateString(undefined, { month: "short", day: "numeric" })
@@ -63,8 +54,8 @@ export function StockSynthesisTile({ ticker, className }: { ticker: string; clas
     <section className={`panel ${className || ""}`}>
       <div className="panel-h">
         <span className="t">Synthesis</span>
-        <span className={`inline-flex h-[18px] items-center rounded px-1.5 text-[11px] font-medium ${VERDICT_TONE[verdict] ?? "bg-surface-2 text-ink-2"}`}>
-          {VERDICT_LABEL[verdict] ?? verdict}
+        <span className={`inline-flex h-[18px] items-center rounded px-1.5 text-[11px] font-medium ${SKEW_TONE[word]}`} title="Risk/reward lean of the latest synthesis">
+          {word}
         </span>
         {stale && <span className="inline-flex items-center gap-1.5 text-[11.5px] text-warn"><span className="dot bg-warn" /> Stale</span>}
         {updated && <span className="m">{updated}</span>}

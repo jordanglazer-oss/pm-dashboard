@@ -134,6 +134,8 @@ export type SuggestedRow = RankedRow & {
   /** Analyst reports on file (filed date per source), so the coverage column
    *  shows ARRIVALS, not just the request. Joined by the route. */
   reports?: { rbc?: string; jpm?: string; morningstar?: string };
+  /** FactSet alert emails on file for the name (pm:street-takeaways). */
+  factset?: number;
   decision: (DecisionEntry & { expiresOn: string }) | null;
   /** Human reasons the name is IMPROVING (gained a list, SIA percentile up, Equate rank up). */
   improving: string[];

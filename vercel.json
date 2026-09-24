@@ -5,14 +5,6 @@
       "schedule": "0 6 * * *"
     },
     {
-      "path": "/api/cron/setup-scan",
-      "schedule": "20 7 * * *"
-    },
-    {
-      "path": "/api/cron/setup-scan",
-      "schedule": "50 7 * * *"
-    },
-    {
       "path": "/api/cron/daily-value",
       "schedule": "30 21 * * 1-5"
     }

@@ -1,8 +1,7 @@
 import { NextResponse } from "next/server";
 import { createLogger } from "@/app/lib/logger";
-import { computeAlerts, alertCounts, computeOpportunities, computeRegimeTailwind, entryAlerts, entryOpportunities } from "@/app/lib/alerts";
+import { computeAlerts, alertCounts, computeOpportunities, computeRegimeTailwind } from "@/app/lib/alerts";
 import { loadAlertInputs } from "@/app/lib/alert-inputs";
-import { getEntryScan, newlyReady } from "@/app/lib/entry-scan";
 
 /**
  * GET /api/alerts — the proactive "needs your attention" digest (Phase 07).
@@ -19,18 +18,15 @@ const log = createLogger("Alerts");
 
 export async function GET() {
   try {
-    const { thesis, transition, risk, context, watchlist, killWatch } = await loadAlertInputs();
+    const { thesis, transition, risk, context, watchlist, killWatch, tacticalWatch, thesisVerdicts } = await loadAlertInputs();
 
     // Entry scorecard (cached 6h): newly-ready names are HIGH alerts (the push),
     // every ready name is an opportunity.
-    const scan = await getEntryScan().catch(() => null);
-    const ready = scan ? scan.rows.filter((r) => r.ready) : [];
-    const fresh = scan ? newlyReady(scan) : [];
-    const alerts = [...computeAlerts({ thesis, transition, risk, context, killWatch }), ...entryAlerts(fresh)];
+    // Entry-ready pushes retired 2026-09-23 — the lanes on the bench replaced them.
+    const alerts = computeAlerts({ thesis, transition, risk, context, killWatch, tacticalWatch, thesisVerdicts });
     // A toward-Risk-On lean is a tailwind, not an alert — surfaced green.
     const regimeTailwind = computeRegimeTailwind(transition);
-    const seen = new Set(ready.map((r) => r.ticker));
-    const opportunities = [...entryOpportunities(ready), ...computeOpportunities({ watchlist, context }).filter((o) => !seen.has(o.ticker))];
+    const opportunities = computeOpportunities({ watchlist, context });
 
     return NextResponse.json({
       alerts,

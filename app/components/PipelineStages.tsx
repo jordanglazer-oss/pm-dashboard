@@ -101,7 +101,7 @@ export function usePipelineData(synthOverride?: SynthRow[] | null): PipelineData
   const [kill, setKill] = useState<{ holdings: KillRow[]; coverage: Coverage } | null>(null);
   const [health, setHealth] = useState<Health | null>(null);
   const [entry, setEntry] = useState<EntryScanLite | null>(null);
-  const [aiPositioned, setAiPositioned] = useState<number | null>(null);
+  const aiPositioned: number | null = null; // AI view retired 2026-09-23
   const skipSynth = synthOverride !== undefined;
 
   useEffect(() => {
@@ -113,7 +113,6 @@ export function usePipelineData(synthOverride?: SynthRow[] | null): PipelineData
     get("/api/thesis-watch").then((j) => alive && setKill({ holdings: j?.holdings ?? [], coverage: j?.coverage ?? { portfolioCount: 0, underwritten: 0, missing: [] } }));
     get("/api/thesis-health").then((j) => alive && setHealth(j?.thesisHealth ?? null));
     get("/api/entry-scan").then((j) => alive && setEntry(Array.isArray(j?.rows) ? j : null));
-    get("/api/suggested-ai").then((j) => alive && setAiPositioned(j?.view?.names ? Object.values(j.view.names as Record<string, { tier: string }>).filter((n) => n.tier === "positioned").length : null));
     return () => { alive = false; };
   }, [skipSynth]);
 

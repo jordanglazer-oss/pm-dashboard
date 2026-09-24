@@ -16,7 +16,7 @@
 import { getRedis } from "@/app/lib/redis";
 import { easternToday, daysFromToday } from "@/app/lib/date-eastern";
 import { loadAlertInputs } from "@/app/lib/alert-inputs";
-import { computeAlerts, entryAlerts, type Alert } from "@/app/lib/alerts";
+import { computeAlerts, type Alert } from "@/app/lib/alerts";
 import { getEntryScan, newlyReady } from "@/app/lib/entry-scan";
 import { loadChangeEvents } from "@/app/lib/change-monitor-load";
 import type { ChangeEvent } from "@/app/lib/change-monitor";
@@ -137,9 +137,8 @@ export async function buildActionsSection(brief: MorningBrief | null): Promise<A
     }
   }
 
-  // Alerts (thesis / regime / technical) + entry-ready pushes.
-  const fresh = scan ? newlyReady(scan) : [];
-  const alerts = [...computeAlerts({ thesis: inputs.thesis, transition: inputs.transition, risk: inputs.risk, context: inputs.context, killWatch: inputs.killWatch }), ...entryAlerts(fresh)];
+  // Alerts (thesis / regime / technical). Entry-ready pushes retired 2026-09-23.
+  const alerts = computeAlerts({ thesis: inputs.thesis, transition: inputs.transition, risk: inputs.risk, context: inputs.context, killWatch: inputs.killWatch, tacticalWatch: inputs.tacticalWatch, thesisVerdicts: inputs.thesisVerdicts });
   for (const a of alerts) {
     // Kill trips are already listed above with a finer id.
     if (a.category === "thesis" && /kill/i.test(a.title)) continue;

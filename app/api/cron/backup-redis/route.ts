@@ -12,9 +12,7 @@ import { refreshTechnicals } from "@/app/lib/technicals-refresh";
 import { rebuildThesisHealth } from "@/app/lib/thesis-health-refresh";
 import { runThesisReviews } from "@/app/lib/thesis-review";
 import { buildEntryScan } from "@/app/lib/entry-scan";
-import { readSuggestedAi, buildSuggestedAi, isSuggestedAiStale } from "@/app/lib/suggested-ai";
 import { runCustomConditionChecks } from "@/app/lib/custom-condition-check";
-import { computeBookFactorScores } from "@/app/lib/factor-scores";
 import { computeDataHealth, type DataHealthReport } from "@/app/lib/data-health";
 import { runAlertDigest } from "@/app/lib/alert-digest";
 
@@ -365,19 +363,7 @@ export async function GET(req: NextRequest) {
     //        just refreshed above, append a snapshot to the append-only
     //        pm:alert-log, and email it IF a recipient is configured AND there
     //        are high-priority alerts. Best-effort: must not fail the backup. ──
-    // Factor shadow scoring (Phase A4) — quant percentile + judgment overlay +
-    // blends for the book, appended to pm:factor-history for Phase C. Strictly
-    // additive: reads pm:stocks read-only, writes only its own factor caches +
-    // append-only history. Best-effort; never affects the 41-pt score or the
-    // digest. Needs the weekly universe to exist (no-ops until it does).
-    let factorScores: Awaited<ReturnType<typeof computeBookFactorScores>>;
-    try {
-      factorScores = await computeBookFactorScores();
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : String(e);
-      console.error("[backup-redis] factor scoring failed (shadow only; no live impact):", msg);
-      factorScores = { ran: false, scored: 0, quantScored: 0, error: msg };
-    }
+    // Factor shadow scoring retired 2026-09-23 (Radar / Factor Lab removed).
 
     // Data-health sentinel — verifies the whole refresh chain above actually
     // landed (fresh markers, sane coverage, outbox draining) and rides along in
@@ -441,28 +427,7 @@ export async function GET(req: NextRequest) {
       thesisReviews = { ran: false, error: msg };
     }
 
-    // ── 4c. AI-positioned Suggested — weekly, or when the regime label flips ──
-    // ≈ one call per sector group. Gated on staleness so a normal night spends
-    // nothing; the Suggested tab button forces it any time.
-    let suggestedAi: { ran: true; calls: number; positioned: number } | { ran: false; reason: string };
-    try {
-      const cur = await readSuggestedAi();
-      let label: string | null = null;
-      try {
-        const raw = await redis.get("pm:market-regime");
-        label = raw ? ((JSON.parse(raw) as { composite?: { label?: string } }).composite?.label ?? null) : null;
-      } catch { label = null; }
-      if (isSuggestedAiStale(cur, label) && Date.now() < startedAt + CUSTOM_CHECK_DEADLINE_MS) {
-        const v = await buildSuggestedAi();
-        suggestedAi = { ran: true, calls: v.calls, positioned: Object.values(v.names).filter((n) => n.tier === "positioned").length };
-      } else {
-        suggestedAi = { ran: false, reason: "fresh" };
-      }
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : String(e);
-      console.error("[backup-redis] suggested-ai refresh failed:", msg);
-      suggestedAi = { ran: false, reason: msg };
-    }
+    // 4c. AI-positioned Suggested — retired 2026-09-23 (feature removed).
 
     // ── 5. Run invariant check inline ────────────────────────────────
     // Best-effort: a thrown invariant check must not turn a successful
@@ -507,8 +472,6 @@ export async function GET(req: NextRequest) {
       customChecks,
       thesisReviews,
       entryScan,
-      suggestedAi,
-      factorScores,
       dataHealth: dataHealth ? { ok: dataHealth.ok, problems: dataHealth.problemCount } : null,
       alertDigest,
       invariantCheck: invariantSummary,

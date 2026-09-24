@@ -53,6 +53,10 @@ export type StockContext = {
    *  Consumed by the /thesis coverage count — funds and ETFs are not
    *  underwritable, so they must not pad the "not underwritten" list. */
   instrumentType?: string | null;
+  /** Alpha sleeves (app/lib/sleeves.ts) — Portfolio holdings only. Carried so
+   *  alerts, the digest and the action queue can treat Thesis and Tactical
+   *  names differently. Nothing branches on it yet. */
+  sleeves?: { thesis: boolean; tactical: boolean };
 };
 
 /** Days until the given YYYY-MM-DD (0 = today); null when absent/past/unparseable
@@ -142,9 +146,61 @@ export function computeAlerts(input: {
     /** YYYY-MM-DD the quarterly re-underwrite is due (90d from underwrite). */
     reUnderwriteBy?: string;
   }>;
+  /** Thesis-sleeve holdings whose latest pillar review reads challenged / broken. */
+  thesisVerdicts?: Array<{ ticker: string; verdict: "intact" | "challenged" | "broken"; pillars: Array<{ title: string; status: string; reading?: string }>; summary: string; generatedAt: string }>;
+  /** Tactical-sleeve positions with a live plan flag (app/lib/tactical-plan). */
+  tacticalWatch?: Array<{ ticker: string; flags: Array<{ kind: string; severity: "high" | "medium" | "info"; text: string }> }>;
 }): Alert[] {
   const alerts: Alert[] = [];
   const ctxFor = (tk: string) => input.context?.[tk];
+
+  // ── Thesis verdicts — a Thesis name is sold on a broken thesis and on
+  // nothing else, so a pillar read against new evidence outranks every
+  // generic signal. Broken is HIGH (it emails); challenged is MEDIUM.
+  for (const tv of input.thesisVerdicts ?? []) {
+    if (tv.verdict === "intact") continue;
+    const ctx = ctxFor(tv.ticker);
+    const hit = tv.pillars.filter((p) => p.status === "broken" || p.status === "contested");
+    alerts.push({
+      id: `verdict-${tv.ticker}`,
+      priority: tv.verdict === "broken" ? "high" : "medium",
+      category: "thesis",
+      ticker: tv.ticker,
+      name: ctx?.name,
+      title: `${tv.ticker} — thesis ${tv.verdict}: ${hit.map((p) => p.title).join(", ") || "pillar read changed"}`,
+      detail: [tv.summary, ...hit.map((p) => `${p.title} (${p.status})${p.reading ? `: ${p.reading}` : ""}`)].filter(Boolean).join(" · "),
+      metrics: [ctx?.composite != null ? `composite ${ctx.composite}` : null, tv.generatedAt ? `read ${tv.generatedAt.slice(0, 10)}` : null].filter((m): m is string => m != null),
+      action:
+        tv.verdict === "broken"
+          ? "A pillar of the long-run thesis reads broken against the latest evidence. Open the stock page, read the review, and decide: exit, or re-underwrite with a reason. This is the one trigger a Thesis name is sold on."
+          : "A pillar of the long-run thesis is contested by new evidence. Open the stock page and work through the review — accept or reject its proposed changes and re-sign.",
+    });
+  }
+
+  // ── Tactical plans — the terms the PM set for a Tactical position ──
+  // A stop or target hit is HIGH (it emails): a tactical trade is only worth
+  // having if its exits are acted on. A due review or a Weak setup is MEDIUM.
+  for (const tw of input.tacticalWatch ?? []) {
+    if (!tw.flags.length) continue;
+    const ctx = ctxFor(tw.ticker);
+    const high = tw.flags.some((f) => f.severity === "high");
+    const kinds = new Set(tw.flags.map((f) => f.kind));
+    alerts.push({
+      id: `tactical-${tw.ticker}`,
+      priority: high ? "high" : "medium",
+      category: "thesis",
+      ticker: tw.ticker,
+      name: ctx?.name,
+      title: `${tw.ticker} — tactical plan: ${kinds.has("stop") ? "stop hit" : kinds.has("target") ? "target reached" : kinds.has("setup") ? "setup deteriorated" : "review due"}`,
+      detail: tw.flags.map((f) => f.text).join(" · "),
+      metrics: [ctx?.price != null ? `price ${ctx.price}` : null, ctx?.composite != null ? `composite ${ctx.composite}` : null].filter((m): m is string => m != null),
+      action: kinds.has("stop")
+        ? "The position is at the level you said would prove the trade wrong. Exit, or rewrite the plan with a reason — do not let it drift."
+        : kinds.has("target")
+          ? "The trade has done what you set out for it. Take profit, or raise the target and stop deliberately and re-date the review."
+          : "Open the stock page and review the tactical plan: keep, exit, or roll it with a new review date.",
+    });
+  }
 
   // ── Kill conditions — pre-registered exits, checked deterministically ──
   // These lead the list: unlike thesis-health (generic deterioration), a trip

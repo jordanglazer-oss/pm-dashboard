@@ -8,16 +8,17 @@ const useIsoLayoutEffect = typeof window !== "undefined" ? useLayoutEffect : use
 import Link from "next/link";
 import { useStocks } from "@/app/lib/StockContext";
 import { useNotifications } from "@/app/lib/NotificationsContext";
-import { FlashValue } from "@/app/components/FlashValue";
 import { SkeletonTable } from "@/app/components/Skeleton";
-import { SCORE_GROUPS, MAX_SCORE, INSTRUMENT_LABELS } from "@/app/lib/types";
+import { SCORE_GROUPS, MAX_SCORE } from "@/app/lib/types";
 import { SetupChip } from "./SetupChip";
+import { SleeveTags } from "./SleeveTags";
+import { sleevesOf, isUntagged, sleeveCounts } from "@/app/lib/sleeves";
 import type { ScoredStock, ScoreKey, HealthData, FundHolding, FundSectorWeight } from "@/app/lib/types";
 import type { TechnicalIndicators, RiskAlert } from "@/app/lib/technicals";
 import { groupTotal, isScoreable, normalizeSector, computeScores } from "@/app/lib/scoring";
 import { AppIcon } from "./AppIcon";
 import { displayTicker, canonicalTicker } from "@/app/lib/ticker";
-import { VERDICT_LABEL, type SynthesisVerdict } from "@/app/lib/synthesis-screen-display";
+import { skewWord, SKEW_TONE, type SynthesisVerdict } from "@/app/lib/synthesis-screen-display";
 import { useSearchParams, useRouter, usePathname } from "next/navigation";
 import { useLiveModelWeights } from "@/app/lib/useLiveModelWeights";
 import { SuggestedWatchlist } from "@/app/components/SuggestedWatchlist";
@@ -306,22 +307,33 @@ export function PortfolioOverview({
   // Per-ticker synthesis verdicts for the rankings' Synthesis column — links
   // the Holdings/Watchlist tables to the Ideas › Synthesis record. Read-only
   // fetch of the same endpoint the Synthesis screen renders from.
-  const [synthesisByTicker, setSynthesisByTicker] = useState<Map<string, { verdict: SynthesisVerdict; stale: boolean }>>(new Map());
-  // Thesis-health verdicts for the Status column (eroding / broken). Read-only.
-  const [thesisByTicker, setThesisByTicker] = useState<Map<string, "eroding" | "broken">>(new Map());
+  const [synthesisByTicker, setSynthesisByTicker] = useState<Map<string, { verdict: SynthesisVerdict; skew: number; stale: boolean }>>(new Map());
+  // Thesis status for the Holdings table: the automated health read
+  // (intact / eroding / broken) from pm:thesis-health, "stale" when the
+  // re-underwrite clock (next earnings + 7d) has passed, "none" when the
+  // name has no thesis on file. Read-only.
+  const [thesisByTicker, setThesisByTicker] = useState<Map<string, ThesisStatus>>(new Map());
   useEffect(() => {
     let alive = true;
-    fetch("/api/thesis-health", { cache: "no-store" })
-      .then((r) => (r.ok ? r.json() : null))
-      .then((j) => {
-        if (!alive || !j?.thesisHealth?.holdings) return;
-        const m = new Map<string, "eroding" | "broken">();
-        for (const h of j.thesisHealth.holdings as Array<{ ticker: string; verdict: string }>) {
-          if (h.verdict === "eroding" || h.verdict === "broken") m.set(h.ticker.toUpperCase(), h.verdict);
-        }
-        setThesisByTicker(m);
-      })
-      .catch(() => {});
+    Promise.all([
+      fetch("/api/thesis-health", { cache: "no-store" }).then((r) => (r.ok ? r.json() : null)).catch(() => null),
+      fetch("/api/thesis-watch", { cache: "no-store" }).then((r) => (r.ok ? r.json() : null)).catch(() => null),
+    ]).then(([health, watch]) => {
+      if (!alive) return;
+      const today = new Date().toISOString().slice(0, 10);
+      const m = new Map<string, ThesisStatus>();
+      for (const h of (health?.thesisHealth?.holdings ?? []) as Array<{ ticker: string; verdict: string }>) {
+        if (h.verdict === "intact" || h.verdict === "eroding" || h.verdict === "broken") m.set(h.ticker.toUpperCase(), h.verdict);
+      }
+      const underwritten = new Set<string>();
+      for (const h of (watch?.holdings ?? []) as Array<{ ticker: string; reUnderwriteBy?: string }>) {
+        underwritten.add(h.ticker.toUpperCase());
+        if (h.reUnderwriteBy && h.reUnderwriteBy < today && m.get(h.ticker.toUpperCase()) !== "broken") m.set(h.ticker.toUpperCase(), "stale");
+      }
+      for (const c of (watch?.coverage?.missing ?? []) as Array<{ ticker: string }>) m.set(c.ticker.toUpperCase(), "none");
+      for (const tk of underwritten) if (!m.has(tk)) m.set(tk, "intact");
+      setThesisByTicker(m);
+    });
     return () => { alive = false; };
   }, []);
   useEffect(() => {
@@ -330,10 +342,10 @@ export function PortfolioOverview({
       .then((r) => (r.ok ? r.json() : null))
       .then((d) => {
         if (!alive || !Array.isArray(d?.rows)) return;
-        const m = new Map<string, { verdict: SynthesisVerdict; stale: boolean }>();
+        const m = new Map<string, { verdict: SynthesisVerdict; skew: number; stale: boolean }>();
         for (const row of d.rows) {
           const v = row?.entry?.result?.verdict;
-          if (row?.ticker && v) m.set(canonicalTicker(row.ticker), { verdict: v, stale: Array.isArray(row.stale) && row.stale.length > 0 });
+          if (row?.ticker && v) m.set(canonicalTicker(row.ticker), { verdict: v, skew: Number(row.entry.result.skew ?? 0), stale: Array.isArray(row.stale) && row.stale.length > 0 });
         }
         setSynthesisByTicker(m);
       })
@@ -1395,29 +1407,17 @@ export function PortfolioOverview({
                     <th className={fThClass} onClick={() => handleFundSort("name")}>
                       Name<FundSortIcon field="name" sortField={fundSort} sortDir={fundSortDir} />
                     </th>
-                    <th className={fThClass} onClick={() => handleFundSort("type")}>
-                      Type<FundSortIcon field="type" sortField={fundSort} sortDir={fundSortDir} />
-                    </th>
                     <th className={fThClass} onClick={() => handleFundSort("role")}>
                       Role<FundSortIcon field="role" sortField={fundSort} sortDir={fundSortDir} />
                     </th>
-                    <th className={`text-right ${fThClass}`} onClick={() => handleFundSort("price")}>
-                      Price<FundSortIcon field="price" sortField={fundSort} sortDir={fundSortDir} />
-                    </th>
-                    <th className={`text-right ${fThClass}`} onClick={() => handleFundSort("ytd")}>
-                      YTD<FundSortIcon field="ytd" sortField={fundSort} sortDir={fundSortDir} />
+                    <th className="whitespace-nowrap" title="Alpha sleeve — Thesis (long-run hold) or Tactical (shorter-horizon). A fund sits in one sleeve only. Core holdings have no sleeve.">
+                      Sleeve
                     </th>
                     <th className={`text-right ${fThClass}`} onClick={() => handleFundSort("oneYear")}>
                       1Y<FundSortIcon field="oneYear" sortField={fundSort} sortDir={fundSortDir} />
                     </th>
                     <th className={`text-right ${fThClass}`} onClick={() => handleFundSort("threeYear")}>
                       3Y<FundSortIcon field="threeYear" sortField={fundSort} sortDir={fundSortDir} />
-                    </th>
-                    <th className={`text-right ${fThClass}`} onClick={() => handleFundSort("fiveYear")}>
-                      5Y<FundSortIcon field="fiveYear" sortField={fundSort} sortDir={fundSortDir} />
-                    </th>
-                    <th className={`text-right ${fThClass}`} onClick={() => handleFundSort("tenYear")}>
-                      10Y<FundSortIcon field="tenYear" sortField={fundSort} sortDir={fundSortDir} />
                     </th>
                   </tr>
                 </thead>
@@ -1481,17 +1481,12 @@ export function PortfolioOverview({
                         </td>
                         <td className="max-w-[180px] truncate text-ink-2">{s.name}</td>
                         <td>
-                          <span className="text-[12px] text-ink-2">
-                            {INSTRUMENT_LABELS[s.instrumentType || "stock"]}
-                          </span>
-                        </td>
-                        <td>
                           {(() => {
                             // Only show Core/Alpha for equity-class ETFs/MFs
                             const nl = (s.name || "").toLowerCase();
                             const sl = (s.sector || "").toLowerCase();
                             const isBondOrAlt = sl.includes("bond") || sl.includes("fixed") || nl.includes("bond") || nl.includes("fixed income")
-                              || sl.includes("alternative") || nl.includes("alternative") || nl.includes("premium yield") || nl.includes("premium incom") || nl.includes("hedge") || nl.includes("option income") || nl.includes("option writing") || nl.includes("covered call");
+                              || sl.includes("alternative") || nl.includes("alternative") || nl.includes("premium yield") || nl.includes("premium incom") || (nl.includes("hedge") && !nl.includes("hedged")) || nl.includes("option income") || nl.includes("option writing") || nl.includes("covered call");
                             if (isBondOrAlt) return <span className="text-[10px] text-ink-faint">—</span>;
                             return (
                               <button
@@ -1507,12 +1502,9 @@ export function PortfolioOverview({
                             );
                           })()}
                         </td>
-                        <td className="n">{s.price != null ? s.price.toFixed(2) : "—"}</td>
-                        <td className={`n ${fundReturnColor(perf?.ytd)}`}>{fundReturnFmt(perf?.ytd)}</td>
+                        <td><SleeveTags stock={s} /></td>
                         <td className={`n ${fundReturnColor(perf?.oneYear)}`}>{fundReturnFmt(perf?.oneYear)}</td>
                         <td className={`n ${fundReturnColor(perf?.threeYear)}`}>{fundReturnFmt(perf?.threeYear)}</td>
-                        <td className={`n ${fundReturnColor(perf?.fiveYear)}`}>{fundReturnFmt(perf?.fiveYear)}</td>
-                        <td className={`n ${fundReturnColor(perf?.tenYear)}`}>{fundReturnFmt(perf?.tenYear)}</td>
                       </tr>
                     );
                   })}
@@ -1526,6 +1518,8 @@ export function PortfolioOverview({
     </div>
   );
 }
+
+type ThesisStatus = "intact" | "eroding" | "broken" | "stale" | "none";
 
 type RankingSortKey =
   | "ticker"
@@ -1587,10 +1581,10 @@ function RankingTable({
    *  (the Portfolio / Watchlist toggle). */
   bucketTabs?: React.ReactNode;
   stocks: ScoredStock[];
-  /** ticker → latest synthesis verdict (+staleness) for the Synthesis column. */
-  synthesisByTicker?: Map<string, { verdict: SynthesisVerdict; stale: boolean }>;
-  /** ticker (upper) → thesis-health verdict, for the Status column. */
-  thesisByTicker?: Map<string, "eroding" | "broken">;
+  /** ticker → latest synthesis (skew shown as Bull / Neutral / Bear; verdict kept for filters). */
+  synthesisByTicker?: Map<string, { verdict: SynthesisVerdict; skew: number; stale: boolean }>;
+  /** ticker (upper) → thesis status for the Thesis status column. */
+  thesisByTicker?: Map<string, ThesisStatus>;
   /** When true, split the rows into Canadian (CAD) and US (USD) sub-sections,
    *  each independently ranked + flagged, so CAD and USD names are compared
    *  within their own currency rather than against each other. */
@@ -1689,7 +1683,7 @@ function RankingTable({
   const prefPrefix = flagType === "review" ? "rankPort" : "rankWatch";
   // Canvas header state: Stale/Flagged chips + search (transient view state),
   // and the ⋯ menu holding the action cluster.
-  const [chipFilter, setChipFilter] = useState<"all" | "stale" | "flagged">("all");
+  const [chipFilter, setChipFilter] = useState<"all" | "stale" | "flagged" | "thesis" | "tactical" | "untagged">("all");
   const [query, setQuery] = useState("");
   const [menuOpen, setMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
@@ -1708,7 +1702,7 @@ function RankingTable({
   };
   const isStaleRow = (st: ScoredStock) => isScoreable(st) && staleDaysOf(st) > 30;
   const isFlaggedRow = (st: ScoredStock) =>
-    Boolean(riskScanByTicker?.get(normalizeRiskTicker(st.ticker)) || st.valueTrap || thesisByTicker?.get(st.ticker.toUpperCase()));
+    Boolean(riskScanByTicker?.get(normalizeRiskTicker(st.ticker)) || st.valueTrap || ["eroding", "broken"].includes(thesisByTicker?.get(st.ticker.toUpperCase()) ?? ""));
   const sort = {
     key: (uiPrefs[`${prefPrefix}Sort`] as RankingSortKey) || "adjusted",
     dir: (uiPrefs[`${prefPrefix}SortDir`] as SortDir) || "desc",
@@ -1733,6 +1727,9 @@ function RankingTable({
     if (q && !(st.ticker.toLowerCase().includes(q) || (st.name || "").toLowerCase().includes(q) || (st.sector || "").toLowerCase().includes(q))) return false;
     if (chipFilter === "stale" && !isStaleRow(st)) return false;
     if (chipFilter === "flagged" && !isFlaggedRow(st)) return false;
+    if (chipFilter === "thesis" && !sleevesOf(st).thesis) return false;
+    if (chipFilter === "tactical" && !sleevesOf(st).tactical) return false;
+    if (chipFilter === "untagged" && !isUntagged(st)) return false;
     return true;
   });
   const sorted = [...filteredStocks].sort((a, b) => {
@@ -1967,7 +1964,7 @@ function RankingTable({
       <div className="flex flex-wrap items-center gap-2">
         {bucketTabs || <h2 className="text-[13px] font-semibold text-ink">{title}</h2>}
         {(() => {
-          const flaggedN = stocks.filter((s) => thesisByTicker?.has(s.ticker.toUpperCase()) || riskScanByTicker?.get(normalizeRiskTicker(s.ticker)) || s.valueTrap).length;
+          const flaggedN = stocks.filter((s) => isFlaggedRow(s)).length;
           const staleN = stocks.filter((s) => isScoreable(s) && staleDaysOf(s) > 30).length;
           return (
             <>
@@ -1988,6 +1985,35 @@ function RankingTable({
               >
                 Stale <span className="font-mono text-[11px] text-ink-3">{staleN}</span>
               </button>
+              {showWeight && (() => {
+                // Alpha sleeves — Portfolio only. Counts are names, not weight.
+                const sc = sleeveCounts(stocks);
+                const chip = (key: "thesis" | "tactical" | "untagged", label: string, n: number, title: string, warn = false) => (
+                  <button
+                    key={key}
+                    onClick={() => setChipFilter(chipFilter === key ? "all" : key)}
+                    aria-pressed={chipFilter === key}
+                    className={`inline-flex h-7 items-center gap-1.5 rounded-control border px-2.5 text-[12.5px] transition-colors ${chipFilter === key ? "border-accent-border bg-accent-soft text-accent" : warn && n > 0 ? "border-warn-soft bg-warn-soft text-warn hover:border-warn-border" : "border-line bg-surface text-ink-2 hover:bg-surface-hover"}`}
+                    title={title}
+                  >
+                    {label} <span className="font-mono text-[11px] text-ink-3">{n}</span>
+                  </button>
+                );
+                void chip;
+                return (
+                  <select
+                    value={chipFilter === "thesis" || chipFilter === "tactical" || chipFilter === "untagged" ? chipFilter : "all"}
+                    onChange={(e) => setChipFilter(e.target.value as typeof chipFilter)}
+                    className={`h-7 rounded-control border px-2 text-[12.5px] ${sc.untagged > 0 && chipFilter === "all" ? "border-warn-soft bg-warn-soft text-warn" : "border-line bg-surface text-ink-2"}`}
+                    title="Filter by Alpha sleeve"
+                  >
+                    <option value="all">All sleeves</option>
+                    <option value="thesis">Thesis · {sc.thesis}</option>
+                    <option value="tactical">Tactical · {sc.tactical}</option>
+                    <option value="untagged">Untagged · {sc.untagged}</option>
+                  </select>
+                );
+              })()}
             </>
           );
         })()}
@@ -2272,14 +2298,12 @@ function RankingTable({
                 />
                 Ticker{arrow("ticker")}
               </th>
-              <th className={thClass} onClick={() => toggleSort("sector")}>Sector{arrow("sector")}</th>
               {showWeight && <th className={`${thClass} text-right`}>Wt %</th>}
-              <th className={`${thClass} text-right`} onClick={() => toggleSort("price")}>Price{arrow("price")}</th>
-              <th className={`${thClass} text-right`}>Day</th>
-              <th className={`${thClass} hidden lg:table-cell`}>Verdict</th>
+              {showWeight && <th className={`${thClass} hidden md:table-cell`} title="Alpha sleeve — Thesis (long-run hold) and/or Tactical (shorter-horizon). Both on = a Thesis name carrying a tactical overweight.">Sleeve</th>}
+              <th className={`${thClass} hidden lg:table-cell`} title="Latest synthesis — the sign of its risk/reward skew. Bull / Neutral / Bear.">Synthesis</th>
               <th className={`${thClass} text-right`} onClick={() => toggleSort("adjusted")}>Score{arrow("adjusted")}</th>
               <th className={`${thClass} hidden md:table-cell`} title="Setup grade — SIA + BoostedAI + MarketEdge (/6), plus your charting read once scored (/9). Timing, read beside the conviction score.">Setup</th>
-              <th className={thClass}>Status</th>
+              <th className={thClass} title="Automated read of the written thesis: intact / eroding / broken. Stale = not re-underwritten since the last earnings print.">Thesis status</th>
               <th className="w-8" aria-label="Detail"></th>
             </tr>
           </thead>
@@ -2376,7 +2400,6 @@ function RankingTable({
                       </Link>
                     </div>
                   </td>
-                  <td className="text-ink-2">{s.sector || "—"}</td>
                   {showWeight && (
                     <td className="n">
                       {(() => {
@@ -2385,33 +2408,20 @@ function RankingTable({
                       })()}
                     </td>
                   )}
-                  <td className="n">
-                    <FlashValue value={s.price ?? null}>{s.price != null ? s.price.toFixed(2) : "—"}</FlashValue>
-                  </td>
-                  <td className="n">
-                    {(() => {
-                      const pc = livePreviousCloses[s.ticker];
-                      if (s.price == null || pc == null || pc <= 0) return <span className="text-ink-faint">—</span>;
-                      const chg = ((s.price - pc) / pc) * 100;
-                      return <span className={chg >= 0 ? "text-pos" : "text-neg"}>{chg >= 0 ? "+" : ""}{chg.toFixed(1)}%</span>;
-                    })()}
-                  </td>
+                  {showWeight && <td className="hidden md:table-cell"><SleeveTags stock={s} /></td>}
                   <td className="hidden lg:table-cell">
                     {(() => {
                       const sv = synthesisByTicker?.get(canonicalTicker(s.ticker));
-                      if (!sv) return <span className="text-ink-faint">—</span>;
-                      const tone =
-                        sv.verdict === "advance" || sv.verdict === "thesis-intact" ? "bg-pos-soft text-pos"
-                        : sv.verdict === "pass" || sv.verdict === "exit-watch" ? "bg-neg-soft text-neg"
-                        : "bg-warn-soft text-warn";
+                      const word = sv ? skewWord(sv.skew) : null;
+                      if (!sv || !word) return <span className="text-[11px] text-ink-faint">none</span>;
                       return (
                         <Link
                           href="/synthesis"
                           onClick={(e) => e.stopPropagation()}
-                          className={`inline-flex h-[18px] items-center gap-1 rounded px-1.5 text-[11px] font-medium whitespace-nowrap ${tone}`}
-                          title={`Latest synthesis verdict${sv.stale ? " (stale — regenerate on the Synthesis screen)" : ""} — click to open Ideas › Synthesis`}
+                          className={`inline-flex h-[18px] items-center gap-1 rounded px-1.5 text-[11px] font-medium whitespace-nowrap ${SKEW_TONE[word]}`}
+                          title={`Latest synthesis reads ${word.toLowerCase()}${sv.stale ? " — stale, regenerate on the Synthesis screen" : ""}. Click to open Ideas › Synthesis.`}
                         >
-                          {VERDICT_LABEL[sv.verdict] ?? sv.verdict}
+                          {word}
                           {sv.stale && <span className="font-normal opacity-70">stale</span>}
                         </Link>
                       );
@@ -2431,20 +2441,23 @@ function RankingTable({
                   </td>
                   <td>
                     {(() => {
-                      // Status (canvas): thesis tripped > risk flag > value trap > stale > current.
-                      const thesis = thesisByTicker?.get(s.ticker.toUpperCase());
+                      // Thesis status: the written thesis's automated read.
+                      // Held names only — a watchlist name has no thesis.
+                      if (!showWeight) return <span className="text-ink-faint">—</span>;
+                      // A Tactical-only name is judged on its plan, not a thesis.
+                      const sl = sleevesOf(s);
+                      if (sl.tactical && !sl.thesis) return <span className="text-[11px] text-ink-faint" title="Tactical position — judged on its plan (see the Thesis desk)">tactical · plan</span>;
+                      const st = thesisByTicker?.get(s.ticker.toUpperCase()) ?? "none";
                       const cell = (dot: string, text: string, cls: string, title?: string) => (
                         <span className="inline-flex items-center gap-1.5 text-[12px]" title={title}>
                           <span className={`dot ${dot}`} /><span className={cls}>{text}</span>
                         </span>
                       );
-                      if (thesis) return cell(thesis === "broken" ? "bg-neg" : "bg-warn", `Thesis ${thesis === "broken" ? "tripped" : "eroding"}`, thesis === "broken" ? "text-neg" : "text-warn");
-                      const risk = riskScanByTicker?.get(normalizeRiskTicker(s.ticker));
-                      if (risk) return cell("bg-neg", `Risk · ${risk.priority}`, "text-neg", `${risk.summary} Action: ${risk.action}`);
-                      if (s.valueTrap) return cell("bg-warn", "Revisions down", "text-warn", `Value-trap haircut: net revisions ${s.valueTrap.net} — valuation categories ×0.5 (${s.valueTrap.pointsRemoved} pts removed)`);
-                      const d = staleDaysOf(s);
-                      if (isScoreable(s) && d > 30) return cell("bg-warn", `Stale ${Number.isFinite(d) ? `${Math.round(d)}d` : ""}`, "text-warn");
-                      return cell("bg-ink-faint", "Current", "text-ink-3");
+                      if (st === "broken") return cell("bg-neg", "Broken", "text-neg", "A pillar or kill condition reads broken — open the stock page");
+                      if (st === "eroding") return cell("bg-warn", "Eroding", "text-warn", "The automated thesis-health read is deteriorating");
+                      if (st === "stale") return cell("bg-warn", "Stale", "text-warn", "Not re-underwritten since the last earnings print");
+                      if (st === "intact") return cell("bg-pos", "Intact", "text-ink-2");
+                      return cell("bg-ink-faint", "Not written", "text-ink-3", "No thesis on file — underwrite on the stock page");
                     })()}
                   </td>
                   <td className="!pr-2 text-right">
@@ -2461,7 +2474,7 @@ function RankingTable({
                 </tr>
                 {expanded && (
                   <tr className="bg-surface-2">
-                    <td colSpan={10} className="!h-auto whitespace-normal !px-3.5 !py-3 align-top">
+                    <td colSpan={showWeight ? 8 : 6} className="!h-auto whitespace-normal !px-3.5 !py-3 align-top">
                       <div className="grid gap-x-6 gap-y-3 md:grid-cols-2">
                         <div className="min-w-0">
                           <div className="mb-1 text-[11px] text-ink-3">What they do</div>

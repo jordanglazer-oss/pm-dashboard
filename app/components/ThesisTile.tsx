@@ -19,6 +19,8 @@ import {
 import type { ThesisReview, ReviewChange } from "@/app/lib/thesis-review";
 import { AppIcon } from "@/app/components/AppIcon";
 import { usePersistedOpen } from "@/app/lib/useCollapsed";
+import { useStocks } from "@/app/lib/StockContext";
+import { sleevesOf } from "@/app/lib/sleeves";
 
 /**
  * Thesis tile (stock page) — the pre-registration surface of the
@@ -95,6 +97,7 @@ const STATUS_STYLE: Record<KillStatus, { dot: string; word: string }> = {
   tripped: { dot: "bg-neg", word: "Tripped" },
   unknown: { dot: "bg-ink-faint", word: "No data" },
   manual: { dot: "bg-ink-faint", word: "Manual" },
+  info: { dot: "bg-ink-faint", word: "Below — informational" },
 };
 
 function todayIso(): string {
@@ -115,6 +118,11 @@ export default function ThesisTile({
   earningsDate?: string | null;
   className?: string;
 }) {
+  // Thesis-sleeve names are sold on a broken thesis, not on trend: the 200-day
+  // breaker still shows, but reads "informational" and never counts as a trip.
+  const { getStock } = useStocks();
+  const held = getStock(ticker);
+  const ma200Informational = held?.bucket === "Portfolio" && sleevesOf(held).thesis;
   const [entry, setEntry] = useState<ThesisEntry | null>(null);
   const [loaded, setLoaded] = useState(false);
   const [editing, setEditing] = useState(false);
@@ -291,7 +299,7 @@ export default function ThesisTile({
   // Composed at read time so no stored blob is rewritten to introduce it; it
   // persists on the next signed save or on its first trip.
   const conditions = useMemo(() => (entry ? withBaselineConditions(entry.killConditions ?? []) : []), [entry]);
-  const checks = useMemo(() => checkAll(conditions, liveSignals), [conditions, liveSignals]);
+  const checks = useMemo(() => checkAll(conditions, liveSignals, { ma200Informational }), [conditions, liveSignals, ma200Informational]);
   const { tripped, auto } = trippedCount(checks);
 
   // ── Persist OK→TRIPPED / TRIPPED→OK transitions (one POST when needed) ──

@@ -39,6 +39,7 @@ export const NAV_GROUPS: NavGroup[] = [
     items: [
       { key: "holdings", label: "Holdings", href: "/", icon: "table", match: (p) => p === "/scoring" || p.startsWith("/stock/") },
       { key: "positioning", label: "Positioning", href: "/portfolio", icon: "pie", match: (p) => p.startsWith("/portfolio") },
+      { key: "review", label: "Review", href: "/review", icon: "calendar" },
       { key: "models", label: "Models", href: "/pim-model", icon: "layers" },
       { key: "performance", label: "Performance", href: "/aa-performance", icon: "trend", match: (p) => p === "/attribution" },
       { key: "risk", label: "Risk", href: "/risk", icon: "shield" },
@@ -52,7 +53,6 @@ export const NAV_GROUPS: NavGroup[] = [
     items: [
       { key: "synthesis", label: "Synthesis", href: "/synthesis", icon: "spark" },
       { key: "pipeline", label: "Pipeline", href: "/funnel", icon: "branch", match: (p) => p === "/conviction" },
-      { key: "screen", label: "Screen", href: "/screener", icon: "filter", match: (p) => p === "/radar" || p === "/setups" || p === "/factor-lab" || p.startsWith("/screener/") },
     ],
   },
   {
