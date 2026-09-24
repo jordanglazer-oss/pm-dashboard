@@ -58,8 +58,21 @@ export async function PUT(req: NextRequest) {
       );
     }
     const redis = await getRedis();
-    await redis.set(KEY, JSON.stringify(data));
-    return NextResponse.json({ ok: true });
+    // Optimistic concurrency: every write stamps `revision`; a PUT carrying a
+    // revision older than the stored one comes from a tab that has not seen a
+    // newer model (a Review commit, a restore, another tab's trade) and would
+    // silently roll it back. Refuse it and hand back the current model.
+    const storedRaw = await redis.get(KEY);
+    const stored = storedRaw ? (JSON.parse(storedRaw) as { revision?: number }) : null;
+    const storedRev = typeof stored?.revision === "number" ? stored.revision : 0;
+    const bodyRev = typeof (data as { revision?: unknown }).revision === "number" ? (data as { revision: number }).revision : null;
+    if (storedRev > 0 && bodyRev !== null && bodyRev < storedRev) {
+      console.warn(`[pm:pim-models PUT] stale revision ${bodyRev} < ${storedRev} — refused`);
+      return NextResponse.json({ error: "stale", revision: storedRev, current: JSON.parse(storedRaw as string) }, { status: 409 });
+    }
+    const next = { ...(data as Record<string, unknown>), revision: storedRev + 1, lastUpdated: new Date().toISOString() };
+    await redis.set(KEY, JSON.stringify(next));
+    return NextResponse.json({ ok: true, revision: storedRev + 1 });
   } catch (e) {
     console.error("Redis write error (pim-models):", e);
     return NextResponse.json({ error: "Failed to save" }, { status: 500 });

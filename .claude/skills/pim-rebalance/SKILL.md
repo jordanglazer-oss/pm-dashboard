@@ -17,6 +17,16 @@ These rules govern how holdings in `pm:pim-models` are weighted. Every one of th
 
 Adding a stock increases `stockTotal` by `refPerStock`; the ETF pool shrinks by the same amount. Locked holdings never move.
 
+## Pinned stocks (Review commits)
+
+A stock holding may carry `pinned: { weightInClass, month, at }`, written by
+`POST /api/weight-decisions/commit`. `rebalanceStockWeights` treats a pinned
+stock exactly like a locked fund: pass-through at `pinned.weightInClass`,
+never re-pinned to `refPerStock`. Only a "release" decision (or a restore of an
+older version) removes the pin. Every server-side write of `pm:pim-models`
+snapshots the blob first (`app/lib/model-versions.ts`); the PUT route refuses a
+stale `revision` (409).
+
 ## Locked symbols
 
 ```ts

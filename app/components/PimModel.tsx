@@ -54,10 +54,11 @@ const WEIGHT_MATH_LOCKED = new Set(["FID5982", "FID5982-T", "GRNJ"]);
 const REF_PER_STOCK = 0.018182;
 
 /** How a holding's weight is derived — the "weight math" column. */
-function weightMathLabel(h: { symbol: string; assetClass: string; weightInClass: number }): { text: string; cls: string; locked?: boolean } {
+function weightMathLabel(h: { symbol: string; assetClass: string; weightInClass: number; pinned?: { month: string } }): { text: string; cls: string; locked?: boolean } {
   if (h.assetClass !== "equity") {
     return { text: h.assetClass === "fixedIncome" ? "FI sleeve" : "Alt sleeve", cls: "text-ink-3" };
   }
+  if (h.pinned) return { text: `Pinned · ${h.pinned.month}`, cls: "text-accent", locked: true };
   if (WEIGHT_MATH_LOCKED.has(h.symbol)) return { text: "Balanced %", cls: "text-warn", locked: true };
   if (Math.abs(h.weightInClass - REF_PER_STOCK) < 0.0005) return { text: "Stock · 1.82%", cls: "text-ink-2" };
   return { text: "ETF · residual", cls: "text-accent-ink" };
