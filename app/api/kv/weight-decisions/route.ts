@@ -58,9 +58,9 @@ export async function POST(req: NextRequest) {
     for (const [symbol, d] of Object.entries(body.decisions)) {
       if (!symbol) continue;
       if (d === null) { delete decisions[symbol]; continue; }
-      if (!d || !["keep", "adopt", "set"].includes(d.action)) continue;
+      if (!d || !["keep", "adopt", "set", "release"].includes(d.action)) continue;
       const target = typeof d.targetInClass === "number" && Number.isFinite(d.targetInClass) && d.targetInClass >= 0 && d.targetInClass <= 1 ? d.targetInClass : undefined;
-      if (d.action !== "keep" && target == null) continue;
+      if (d.action !== "keep" && d.action !== "release" && target == null) continue;
       decisions[symbol] = {
         action: d.action,
         ...(target != null ? { targetInClass: target } : {}),

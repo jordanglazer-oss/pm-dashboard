@@ -30,11 +30,23 @@ import { isCoreDesignated, isFund, sleevesOf } from "./sleeves";
 import { MAX_STOCK_PORTFOLIO_WEIGHT, maxEquityAllocation } from "./sleeve-weights";
 
 export const WEIGHT_DECISIONS_KEY = "pm:weight-decisions";
-/** Commit writes pm:pim-models. Off until the split is approved for production
- *  — preview shares the database, so a commit there would change the live models. */
-export const WEIGHT_COMMIT_ENABLED = false;
+/** Commit writes pm:pim-models (enabled 2026-09-24 with typed confirmation,
+ *  server-side reconciliation, a version snapshot before every write, and a
+ *  revision guard against stale tabs). */
+export const WEIGHT_COMMIT_ENABLED = true;
+/** The per-stock rule weight today (StockContext.rebalanceStockWeights). A
+ *  "release" decision returns a pinned stock to this. */
+export const REF_PER_STOCK = 0.018182;
 
-export type DecisionAction = "keep" | "adopt" | "set";
+/**
+ *   keep     the drift is noise; the current target stands
+ *   adopt    the live weight becomes the target — PINNED
+ *   set      an explicit target — PINNED
+ *   release  drop the pin; the name returns to the rule weight (nets like a set)
+ * A pin means the rebalance rule skips the name; it holds the committed weight
+ * through later trades until released or decided again (Jordan, 2026-09-24).
+ */
+export type DecisionAction = "keep" | "adopt" | "set" | "release";
 export type WeightDecision = {
   action: DecisionAction;
   /** New weightInClass for adopt / set; absent for keep. */
@@ -96,11 +108,13 @@ export function reconcile(group: PimModelGroup, stocks: StockLite[], decisions: 
     if (h.assetClass !== "equity") continue;
     const s = idx.get(canonicalTicker(h.symbol));
     const d = decisions[h.symbol];
-    if (!d || d.action === "keep" || d.targetInClass == null) continue;
+    if (!d || d.action === "keep") continue;
+    const target = d.action === "release" ? REF_PER_STOCK : d.targetInClass;
+    if (target == null) continue;
     const sleeve = decisionSleeveOf(s);
     if (!sleeve) { untouchedUntagged.push(h.symbol); continue; }
-    deltas[sleeve] += d.targetInClass - h.weightInClass;
-    if (s && !isFund(s) && d.targetInClass > capInClass + 1e-9) capBreaches.push({ symbol: h.symbol, targetInClass: d.targetInClass, capInClass });
+    deltas[sleeve] += target - h.weightInClass;
+    if (s && !isFund(s) && target > capInClass + 1e-9) capBreaches.push({ symbol: h.symbol, targetInClass: target, capInClass });
   }
   const nets: SleeveNet[] = (["thesis", "tactical"] as DecisionSleeve[]).map((sleeve) => ({ sleeve, delta: deltas[sleeve], ok: Math.abs(deltas[sleeve]) <= NET_TOLERANCE }));
   return { nets, capBreaches, untouchedUntagged, ok: nets.every((n) => n.ok) && capBreaches.length === 0 && untouchedUntagged.length === 0 };
@@ -109,13 +123,21 @@ export function reconcile(group: PimModelGroup, stocks: StockLite[], decisions: 
 /** The group with a month's decisions applied (pure — for the diff preview and,
  *  once enabled, the commit). Only decided symbols move; Core is untouched
  *  because decisions net to zero inside each sleeve. */
-export function applyDecisions(group: PimModelGroup, decisions: Record<string, WeightDecision>): PimModelGroup {
+export function applyDecisions(group: PimModelGroup, decisions: Record<string, WeightDecision>, month?: string): PimModelGroup {
+  const at = new Date().toISOString();
   return {
     ...group,
     holdings: group.holdings.map((h) => {
       const d = decisions[h.symbol];
-      if (h.assetClass !== "equity" || !d || d.action === "keep" || d.targetInClass == null) return h;
-      return { ...h, weightInClass: parseFloat(d.targetInClass.toFixed(6)) };
+      if (h.assetClass !== "equity" || !d || d.action === "keep") return h;
+      if (d.action === "release") {
+        const { pinned: _drop, ...rest } = h;
+        void _drop;
+        return { ...rest, weightInClass: REF_PER_STOCK };
+      }
+      if (d.targetInClass == null) return h;
+      const w = parseFloat(d.targetInClass.toFixed(6));
+      return { ...h, weightInClass: w, pinned: { weightInClass: w, month: month ?? monthKey(), at } };
     }),
   };
 }
@@ -126,11 +148,14 @@ export function applyDecisions(group: PimModelGroup, decisions: Record<string, W
 export function inheritDecisions(pim: PimModelGroup, other: PimModelGroup, stocks: StockLite[], decisions: Record<string, WeightDecision>): PimModelGroup {
   const idx = new Map<string, StockLite>();
   for (const s of stocks) if (s.bucket === "Portfolio") idx.set(canonicalTicker(s.ticker), s);
-  const decided = new Map<string, number>();
+  const decided = new Map<string, { w: number; pin: boolean }>();
   for (const h of pim.holdings) {
     const d = decisions[h.symbol];
-    if (h.assetClass === "equity" && d && d.action !== "keep" && d.targetInClass != null) decided.set(canonicalTicker(h.symbol), d.targetInClass);
+    if (h.assetClass !== "equity" || !d || d.action === "keep") continue;
+    if (d.action === "release") decided.set(canonicalTicker(h.symbol), { w: REF_PER_STOCK, pin: false });
+    else if (d.targetInClass != null) decided.set(canonicalTicker(h.symbol), { w: d.targetInClass, pin: true });
   }
+  const at = new Date().toISOString();
   const equity = other.holdings.filter((h) => h.assetClass === "equity");
   const core = equity.filter((h) => isCoreDesignated(idx.get(canonicalTicker(h.symbol)) ?? {}) || (!idx.has(canonicalTicker(h.symbol))));
   const coreSet = new Set(core.map((h) => h.symbol));
@@ -138,9 +163,11 @@ export function inheritDecisions(pim: PimModelGroup, other: PimModelGroup, stock
   const next = other.holdings.map((h) => {
     if (h.assetClass !== "equity" || coreSet.has(h.symbol)) return h;
     const t = decided.get(canonicalTicker(h.symbol));
-    const w = t != null ? parseFloat(t.toFixed(6)) : h.weightInClass;
+    if (!t) { nonCore += h.weightInClass; return h; }
+    const w = parseFloat(t.w.toFixed(6));
     nonCore += w;
-    return { ...h, weightInClass: w };
+    if (!t.pin) { const { pinned: _drop, ...rest } = h; void _drop; return { ...rest, weightInClass: w }; }
+    return { ...h, weightInClass: w, pinned: { weightInClass: w, month: monthKey(), at } };
   });
   const coreTotal = Math.max(0, 1 - nonCore);
   const coreCur = core.reduce((a, h) => a + h.weightInClass, 0);

@@ -127,6 +127,7 @@ type StockContextType = {
   pimModels: PimModelData;
   updatePimModels: (data: PimModelData) => void;
   rebalanceStockWeights: (holdings: PimHolding[], extraStock?: Stock, groupId?: string) => PimHolding[];
+  reloadPimModels: () => Promise<void>;
   toggleModelEligibility: (ticker: string, groupId: string, eligible: boolean) => void;
   updateModelWeight: (ticker: string, groupId: string, weight: number) => void;
   pimPortfolioState: PimPortfolioState;
@@ -356,13 +357,50 @@ export function StockProvider({ children }: { children: React.ReactNode }) {
   const [persistBrief] = useDebouncedPersist("/api/kv/brief", "brief", 100);
   const [persistChartAnalyses] = useDebouncedPersist("/api/kv/chart-analysis", "chartAnalyses", 300);
   const [persistScanner] = useDebouncedPersist("/api/kv/scanner", "scanner", 300);
-  // Custom persist for pim-models (sends full object, not wrapped in key)
+  // Custom persist for pim-models (sends full object, not wrapped in key).
+  // Sequential and revision-aware: each PUT carries the newest revision this
+  // tab has seen, the server stamps the next one, and a 409 (someone else
+  // wrote a newer model — a Review commit, a restore, another tab) reloads the
+  // server's copy into state instead of overwriting it. The local change that
+  // lost the race is dropped and the PM is told to redo it.
+  const pimRevisionRef = useRef<number | undefined>(undefined);
+  const pimPersistChain = useRef<Promise<void>>(Promise.resolve());
   const persistPim = useCallback((data: PimModelData) => {
-    fetch("/api/kv/pim-models", {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(data),
-    }).catch((e) => console.error("Failed to persist pim-models:", e));
+    pimPersistChain.current = pimPersistChain.current.then(async () => {
+      try {
+        const res = await fetch("/api/kv/pim-models", {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ ...data, revision: pimRevisionRef.current }),
+        });
+        if (res.status === 409) {
+          const j = await res.json().catch(() => ({}));
+          if (j?.current?.groups) {
+            pimRevisionRef.current = j.revision;
+            setPimModelsState(j.current as PimModelData);
+            console.warn("[pim-models] model changed elsewhere — reloaded the server copy; redo the last change");
+            window.dispatchEvent(new CustomEvent("pim-models:stale", { detail: { revision: j.revision } }));
+          }
+          return;
+        }
+        const j = await res.json().catch(() => ({}));
+        if (typeof j?.revision === "number") pimRevisionRef.current = j.revision;
+      } catch (e) {
+        console.error("Failed to persist pim-models:", e);
+      }
+    });
+  }, []);
+  /** Re-read pm:pim-models from the server (after a Review commit or restore). */
+  const reloadPimModels = useCallback(async () => {
+    try {
+      const j = (await fetch("/api/kv/pim-models", { cache: "no-store" }).then((r) => r.json())) as PimModelData;
+      if (j?.groups) {
+        pimRevisionRef.current = j.revision;
+        setPimModelsState(j);
+      }
+    } catch (e) {
+      console.error("reloadPimModels failed:", e);
+    }
   }, []);
   const persistPortfolioState = useCallback((data: PimPortfolioState) => {
     fetch("/api/kv/pim-portfolio-state", {
@@ -437,6 +475,7 @@ export function StockProvider({ children }: { children: React.ReactNode }) {
             }),
           })),
         };
+        pimRevisionRef.current = (pimRes as PimModelData).revision;
         setPimModelsState(fixedPim);
         if (pimFixed) persistPim(fixedPim);
       }
@@ -723,10 +762,13 @@ export function StockProvider({ children }: { children: React.ReactNode }) {
     //   1) individual stocks — locked at refPerStock
     //   2) Alpha-tagged funds — pass-through, keep current weightInClass
     //   3) Core-tagged ETFs — absorb residual equity weight proportionally
-    const stockHoldings = equityHoldings.filter((h) => seedStockSymbols.has(h.symbol));
+    // A PINNED stock (weight set in a Review commit) is skipped by the rule —
+    // it holds its pinned weight like a hand-set fund until the pin is released.
+    const isPinned = (h: PimHolding) => h.pinned != null && Number.isFinite(h.pinned.weightInClass);
+    const stockHoldings = equityHoldings.filter((h) => seedStockSymbols.has(h.symbol) && !isPinned(h));
     const lockedHoldings = equityHoldings.filter(
-      (h) => !seedStockSymbols.has(h.symbol) && isAlphaLockedHolding(h.symbol),
-    );
+      (h) => (seedStockSymbols.has(h.symbol) && isPinned(h)) || (!seedStockSymbols.has(h.symbol) && isAlphaLockedHolding(h.symbol)),
+    ).map((h) => (isPinned(h) ? { ...h, weightInClass: h.pinned!.weightInClass } : h));
     const etfHoldings = equityHoldings.filter(
       (h) => !seedStockSymbols.has(h.symbol) && !isAlphaLockedHolding(h.symbol),
     );
@@ -1966,6 +2008,7 @@ export function StockProvider({ children }: { children: React.ReactNode }) {
         pimModels,
         updatePimModels,
         rebalanceStockWeights,
+        reloadPimModels,
         toggleModelEligibility,
         updateModelWeight,
         pimPortfolioState,

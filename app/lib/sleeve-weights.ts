@@ -143,7 +143,9 @@ export function computeSleeveLegs(pim: PimModelGroup | undefined, stocks: StockL
     const s = idx.get(canonicalTicker(h.symbol));
     const role = roleOf(s, h.symbol);
     if (role === "core" || role === "unknown" || role === "untagged") continue;
-    if (s && isFund(s)) {
+    if ((s && isFund(s)) || h.pinned) {
+      // Funds keep their manual weight; a PINNED stock keeps its committed
+      // weight — both come off the sleeve budget before the legs are shared.
       if (role === "thesis") legs.thesisFunds += h.weightInClass;
       else legs.tacticalFunds += h.weightInClass;
     } else {
@@ -198,7 +200,7 @@ export function proposeGroupWeights(group: PimModelGroup, stocks: StockLite[], l
     } else if (role === "untagged") {
       warnings.push(`${h.symbol} is untagged — weight left unchanged. Tag it Thesis or Tactical.`);
       totals.untagged += proposed;
-    } else if (kind === "fund") {
+    } else if (kind === "fund" || h.pinned) {
       if (role === "thesis") totals.thesis += proposed;
       else totals.tactical += proposed;
     } else {

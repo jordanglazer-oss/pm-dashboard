@@ -8,6 +8,10 @@ export type PimHolding = {
   currency: "CAD" | "USD";
   assetClass: PimAssetClass;
   weightInClass: number; // weight within the asset class (e.g., 0.5 = 50% of fixed income)
+  /** A PM-set weight (Review commit). The rebalance rule SKIPS a pinned stock —
+   *  it keeps weightInClass instead of being re-pinned to the per-stock
+   *  constant — until the pin is released. Funds never need one. */
+  pinned?: { weightInClass: number; month: string; at: string };
 };
 
 export type PimProfileWeights = {
@@ -67,6 +71,9 @@ export type PimComputedHolding = PimHolding & {
 export type PimModelData = {
   groups: PimModelGroup[];
   lastUpdated?: string;
+  /** Server-stamped on every write of pm:pim-models. A PUT carrying a stale
+   *  revision is refused (409) so an old tab cannot overwrite a newer model. */
+  revision?: number;
 };
 
 // ── Performance Tracking ──

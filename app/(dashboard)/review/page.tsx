@@ -7,11 +7,12 @@ import { useLiveModelWeights } from "@/app/lib/useLiveModelWeights";
 import { canonicalTicker, displayTicker } from "@/app/lib/ticker";
 import { sleevesOf, isCoreDesignated, isFund } from "@/app/lib/sleeves";
 import { computeSleeveLegs, CORE_SHARE, DEFAULT_THESIS_SHARE, MAX_STOCK_PORTFOLIO_WEIGHT, maxEquityAllocation } from "@/app/lib/sleeve-weights";
-import { applyDecisions, inheritDecisions, monthKey, reconcile, WEIGHT_COMMIT_ENABLED, type DecisionAction, type MonthReview, type WeightDecision, type WeightDecisionStore } from "@/app/lib/weight-decisions";
+import { applyDecisions, inheritDecisions, monthKey, reconcile, REF_PER_STOCK, WEIGHT_COMMIT_ENABLED, type DecisionAction, type MonthReview, type WeightDecision, type WeightDecisionStore } from "@/app/lib/weight-decisions";
 import { LegVerdictChips, useSleeveVerdicts } from "@/app/components/LegVerdicts";
 import { CollapsibleSection } from "@/app/components/CollapsibleSection";
 import { TacticalBench } from "@/app/components/TacticalBench";
 import { SleeveConcentration } from "@/app/components/SleeveConcentration";
+import { ModelVersions } from "@/app/components/ModelVersions";
 import { AppIcon } from "@/app/components/AppIcon";
 import { THESIS_VERDICT_LABEL, type ThesisVerdict } from "@/app/lib/thesis-verdict";
 import type { PimProfileType } from "@/app/lib/pim-types";
@@ -60,13 +61,14 @@ type Row = {
   sleeve: "thesis" | "tactical" | "both";
   netSleeve: "thesis" | "tactical";
   targetInClass: number;
+  pinned?: { month: string };
   target: number; // % of portfolio (fraction)
   live: number | null;
   liveInClass: number | null;
 };
 
 export default function ReviewPage() {
-  const { pimModels, stocks, uiPrefs, setUiPref } = useStocks();
+  const { pimModels, stocks, uiPrefs, setUiPref, reloadPimModels } = useStocks();
   const groupId = "pim";
   const profile = (PROFILES.includes(uiPrefs["review.profile"] as PimProfileType) ? uiPrefs["review.profile"] : "balanced") as PimProfileType;
   const group = pimModels.groups.find((g) => g.id === groupId);
@@ -80,6 +82,9 @@ export default function ReviewPage() {
   const [saving, setSaving] = useState<string | null>(null);
   const [commitMsg, setCommitMsg] = useState<string | null>(null);
   const [showDiff, setShowDiff] = useState(false);
+  const [confirming, setConfirming] = useState(false);
+  const [confirmText, setConfirmText] = useState("");
+  const [committing, setCommitting] = useState(false);
 
   useEffect(() => {
     let alive = true;
@@ -117,6 +122,7 @@ export default function ReviewPage() {
         sleeve: sl.thesis && sl.tactical ? "both" : sl.thesis ? "thesis" : "tactical",
         netSleeve: sl.tactical ? "tactical" : "thesis",
         targetInClass: h.weightInClass,
+        pinned: h.pinned ? { month: h.pinned.month } : undefined,
         target: h.weightInClass * eqAlloc,
         live: liveFrac,
         liveInClass: liveFrac != null && eqAlloc > 0 ? liveFrac / eqAlloc : null,
@@ -176,10 +182,24 @@ export default function ReviewPage() {
   };
 
   const tryCommit = async () => {
-    const r = await fetch("/api/weight-decisions/commit", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ month }) });
-    const j = await r.json();
-    setCommitMsg(j.error ?? (r.ok ? "committed" : "commit failed"));
+    if (confirmText.trim() !== `COMMIT ${month}`) return;
+    setCommitting(true);
+    setCommitMsg(null);
+    try {
+      const r = await fetch("/api/weight-decisions/commit", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ month, confirm: confirmText.trim() }) });
+      const j = await r.json();
+      if (!r.ok) { setCommitMsg(j.error ?? "commit failed"); return; }
+      setCommitMsg(`Committed ${month}: ${j.diff?.length ?? 0} weight changes across the models. Snapshot ${j.versionId} saved — restore it from Versions if anything is wrong.`);
+      setConfirming(false);
+      setConfirmText("");
+      await reloadPimModels();
+      const st = await fetch("/api/kv/weight-decisions", { cache: "no-store" }).then((x) => x.json());
+      setStore(st.store ?? { months: {} });
+    } finally {
+      setCommitting(false);
+    }
   };
+  const releasePin = (r: Row) => saveDecision(r.symbol, { action: "release", liveInClass: r.liveInClass, at: "" });
 
   // ── Diff preview across every model ──
   const diff = useMemo(() => {
@@ -285,7 +305,7 @@ export default function ReviewPage() {
               const ret = data?.returns.rows[r.ticker.toUpperCase()];
               const rel = ret?.r1m != null && ret.sector1m != null ? ret.r1m - ret.sector1m : null;
               const drift = r.live != null ? (r.live - r.target) * 10000 : null;
-              const newTarget = d?.action === "keep" ? r.target : d?.targetInClass != null ? d.targetInClass * eqAlloc : null;
+              const newTarget = d?.action === "keep" ? r.target : d?.action === "release" ? REF_PER_STOCK * eqAlloc : d?.targetInClass != null ? d.targetInClass * eqAlloc : null;
               const busy = saving === r.symbol;
               return (
                 <tr key={r.symbol} className={d ? "" : "opacity-95"}>
@@ -293,6 +313,7 @@ export default function ReviewPage() {
                     <Link href={`/stock/${r.ticker.toLowerCase()}`} className="font-mono font-medium text-ink hover:underline">{displayTicker(r.ticker)}</Link>
                     <span className="ml-2 hidden text-[11.5px] text-ink-3 md:inline">{r.name}</span>
                     {r.kind === "fund" && <span className="ml-1.5 text-[10.5px] text-ink-faint">fund</span>}
+                    {r.pinned && <span className="ml-1.5 text-[10.5px] text-accent" title={`Pinned in the ${r.pinned.month} review — the rebalance rule skips this name until the pin is released`}>📌 {r.pinned.month}</span>}
                   </td>
                   <td><span className={`text-[11.5px] ${r.sleeve === "tactical" ? "text-violet" : "text-accent"}`}>{r.sleeve === "both" ? "Thesis + Tactical" : r.sleeve === "thesis" ? "Thesis" : "Tactical"}</span></td>
                   <td className="hidden lg:table-cell"><span className="inline-flex flex-wrap gap-1"><LegVerdictChips legs={verdicts[r.ticker.toUpperCase()]} /></span></td>
@@ -322,7 +343,8 @@ export default function ReviewPage() {
                     <div className="seg" aria-busy={busy}>
                       <button type="button" disabled={committed || busy} className={d?.action === "keep" ? "on" : ""} onClick={() => setAction(r, "keep")} title="The drift is noise — trade back to the current target">Keep</button>
                       <button type="button" disabled={committed || busy || r.live == null} className={d?.action === "adopt" ? "on" : ""} onClick={() => setAction(r, "adopt")} title={r.live == null ? "No live weight — save positions first" : "Let it ride — the live weight becomes the new target, no trade"}>Adopt live</button>
-                      <button type="button" disabled={committed || busy} className={d?.action === "set" ? "on" : ""} onClick={() => setAction(r, "set")} title="An explicit trim or add — type the new target">Set</button>
+                      <button type="button" disabled={committed || busy} className={d?.action === "set" ? "on" : ""} onClick={() => setAction(r, "set")} title="An explicit trim or add — type the new target. Pins the name.">Set</button>
+                      {r.pinned && r.kind === "stock" && <button type="button" disabled={committed || busy} className={d?.action === "release" ? "on" : ""} onClick={() => releasePin(r)} title={`Release the pin — back to the rule weight (${pct(REF_PER_STOCK * eqAlloc)}). Nets within the sleeve like any change.`}>Release</button>}
                     </div>
                     {d && !committed && <button type="button" onClick={() => saveDecision(r.symbol, null)} className="ml-1.5 inline-flex h-6 items-center rounded-control border border-line bg-surface px-1.5 text-[11px] text-ink-2 hover:bg-surface-hover" title="Undo — remove this decision; the current target stands">Undo</button>}
                   </td>
@@ -346,14 +368,26 @@ export default function ReviewPage() {
           <button type="button" onClick={() => setShowDiff((v) => !v)} className="inline-flex h-7 items-center rounded-control border border-line bg-surface px-2.5 text-[12px] text-ink-2 hover:bg-surface-hover">{showDiff ? "Hide diff" : "Preview diff — every model"}</button>
           <button
             type="button"
-            onClick={tryCommit}
-            disabled={!WEIGHT_COMMIT_ENABLED || committed || !recon?.ok || decided === 0}
+            onClick={() => { setShowDiff(true); setConfirming(true); }}
+            disabled={!WEIGHT_COMMIT_ENABLED || committed || !recon?.ok || decided === 0 || confirming}
             className="inline-flex h-7 items-center rounded-control bg-ink px-3 text-[12px] font-medium text-surface disabled:opacity-40"
-            title={!WEIGHT_COMMIT_ENABLED ? "Commit is disabled on this build — the preview shares the database with production. Decisions are kept as a draft." : !recon?.ok ? "Blocked: every sleeve must net to zero and no stock may breach the cap." : "Write these targets to every model (stashes the current model first)"}
+            title={!WEIGHT_COMMIT_ENABLED ? "Commit is disabled on this build." : !recon?.ok ? "Blocked: every sleeve must net to zero and no stock may breach the cap." : "Write these targets to every model. The current models are snapshotted first, so this can be undone from Versions."}
           >
-            {committed ? "Committed" : WEIGHT_COMMIT_ENABLED ? "Commit targets" : "Commit disabled (preview)"}
+            {committed ? "Committed" : "Commit targets…"}
           </button>
         </div>
+        {confirming && !committed && (
+          <div className="flex flex-wrap items-center gap-3 border-t border-warn-border bg-warn-soft px-3 py-2.5 text-[12px] text-ink">
+            <span className="font-medium text-warn">This writes the targets above into every model.</span>
+            <span className="text-ink-2">A snapshot of today&apos;s models is saved first; Versions below can put it back. Positioning will then show the trades needed.</span>
+            <label className="ml-auto flex items-center gap-2">
+              <span className="text-ink-3">Type <span className="font-mono text-ink">COMMIT {month}</span></span>
+              <input value={confirmText} onChange={(e) => setConfirmText(e.target.value)} className="h-7 w-44 rounded-control border border-line bg-surface px-2 font-mono text-[12px] text-ink" autoFocus />
+            </label>
+            <button type="button" onClick={tryCommit} disabled={committing || confirmText.trim() !== `COMMIT ${month}`} className="inline-flex h-7 items-center rounded-control bg-neg px-3 text-[12px] font-medium text-white disabled:opacity-40">{committing ? "Committing…" : "Commit now"}</button>
+            <button type="button" onClick={() => { setConfirming(false); setConfirmText(""); }} className="inline-flex h-7 items-center rounded-control border border-line bg-surface px-2.5 text-[12px] text-ink-2">Cancel</button>
+          </div>
+        )}
         {showDiff && (
           <div className="grid gap-2 border-t border-line-soft px-3 py-2 md:grid-cols-3">
             {diff.map((g) => (
@@ -399,6 +433,8 @@ export default function ReviewPage() {
           </div>
         )}
       </CollapsibleSection>
+
+      <ModelVersions onRestored={async () => { await reloadPimModels(); }} />
 
       <SleeveConcentration />
 
