@@ -94,7 +94,7 @@ export function GrowthMath({ calc }: { calc: Calc }) {
               {calc.clampedFrom != null && <p className="text-warn">The model returned {calc.clampedFrom}, more than one point from the computed score, so the app held it to {calc.modelScore}.</p>}
             </>
           )}
-          <p className="text-ink-3">The full method, and every peer group&apos;s cut points, are on the <a href="/methodology#growth-score" className="text-accent hover:underline">Methodology page</a>.</p>
+          <p className="text-ink-3">The full method, and every peer group&apos;s cut points, are on the <a href="/methodology#growth-score" className="text-accent hover:underline">Methodology page</a>. The raw FactSet inputs, the exact formulas and every peer&apos;s figures are on the <a href="/methodology/growth-data" className="text-accent hover:underline">growth data page</a>.</p>
         </div>
       )}
     </div>

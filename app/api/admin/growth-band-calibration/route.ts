@@ -8,7 +8,7 @@ import { universeTickers, LIST_VERSION } from "@/app/lib/factor-constituents";
 import { pickPlaybook } from "@/app/lib/sector-playbook";
 import {
   deriveGrowthInputs, winsorSort, quantile, GROWTH_CUTS, GROWTH_WEIGHTS, MIN_GROUP_SIZE, TOP_MARK_FLOOR_PCT,
-  GROUP_METRIC_RULES, GROWTH_BANDS_KEY, type GrowthBands, type GrowthGroup, type GrowthMetricKey, type RawGrowthRow,
+  GROUP_METRIC_RULES, GROWTH_BANDS_KEY, GROWTH_DETAIL_KEY, GROWTH_SOURCE_FIELDS, type GrowthBands, type GrowthDetail, type GrowthGroup, type GrowthMetricKey, type RawGrowthRow,
 } from "@/app/lib/growth-score";
 
 /**
@@ -25,7 +25,8 @@ import {
  * every exclusion with its reason, and each group's cut points, so any name
  * can be checked against a FactSet terminal before anything is stored.
  *
- * REDIS — one key, pm:growth-bands (a regenerable cache: nuke it and the
+ * REDIS — two keys written together: pm:growth-bands-detail (the per-company
+ * inputs, for audit) and pm:growth-bands (a regenerable cache: nuke it and the
  * growth category simply falls back to DATA GAP until this route is re-run).
  * It is written ONLY with ?confirm=YES, and the previous value is stashed at
  * pm:growth-bands.pre-<ts> first so a bad calibration can be rolled back.
@@ -37,17 +38,10 @@ export const dynamic = "force-dynamic";
 
 const log = createLogger("Growth-calibration");
 
+// The raw fields come from ONE list (growth-score.ts) so the pull, the data
+// page and the stock-page working can never describe different formulas.
 const F = {
-  salesNtm: "FE_ESTIMATE(SALES,MEAN,NTMA,0,NOW,'')",
-  salesLtm: "FF_SALES(LTM,0)",
-  salesLtmA: "FE_ESTIMATE(SALES,MEAN,LTMA,0,NOW,'')",
-  epsNtm: "FE_ESTIMATE(EPS,MEAN,NTMA,0,NOW,'')",
-  epsLtmA: "FE_ESTIMATE(EPS,MEAN,LTMA,0,NOW,'')",
-  ltg: "FE_ESTIMATE(LTG,MEAN,ANN_ROLL,0,NOW,'')",
-  salesAnn0: "FF_SALES(ANN,0)",
-  salesAnn3: "FF_SALES(ANN,-3)",
-  bpsAnn0: "FF_BPS(ANN,0)",
-  bpsAnn3: "FF_BPS(ANN,-3)",
+  ...(Object.fromEntries(GROWTH_SOURCE_FIELDS.map((f) => [f.key, f.formula])) as Record<(typeof GROWTH_SOURCE_FIELDS)[number]["key"], string>),
   sector: "FG_GICS_SECTOR",
   industry: "FG_GICS_INDUSTRY",
 } as const;
@@ -86,7 +80,7 @@ export async function GET(req: NextRequest) {
   }
 
   // ── Derive + group ──────────────────────────────────────────────────────
-  type Constituent = { ticker: string; sector: string | null; industry: string | null; group: string; values: Partial<Record<GrowthMetricKey, number>>; excluded: { metric: string; reason: string }[] };
+  type Constituent = { ticker: string; sector: string | null; industry: string | null; group: string; raw: RawGrowthRow; values: Partial<Record<GrowthMetricKey, number>>; excluded: { metric: string; reason: string }[] };
   const constituents: Constituent[] = [];
   const byGroup = new Map<string, Constituent[]>();
   const bySector = new Map<string, Constituent[]>();
@@ -107,7 +101,7 @@ export async function GET(req: NextRequest) {
     const raw: RawGrowthRow = { salesNtm: n("salesNtm"), salesLtm: n("salesLtm"), salesLtmA: n("salesLtmA"), epsNtm: n("epsNtm"), epsLtmA: n("epsLtmA"), ltg: n("ltg"), salesAnn0: n("salesAnn0"), salesAnn3: n("salesAnn3"), bpsAnn0: n("bpsAnn0"), bpsAnn3: n("bpsAnn3") };
     const { inputs, excluded } = deriveGrowthInputs(raw, group);
     const round = (v: number) => Math.round(v * 10) / 10;
-    const c: Constituent = { ticker, sector, industry, group, values: Object.fromEntries(Object.entries(inputs).map(([k, v]) => [k, round(v as number)])), excluded };
+    const c: Constituent = { ticker, sector, industry, group, raw, values: Object.fromEntries(Object.entries(inputs).map(([k, v]) => [k, round(v as number)])), excluded };
     constituents.push(c);
     byGroup.set(group, [...(byGroup.get(group) ?? []), c]);
     if (sector) bySector.set(sector, [...(bySector.get(sector) ?? []), c]);
@@ -149,6 +143,13 @@ export async function GET(req: NextRequest) {
     const prev = await redis.get(GROWTH_BANDS_KEY);
     if (prev) { stashedTo = `${GROWTH_BANDS_KEY}.pre-${Date.now()}`; await redis.set(stashedTo, prev); }
     await redis.set(GROWTH_BANDS_KEY, JSON.stringify(bands));
+    // The per-company inputs behind those bands — the audit trail the
+    // Methodology data page reads. Same lifecycle as the bands: regenerable,
+    // prior value stashed, written only on confirm.
+    const prevDetail = await redis.get(GROWTH_DETAIL_KEY);
+    if (prevDetail) await redis.set(`${GROWTH_DETAIL_KEY}.pre-${Date.now()}`, prevDetail);
+    const detail: GrowthDetail = { calibratedAt: bands.calibratedAt, rows: constituents, droppedNoSector: unclassified };
+    await redis.set(GROWTH_DETAIL_KEY, JSON.stringify(detail));
     stored = true;
     log.info(`stored growth bands: ${constituents.length} names, ${Object.keys(bands.groups).length} groups${stashedTo ? `, prior stashed at ${stashedTo}` : ""}`);
   }
