@@ -4,6 +4,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createHash } from "crypto";
 import { getRedis } from "@/app/lib/redis";
 import { createLogger } from "@/app/lib/logger";
+import { SONNET_MODEL, THINKING_OFF } from "@/app/lib/claude-model";
 
 /**
  * Client-report presentation bullets.
@@ -335,8 +336,8 @@ export async function POST(req: NextRequest) {
   let bullets: string[] | null = null;
   try {
     const msg = await client.messages.create({
-      model: "claude-sonnet-5",
-      thinking: { type: "disabled" },
+      model: SONNET_MODEL,
+      thinking: THINKING_OFF,
       max_tokens: 1024,
       messages: [{ role: "user", content: buildPrompt(body) }],
     });

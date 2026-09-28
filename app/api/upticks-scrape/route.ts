@@ -2,6 +2,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import { NextRequest, NextResponse } from "next/server";
 import { createHash } from "crypto";
 import { getRedis } from "@/app/lib/redis";
+import { SONNET_MODEL, THINKING_OFF } from "@/app/lib/claude-model";
 
 /**
  * Upticks screenshot → structured rows.
@@ -140,8 +141,8 @@ async function runVision(atts: AttachmentInput[]): Promise<{ entries: ScrapedUpt
   if (imageBlocks.length === 0) return { entries: [], rawText: "" };
 
   const msg = await client.messages.create({
-    model: "claude-sonnet-5",
-    thinking: { type: "disabled" },
+    model: SONNET_MODEL,
+    thinking: THINKING_OFF,
     max_tokens: 4096,
     messages: [
       {

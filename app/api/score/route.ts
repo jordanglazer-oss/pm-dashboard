@@ -34,6 +34,7 @@ import {
 } from "@/app/lib/score-prompt-fragments";
 import { getAdverseEventFlags, formatAdverseFlagsForPrompt } from "@/app/lib/edgar-adverse";
 import { getValuationBand, formatValuationBandForPrompt } from "@/app/lib/valuation-band";
+import { SONNET_MODEL, THINKING_OFF } from "@/app/lib/claude-model";
 
 const client = new Anthropic();
 
@@ -1238,8 +1239,8 @@ export async function POST(request: NextRequest) {
     // attempt so we don't waste retries on a real bug.
     const message = await callAnthropicWithRetry(`Score ${upperTicker}`, () =>
       client.messages.create({
-        model: "claude-sonnet-5",
-        thinking: diagnosticThinking ? { type: "adaptive" } : { type: "disabled" },
+        model: SONNET_MODEL,
+        thinking: diagnosticThinking ? { type: "adaptive" } : THINKING_OFF,
         // Thinking tokens count against max_tokens — leave the JSON its room.
         max_tokens: diagnosticThinking ? 16000 : 8192,
         messages: [

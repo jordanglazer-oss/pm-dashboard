@@ -10,6 +10,7 @@ import type {
 } from "@/app/lib/pim-types";
 import type { MarketRegimeData } from "@/app/lib/market-regime";
 import { computeRegimeTransition } from "@/app/lib/regime-transition";
+import { SONNET_MODEL, THINKING_OFF } from "@/app/lib/claude-model";
 
 /**
  * POST /api/chat
@@ -39,7 +40,7 @@ import { computeRegimeTransition } from "@/app/lib/regime-transition";
 const client = new Anthropic();
 
 const MAX_MESSAGES_IN_HISTORY = 40; // hard cap to keep context manageable
-const MODEL = "claude-sonnet-5";
+const MODEL = SONNET_MODEL;
 
 type IncomingMessage = { role: "user" | "assistant"; content: string };
 
@@ -376,7 +377,7 @@ export async function POST(req: NextRequest) {
         // including server_tool_use and web_search_tool_result blocks.
         const messageStream = client.messages.stream({
           model: MODEL,
-          thinking: { type: "disabled" },
+          thinking: THINKING_OFF,
           max_tokens: 4096,
           system: systemBlocks,
           tools: tools as unknown as Anthropic.Messages.Tool[],

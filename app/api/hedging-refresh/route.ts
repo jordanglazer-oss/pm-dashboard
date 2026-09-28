@@ -7,6 +7,7 @@ import { computeRegimeTransition } from "@/app/lib/regime-transition";
 import type { MarketRegimeData } from "@/app/lib/market-regime";
 import { loadHedges, isActiveHedge, describeHedge } from "@/app/lib/hedges";
 import { easternToday } from "@/app/lib/date-eastern";
+import { SONNET_MODEL, THINKING_OFF } from "@/app/lib/claude-model";
 
 /**
  * Standalone hedging refresh — re-runs ONLY the hedging read (live CBOE
@@ -151,8 +152,8 @@ Return ONLY this JSON (no markdown fences):
 }`;
 
     const resp = await client.messages.create({
-      model: "claude-sonnet-5",
-      thinking: { type: "disabled" },
+      model: SONNET_MODEL,
+      thinking: THINKING_OFF,
       max_tokens: 1024,
       messages: [{ role: "user", content: prompt }],
     });

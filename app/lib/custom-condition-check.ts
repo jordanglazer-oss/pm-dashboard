@@ -4,6 +4,7 @@ import type { KillCondition } from "./kill-conditions";
 import { buildTickerEvidence, latestEvidenceAt } from "./thesis-evidence";
 import { parseModelJson } from "./json-repair";
 import { abbreviationRule } from "./prose-style";
+import { SONNET_MODEL, THINKING_OFF } from "@/app/lib/claude-model";
 
 /**
  * AI verification of CUSTOM kill conditions — the automation for the one
@@ -125,8 +126,8 @@ Rules:
 - ${abbreviationRule('the "reading" and "suggestedRewrite" lines')}`;
 
   const resp = await client.messages.create({
-    model: "claude-sonnet-5",
-    thinking: { type: "disabled" },
+    model: SONNET_MODEL,
+    thinking: THINKING_OFF,
     max_tokens: 1200,
     tools: [{ type: "web_search_20250305", name: "web_search", max_uses: 3 }],
     messages: [{ role: "user", content: prompt }],

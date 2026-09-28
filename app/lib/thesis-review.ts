@@ -12,6 +12,7 @@ import { canonicalTicker } from "./ticker";
 import type { SynthesisScreenCache, SynthesisEntry } from "./synthesis-screen-display";
 import { thesisVerdictOf, VERDICT_LOG_KEY, VERDICT_LOG_MAX_PER_TICKER, type VerdictLog } from "./thesis-verdict";
 import { sleevesOf } from "./sleeves";
+import { SONNET_MODEL, THINKING_OFF } from "@/app/lib/claude-model";
 
 /**
  * Post-earnings thesis review — the "regenerate after each report" answer that
@@ -197,8 +198,8 @@ Rules:
   try {
     const ask = async (extra = "") => {
       const resp = await client.messages.create({
-        model: "claude-sonnet-5",
-        thinking: { type: "disabled" },
+        model: SONNET_MODEL,
+        thinking: THINKING_OFF,
         max_tokens: 1600,
         messages: [{ role: "user", content: prompt + extra }],
       });
