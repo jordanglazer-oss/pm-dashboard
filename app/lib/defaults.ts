@@ -212,9 +212,36 @@ export type FewEntry = {
 
 export type SectorView = "overweight" | "neutral" | "underweight";
 
+/** Where a sector view last came from. "monthly" = the Fundstrat sector
+ *  table screenshot (emailed on the monthly reminder); "daily-note" = an
+ *  explicit rating change stated in a Newton / Lee daily report; "manual" =
+ *  the PM clicked the chip. Absent on entries that predate provenance. */
+export type SectorViewSource = "monthly" | "daily-note" | "manual";
+
 export type SectorViewEntry = {
   sector: string;
   view: SectorView;
+  source?: SectorViewSource;
+  /** ISO timestamp of the last change to this entry. */
+  setAt?: string;
+  /** For "daily-note": the note's date (YYYY-MM-DD) and the verbatim
+   *  sentence that stated the change, so the chip can show its evidence. */
+  noteDate?: string;
+  quote?: string;
+};
+
+/** One row of the sector-view audit trail — every server-side change is
+ *  logged with its prior value, so any automated change can be reverted by
+ *  hand (click the chip back) with the evidence in view. */
+export type SectorViewLogEntry = {
+  at: string;
+  strategist: "newton" | "lee";
+  sector: string;
+  from: SectorView;
+  to: SectorView;
+  source: SectorViewSource;
+  noteDate?: string;
+  quote?: string;
 };
 
 // The 11 GICS sectors pre-populated so the PM only has to toggle views.
@@ -293,6 +320,16 @@ export type ResearchState = {
   newtonSectors?: SectorViewEntry[];
   // Tom Lee's sector overweight/underweight views. Same format as Newton's.
   leeSectors?: SectorViewEntry[];
+  // ISO timestamp of the last change to EITHER sector array (server or
+  // client). PUT /api/kv/research keeps the stored sector fields when an
+  // incoming body carries an older stamp, so a stale Research tab can't roll
+  // back a change an emailed note or the monthly screenshot just made.
+  sectorViewsAt?: string;
+  // Eastern date (YYYY-MM-DD) the monthly Fundstrat sector table was last
+  // ingested. Drives the tile's "monthly update due" flag.
+  sectorViewsMonthlyAt?: string;
+  // Audit trail of server-side sector changes, newest first (capped).
+  sectorViewLog?: SectorViewLogEntry[];
   // Tom Lee's areas to focus on — free-text labels the PM types in because
   // Lee's themes often aren't standard GICS sectors (e.g. "AI beneficiaries",
   // "GARP names", "epicenter stocks").

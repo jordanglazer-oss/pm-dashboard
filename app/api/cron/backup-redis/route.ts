@@ -15,6 +15,7 @@ import { buildEntryScan } from "@/app/lib/entry-scan";
 import { runCustomConditionChecks } from "@/app/lib/custom-condition-check";
 import { computeDataHealth, type DataHealthReport } from "@/app/lib/data-health";
 import { runAlertDigest } from "@/app/lib/alert-digest";
+import { maybeQueueSectorViewsReminder } from "@/app/lib/sector-views";
 
 // This one nightly slot runs, IN ORDER:
 //   backup → prune → hedging snapshot → FactSet estimates → market regime →
@@ -385,6 +386,18 @@ export async function GET(req: NextRequest) {
       alertDigest = { ran: false, total: 0, emailed: false, error: msg };
     }
 
+    // Monthly Fundstrat sector-table reminder (the 3rd). One outbox write, no
+    // model call — cheap enough to sit ahead of the slow AI steps below.
+    let sectorViewsReminder: { queued: boolean; reason: string } | { ran: false; error: string };
+    try {
+      const r = await maybeQueueSectorViewsReminder();
+      sectorViewsReminder = { queued: r.queued, reason: r.reason };
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      console.error("[backup-redis] sector-views reminder failed:", msg);
+      sectorViewsReminder = { ran: false, error: msg };
+    }
+
     // Custom kill-condition AI verification — DELIBERATELY AFTER THE DIGEST.
     //
     // This used to sit BEFORE it and was silently eating the email. This
@@ -474,6 +487,7 @@ export async function GET(req: NextRequest) {
       entryScan,
       dataHealth: dataHealth ? { ok: dataHealth.ok, problems: dataHealth.problemCount } : null,
       alertDigest,
+      sectorViewsReminder,
       invariantCheck: invariantSummary,
       elapsedMs: Date.now() - startedAt,
     });

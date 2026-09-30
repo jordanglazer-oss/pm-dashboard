@@ -50,6 +50,7 @@ import { logResearchRemovals } from "./research-removals";
 import type { ResearchState } from "./defaults";
 import { defaultResearch, defaultMarketData } from "./defaults";
 import { appendStrategistNote } from "./forward-looking";
+import { applySectorChangesFromNote, applySectorTableScreenshot, describeChanges } from "./sector-views";
 import { easternToday } from "./date-eastern";
 import { extractPdfText } from "./pdf-text";
 import {
@@ -78,6 +79,7 @@ export type InboxKind =
   | "street-takeaways"
   | "newton-note"
   | "lee-note"
+  | "sector-views"
   | "unknown"
   | ResearchKind;
 
@@ -97,6 +99,10 @@ export function classifySubject(subject: string): InboxKind {
   // stripped before testing rather than trusting \b: the same trap that made
   // "SIA_SP500" and "TSX60" unmatchable.
   if (isEquateLabel(s)) return "equate";
+  // Fundstrat's monthly sector-view table (Lee + Newton OW/N/UW), sent as a
+  // reply to the reminder queued on the 3rd. Before the other Fundstrat
+  // prefixes so it can never be read as an idea list.
+  if (/^fundstrat\s+sector\b/i.test(s)) return "sector-views";
   // ── Research lists (RBC / Fundstrat / Seeking Alpha / RBCCM FEW) ──
   // Fundstrat "Core Ideas" DQM screens first — the "… Core" suffix keeps them
   // distinct from the "… Top/Bottom" idea lists below.
@@ -518,6 +524,22 @@ async function handleStrategistNote(
     console.error(`[Inbox] ${who} note history append failed:`, err),
   );
 
+  // Sector views: an OVERT rating change in the note ("Lowering Consumer
+  // Discretionary to Underweight") moves that sector on the Research tile.
+  // Best-effort — the note is already stored, so a failure here only means
+  // no sector move, and is reported in the message rather than as an error.
+  let sectorNote = "";
+  try {
+    const sv = await applySectorChangesFromNote(strategist, text, date, subject);
+    detail.sectorViews = sv;
+    if (sv.applied.length) sectorNote = ` Sector view updated: ${describeChanges(sv.applied)}.`;
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    console.error(`[Inbox] ${who} sector-view check failed:`, msg);
+    detail.sectorViews = { error: msg };
+    sectorNote = " (Sector-view check failed — views unchanged.)";
+  }
+
   const words = text.split(/\s+/).length;
   detail.date = date;
   detail.words = words;
@@ -525,7 +547,7 @@ async function handleStrategistNote(
   return {
     ok: true,
     kind,
-    message: `${who} note stored for ${date} (${words} words from ${sourceNote}). It will feed the next Morning Brief.`,
+    message: `${who} note stored for ${date} (${words} words from ${sourceNote}). It will feed the next Morning Brief.${sectorNote}`,
     detail,
   };
 }
@@ -874,6 +896,18 @@ async function handleStrategist(att: AttachmentInput, label: string): Promise<Di
   };
 }
 
+async function handleSectorViews(att: AttachmentInput, label: string): Promise<DispatchResult> {
+  if (!isImageDataUrl(att.dataUrl) && !isPdfDataUrl(att.dataUrl)) {
+    return { ok: false, kind: "sector-views", status: 400, message: "Sector views email expects a screenshot (PNG/JPG) of the Fundstrat sector table." };
+  }
+  const r = await applySectorTableScreenshot(att);
+  // 4xx on an unrecognised image: permanent, so the Apps Script doesn't retry
+  // (and a small inline logo riding along with the real screenshot is harmless).
+  return r.ok
+    ? { ok: true, kind: "sector-views", message: r.message, detail: { label, applied: r.applied, missing: r.missing } }
+    : { ok: false, kind: "sector-views", status: 422, message: r.message };
+}
+
 // ── Research list handler (Fundstrat / RBC / Alpha Picks / FEW) ─────
 
 /** Read pm:research, falling back to the default empty state. */
@@ -982,6 +1016,7 @@ export async function dispatchInbox(args: {
     case "street-takeaways": return await handleStreetTakeaways(args.bodyText ?? "", args.subject);
     case "newton-note":  return await handleStrategistNote("newton", args.bodyText ?? "", args.subject, args.dataUrl);
     case "lee-note":     return await handleStrategistNote("lee", args.bodyText ?? "", args.subject, args.dataUrl);
+    case "sector-views": return await handleSectorViews(att, label);
     case "analyst-report": return null;  // existing flow handles this
     case "unknown":      return null;    // existing route returns its "couldn't determine source" error
   }

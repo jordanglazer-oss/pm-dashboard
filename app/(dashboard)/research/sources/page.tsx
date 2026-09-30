@@ -3082,86 +3082,97 @@ export default function ResearchPage() {
           className="border-line"
           titleClass="text-[13px] font-semibold text-ink"
           title={<>Sector views</>}
-          subtitle={<>Newton&apos;s &amp; Lee&apos;s sector tilts — click any chip to cycle OW / N / UW. These feed the morning brief.</>}
-          right={<span className="font-mono text-[11.5px] text-ink-3">2 sources</span>}
+          subtitle={<>Newton&apos;s &amp; Lee&apos;s sector tilts — set monthly from the Fundstrat table, moved by a daily note only when it overtly changes a rating. Click any chip to cycle OW / N / UW. These feed the morning brief.</>}
+          right={
+            <span className="font-mono text-[11.5px] text-ink-3">
+              {state.sectorViewsMonthlyAt ? `table ${state.sectorViewsMonthlyAt}` : "2 sources"}
+            </span>
+          }
         >
+          {(() => {
+            const monthlyAge = state.sectorViewsMonthlyAt
+              ? Math.floor((Date.now() - new Date(`${state.sectorViewsMonthlyAt}T12:00:00`).getTime()) / 86_400_000)
+              : null;
+            return monthlyAge == null || monthlyAge > 35 ? (
+              <p className="mb-3 text-[11.5px] text-warn">
+                {monthlyAge == null ? "No Fundstrat sector table on file yet" : `Fundstrat sector table is ${monthlyAge} days old`} — reply to the monthly &ldquo;Fundstrat Sector Views&rdquo; email with a screenshot of the table.
+              </p>
+            ) : null;
+          })()}
           <div className="grid gap-3.5 lg:grid-cols-2">
-            {/* Newton sector views */}
-            <div>
-              <div className="mb-2.5 flex items-baseline gap-2">
-                <span className="text-[12.5px] font-medium text-ink">Newton&apos;s sector views</span>
-                <span className="text-[11px] text-ink-3">Click to cycle OW / N / UW</span>
-              </div>
-              <div className="flex flex-wrap gap-2">
-                {(state.newtonSectors ?? GICS_SECTORS.map((s) => ({ sector: s, view: "neutral" as SectorView }))).map((sv) => {
-                  const cycle = () => {
-                    const next: SectorView =
-                      sv.view === "neutral" ? "overweight" : sv.view === "overweight" ? "underweight" : "neutral";
-                    const updated = (state.newtonSectors ?? GICS_SECTORS.map((s) => ({ sector: s, view: "neutral" as SectorView }))).map((e) =>
-                      e.sector === sv.sector ? { ...e, view: next } : e
-                    );
-                    save({ ...state, newtonSectors: updated });
-                  };
-                  const bg =
-                    sv.view === "overweight"
-                      ? "bg-pos-soft text-pos border-pos-border"
-                      : sv.view === "underweight"
-                      ? "bg-neg-soft text-neg border-neg-border"
-                      : "bg-surface-2 text-ink-3 border-line";
-                  const badge =
-                    sv.view === "overweight" ? "OW" : sv.view === "underweight" ? "UW" : "N";
-                  return (
-                    <button
-                      key={sv.sector}
-                      onClick={cycle}
-                      className={`h-7 select-none rounded-control border px-2.5 text-[12.5px] transition-colors ${bg}`}
-                      title={`${sv.sector}: ${sv.view} — click to cycle`}
-                    >
-                      {sv.sector} <span className="ml-1 font-mono font-medium">{badge}</span>
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-
-            {/* Lee sector views */}
-            <div>
-              <div className="mb-2.5 flex items-baseline gap-2">
-                <span className="text-[12.5px] font-medium text-ink">Lee&apos;s sector views</span>
-                <span className="text-[11px] text-ink-3">Click to cycle OW / N / UW</span>
-              </div>
-              <div className="flex flex-wrap gap-2">
-                {(state.leeSectors ?? GICS_SECTORS.map((s) => ({ sector: s, view: "neutral" as SectorView }))).map((sv) => {
-                  const cycle = () => {
-                    const next: SectorView =
-                      sv.view === "neutral" ? "overweight" : sv.view === "overweight" ? "underweight" : "neutral";
-                    const updated = (state.leeSectors ?? GICS_SECTORS.map((s) => ({ sector: s, view: "neutral" as SectorView }))).map((e) =>
-                      e.sector === sv.sector ? { ...e, view: next } : e
-                    );
-                    save({ ...state, leeSectors: updated });
-                  };
-                  const bg =
-                    sv.view === "overweight"
-                      ? "bg-pos-soft text-pos border-pos-border"
-                      : sv.view === "underweight"
-                      ? "bg-neg-soft text-neg border-neg-border"
-                      : "bg-surface-2 text-ink-3 border-line";
-                  const badge =
-                    sv.view === "overweight" ? "OW" : sv.view === "underweight" ? "UW" : "N";
-                  return (
-                    <button
-                      key={sv.sector}
-                      onClick={cycle}
-                      className={`h-7 select-none rounded-control border px-2.5 text-[12.5px] transition-colors ${bg}`}
-                      title={`${sv.sector}: ${sv.view} — click to cycle`}
-                    >
-                      {sv.sector} <span className="ml-1 font-mono font-medium">{badge}</span>
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
+            {([
+              { field: "newtonSectors", label: "Newton\u2019s sector views" },
+              { field: "leeSectors", label: "Lee\u2019s sector views" },
+            ] as const).map(({ field, label }) => {
+              const grid: SectorViewEntry[] = state[field] ?? GICS_SECTORS.map((s) => ({ sector: s, view: "neutral" as SectorView }));
+              return (
+                <div key={field}>
+                  <div className="mb-2.5 flex items-baseline gap-2">
+                    <span className="text-[12.5px] font-medium text-ink">{label}</span>
+                    <span className="text-[11px] text-ink-3">Click to cycle OW / N / UW · ✱ = changed by a daily note</span>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    {grid.map((sv) => {
+                      const cycle = () => {
+                        const next: SectorView =
+                          sv.view === "neutral" ? "overweight" : sv.view === "overweight" ? "underweight" : "neutral";
+                        // Stamp strictly after the loaded stamp so the kv/research
+                        // PUT guard treats this as the newest sector write.
+                        const loadedAt = state.sectorViewsAt ? new Date(state.sectorViewsAt).getTime() : 0;
+                        const at = new Date(Math.max(Date.now(), loadedAt + 1)).toISOString();
+                        const updated = grid.map((e) =>
+                          e.sector === sv.sector ? { sector: e.sector, view: next, source: "manual" as const, setAt: at } : e
+                        );
+                        save({ ...state, [field]: updated, sectorViewsAt: at });
+                      };
+                      const bg =
+                        sv.view === "overweight"
+                          ? "bg-pos-soft text-pos border-pos-border"
+                          : sv.view === "underweight"
+                          ? "bg-neg-soft text-neg border-neg-border"
+                          : "bg-surface-2 text-ink-3 border-line";
+                      const badge =
+                        sv.view === "overweight" ? "OW" : sv.view === "underweight" ? "UW" : "N";
+                      const fromNote = sv.source === "daily-note";
+                      const title = fromNote
+                        ? `${sv.sector}: ${sv.view} — from the ${sv.noteDate ?? ""} daily note: \u201c${sv.quote ?? ""}\u201d. Click to cycle.`
+                        : `${sv.sector}: ${sv.view}${sv.source === "monthly" ? " (monthly table)" : sv.source === "manual" ? " (set by hand)" : ""} — click to cycle`;
+                      return (
+                        <button
+                          key={sv.sector}
+                          onClick={cycle}
+                          className={`h-7 select-none rounded-control border px-2.5 text-[12.5px] transition-colors ${bg}`}
+                          title={title}
+                        >
+                          {sv.sector} <span className="ml-1 font-mono font-medium">{badge}{fromNote ? "✱" : ""}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              );
+            })}
           </div>
+          {(() => {
+            const recent = (state.sectorViewLog ?? []).filter((l) => l.source === "daily-note").slice(0, 4);
+            if (recent.length === 0) return null;
+            const V = { overweight: "OW", neutral: "N", underweight: "UW" } as const;
+            return (
+              <div className="mt-3.5 border-t border-line pt-2.5">
+                <div className="mb-1.5 text-[11px] font-medium uppercase tracking-wide text-ink-3">Changed by daily notes</div>
+                <ul className="space-y-1">
+                  {recent.map((l) => (
+                    <li key={`${l.at}-${l.strategist}-${l.sector}`} className="text-[12px] leading-[1.45] text-ink-2">
+                      <span className="font-mono text-ink-3">{l.noteDate ?? l.at.slice(0, 10)}</span>{" "}
+                      <span className="font-medium text-ink">{l.strategist === "newton" ? "Newton" : "Lee"}</span>{" "}
+                      {l.sector} <span className="font-mono">{V[l.from]}→{V[l.to]}</span>
+                      {l.quote && <span className="text-ink-3"> — &ldquo;{l.quote}&rdquo;</span>}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            );
+          })()}
         </CollapsibleSection>
 
         {/* ── Fundstrat Ideas ── */}
