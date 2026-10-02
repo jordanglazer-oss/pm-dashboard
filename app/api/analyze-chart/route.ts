@@ -4,6 +4,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import type { TechnicalIndicators } from "@/app/lib/technicals";
 import { formatTechnicalsForPrompt } from "@/app/lib/technicals";
 import { abbreviationRule } from "@/app/lib/prose-style";
+import { SONNET_MODEL, THINKING_OFF } from "@/app/lib/claude-model";
 
 const client = new Anthropic();
 
@@ -45,8 +46,8 @@ export async function POST(request: NextRequest) {
     const technicalsText = technicals ? `\n\n${formatTechnicalsForPrompt(technicals)}` : "";
 
     const message = await client.messages.create({
-      model: "claude-sonnet-5",
-      thinking: { type: "disabled" },
+      model: SONNET_MODEL,
+      thinking: THINKING_OFF,
       max_tokens: 2000,
       messages: [
         {

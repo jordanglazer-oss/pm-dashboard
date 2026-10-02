@@ -14,6 +14,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import { createHash } from "crypto";
 import { getRedis } from "./redis";
 import type { BoostedAiConsensus } from "./external-scoring";
+import { SONNET_MODEL, THINKING_OFF } from "@/app/lib/claude-model";
 
 const client = new Anthropic();
 
@@ -146,8 +147,8 @@ export async function extractSiaFromAttachments(
   const imageBlocks = buildImageBlocks(attachments);
   if (imageBlocks.length === 0) return { entries: [], cached: false, hash };
   const msg = await client.messages.create({
-    model: "claude-sonnet-5",
-    thinking: { type: "disabled" },
+    model: SONNET_MODEL,
+    thinking: THINKING_OFF,
     max_tokens: 4096,
     messages: [{ role: "user", content: [{ type: "text", text: SIA_PROMPT }, ...imageBlocks] }],
   });
@@ -249,8 +250,8 @@ export async function extractBoostedFromAttachments(
   const imageBlocks = buildImageBlocks(attachments);
   if (imageBlocks.length === 0) return { entries: [], cached: false, hash };
   const msg = await client.messages.create({
-    model: "claude-sonnet-5",
-    thinking: { type: "disabled" },
+    model: SONNET_MODEL,
+    thinking: THINKING_OFF,
     max_tokens: 4096,
     messages: [{ role: "user", content: [{ type: "text", text: BOOSTED_PROMPT }, ...imageBlocks] }],
   });

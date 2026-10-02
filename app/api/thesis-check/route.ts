@@ -6,6 +6,7 @@ import { loadAlertInputs } from "@/app/lib/alert-inputs";
 import { createHash } from "crypto";
 import { parseModelJson } from "@/app/lib/json-repair";
 import { abbreviationRule } from "@/app/lib/prose-style";
+import { SONNET_MODEL, THINKING_OFF } from "@/app/lib/claude-model";
 
 /**
  * POST /api/thesis-check { ticker } — the on-trip written thesis check
@@ -119,8 +120,8 @@ Rules: use ONLY the facts above — do not invent numbers or events. If the trip
 ${abbreviationRule("each field of your answer")}`;
 
     const resp = await client.messages.create({
-      model: "claude-sonnet-5",
-      thinking: { type: "disabled" },
+      model: SONNET_MODEL,
+      thinking: THINKING_OFF,
       max_tokens: 700,
       messages: [{ role: "user", content: prompt }],
     });

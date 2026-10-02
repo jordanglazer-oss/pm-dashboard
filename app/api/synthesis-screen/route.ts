@@ -37,6 +37,7 @@ import {
   type ThirdPartyTech,
   type Technicals,
 } from "@/app/lib/synthesis-screen";
+import { SONNET_MODEL, THINKING_OFF } from "@/app/lib/claude-model";
 
 /**
  * Synthesis screen API.
@@ -135,9 +136,9 @@ async function callSynthesisModel(
     const messages: Anthropic.MessageParam[] = [{ role: "user", content: user }];
     for (let i = 0; i < 4; i++) {
       const response = await client.messages.create({
-        model: "claude-sonnet-5",
+        model: SONNET_MODEL,
         max_tokens: SYNTHESIS_MAX_TOKENS,
-        ...(thinkingOff ? { thinking: { type: "disabled" as const } } : {}),
+        ...(thinkingOff ? { thinking: THINKING_OFF } : {}),
         system: [{ type: "text", text: system, cache_control: { type: "ephemeral" } }],
         messages,
         tools,

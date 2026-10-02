@@ -4,6 +4,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getRedis } from "@/app/lib/redis";
 import type { ResearchState } from "@/app/lib/defaults";
 import type { MorningBrief, Stock } from "@/app/lib/types";
+import { SONNET_MODEL, THINKING_OFF } from "@/app/lib/claude-model";
 
 /**
  * Cross-source research synthesis.
@@ -686,8 +687,8 @@ async function runSynthesis(
   // lets the retry nudge the model toward clean/complete JSON.
   const attempt = async (extraSystem?: string): Promise<SynthesisResult | null> => {
     const msg = await client.messages.create({
-      model: "claude-sonnet-5",
-      thinking: { type: "disabled" },
+      model: SONNET_MODEL,
+      thinking: THINKING_OFF,
       // Generous ceiling: a research set with many picks (ticker + sources +
       // thesis + rationale + conviction each) can exceed 8192 and truncate the
       // JSON mid-object, which was the classic parse failure. 16000 gives ample

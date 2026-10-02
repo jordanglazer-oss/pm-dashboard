@@ -4,6 +4,7 @@ import { createHash } from "crypto";
 import { getRedis } from "@/app/lib/redis";
 import { stripExchangeCode, toCanadianYahooTicker } from "@/app/lib/rbc-canonical";
 import { isSuspectTicker } from "@/app/lib/ticker-health";
+import { SONNET_MODEL, THINKING_OFF } from "@/app/lib/claude-model";
 
 /**
  * Generic research-screenshot scraper for the four sources beyond
@@ -629,8 +630,8 @@ async function runVision(source: SourceKey, atts: AttachmentInput[]): Promise<{ 
   if (imageBlocks.length === 0) return { entries: [], rawText: "" };
 
   const msg = await client.messages.create({
-    model: "claude-sonnet-5",
-    thinking: { type: "disabled" },
+    model: SONNET_MODEL,
+    thinking: THINKING_OFF,
     max_tokens: 4096,
     messages: [
       {
