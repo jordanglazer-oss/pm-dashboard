@@ -70,6 +70,21 @@ function symbolToTicker(symbol: string): string {
   return symbol.endsWith("-T") ? symbol.replace(/-T$/, ".TO") : symbol;
 }
 
+/** A bucket inside the equity sleeve. `target` is a share of EQUITIES. */
+type EquityBucket = { id: string; name: string; target: number };
+type EquityBucketsState = {
+  enabled: boolean;
+  buckets: EquityBucket[];
+  /** Normalised symbol → bucket id. Unlisted symbols follow their Core/Alpha
+   *  designation. Scenario-only: never written back to pm:stocks. */
+  assign: Record<string, string>;
+};
+const DEFAULT_BUCKETS: EquityBucket[] = [
+  { id: "core", name: "Core", target: 0 },
+  { id: "alpha", name: "Alpha", target: 0 },
+];
+const bucketKey = (sym: string) => sym.replace(/\.TO$/, "-T").toUpperCase();
+
 type SavedScenario = {
   id: string;
   name: string;
@@ -80,6 +95,7 @@ type SavedScenario = {
   residual?: ResidualPolicy;
   residualTargets?: string[];
   holdCash?: boolean;
+  equityBuckets?: EquityBucketsState;
   allocOverride?: boolean;
   pinnedSymbols?: string[];
   customAlloc?: { equity: number; fixedIncome: number; alternative: number; cash: number };
@@ -369,6 +385,33 @@ export function ModelScenarios({ groups, alwaysOpen = false }: Props) {
    */
   const [holdCash, setHoldCash] = useState(false);
   const effectiveResidual: ResidualPolicy = holdCash ? "none" : residual;
+
+  // ── Equity buckets (Core / Alpha / custom) ───────────────────────────────
+  const [bucketsOn, setBucketsOn] = useState(false);
+  const [buckets, setBuckets] = useState<EquityBucket[]>(DEFAULT_BUCKETS);
+  const [bucketAssign, setBucketAssign] = useState<Record<string, string>>({});
+  /** In-flight text for the bucket target boxes (see allocDraft). */
+  const [bucketDraft, setBucketDraft] = useState<Record<string, string>>({});
+  const [newBucketName, setNewBucketName] = useState("");
+
+  /** Which bucket a holding sits in: an explicit scenario assignment if it
+   *  points at a bucket that still exists, otherwise its Core/Alpha tag. */
+  const makeBucketOf = useCallback(
+    (assign: Record<string, string>, list: EquityBucket[]) => (symbol: string) => {
+      const a = assign[bucketKey(symbol)];
+      if (a && list.some((b) => b.id === a)) return a;
+      return isCore(symbol) ? "core" : "alpha";
+    },
+    [isCore],
+  );
+  const bucketOf = useMemo(() => makeBucketOf(bucketAssign, buckets), [makeBucketOf, bucketAssign, buckets]);
+  const equityBucketsOpt = useMemo(
+    () =>
+      bucketsOn
+        ? { targets: Object.fromEntries(buckets.map((b) => [b.id, b.target])), bucketOf }
+        : undefined,
+    [bucketsOn, buckets, bucketOf],
+  );
   /** Symbols that absorb under the "named" policy, split evenly. */
   const [residualTargets, setResidualTargets] = useState<string[]>([]);
   const [saving, setSaving] = useState(false);
@@ -463,9 +506,48 @@ export function ModelScenarios({ groups, alwaysOpen = false }: Props) {
         residualTargets,
         allocations: startAlloc,
         pinnedSymbols: pinned,
+        equityBuckets: equityBucketsOpt,
       }),
-    [baseHoldings, actions, basis, hasActuals, actualWeights, isCore, effectiveResidual, residualTargets, startAlloc, pinned],
+    [baseHoldings, actions, basis, hasActuals, actualWeights, isCore, effectiveResidual, residualTargets, startAlloc, pinned, equityBucketsOpt],
   );
+
+  /** Each bucket's share of EQUITIES under the scenario as it stands. */
+  const bucketShares = useMemo(() => {
+    const out: Record<string, number> = {};
+    for (const h of result.holdings) {
+      if (h.assetClass !== "equity") continue;
+      const b = bucketOf(h.symbol);
+      out[b] = (out[b] ?? 0) + h.weightInClass;
+    }
+    return out;
+  }, [result.holdings, bucketOf]);
+
+  /** Turning the split on seeds every target with where its bucket sits right
+   *  now, so switching it on changes nothing until a target is edited. */
+  const toggleBuckets = (on: boolean) => {
+    if (on) {
+      setBuckets((prev) => prev.map((b) => ({ ...b, target: bucketShares[b.id] ?? 0 })));
+      setBucketDraft({});
+    }
+    setBucketsOn(on);
+  };
+  const setBucketTarget = (id: string, target: number) =>
+    setBuckets((prev) => prev.map((b) => (b.id === id ? { ...b, target } : b)));
+  const addBucket = () => {
+    const name = newBucketName.trim();
+    if (!name) return;
+    const id = `b-${Date.now().toString(36)}`;
+    setBuckets((prev) => [...prev, { id, name, target: 0 }]);
+    setNewBucketName("");
+  };
+  /** Its holdings fall back to their Core/Alpha tag — via makeBucketOf, which
+   *  ignores assignments to a bucket that no longer exists. */
+  const removeBucket = (id: string) => {
+    setBuckets((prev) => prev.filter((b) => b.id !== id));
+    setBucketAssign((prev) => Object.fromEntries(Object.entries(prev).filter(([, v]) => v !== id)));
+  };
+  const assignBucket = (symbol: string, id: string) =>
+    setBucketAssign((prev) => ({ ...prev, [bucketKey(symbol)]: id }));
 
   // The left-hand side of the comparison: today's model, or another scenario
   // replayed against the same base so two proposals are judged like-for-like.
@@ -494,8 +576,14 @@ export function ModelScenarios({ groups, alwaysOpen = false }: Props) {
       isCore,
       residual: other.holdCash ? "none" : (other.residual ?? "core"),
       residualTargets: other.residualTargets,
+      equityBuckets: other.equityBuckets?.enabled
+        ? {
+            targets: Object.fromEntries(other.equityBuckets.buckets.map((b) => [b.id, b.target])),
+            bucketOf: makeBucketOf(other.equityBuckets.assign, other.equityBuckets.buckets),
+          }
+        : undefined,
     }).holdings;
-  }, [compareId, saved, baseHoldings, basis, hasActuals, actualWeights, isCore, residual]);
+  }, [compareId, saved, baseHoldings, basis, hasActuals, actualWeights, isCore, residual, makeBucketOf]);
 
   const deltas = useMemo(
     () => diffHoldings(comparisonBase, result.holdings),
@@ -603,7 +691,7 @@ export function ModelScenarios({ groups, alwaysOpen = false }: Props) {
         (c) => !sameAtDisplay(customAlloc[c], basisAlloc[c] ?? 0),
       );
     const allocShift = shiftActive ? customAlloc : null;
-    if (!group || (actions.length === 0 && !allocShift)) return [];
+    if (!group || (actions.length === 0 && !allocShift && !equityBucketsOpt)) return [];
     const edited = group.profiles[profile];
     const editedTgt = edited
       ? { equity: edited.equity, fixedIncome: edited.fixedIncome, alternative: edited.alternatives }
@@ -654,7 +742,7 @@ export function ModelScenarios({ groups, alwaysOpen = false }: Props) {
         const after = applyScenario(baseHoldings, actions, {
           basis: basis === "actual" && hasActuals ? "actual" : "model",
           actualWeights, isCore, residual: effectiveResidual, residualTargets, pinnedSymbols: pinned,
-          allocations: allocAfter, targetAllocations: startAlloc,
+          allocations: allocAfter, targetAllocations: startAlloc, equityBuckets: equityBucketsOpt,
         });
         const wt = (r: typeof after, sym: string) => {
           const x = r.holdings.find((y) => y.symbol === sym);
@@ -676,7 +764,7 @@ export function ModelScenarios({ groups, alwaysOpen = false }: Props) {
         const applies = touchedClasses.some((c) => (alloc[c] ?? 0) > 0) || allocMoves.length > 0;
         return { profile: p, alloc, allocMoves, moves, applies, touchedClasses };
       });
-  }, [group, profile, actions, baseHoldings, basis, hasActuals, actualWeights, isCore, residual, effectiveResidual, residualTargets, startAlloc, pinned, allocOverride, customAlloc, basisAlloc]);
+  }, [group, profile, actions, baseHoldings, basis, hasActuals, actualWeights, isCore, residual, effectiveResidual, residualTargets, startAlloc, pinned, allocOverride, customAlloc, basisAlloc, equityBucketsOpt]);
 
   /**
    * The allocation the LEFT-HAND column is scaled by — a fixed reference point.
@@ -860,6 +948,10 @@ export function ModelScenarios({ groups, alwaysOpen = false }: Props) {
     setResidual("core");
     setResidualTargets([]);
     setHoldCash(false);
+    setBucketsOn(false);
+    setBuckets(DEFAULT_BUCKETS);
+    setBucketAssign({});
+    setBucketDraft({});
     setAllocOverride(false);
     setPinned([]);
     setRowDraft({});
@@ -888,6 +980,7 @@ export function ModelScenarios({ groups, alwaysOpen = false }: Props) {
           residual,
           residualTargets,
           holdCash,
+          equityBuckets: { enabled: bucketsOn, buckets, assign: bucketAssign },
           allocOverride,
           customAlloc,
           pinnedSymbols: pinned,
@@ -918,6 +1011,10 @@ export function ModelScenarios({ groups, alwaysOpen = false }: Props) {
     setResidual(s.residual ?? "core");
     setResidualTargets(s.residualTargets ?? []);
     setHoldCash(s.holdCash ?? false);
+    setBucketsOn(s.equityBuckets?.enabled ?? false);
+    setBuckets(s.equityBuckets?.buckets?.length ? s.equityBuckets.buckets : DEFAULT_BUCKETS);
+    setBucketAssign(s.equityBuckets?.assign ?? {});
+    setBucketDraft({});
     setAllocOverride(s.allocOverride ?? false);
     setPinned(s.pinnedSymbols ?? []);
     setCustomAlloc(s.customAlloc ?? null);
@@ -1735,6 +1832,110 @@ export function ModelScenarios({ groups, alwaysOpen = false }: Props) {
                       )}
                     </div>
 
+                    {/* Equity buckets — Core / Alpha / custom. Off: the split
+                        is shown as it falls out of the weights. On: each
+                        bucket's share of equities is typed directly and its
+                        holdings scale to fit. */}
+                    {ac === "equity" && (() => {
+                      const targetSum = buckets.reduce((t, b) => t + b.target, 0);
+                      return (
+                        <div className="flex flex-col gap-2 border-b border-line-soft bg-surface-2 px-5 py-2 text-xs">
+                          <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
+                            <span className="text-ink-3">Buckets</span>
+                            <label className="inline-flex items-center gap-1.5 text-ink-3">
+                              <input type="checkbox" checked={bucketsOn} onChange={(e) => toggleBuckets(e.target.checked)} />
+                              Set the split
+                            </label>
+                            {!bucketsOn &&
+                              buckets.map((b) => (
+                                <span key={b.id}>
+                                  <span className="text-ink-3">{b.name} </span>
+                                  <span className="font-mono font-semibold text-ink">{pct(bucketShares[b.id] ?? 0)}</span>
+                                </span>
+                              ))}
+                            {!bucketsOn && <span className="text-ink-faint">of equities</span>}
+                          </div>
+                          {bucketsOn && (
+                            <div className="flex flex-wrap items-center gap-x-5 gap-y-2">
+                              {buckets.map((b) => {
+                                const now = bucketShares[b.id] ?? 0;
+                                const off = !sameAtDisplay(now, b.target);
+                                return (
+                                  <span key={b.id} className="inline-flex items-center gap-1.5">
+                                    <span className="font-medium text-ink">{b.name}</span>
+                                    <input
+                                      inputMode="decimal"
+                                      value={bucketDraft[b.id] ?? (b.target * 100).toFixed(2)}
+                                      onFocus={(e) => e.currentTarget.select()}
+                                      onChange={(e) => {
+                                        const raw = e.target.value;
+                                        setBucketDraft((d) => ({ ...d, [b.id]: raw }));
+                                        const v = parseFloat(raw);
+                                        if (Number.isFinite(v) && v >= 0) setBucketTarget(b.id, v / 100);
+                                      }}
+                                      onBlur={() =>
+                                        setBucketDraft((d) => {
+                                          const { [b.id]: _drop, ...rest } = d;
+                                          void _drop;
+                                          return rest;
+                                        })
+                                      }
+                                      onKeyDown={(e) => {
+                                        if (e.key === "Enter") e.currentTarget.blur();
+                                      }}
+                                      title="Share of the equity sleeve"
+                                      className="w-16 rounded border border-line bg-surface px-1.5 py-0.5 text-right font-mono text-ink"
+                                    />
+                                    <span className="text-ink-3">% of equities</span>
+                                    <span className="text-ink-faint">≈ {pct(b.target * allocTo)} of portfolio</span>
+                                    {off && (
+                                      <span className={now < b.target ? "text-warn" : "text-neg"} title="Where the bucket sits after the scenario's changes">
+                                        (now {pct(now)})
+                                      </span>
+                                    )}
+                                    {b.id !== "core" && b.id !== "alpha" && (
+                                      <button
+                                        onClick={() => removeBucket(b.id)}
+                                        title="Remove this bucket — its holdings go back to Core / Alpha"
+                                        className="text-ink-faint hover:text-neg"
+                                      >
+                                        ×
+                                      </button>
+                                    )}
+                                  </span>
+                                );
+                              })}
+                              <span className={sameAtDisplay(targetSum, 1) ? "text-ink-faint" : "font-semibold text-neg"}>
+                                Total {pct(targetSum)}
+                                {!sameAtDisplay(targetSum, 1) &&
+                                  (targetSum < 1
+                                    ? ` — ${pct(1 - targetSum)} of equities left unplaced`
+                                    : ` — ${pct(targetSum - 1)} over`)}
+                              </span>
+                              <span className="inline-flex items-center gap-1.5">
+                                <input
+                                  value={newBucketName}
+                                  onChange={(e) => setNewBucketName(e.target.value)}
+                                  onKeyDown={(e) => {
+                                    if (e.key === "Enter") addBucket();
+                                  }}
+                                  placeholder="New bucket name"
+                                  className="w-36 rounded border border-line bg-surface px-1.5 py-0.5 text-ink"
+                                />
+                                <button
+                                  onClick={addBucket}
+                                  disabled={!newBucketName.trim()}
+                                  className="font-medium text-accent hover:underline disabled:opacity-40"
+                                >
+                                  + Add bucket
+                                </button>
+                              </span>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })()}
+
                     {/* Scrolls sideways rather than compressing seven columns
                         into an unreadable width; the page itself never scrolls
                         horizontally because the overflow is owned here. */}
@@ -1751,6 +1952,14 @@ export function ModelScenarios({ groups, alwaysOpen = false }: Props) {
                             <th className="py-2.5 pr-2 text-left font-semibold">Name</th>
                             <th className="py-2.5 px-2 text-left font-semibold">Symbol</th>
                             <th className="py-2.5 px-2 text-center font-semibold">Ccy</th>
+                            {ac === "equity" && (
+                              <th
+                                className="py-2.5 px-2 text-left font-semibold"
+                                title="Scenario only — does not change the stock's Core/Alpha tag"
+                              >
+                                Bucket
+                              </th>
+                            )}
                             <th className="py-2.5 px-2 text-right font-semibold whitespace-nowrap">
                               {compareLabel} Wt
                             </th>
@@ -1823,6 +2032,21 @@ export function ModelScenarios({ groups, alwaysOpen = false }: Props) {
                                   {r.currency}
                                 </span>
                               </td>
+                              {ac === "equity" && (
+                                <td className="py-2 px-2">
+                                  <select
+                                    value={bucketOf(r.symbol)}
+                                    onChange={(e) => assignBucket(r.symbol, e.target.value)}
+                                    className="rounded border border-line bg-surface-2 px-1 py-0.5 text-xs text-ink"
+                                  >
+                                    {buckets.map((b) => (
+                                      <option key={b.id} value={b.id}>
+                                        {b.name}
+                                      </option>
+                                    ))}
+                                  </select>
+                                </td>
+                              )}
                               <td className="py-2 px-2 text-right font-mono text-xs text-ink-2">
                                 {dFromP.values[i] == null ? <span className="text-ink-faint">&mdash;</span> : pct(dFromP.values[i] as number)}
                               </td>
@@ -1935,7 +2159,7 @@ export function ModelScenarios({ groups, alwaysOpen = false }: Props) {
                             </tr>
                           ))}
                           <tr className={`${colors.bg} font-semibold`}>
-                            <td className="py-2 pl-4 pr-2 text-xs text-ink-3" colSpan={4}>
+                            <td className="py-2 pl-4 pr-2 text-xs text-ink-3" colSpan={ac === "equity" ? 5 : 4}>
                               TOTAL
                             </td>
                             <td className="py-2 px-2 text-right font-mono text-xs font-bold">{pct(dFromP.total)}</td>
@@ -1978,7 +2202,7 @@ export function ModelScenarios({ groups, alwaysOpen = false }: Props) {
                           {/* Add straight into the sleeve you're looking at —
                               the class is implied by where the row sits. */}
                           <tr>
-                            <td colSpan={12} className="py-2 pl-4 pr-4">
+                            <td colSpan={ac === "equity" ? 13 : 12} className="py-2 pl-4 pr-4">
                               {addingTo === ac ? (
                                 <span className="flex flex-col gap-2 text-xs sm:flex-row sm:flex-wrap sm:items-center">
                                   <input
@@ -2159,7 +2383,7 @@ export function ModelScenarios({ groups, alwaysOpen = false }: Props) {
             />
             <button
               onClick={save}
-              disabled={saving || !name.trim() || actions.length === 0}
+              disabled={saving || !name.trim() || (actions.length === 0 && !bucketsOn)}
               className="rounded bg-accent px-3 py-1 font-medium !text-white disabled:opacity-40"
             >
               {saving ? "Saving…" : draftId ? "Update" : "Keep"}

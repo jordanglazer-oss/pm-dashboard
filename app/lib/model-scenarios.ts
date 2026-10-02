@@ -149,6 +149,26 @@ export type ScenarioOptions = {
    * sleeve, which is rarely what is meant when only one line is being adjusted.
    */
   pinnedSymbols?: string[];
+  /**
+   * Buckets inside the EQUITY sleeve — Core, Alpha and any the PM adds — each
+   * with a target share of the sleeve (fractions of equity, not of the
+   * portfolio). When supplied:
+   *   1. the starting weights are rescaled so every bucket sits on its target
+   *      (holdings inside a bucket keep their relative sizes; pinned ones
+   *      stay put and the rest of the bucket makes room);
+   *   2. the scenario's changes then apply on top;
+   *   3. the equity residual is resolved PER BUCKET — freed weight is
+   *      reinvested inside the bucket it came from (never "none" mode), so a
+   *      sale cannot quietly move the Core/Alpha split.
+   * A bucket with nothing in it can't absorb anything: its target is left as
+   * cash to place until a holding is assigned to it. Targets that don't sum
+   * to 1 leave the sleeve short or over, reported like any other gap.
+   * Scenario-only — the live model has no bucket targets.
+   */
+  equityBuckets?: {
+    targets: Record<string, number>;
+    bucketOf: (symbol: string) => string;
+  };
 };
 
 export type ScenarioDiagnostic = {
@@ -220,9 +240,28 @@ export function applyScenario(
   // can't be found among the touched rows later — remember what it was so the
   // freed weight still lands in the same currency.
   const freedCcy: Record<string, Set<string>> = {};
+  /** Same, per equity bucket (only used when equityBuckets is supplied). */
+  const freedBucketCcy: Record<string, Set<string>> = {};
   for (const p of opts.pinnedSymbols ?? []) {
     const hit = holdings.find((h) => sameSymbol(h.symbol, p));
     if (hit) touched.add(norm(hit.symbol));
+  }
+
+  // 1b. Rescale the equity sleeve onto its bucket targets — the starting
+  // point the scenario's changes are then made against.
+  const eb = opts.equityBuckets;
+  if (eb) {
+    const pinnedSet = new Set((opts.pinnedSymbols ?? []).map((p) => norm(p).replace(/\.TO$/, "-T")));
+    const isPin = (sym: string) => pinnedSet.has(norm(sym).replace(/\.TO$/, "-T"));
+    for (const [bucket, target] of Object.entries(eb.targets)) {
+      const members = holdings.filter((h) => h.assetClass === "equity" && eb.bucketOf(h.symbol) === bucket);
+      const fixed = members.filter((h) => isPin(h.symbol)).reduce((t, h) => t + h.weightInClass, 0);
+      const free = members.filter((h) => !isPin(h.symbol));
+      const freeTotal = free.reduce((t, h) => t + h.weightInClass, 0);
+      if (freeTotal <= EPSILON) continue; // empty bucket — reported as unplaced below
+      const scale = Math.max(0, target - fixed) / freeTotal;
+      for (const h of free) h.weightInClass *= scale;
+    }
   }
 
   // 2. Apply actions in order; later actions on the same symbol win.
@@ -367,6 +406,8 @@ export function applyScenario(
         }
         const gone = holdings[idx];
         (freedCcy[gone.assetClass] ??= new Set()).add(gone.currency);
+        if (gone.assetClass === "equity" && opts.equityBuckets)
+          (freedBucketCcy[opts.equityBuckets.bucketOf(gone.symbol)] ??= new Set()).add(gone.currency);
         holdings.splice(idx, 1);
         break;
       }
@@ -471,6 +512,41 @@ export function applyScenario(
     const gap = 1 - rawTotal;
     const warnings = [...(warningsByClass[cls] ?? [])];
     let absorbedBy: string[] = [];
+
+    if (cls === "equity" && eb) {
+      // Per-bucket residual: each bucket is brought back to its own target
+      // using only its own untouched holdings.
+      if (residual !== "none") {
+        for (const [bucket, target] of Object.entries(eb.targets)) {
+          const members = inClass.filter((h) => eb.bucketOf(h.symbol) === bucket);
+          const bGap = target - members.reduce((t, h) => t + h.weightInClass, 0);
+          if (Math.abs(bGap) <= EPSILON) continue;
+          let pool = members.filter((h) => !touched.has(norm(h.symbol)));
+          // Same-currency first, as everywhere else in this file.
+          const ccys = new Set([
+            ...members.filter((h) => touched.has(norm(h.symbol))).map((h) => h.currency),
+            ...(freedBucketCcy[bucket] ?? []),
+          ]);
+          if (ccys.size === 1) {
+            const [ccy] = [...ccys];
+            const same = pool.filter((h) => h.currency === ccy);
+            if (same.length > 0) pool = same;
+          }
+          const poolTotal = pool.reduce((t, h) => t + h.weightInClass, 0);
+          if (poolTotal <= EPSILON) continue; // nothing to absorb — stays as cash / over
+          for (const h of pool) h.weightInClass = Math.max(0, h.weightInClass + bGap * (h.weightInClass / poolTotal));
+          absorbedBy.push(...pool.map((h) => h.symbol));
+        }
+      }
+      diagnostics.push({
+        assetClass: cls,
+        rawTotal,
+        residualApplied: absorbedBy.length ? gap : 0,
+        absorbedBy,
+        warnings,
+      });
+      continue;
+    }
 
     if (Math.abs(gap) > EPSILON && residual !== "none") {
       // Candidates: never the holdings the scenario explicitly set, or the
