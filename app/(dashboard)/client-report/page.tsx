@@ -18,6 +18,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
+import { Playfair_Display } from "next/font/google";
 import {
   useReportData,
   SLICE_COLORS,
@@ -363,11 +364,61 @@ function normalizePreferredTicker(ticker: string): string {
 
 const VALID_PROFILES: readonly PimProfileType[] = ["conservative", "balanced", "growth", "allEquity"];
 
-// RBC Dominion Securities palette. Navy is the primary brand colour;
-// gold is the accent used for rules, subtle highlights, and footer
-// marks. Everything else stays neutral so the PDF prints cleanly.
-const RBC_NAVY = "#002855";
-const RBC_GOLD = "#FED141";
+// Report theme — sampled from the firm's "Your Portfolio, Built in
+// Layers" investment-approach slide so the report reads as part of the
+// same deck: deep navy, muted antique gold, warm cream paper, a pale
+// sky tint, and a Didone serif for headings. Navy stays the primary
+// colour; gold is the accent for rules, eyebrows and highlights.
+const RBC_NAVY = "#0A2A50";
+const RBC_GOLD = "#B8893F";
+const THEME = {
+  navy: RBC_NAVY,
+  navyDeep: "#051E3C",
+  gold: RBC_GOLD,
+  goldBand: "#DEB165",
+  goldPale: "#F4E7CC",
+  cream: "#FBF7EE",
+  card: "#FFFDF8",
+  sky: "#DCE7F2",
+  skyDeep: "#C4D6EA",
+  ink: "#1C2B44",
+  muted: "#5F6B7E",
+  rule: "#E6DAC0",
+  positive: "#2F7D5B",
+  negative: "#B4423C",
+} as const;
+
+// Heading serif for the report body only (scoped via className, so the
+// rest of the dashboard keeps IBM Plex).
+const reportSerif = Playfair_Display({
+  subsets: ["latin"],
+  style: ["normal", "italic"],
+  weight: ["400", "500", "600", "700"],
+  display: "swap",
+});
+const SERIF = reportSerif.style.fontFamily;
+const SANS = "system-ui, -apple-system, 'Segoe UI', sans-serif";
+
+// Allocation-slice colours re-tinted to the theme. Keyed by slice key so
+// the shared SLICE_COLORS in useReportData (used elsewhere) is untouched.
+const THEME_SLICE_COLORS: Record<ReportAllocationSlice["key"], string> = {
+  coreEtfs: "#0A2A50",
+  usEquity: "#3D6AA3",
+  canadianEquity: "#B8893F",
+  globalEquity: "#7FA3CC",
+  fixedIncome: "#8A97AB",
+  alternatives: "#DEB165",
+  preferredShares: "#5B4A7A",
+  cash: "#CFC4AE",
+};
+const sliceColor = (s: { key: ReportAllocationSlice["key"]; color: string }) =>
+  THEME_SLICE_COLORS[s.key] ?? s.color;
+
+// Sector bars: one navy→sky family so the bar list reads as a single
+// calm scale (matching the slide) rather than eleven hues.
+const SECTOR_RAMP = ["#0A2A50", "#1D4272", "#305A93", "#4673AE", "#6189C0", "#7FA0CF", "#9DB7DC", "#B9CCE6"];
+
+type ReportLayout = "portrait" | "landscape";
 
 /** Strip Canadian-listing suffixes so two ticker variants (e.g.
  *  `FID5982` vs `FID5982-T`, `XIU` vs `XIU.TO`) compare equal. Mirrors
@@ -689,6 +740,21 @@ export default function ClientReportPage() {
   const groupId = params.get("group") || "pim";
   const profileParam = (params.get("profile") || "balanced") as PimProfileType;
   const profile = VALID_PROFILES.includes(profileParam) ? profileParam : "balanced";
+  // Portrait = the letter-sized PDF one-pager. Landscape = 16:9 slides
+  // sized for Prezi: each slide is one self-contained screenshot (or one
+  // page of a landscape PDF). Lives in the URL like group/profile.
+  const layout: ReportLayout = params.get("layout") === "landscape" ? "landscape" : "portrait";
+  const reportUrl = useCallback(
+    (next: { group?: string; profile?: string; layout?: ReportLayout }) => {
+      const g = next.group ?? groupId;
+      const p = next.profile ?? profile;
+      const l = next.layout ?? layout;
+      return `/client-report?group=${encodeURIComponent(g)}&profile=${encodeURIComponent(p)}${
+        l === "landscape" ? "&layout=landscape" : ""
+      }`;
+    },
+    [groupId, profile, layout],
+  );
 
   const { data, loading, error, refetch } = useReportData(groupId, profile);
   const { stocks, pimModels } = useStocks();
@@ -1764,8 +1830,8 @@ export default function ClientReportPage() {
       <style jsx global>{`
         @media print {
           @page {
-            size: letter;
-            margin: 0.4in;
+            size: ${layout === "landscape" ? "1280px 720px" : "letter"};
+            margin: ${layout === "landscape" ? "0" : "0.4in"};
             /* Suppress the browser's default page-margin content
                (URL bottom-left, date top-right, page numbers, title).
                Chrome 121+ honors these @page margin pseudo-elements
@@ -1790,13 +1856,45 @@ export default function ClientReportPage() {
             margin: 0 !important;
             width: 100% !important;
           }
+          /* Landscape: one 16:9 slide per printed page, at true size
+             (1280×720 CSS px = 13.333in × 7.5in; sized in px so the
+             page is exactly one slide, no rounding). The on-screen
+             fit-to-window zoom is dropped for print. */
+          .report-slide-deck {
+            display: block !important;
+            gap: 0 !important;
+            padding: 0 !important;
+          }
+          /* A 13.333in page is wider than the md breakpoint, so the
+             dashboard's 200px rail gutter would apply in print and push
+             each slide off the page. The rail itself is print:hidden. */
+          .report-slide-host,
+          .app-content {
+            padding: 0 !important;
+            margin: 0 !important;
+          }
+          .report-slide-zoom {
+            zoom: 1 !important;
+            overflow: hidden;
+          }
+          .report-slide + .report-slide {
+            break-before: page;
+            page-break-before: always;
+          }
+          /* Blurred shadows rasterise as grey blocks in Chrome's PDF. */
+          .report-slide-deck,
+          .report-slide-deck * {
+            box-shadow: none !important;
+          }
           /* Force colored backgrounds (pie slices, sector bars, legend
              swatches) to render in the printed PDF. By default Chrome
              strips these to save ink — which washed out the sector bar
              colors and the pie-chart legend swatches. Apply inside and
              below the report frame so the sticky toolbar is unaffected. */
           .report-preview-frame,
-          .report-preview-frame * {
+          .report-preview-frame *,
+          .report-slide-deck,
+          .report-slide-deck * {
             -webkit-print-color-adjust: exact !important;
             print-color-adjust: exact !important;
           }
@@ -1818,7 +1916,7 @@ export default function ClientReportPage() {
             Only the URL changes, so a bookmark still carries the choice. */}
         <select
           value={groupId}
-          onChange={(e) => router.replace(`/client-report?group=${encodeURIComponent(e.target.value)}&profile=${encodeURIComponent(profile)}`)}
+          onChange={(e) => router.replace(reportUrl({ group: e.target.value }))}
           className="h-7 rounded border border-slate-300 bg-white px-2 text-xs text-slate-800"
           aria-label="Model"
         >
@@ -1828,7 +1926,7 @@ export default function ClientReportPage() {
         </select>
         <select
           value={profile}
-          onChange={(e) => router.replace(`/client-report?group=${encodeURIComponent(groupId)}&profile=${encodeURIComponent(e.target.value)}`)}
+          onChange={(e) => router.replace(reportUrl({ profile: e.target.value }))}
           className="h-7 rounded border border-slate-300 bg-white px-2 text-xs text-slate-800"
           aria-label="Profile"
         >
@@ -1852,6 +1950,25 @@ export default function ClientReportPage() {
             {data.weightsSource === "live" ? "Live positions" : "Target weights"}
           </span>
         )}
+        <div className="flex rounded border border-slate-300 overflow-hidden text-xs" role="group" aria-label="Layout">
+          {(["portrait", "landscape"] as const).map((l) => (
+            <button
+              key={l}
+              onClick={() => router.replace(reportUrl({ layout: l }))}
+              className={`px-2.5 h-7 font-semibold ${
+                layout === l ? "text-white" : "bg-white text-slate-600 hover:bg-slate-50"
+              }`}
+              style={layout === l ? { backgroundColor: RBC_NAVY } : undefined}
+              title={
+                l === "portrait"
+                  ? "Letter-sized PDF one-pager"
+                  : "16:9 slides sized for Prezi — screenshot each slide, or Generate PDF for one slide per page"
+              }
+            >
+              {l === "portrait" ? "Portrait PDF" : "Landscape slides"}
+            </button>
+          ))}
+        </div>
         <div className="flex-1" />
         <button
           onClick={() => refetch()}
@@ -1866,7 +1983,7 @@ export default function ClientReportPage() {
           className="rounded-lg px-4 py-1.5 text-xs font-semibold text-white disabled:opacity-50"
           style={{ backgroundColor: RBC_NAVY }}
         >
-          Generate PDF
+          {layout === "landscape" ? "Generate slide PDF" : "Generate PDF"}
         </button>
       </div>
 
@@ -2354,10 +2471,30 @@ export default function ClientReportPage() {
         </details>
       </div>
 
+      {/* Landscape: 16:9 slides for Prezi. */}
+      {layout === "landscape" && (
+        <SlideDeck
+          data={data}
+          loading={loading}
+          error={error}
+          onRetry={() => refetch()}
+          clientPortfolio={showComparison ? clientResult : null}
+          analysis={showComparison ? analysis : null}
+          bullets={bullets}
+          merBreakdown={
+            data
+              ? buildMerBreakdown(showComparison ? clientResult : null, data, clientPositions, stocks)
+              : null
+          }
+          metricsOverride={metricsOverrides[`${groupId}::${profile}`] ?? {}}
+        />
+      )}
+
       {/* Letter-sized frame. */}
+      {layout === "portrait" && (
       <div
-        className="report-preview-frame mx-auto my-6 bg-white shadow-lg print:shadow-none print:my-0"
-        style={{ width: "8.5in", minHeight: "11in" }}
+        className="report-preview-frame mx-auto my-6 shadow-lg print:shadow-none print:my-0"
+        style={{ width: "8.5in", minHeight: "11in", backgroundColor: THEME.cream }}
       >
         {loading && !data && (
           <div className="p-12 text-center text-slate-500 text-sm">Loading live data…</div>
@@ -2395,6 +2532,7 @@ export default function ClientReportPage() {
           />
         )}
       </div>
+      )}
     </div>
   );
 }
@@ -2433,43 +2571,23 @@ function OnePager({
 
   return (
     <div
-      className="p-6 text-slate-800"
-      style={{ fontFamily: "system-ui, -apple-system, sans-serif" }}
+      className="p-6"
+      style={{ fontFamily: SANS, color: THEME.ink }}
     >
       {/* ── Header ── */}
-      <div
-        className="flex items-start justify-between pb-3 border-b-4"
-        style={{ borderColor: RBC_NAVY }}
-      >
-        <div>
-          <div className="text-[10px] tracking-[0.2em] uppercase text-slate-500">
-            RBC Dominion Securities
-          </div>
-          <div className="mt-0.5 text-xl font-bold" style={{ color: RBC_NAVY }}>
-            Di Iorio Wealth Management
-          </div>
-          <div className="mt-0.5 text-xs text-slate-600">
-            {data.profileLabel} Model — Current Positioning
-          </div>
-        </div>
-        <div className="text-right">
-          <div
-            className="w-20 h-10 border rounded flex items-center justify-center text-[10px] text-slate-400"
-            style={{ borderColor: RBC_NAVY }}
-            aria-label="RBC logo placeholder"
-          >
-            RBC
-          </div>
-          <div className="mt-1 text-[10px] text-slate-500">{dateStr}</div>
-        </div>
-      </div>
+      <ReportMasthead
+        lead={`${data.profileLabel} Model,`}
+        accent="Current Positioning"
+        dateStr={dateStr}
+        profileLabel={data.profileLabel}
+      />
 
       {/* ── Row 1: Holdings table + Allocation pie ── */}
       <div className="grid grid-cols-5 gap-5 mt-4 break-inside-avoid">
         <div className="col-span-3">
           <SectionTitle>Current Positioning</SectionTitle>
           <HoldingsTable rows={data.xray.slice(0, 10)} />
-          <div className="mt-1 text-[9px] text-slate-400 flex justify-between">
+          <div className="mt-1 text-[9px] flex justify-between" style={{ color: THEME.muted }}>
             <span>
               CAD: {data.totals.cad.toFixed(1)}% · USD: {data.totals.usd.toFixed(1)}%
             </span>
@@ -2491,7 +2609,7 @@ function OnePager({
         <div className="flex items-baseline justify-between">
           <SectionTitle>Model Performance (Since Inception)</SectionTitle>
           {data.tracker?.sinceInceptionReturnPct != null && (
-            <span className="text-[10px] text-slate-600 font-semibold tabular-nums">
+            <span className="text-[10px] font-semibold tabular-nums" style={{ color: THEME.navy }}>
               Cumulative: {fmtPctSigned(data.tracker.sinceInceptionReturnPct, 2)}
             </span>
           )}
@@ -2501,15 +2619,15 @@ function OnePager({
             <div className="col-span-3">
               <PerformanceChart tracker={data.tracker} />
               {data.tracker.annualizedReturnPct != null && (
-                <div className="mt-1 text-center text-[11px] text-slate-700">
+                <div className="mt-1 text-center text-[11px]" style={{ color: THEME.ink }}>
                   Annualized Return:{" "}
                   <span
                     className="font-bold tabular-nums"
                     style={{
                       color:
                         data.tracker.annualizedReturnPct >= 0
-                          ? "#059669"
-                          : "#dc2626",
+                          ? THEME.positive
+                          : THEME.negative,
                     }}
                   >
                     {fmtPctSigned(data.tracker.annualizedReturnPct, 2)}
@@ -2549,10 +2667,10 @@ function OnePager({
         <div>
           <SectionTitle>Top Sector Exposures</SectionTitle>
           <BarList
-            rows={data.sectors.slice(0, 8).map((s) => ({
+            rows={data.sectors.slice(0, 8).map((s, i) => ({
               label: s.sector,
               value: s.weight,
-              color: colorForSector(s.sector),
+              color: SECTOR_RAMP[i] ?? colorForSector(s.sector),
               tooltip: `${s.sector}: ${s.weight.toFixed(2)}% of equity exposure (post-look-through)`,
             }))}
             accent={RBC_GOLD}
@@ -2655,20 +2773,11 @@ function OnePager({
       {/* ── Client Portfolio Comparison (only when active) ── */}
       {clientPortfolio && (
         <div className="mt-6 break-inside-avoid">
-          <div
-            className="pb-3 border-b-4 mb-4"
-            style={{ borderColor: RBC_NAVY }}
-          >
-            <div
-              className="text-lg font-bold"
-              style={{ color: RBC_NAVY }}
-            >
-              Portfolio Comparison
-            </div>
-            <div className="text-[10px] text-slate-500">
-              Current holdings vs {data.profileLabel} Model
-            </div>
-          </div>
+          <PageHeading
+            eyebrow={`Current holdings vs ${data.profileLabel} Model`}
+            title="Portfolio"
+            accent="Comparison"
+          />
 
           {/* Side-by-side allocation pies */}
           <div className="grid grid-cols-2 gap-5 break-inside-avoid">
@@ -2745,21 +2854,14 @@ function OnePager({
           the pie and the prospect couldn't see what was inside that slice. */}
       {data.allocationBreakdown.length > 0 && (
         <div
-          className="relative z-10 mt-8 pt-6 bg-white"
-          style={{ breakBefore: "page", pageBreakBefore: "always" }}
+          className="relative z-10 mt-8 pt-6"
+          style={{ breakBefore: "page", pageBreakBefore: "always", backgroundColor: THEME.cream }}
         >
-          <div
-            className="pb-3 border-b-4 mb-4"
-            style={{ borderColor: RBC_NAVY }}
-          >
-            <div className="text-lg font-bold" style={{ color: RBC_NAVY }}>
-              Asset Allocation — Holdings Breakdown
-            </div>
-            <div className="text-[10px] text-slate-500">
-              Each holding&apos;s contribution to the categories shown in the
-              Asset Allocation pie chart (post look-through).
-            </div>
-          </div>
+          <PageHeading
+            eyebrow="Each holding's contribution to the Asset Allocation categories (post look-through)"
+            title="Asset Allocation,"
+            accent="Holdings Breakdown"
+          />
           <AllocationBreakdownTables breakdown={data.allocationBreakdown} />
         </div>
       )}
@@ -2773,17 +2875,17 @@ function OnePager({
           feeds the comparison page's blended-MER tiles). */}
       {merBreakdown && (
         <div
-          className="relative z-10 mt-8 pt-6 bg-white"
-          style={{ breakBefore: "page", pageBreakBefore: "always" }}
+          className="relative z-10 mt-8 pt-6"
+          style={{ breakBefore: "page", pageBreakBefore: "always", backgroundColor: THEME.cream }}
         >
-          <div
-            className="pb-3 border-b-4 mb-4"
-            style={{ borderColor: RBC_NAVY }}
-          >
-            <div className="text-lg font-bold" style={{ color: RBC_NAVY }}>
-              Blended MER — Contributors
-            </div>
-            <div className="text-[10px] text-slate-500">
+          <div className="mb-4">
+            <PageHeading
+              eyebrow="Per-holding breakdown of the blended management fee"
+              title="Blended MER,"
+              accent="Contributors"
+              flush
+            />
+            <div className="text-[10px] mt-1" style={{ color: THEME.muted }}>
               Per-holding breakdown of the blended management-fee calculation.
               Contribution = Weight × MER ÷ 100 (percentage points of blended MER).
               Stocks contribute 0 pp with full coverage; fund rows without an
@@ -2811,7 +2913,7 @@ function OnePager({
               rows={merBreakdown.model.rows}
               blended={merBreakdown.model.blended}
               coveragePct={merBreakdown.model.coveragePct}
-              accent="#059669"
+              accent={THEME.positive}
             />
           </div>
         </div>
@@ -2819,12 +2921,16 @@ function OnePager({
 
       {/* ── Footer ── */}
       <div
-        className="mt-4 pt-2 border-t text-[9px] text-slate-400 flex justify-between"
-        style={{ borderColor: RBC_GOLD }}
+        className="mt-4 pt-2 border-t text-[9px] flex justify-between"
+        style={{ borderColor: RBC_GOLD, color: THEME.muted }}
       >
         <span>
-          Di Iorio Wealth Management · RBC Dominion Securities Inc. · For client
-          presentation purposes only.
+          <span className="font-semibold tracking-[0.18em] uppercase" style={{ color: THEME.navy }}>
+            Di Iorio Family Wealth
+          </span>
+          <span className="mx-1.5" style={{ color: THEME.gold }}>|</span>
+          <span className="tracking-[0.18em] uppercase">RBC Dominion Securities</span>
+          <span className="ml-2">For client presentation purposes only.</span>
         </span>
         <span>
           Generated{" "}
@@ -2835,6 +2941,705 @@ function OnePager({
         </span>
       </div>
     </div>
+  );
+}
+
+// ───────── Landscape slides (Prezi) ─────────
+//
+// Each slide is a fixed 1280×720 canvas (16:9, = 13.333in × 7.5in at
+// 96dpi) so one screenshot — or one page of the printed landscape PDF —
+// drops straight into a Prezi frame. On screen the canvas is CSS-zoomed
+// to fit the window (zoom re-lays out at device resolution, so text
+// stays crisp in a screenshot); print resets the zoom to 1.
+//
+// Read-only by construction: no inputs render on a slide (the Risk
+// Profile overrides are edited in Portrait and simply displayed here).
+
+const SLIDE_W = 1280;
+const SLIDE_H = 720;
+
+function SlideDeck({
+  data,
+  loading,
+  error,
+  onRetry,
+  clientPortfolio,
+  analysis,
+  bullets,
+  merBreakdown,
+  metricsOverride,
+}: {
+  data: ReportData | null;
+  loading: boolean;
+  error: string | null;
+  onRetry: () => void;
+  clientPortfolio: ClientPortfolioResult | null;
+  analysis: ClientReportAnalysis | null;
+  bullets: StoredBullets | null;
+  merBreakdown: MerBreakdown | null;
+  metricsOverride: MetricsOverride;
+}) {
+  const hostRef = useRef<HTMLDivElement>(null);
+  const [scale, setScale] = useState(1);
+
+  // Fit each slide inside the visible window (width AND height) so a
+  // single slide is always fully on screen for a one-shot screenshot.
+  useEffect(() => {
+    const el = hostRef.current;
+    if (!el) return;
+    const fit = () => {
+      const availW = el.clientWidth - 48;
+      const availH = window.innerHeight - 64 - 40; // sticky toolbar + breathing room
+      const next = Math.min(availW / SLIDE_W, availH / SLIDE_H);
+      setScale(Math.max(0.35, Math.min(1.6, Number.isFinite(next) ? next : 1)));
+    };
+    fit();
+    const ro = new ResizeObserver(fit);
+    ro.observe(el);
+    window.addEventListener("resize", fit);
+    return () => {
+      ro.disconnect();
+      window.removeEventListener("resize", fit);
+    };
+  }, []);
+
+  const dateStr = data
+    ? new Date(data.generatedAt).toLocaleDateString("en-CA", {
+        year: "numeric",
+        month: "long",
+        day: "numeric",
+      })
+    : "";
+
+  const slides: React.ReactNode[] = [];
+  if (data) {
+    slides.push(
+      <OverviewSlide key="overview" data={data} dateStr={dateStr} metricsOverride={metricsOverride} />,
+    );
+    slides.push(<LookThroughSlide key="lookthrough" data={data} dateStr={dateStr} bullets={bullets} />);
+    if (clientPortfolio) {
+      slides.push(
+        <ComparisonSlide
+          key="comparison"
+          data={data}
+          dateStr={dateStr}
+          clientPortfolio={clientPortfolio}
+          merBreakdown={merBreakdown}
+        />,
+      );
+      if (analysis) {
+        slides.push(
+          <RecommendationsSlide key="recs" data={data} dateStr={dateStr} analysis={analysis} />,
+        );
+      }
+    }
+  }
+
+  return (
+    <div ref={hostRef} className="report-slide-host px-6">
+      <div className="print:hidden mx-auto my-3 max-w-4xl text-[11px] text-slate-500 text-center">
+        {slides.length > 0 && `${slides.length} slide${slides.length === 1 ? "" : "s"} · `}16:9 (1280×720). Screenshot a
+        slide straight into Prezi, or use <span className="font-semibold">Generate slide PDF</span> for
+        one slide per page. The holdings-breakdown and MER audit pages stay in Portrait PDF.
+      </div>
+      {loading && !data && (
+        <div className="p-12 text-center text-slate-500 text-sm">Loading live data…</div>
+      )}
+      {error && (
+        <div className="p-12 text-center text-rose-600 text-sm">
+          {error}.{" "}
+          <button onClick={onRetry} className="underline">
+            Try again
+          </button>
+          .
+        </div>
+      )}
+      <div className="report-slide-deck flex flex-col items-center gap-10 pb-10">
+        {slides.map((slide, i) => (
+          <div
+            key={i}
+            className="report-slide report-slide-zoom shadow-xl"
+            style={{ zoom: scale, width: SLIDE_W, height: SLIDE_H }}
+          >
+            {slide}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/** 1280×720 canvas: cream paper, masthead, body, firm footer. */
+function SlideFrame({
+  lead,
+  accent,
+  dateStr,
+  profileLabel,
+  children,
+}: {
+  lead: string;
+  accent: string;
+  dateStr: string;
+  profileLabel: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div
+      className="relative flex flex-col overflow-hidden"
+      style={{
+        width: SLIDE_W,
+        height: SLIDE_H,
+        backgroundColor: THEME.cream,
+        fontFamily: SANS,
+        color: THEME.ink,
+        padding: "30px 56px 0",
+      }}
+    >
+      <ReportMasthead lead={lead} accent={accent} dateStr={dateStr} profileLabel={profileLabel} size="slide" />
+      <div className="flex-1 min-h-0" style={{ marginTop: 18 }}>
+        {children}
+      </div>
+      <div
+        className="flex items-center justify-between"
+        style={{ height: 42, borderTop: `1px solid ${THEME.rule}`, marginTop: 14 }}
+      >
+        <span className="uppercase" style={{ fontSize: 11, letterSpacing: "0.22em", color: THEME.navy }}>
+          <span className="font-semibold">Di Iorio Family Wealth</span>
+          <span style={{ color: THEME.gold, margin: "0 10px" }}>|</span>
+          RBC Dominion Securities
+        </span>
+        <span style={{ fontSize: 10.5, color: "#3D6AA3" }}>
+          For client presentation purposes only. Past performance is not indicative of future results.
+        </span>
+      </div>
+    </div>
+  );
+}
+
+type CardTone = "cream" | "sky" | "navy" | "gold";
+
+/** One "layer" from the investment-approach slide. */
+function SlideCard({
+  tone,
+  num,
+  eyebrow,
+  right,
+  children,
+  className = "",
+  style,
+}: {
+  tone: CardTone;
+  num?: string;
+  eyebrow: string;
+  right?: React.ReactNode;
+  children: React.ReactNode;
+  className?: string;
+  style?: React.CSSProperties;
+}) {
+  const bg =
+    tone === "navy"
+      ? `linear-gradient(135deg, ${THEME.navy} 0%, ${THEME.navyDeep} 100%)`
+      : tone === "gold"
+        ? `linear-gradient(135deg, #E6C07C 0%, ${THEME.goldBand} 55%, #CFA052 100%)`
+        : tone === "sky"
+          ? `linear-gradient(135deg, #E4EDF6 0%, ${THEME.skyDeep} 100%)`
+          : THEME.card;
+  const border = tone === "cream" ? THEME.goldBand : tone === "sky" ? "#B3C8E0" : "transparent";
+  const eyebrowColor = tone === "navy" ? THEME.goldBand : tone === "gold" ? THEME.navy : THEME.gold;
+  return (
+    <div
+      className={`rounded-[3px] flex flex-col min-h-0 min-w-0 ${className}`}
+      style={{
+        background: bg,
+        border: `1px solid ${border}`,
+        boxShadow: "0 8px 18px -12px rgba(10,42,80,0.45)",
+        padding: "16px 20px",
+        color: tone === "navy" ? "#fff" : THEME.ink,
+        ...style,
+      }}
+    >
+      <div className="flex items-baseline justify-between gap-3" style={{ marginBottom: 10 }}>
+        <div className="flex items-baseline gap-2.5 min-w-0">
+          {num && (
+            <span
+              style={{
+                fontFamily: SERIF,
+                fontSize: 22,
+                lineHeight: 1,
+                color: tone === "navy" ? THEME.goldBand : tone === "gold" ? THEME.navy : THEME.gold,
+              }}
+            >
+              {num}
+            </span>
+          )}
+          <span
+            className="uppercase truncate"
+            style={{ fontSize: 11.5, letterSpacing: "0.2em", color: eyebrowColor, fontWeight: 600 }}
+          >
+            {eyebrow}
+          </span>
+        </div>
+        {right}
+      </div>
+      <div className="flex-1 min-h-0">{children}</div>
+    </div>
+  );
+}
+
+function SlideHoldingRows({
+  rows,
+  fontSize = 13.5,
+  rowH = 23,
+  cashWeight,
+}: {
+  rows: { name: string; symbol: string; weight: number }[];
+  fontSize?: number;
+  rowH?: number;
+  cashWeight?: number;
+}) {
+  if (!rows.length) {
+    return <div style={{ fontSize: 12, color: THEME.muted, fontStyle: "italic" }}>No holdings available.</div>;
+  }
+  const max = Math.max(...rows.map((r) => r.weight), 0.01);
+  return (
+    <div>
+      {rows.map((r, i) => (
+        <div
+          key={`${r.symbol}-${i}`}
+          className="flex items-center gap-3"
+          style={{ height: rowH, fontSize, borderTop: i ? `1px solid ${THEME.rule}` : undefined }}
+        >
+          <span className="tabular-nums" style={{ width: 18, color: THEME.gold, fontSize: fontSize - 2 }}>
+            {i + 1}
+          </span>
+          <span className="flex-1 min-w-0 truncate" style={{ color: THEME.navy }}>
+            {formatCompanyName(r.name) || r.symbol}
+            {r.symbol && r.symbol !== r.name && (
+              <span style={{ marginLeft: 6, fontSize: fontSize - 3.5, color: THEME.muted }}>{r.symbol}</span>
+            )}
+          </span>
+          <span className="block rounded-full" style={{ width: 56, height: 4, backgroundColor: "rgba(10,42,80,0.08)" }}>
+            <span
+              className="block h-full rounded-full"
+              style={{ width: `${Math.max(6, (r.weight / max) * 100)}%`, backgroundColor: THEME.goldBand }}
+            />
+          </span>
+          <span className="tabular-nums font-semibold text-right" style={{ width: 54, color: THEME.navy }}>
+            {r.weight.toFixed(2)}%
+          </span>
+        </div>
+      ))}
+      {cashWeight != null && cashWeight > 0.05 && (
+        <div
+          className="flex items-center gap-3"
+          style={{ height: rowH, fontSize, borderTop: `1px solid ${THEME.rule}`, color: THEME.muted }}
+        >
+          <span style={{ width: 18 }} />
+          <span className="flex-1 italic">Cash</span>
+          <span className="tabular-nums font-semibold text-right" style={{ width: 54 }}>
+            {cashWeight.toFixed(2)}%
+          </span>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function SlideStat({
+  label,
+  value,
+  tone = "light",
+  size = 30,
+}: {
+  label: string;
+  value: string;
+  tone?: "light" | "dark";
+  size?: number;
+}) {
+  return (
+    <div>
+      <div
+        className="uppercase"
+        style={{
+          fontSize: 10.5,
+          letterSpacing: "0.16em",
+          color: tone === "dark" ? "rgba(255,255,255,0.72)" : THEME.navy,
+          opacity: tone === "dark" ? 1 : 0.8,
+        }}
+      >
+        {label}
+      </div>
+      <div
+        className="tabular-nums"
+        style={{
+          fontFamily: SERIF,
+          fontSize: size,
+          lineHeight: 1.15,
+          fontWeight: 600,
+          color: tone === "dark" ? "#fff" : THEME.navy,
+        }}
+      >
+        {value}
+      </div>
+    </div>
+  );
+}
+
+function SlideBullets({
+  bullets,
+  accent,
+  fontSize = 14,
+  tone = "light",
+}: {
+  bullets: string[];
+  accent: string;
+  fontSize?: number;
+  tone?: "light" | "dark";
+}) {
+  if (!bullets.length) {
+    return <div style={{ fontSize: 12, color: THEME.muted, fontStyle: "italic" }}>No items available.</div>;
+  }
+  return (
+    <ul className="space-y-2.5">
+      {bullets.map((b, i) => (
+        <li
+          key={i}
+          className="flex gap-2.5"
+          style={{ fontSize, lineHeight: 1.4, color: tone === "dark" ? "rgba(255,255,255,0.92)" : THEME.ink }}
+        >
+          <span
+            aria-hidden
+            className="block shrink-0 rounded-full"
+            style={{ width: 6, height: 6, marginTop: fontSize * 0.5, backgroundColor: accent }}
+          />
+          <span>{b}</span>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+function fmtStat(v: number | null | undefined, fraction: boolean): string {
+  if (v == null || !Number.isFinite(v)) return "N/A";
+  return `${(fraction ? v * 100 : v).toFixed(1)}%`;
+}
+
+/** Slide 1 — the whole one-pager story on one 16:9 canvas. */
+function OverviewSlide({
+  data,
+  dateStr,
+  metricsOverride,
+}: {
+  data: ReportData;
+  dateStr: string;
+  metricsOverride: MetricsOverride;
+}) {
+  const t = data.tracker;
+  const perf = data.performance;
+  const pick = (o: number | undefined, a: number | null) => (o != null ? o : a);
+  return (
+    <SlideFrame
+      lead={`${data.profileLabel} Model,`}
+      accent="Current Positioning"
+      dateStr={dateStr}
+      profileLabel={data.profileLabel}
+    >
+      <div className="flex flex-col h-full gap-4">
+        <div className="grid gap-4 flex-1 min-h-0" style={{ gridTemplateColumns: "1.25fr 1fr 1fr" }}>
+          <SlideCard tone="cream" num="01" eyebrow="Top Holdings · Look-Through">
+            <SlideHoldingRows
+              rows={data.xray.slice(0, 10).map((r) => ({ name: r.name, symbol: r.symbol, weight: r.weight }))}
+              fontSize={13}
+              rowH={25}
+            />
+          </SlideCard>
+          <SlideCard tone="cream" num="02" eyebrow="Asset Allocation">
+            <div className="flex flex-col h-full">
+              <AllocationPie slices={data.allocation} size={128} fontSize={12.5} />
+              <div className="mt-auto pt-3 flex gap-6" style={{ borderTop: `1px solid ${THEME.rule}` }}>
+                <SlideStat label="CAD" value={`${data.totals.cad.toFixed(1)}%`} size={20} />
+                <SlideStat label="USD" value={`${data.totals.usd.toFixed(1)}%`} size={20} />
+              </div>
+            </div>
+          </SlideCard>
+          <SlideCard tone="sky" num="03" eyebrow="Sector Exposure">
+            <BarList
+              rows={data.sectors.slice(0, 8).map((s, i) => ({
+                label: s.sector,
+                value: s.weight,
+                color: SECTOR_RAMP[i] ?? colorForSector(s.sector),
+              }))}
+              accent={THEME.navy}
+              textColor={THEME.navy}
+              scale="sqrt"
+              minBarPct={12}
+              size="slide"
+            />
+          </SlideCard>
+        </div>
+        <div className="grid gap-4" style={{ gridTemplateColumns: "1.75fr 1fr", height: 182 }}>
+          <SlideCard
+            tone="navy"
+            num="04"
+            eyebrow="Model Performance · Since Inception"
+            right={
+              t?.yearsOfHistory != null ? (
+                <span style={{ fontSize: 11, color: "rgba(255,255,255,0.6)" }}>
+                  {t.yearsOfHistory.toFixed(1)} years of history
+                </span>
+              ) : undefined
+            }
+          >
+            {t ? (
+              <div className="flex gap-6 h-full">
+                <div className="flex flex-col justify-between shrink-0" style={{ width: 150 }}>
+                  <SlideStat label="Annualized" value={fmtPctSigned(t.annualizedReturnPct, 2)} tone="dark" size={30} />
+                  <SlideStat label="Cumulative" value={fmtPctSigned(t.sinceInceptionReturnPct, 2)} tone="dark" size={22} />
+                </div>
+                <div className="flex-1 min-w-0 flex flex-col">
+                  <PerformanceChart tracker={t} width={560} height={86} tone="dark" />
+                  <div className="flex flex-wrap gap-x-4 gap-y-1 mt-1.5" style={{ fontSize: 11.5 }}>
+                    {t.yearlyReturns.slice(-6).map((r) => (
+                      <span key={r.year} className="tabular-nums" style={{ color: "rgba(255,255,255,0.65)" }}>
+                        {r.year}{" "}
+                        <span className="font-semibold" style={{ color: r.returnPct >= 0 ? THEME.goldBand : "#F2A39C" }}>
+                          {fmtPctSigned(r.returnPct, 1)}
+                        </span>
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <div style={{ fontSize: 13, color: "rgba(255,255,255,0.7)", fontStyle: "italic" }}>
+                No performance tracker history yet.
+              </div>
+            )}
+          </SlideCard>
+          <SlideCard tone="gold" num="05" eyebrow="Risk Profile vs S&P 500">
+            <div className="grid grid-cols-2 gap-x-5 gap-y-3">
+              <SlideStat label="Std Dev · Portfolio" value={fmtStat(pick(metricsOverride.stdDev, perf.volatility), true)} size={24} />
+              <SlideStat label="Std Dev · S&P 500" value={fmtStat(pick(metricsOverride.benchmarkStdDev, perf.benchmarkVolatility), true)} size={24} />
+              <SlideStat label="Upside Capture" value={fmtStat(pick(metricsOverride.upsideCapture, perf.upsideCapture), false)} size={24} />
+              <SlideStat label="Downside Capture" value={fmtStat(pick(metricsOverride.downsideCapture, perf.downsideCapture), false)} size={24} />
+            </div>
+          </SlideCard>
+        </div>
+      </div>
+    </SlideFrame>
+  );
+}
+
+/** Slide 2 — look-through exposures + the AI portfolio highlights. */
+function LookThroughSlide({
+  data,
+  dateStr,
+  bullets,
+}: {
+  data: ReportData;
+  dateStr: string;
+  bullets: StoredBullets | null;
+}) {
+  const hasBullets = !!bullets && bullets.bullets.length > 0;
+  const rows = data.xray.slice(0, 12);
+  return (
+    <SlideFrame lead="Inside the Portfolio," accent="Look-Through" dateStr={dateStr} profileLabel={data.profileLabel}>
+      <div className="grid gap-4 h-full" style={{ gridTemplateColumns: hasBullets ? "1.2fr 1fr" : "1fr" }}>
+        <SlideCard tone="cream" num="01" eyebrow="Top Exposures · Direct + Through Funds">
+          {rows.length ? (
+            <table className="w-full tabular-nums" style={{ fontSize: 13.5 }}>
+              <thead>
+                <tr style={{ color: THEME.gold, fontSize: 10.5, letterSpacing: "0.16em" }} className="uppercase">
+                  <th className="text-left font-semibold pb-1.5">Position</th>
+                  <th className="text-right font-semibold pb-1.5">Direct</th>
+                  <th className="text-right font-semibold pb-1.5">Look-Through</th>
+                  <th className="text-right font-semibold pb-1.5">Total</th>
+                </tr>
+              </thead>
+              <tbody>
+                {rows.map((r, i) => (
+                  <tr key={r.symbol} style={{ borderTop: `1px solid ${THEME.rule}`, height: 32 }}>
+                    <td style={{ color: THEME.navy }}>
+                      <span style={{ color: THEME.gold, marginRight: 10, fontSize: 11.5 }}>{i + 1}</span>
+                      {formatCompanyName(r.name) || r.symbol}
+                      {r.symbol && r.symbol !== r.name && (
+                        <span style={{ marginLeft: 6, fontSize: 10, color: THEME.muted }}>{r.symbol}</span>
+                      )}
+                    </td>
+                    <td className="text-right" style={{ color: THEME.muted }}>
+                      {r.direct > 0 ? `${r.direct.toFixed(2)}%` : "—"}
+                    </td>
+                    <td className="text-right" style={{ color: THEME.muted }}>
+                      {r.lookThrough > 0 ? `${r.lookThrough.toFixed(2)}%` : "—"}
+                    </td>
+                    <td className="text-right font-semibold" style={{ color: THEME.navy }}>
+                      {r.weight.toFixed(2)}%
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          ) : (
+            <div style={{ fontSize: 13, color: THEME.muted, fontStyle: "italic" }}>
+              Look-through exposures populate once fund-data holdings have been cached.
+            </div>
+          )}
+        </SlideCard>
+        {hasBullets && (
+          <SlideCard tone="navy" num="02" eyebrow="Portfolio Highlights">
+            <SlideBullets bullets={bullets!.bullets} accent={THEME.goldBand} fontSize={17} tone="dark" />
+          </SlideCard>
+        )}
+      </div>
+    </SlideFrame>
+  );
+}
+
+/** Slide 3 — client's current portfolio beside the model. */
+function ComparisonSlide({
+  data,
+  dateStr,
+  clientPortfolio,
+  merBreakdown,
+}: {
+  data: ReportData;
+  dateStr: string;
+  clientPortfolio: ClientPortfolioResult;
+  merBreakdown: MerBreakdown | null;
+}) {
+  const savings =
+    merBreakdown?.client != null
+      ? computeFeeSavings(merBreakdown.client.blended, merBreakdown.model.blended, clientPortfolio.totalValue)
+      : null;
+  const fmt = (n: number) => `$${n.toLocaleString()}`;
+  const side = (
+    tone: CardTone,
+    num: string,
+    eyebrow: string,
+    slices: ReportAllocationSlice[],
+    rows: { name: string; symbol: string; weight: number }[],
+    mer: number | undefined,
+    cashWeight?: number,
+  ) => (
+    <SlideCard
+      tone={tone}
+      num={num}
+      eyebrow={eyebrow}
+      right={
+        mer != null ? (
+          <span className="tabular-nums" style={{ fontSize: 12, color: THEME.navy }}>
+            Blended MER <span className="font-semibold">{mer.toFixed(2)}%</span>
+          </span>
+        ) : undefined
+      }
+    >
+      <div className="flex flex-col gap-2 h-full min-w-0">
+        <div style={{ maxWidth: 380 }}>
+          <AllocationPie slices={slices} size={104} fontSize={12} />
+        </div>
+        <div className="min-w-0" style={{ borderTop: `1px solid ${THEME.rule}`, paddingTop: 4 }}>
+          <SlideHoldingRows rows={rows} fontSize={12.5} rowH={22} cashWeight={cashWeight} />
+        </div>
+      </div>
+    </SlideCard>
+  );
+  return (
+    <SlideFrame lead="Your Portfolio," accent="Side by Side" dateStr={dateStr} profileLabel={data.profileLabel}>
+      <div className="flex flex-col h-full gap-4">
+        <div className="grid grid-cols-2 gap-4 flex-1 min-h-0">
+          {side(
+            "cream",
+            "01",
+            "Current Portfolio",
+            clientPortfolio.allocation,
+            clientPortfolio.xray.slice(0, 8).map((r) => ({ name: r.name || r.symbol, symbol: r.symbol, weight: r.weight })),
+            merBreakdown?.client?.blended,
+            clientPortfolio.cashWeight,
+          )}
+          {side(
+            "sky",
+            "02",
+            `${data.profileLabel} Model`,
+            data.allocation,
+            data.xray.slice(0, 8).map((r) => ({ name: r.name || r.symbol, symbol: r.symbol, weight: r.weight })),
+            merBreakdown?.model.blended,
+          )}
+        </div>
+        {savings && merBreakdown?.client && (
+          <SlideCard tone="navy" num="03" eyebrow="Estimated Cost Savings" style={{ height: 124 }}>
+            <div className="flex items-center gap-10">
+              <SlideStat
+                label="Blended MER"
+                value={`${merBreakdown.client.blended.toFixed(2)}% → ${merBreakdown.model.blended.toFixed(2)}%`}
+                tone="dark"
+                size={26}
+              />
+              <SlideStat label="Per Year" value={fmt(savings.annualRounded)} tone="dark" size={26} />
+              <SlideStat label={`Over ${savings.horizon} Years`} value={fmt(savings.total)} tone="dark" size={26} />
+              <div style={{ fontSize: 12.5, color: "rgba(255,255,255,0.7)", maxWidth: 300, lineHeight: 1.4 }}>
+                On a portfolio value of {fmt(Math.round(clientPortfolio.totalValue))}, moving to the{" "}
+                {data.profileLabel} model.
+              </div>
+            </div>
+          </SlideCard>
+        )}
+      </div>
+    </SlideFrame>
+  );
+}
+
+/** Slide 4 — the AI comparison analysis as three columns. */
+function RecommendationsSlide({
+  data,
+  dateStr,
+  analysis,
+}: {
+  data: ReportData;
+  dateStr: string;
+  analysis: ClientReportAnalysis;
+}) {
+  const pros = analysis.currentPosition.pros ?? [];
+  const cons = analysis.currentPosition.cons ?? [];
+  const recs = analysis.recommendations ?? [];
+  const summary = analysis.summary ?? [];
+  const mer = analysis.blendedMer;
+  return (
+    <SlideFrame lead="Our" accent="Recommendations" dateStr={dateStr} profileLabel={data.profileLabel}>
+      <div className="grid grid-cols-3 gap-4 h-full">
+        <SlideCard tone="cream" num="01" eyebrow="Where You Are Now">
+          <div className="uppercase" style={{ fontSize: 10.5, letterSpacing: "0.16em", color: THEME.positive, fontWeight: 600, marginBottom: 6 }}>
+            Strengths
+          </div>
+          <SlideBullets bullets={pros} accent={THEME.positive} fontSize={14} />
+          <div className="uppercase" style={{ fontSize: 10.5, letterSpacing: "0.16em", color: THEME.negative, fontWeight: 600, margin: "14px 0 6px" }}>
+            Risks / Weaknesses
+          </div>
+          <SlideBullets bullets={cons} accent={THEME.negative} fontSize={14} />
+        </SlideCard>
+        <SlideCard tone="navy" num="02" eyebrow="Action Items">
+          <SlideBullets bullets={recs} accent={THEME.goldBand} fontSize={15} tone="dark" />
+        </SlideCard>
+        <SlideCard tone="sky" num="03" eyebrow="Why This Works Better">
+          <div className="flex flex-col h-full">
+            <SlideBullets bullets={summary} accent={THEME.navy} fontSize={15} />
+            {(typeof mer?.client === "number" || typeof mer?.model === "number") && (
+              <div className="mt-auto pt-3 flex gap-8" style={{ borderTop: `1px solid #B3C8E0` }}>
+                <SlideStat
+                  label="Current MER"
+                  value={typeof mer.client === "number" ? `${mer.client.toFixed(2)}%` : "—"}
+                  size={24}
+                />
+                <SlideStat
+                  label={`${data.profileLabel} MER`}
+                  value={typeof mer.model === "number" ? `${mer.model.toFixed(2)}%` : "—"}
+                  size={24}
+                />
+              </div>
+            )}
+          </div>
+        </SlideCard>
+      </div>
+    </SlideFrame>
   );
 }
 
@@ -2867,25 +3672,16 @@ function FeeSavingsTile({
   portfolioValueUsd: number;
   profileLabel: string;
 }) {
-  const diff = clientMer - modelMer;
-  if (!(diff > 0.05)) return null;
-  if (!portfolioValueUsd || portfolioValueUsd <= 0) return null;
-
-  const annual = portfolioValueUsd * (diff / 100);
-  const THRESHOLD = 2000;
-  const horizons = [5, 10, 15, 20];
-  const horizon = horizons.find((y) => annual * y >= THRESHOLD);
-  if (!horizon) return null;
-
-  const total = Math.round(annual * horizon);
-  const annualRounded = Math.round(annual);
+  const savings = computeFeeSavings(clientMer, modelMer, portfolioValueUsd);
+  if (!savings) return null;
+  const { horizon, total, annualRounded } = savings;
   const fmt = (n: number) => `$${n.toLocaleString()}`;
 
   return (
     <div className="mt-4 break-inside-avoid">
       <div
         className="rounded-lg border px-4 py-3 text-xs text-slate-700"
-        style={{ borderColor: RBC_NAVY, backgroundColor: "#F6F8FC" }}
+        style={{ borderColor: RBC_NAVY, backgroundColor: THEME.sky }}
       >
         <div
           className="text-[10px] font-semibold uppercase tracking-wider mb-1"
@@ -2906,6 +3702,27 @@ function FeeSavingsTile({
       </div>
     </div>
   );
+}
+
+/** Shared fee-savings math for the portrait tile and the comparison
+ *  slide. Null when the gap or the dollars aren't meaningful (see
+ *  FeeSavingsTile for the thresholds). */
+function computeFeeSavings(
+  clientMer: number,
+  modelMer: number,
+  portfolioValueUsd: number,
+): { horizon: number; total: number; annualRounded: number } | null {
+  const diff = clientMer - modelMer;
+  if (!(diff > 0.05)) return null;
+  if (!portfolioValueUsd || portfolioValueUsd <= 0) return null;
+
+  const annual = portfolioValueUsd * (diff / 100);
+  const THRESHOLD = 2000;
+  const horizons = [5, 10, 15, 20];
+  const horizon = horizons.find((y) => annual * y >= THRESHOLD);
+  if (!horizon) return null;
+
+  return { horizon, total: Math.round(annual * horizon), annualRounded: Math.round(annual) };
 }
 
 /**
@@ -2939,15 +3756,15 @@ function AnalysisSections({
           style={{ borderColor: RBC_NAVY }}
         >
           <div
-            className="text-sm font-bold uppercase tracking-wider"
-            style={{ color: RBC_NAVY }}
+            className="text-[17px] font-semibold"
+            style={{ color: RBC_NAVY, fontFamily: SERIF }}
           >
             Where You Are Now
           </div>
         </div>
         <div className="grid grid-cols-2 gap-4">
-          <BulletCard title="Strengths" bullets={pros} accent="#059669" />
-          <BulletCard title="Risks / Weaknesses" bullets={cons} accent="#dc2626" />
+          <BulletCard title="Strengths" bullets={pros} accent={THEME.positive} />
+          <BulletCard title="Risks / Weaknesses" bullets={cons} accent={THEME.negative} />
         </div>
       </div>
 
@@ -2958,8 +3775,8 @@ function AnalysisSections({
           style={{ borderColor: RBC_GOLD }}
         >
           <div
-            className="text-sm font-bold uppercase tracking-wider"
-            style={{ color: RBC_NAVY }}
+            className="text-[17px] font-semibold"
+            style={{ color: RBC_NAVY, fontFamily: SERIF }}
           >
             Our Recommendations
           </div>
@@ -2975,8 +3792,8 @@ function AnalysisSections({
           style={{ borderColor: RBC_NAVY }}
         >
           <div
-            className="text-sm font-bold uppercase tracking-wider"
-            style={{ color: RBC_NAVY }}
+            className="text-[17px] font-semibold"
+            style={{ color: RBC_NAVY, fontFamily: SERIF }}
           >
             Why This Works Better
           </div>
@@ -3016,7 +3833,7 @@ function BulletCard({
 }) {
   if (!bullets.length) {
     return (
-      <div className="rounded border border-slate-200 p-3">
+      <div className="rounded border p-3" style={{ borderColor: THEME.rule, backgroundColor: THEME.card }}>
         <div
           className="text-[10px] font-bold uppercase tracking-wider mb-1"
           style={{ color: accent }}
@@ -3032,7 +3849,7 @@ function BulletCard({
   return (
     <div
       className="rounded border p-3"
-      style={{ borderColor: "#e2e8f0", borderLeftWidth: 4, borderLeftColor: accent }}
+      style={{ borderColor: THEME.rule, borderLeftWidth: 4, borderLeftColor: accent, backgroundColor: THEME.card }}
     >
       <div
         className="text-[10px] font-bold uppercase tracking-wider mb-2"
@@ -3072,11 +3889,11 @@ function MerStat({
   coverage?: number;
   tone: "neutral" | "positive";
 }) {
-  const color = tone === "positive" ? "#059669" : "#475569";
+  const color = tone === "positive" ? THEME.positive : THEME.muted;
   return (
     <div
       className="rounded border p-2"
-      style={{ borderColor: "#e2e8f0" }}
+      style={{ borderColor: THEME.rule, backgroundColor: THEME.card }}
     >
       <div className="text-[9px] uppercase tracking-wider text-slate-500">
         {label}
@@ -3198,20 +4015,21 @@ function AllocationBreakdownTables({
   // white-backed cards sidesteps that entirely and still prints cleanly
   // since each card is marked `break-inside-avoid`.
   return (
-    <div className="relative z-10 flex flex-col gap-3 bg-white">
+    <div className="relative z-10 flex flex-col gap-3">
       {breakdown.map((slice) => (
         <div
           key={slice.key}
-          className="break-inside-avoid rounded border border-slate-200 overflow-hidden bg-white"
+          className="break-inside-avoid rounded border overflow-hidden"
+          style={{ borderColor: THEME.rule, backgroundColor: THEME.card }}
         >
           <div
             className="flex items-center justify-between gap-2 px-2 py-1.5 border-b"
-            style={{ borderColor: RBC_GOLD, background: "#f8fafc" }}
+            style={{ borderColor: RBC_GOLD, background: THEME.goldPale }}
           >
             <div className="flex items-center gap-2 min-w-0">
               <span
                 className="inline-block h-3 w-3 rounded-sm flex-shrink-0"
-                style={{ background: slice.color }}
+                style={{ background: sliceColor(slice) }}
                 aria-hidden
               />
               <span
@@ -3304,10 +4122,13 @@ function MerContributorsTable({
     0,
   );
   return (
-    <div className="break-inside-avoid rounded border border-slate-200 overflow-hidden bg-white">
+    <div
+      className="break-inside-avoid rounded border overflow-hidden"
+      style={{ borderColor: THEME.rule, backgroundColor: THEME.card }}
+    >
       <div
         className="flex items-center justify-between gap-2 px-2 py-1.5 border-b"
-        style={{ borderColor: RBC_GOLD, background: "#f8fafc" }}
+        style={{ borderColor: RBC_GOLD, background: THEME.goldPale }}
       >
         <span
           className="text-[11px] font-bold truncate"
@@ -3422,12 +4243,116 @@ function MerContributorsTable({
 }
 
 function SectionTitle({ children }: { children: React.ReactNode }) {
+  // Gold letter-spaced eyebrow over a hairline rule — the slide's
+  // "MARKET EXPOSURE (BETA)" treatment.
   return (
     <div
-      className="text-[10px] font-bold uppercase tracking-[0.15em] pb-1 border-b"
-      style={{ color: RBC_NAVY, borderColor: RBC_GOLD }}
+      className="text-[9.5px] font-semibold uppercase tracking-[0.2em] pb-1 border-b"
+      style={{ color: RBC_GOLD, borderColor: THEME.rule }}
     >
       {children}
+    </div>
+  );
+}
+
+/** Report masthead: serif navy lead + gold italic accent, with the
+ *  firm line as a letter-spaced eyebrow under a short gold rule —
+ *  mirrors the "Your Portfolio, Built in Layers" title block. */
+function ReportMasthead({
+  lead,
+  accent,
+  dateStr,
+  profileLabel,
+  size = "portrait",
+}: {
+  lead: string;
+  accent: string;
+  dateStr: string;
+  profileLabel: string;
+  size?: "portrait" | "slide";
+}) {
+  const slide = size === "slide";
+  return (
+    <div className="flex items-end justify-between gap-6">
+      <div className="min-w-0">
+        <div
+          className="leading-[1.05] whitespace-nowrap"
+          style={{ fontFamily: SERIF, color: THEME.navy, fontSize: slide ? 44 : 28, fontWeight: 600 }}
+        >
+          {lead}{" "}
+          <span style={{ color: THEME.gold, fontStyle: "italic", fontWeight: 500 }}>{accent}</span>
+        </div>
+        <div className="flex items-center gap-3" style={{ marginTop: slide ? 10 : 6 }}>
+          <span className="block h-px" style={{ width: slide ? 56 : 36, backgroundColor: THEME.gold }} />
+          <span
+            className="uppercase whitespace-nowrap"
+            style={{ color: THEME.navy, letterSpacing: "0.24em", fontSize: slide ? 12 : 9 }}
+          >
+            Di Iorio Family Wealth · RBC Dominion Securities
+          </span>
+        </div>
+      </div>
+      <div className="text-right shrink-0">
+        <div className="flex justify-end gap-1.5">
+          {(["Balanced", "Growth", "All-Equity"].includes(profileLabel)
+            ? ["Balanced", "Growth", "All-Equity"]
+            : [profileLabel, "Balanced", "Growth", "All-Equity"]
+          ).map((p) => {
+            const on = p === profileLabel;
+            return (
+              <span
+                key={p}
+                className="rounded border"
+                style={{
+                  fontSize: slide ? 12 : 9,
+                  padding: slide ? "4px 12px" : "2px 8px",
+                  borderColor: on ? THEME.navy : THEME.gold,
+                  backgroundColor: on ? THEME.navy : "transparent",
+                  color: on ? "#fff" : THEME.navy,
+                  fontWeight: on ? 600 : 400,
+                }}
+              >
+                {p}
+              </span>
+            );
+          })}
+        </div>
+        <div className="mt-1.5" style={{ color: THEME.muted, fontSize: slide ? 12 : 9.5 }}>
+          {dateStr}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/** Page-level heading for the continuation pages (comparison, breakdown,
+ *  MER audit): serif lead + gold italic accent with a gold eyebrow. */
+function PageHeading({
+  eyebrow,
+  title,
+  accent,
+  flush,
+}: {
+  eyebrow: string;
+  title: string;
+  accent: string;
+  flush?: boolean;
+}) {
+  return (
+    <div className={flush ? "" : "mb-4"}>
+      <div
+        className="text-[9px] uppercase tracking-[0.22em]"
+        style={{ color: THEME.gold }}
+      >
+        {eyebrow}
+      </div>
+      <div
+        className="mt-1 leading-tight pb-2 border-b"
+        style={{ fontFamily: SERIF, color: THEME.navy, fontSize: 22, fontWeight: 600, borderColor: THEME.gold }}
+      >
+        {title}{" "}
+        <span style={{ color: THEME.gold, fontStyle: "italic", fontWeight: 500 }}>{accent}</span>
+      </div>
     </div>
   );
 }
@@ -3461,7 +4386,7 @@ function HoldingsTable({ rows }: { rows: ReportXRayRow[] }) {
       </thead>
       <tbody>
         {rows.map((r, i) => (
-          <tr key={r.symbol} className={i % 2 ? "bg-slate-50" : ""}>
+          <tr key={r.symbol} style={i % 2 ? { backgroundColor: "rgba(222,177,101,0.10)" } : undefined}>
             <td className="py-0.5 text-slate-800">
               <span>{formatCompanyName(r.name) || r.symbol}</span>
               {r.symbol && r.symbol !== r.name && (
@@ -3485,7 +4410,17 @@ function HoldingsTable({ rows }: { rows: ReportXRayRow[] }) {
  * library. Slices are laid out clockwise starting at 12 o'clock; the
  * legend sits beside the pie and uses the same colours.
  */
-function AllocationPie({ slices }: { slices: ReportAllocationSlice[] }) {
+function AllocationPie({
+  slices,
+  size = 120,
+  fontSize = 10,
+}: {
+  slices: ReportAllocationSlice[];
+  /** Pie diameter in px. */
+  size?: number;
+  /** Legend font size in px. */
+  fontSize?: number;
+}) {
   const filtered = slices.filter((s) => s.weight > 0);
   const total = filtered.reduce((acc, s) => acc + s.weight, 0);
   if (!filtered.length || total <= 0) {
@@ -3532,25 +4467,25 @@ function AllocationPie({ slices }: { slices: ReportAllocationSlice[] }) {
   });
 
   return (
-    <div className="mt-2 flex items-center gap-3">
+    <div className="mt-2 flex items-center" style={{ gap: Math.round(size / 10) }}>
       <svg
         viewBox="0 0 200 200"
-        width="120"
-        height="120"
+        width={size}
+        height={size}
         style={{ transform: "rotate(-90deg)" }}
         aria-label="Asset allocation pie chart"
       >
         {paths.map(({ slice, d }) => (
-          <path key={slice.key} d={d} fill={slice.color} stroke="#fff" strokeWidth={1.5} />
+          <path key={slice.key} d={d} fill={sliceColor(slice)} stroke={THEME.cream} strokeWidth={1.5} />
         ))}
       </svg>
-      <div className="flex-1 text-[10px] space-y-0.5">
+      <div className="flex-1 min-w-0" style={{ fontSize, lineHeight: 1.5 }}>
         {filtered.map((s) => (
           <div key={s.key} className="flex items-center justify-between gap-2">
-            <span className="flex items-center gap-1.5">
+            <span className="flex items-center gap-1.5 min-w-0 whitespace-nowrap">
               <span
-                className="inline-block w-2.5 h-2.5 rounded-sm"
-                style={{ backgroundColor: s.color }}
+                className="inline-block rounded-sm shrink-0"
+                style={{ backgroundColor: sliceColor(s), width: fontSize, height: fontSize }}
               />
               <span style={{ color: RBC_NAVY }}>{s.label}</span>
             </span>
@@ -3594,7 +4529,7 @@ function SimpleHoldingsTable({
       </thead>
       <tbody>
         {rows.map((r, i) => (
-          <tr key={r.ticker} className={i % 2 ? "bg-slate-50" : ""}>
+          <tr key={r.ticker} style={i % 2 ? { backgroundColor: "rgba(222,177,101,0.10)" } : undefined}>
             <td className="py-0.5 text-slate-800">
               <span>{formatCompanyName(r.name)}</span>
               {r.ticker && r.ticker !== r.name && (
@@ -3609,7 +4544,7 @@ function SimpleHoldingsTable({
           </tr>
         ))}
         {cashWeight != null && cashWeight > 0.05 && (
-          <tr className={rows.length % 2 ? "bg-slate-50" : ""}>
+          <tr style={rows.length % 2 ? { backgroundColor: "rgba(222,177,101,0.10)" } : undefined}>
             <td className="py-0.5 text-slate-600 italic">Cash</td>
             <td className="text-right py-0.5 tabular-nums font-semibold text-slate-600">
               {cashWeight.toFixed(2)}%
@@ -3630,7 +4565,20 @@ function SimpleHoldingsTable({
  * is positive, with a dashed reference line at value=100. Y-axis is the
  * published index value; X-axis shows start and end dates only.
  */
-function PerformanceChart({ tracker }: { tracker: ReportTrackerPerformance }) {
+function PerformanceChart({
+  tracker,
+  width = 400,
+  height = 110,
+  tone = "light",
+}: {
+  tracker: ReportTrackerPerformance;
+  /** viewBox width — match the rendered width so labels stay true-size. */
+  width?: number;
+  /** Rendered height in px; the viewBox keeps a 400-wide coordinate space. */
+  height?: number;
+  /** "dark" = drawn on the navy slide band (gold line, light labels). */
+  tone?: "light" | "dark";
+}) {
   const { history } = tracker;
   if (history.length < 2) {
     return <div className="text-[10px] text-slate-400 italic">Insufficient history.</div>;
@@ -3638,12 +4586,13 @@ function PerformanceChart({ tracker }: { tracker: ReportTrackerPerformance }) {
 
   // Normalize to a 0..1 viewport. 400×110 keeps it compact next to
   // the yearly-return table without overwhelming the row.
-  const w = 400;
-  const h = 110;
-  const padL = 24; // left axis room for value labels
+  const dark = tone === "dark";
+  const w = width;
+  const h = height;
+  const padL = dark ? 32 : 24; // left axis room for value labels
   const padR = 2;
   const padT = 4;
-  const padB = 14;
+  const padB = dark ? 18 : 14;
 
   const values = history.map((d) => d.value);
   const minV = Math.min(...values);
@@ -3659,8 +4608,15 @@ function PerformanceChart({ tracker }: { tracker: ReportTrackerPerformance }) {
   // Positive if cumulative return ≥ 0 — mirrors the Performance Tracker's
   // "100 is the inception value" convention.
   const isPositive = last.value >= first.value;
-  const lineColor = isPositive ? "#10b981" : "#ef4444";
-  const areaFill = isPositive ? "rgba(16,185,129,0.08)" : "rgba(239,68,68,0.08)";
+  const lineColor = dark ? THEME.goldBand : isPositive ? THEME.navy : THEME.negative;
+  const areaFill = dark
+    ? "rgba(222,177,101,0.16)"
+    : isPositive
+      ? "rgba(184,137,63,0.14)"
+      : "rgba(180,66,60,0.10)";
+  const gridColor = dark ? "rgba(255,255,255,0.18)" : "#e2e8f0";
+  const labelColor = dark ? "rgba(255,255,255,0.7)" : "#64748b";
+  const labelSize = dark ? 9 : 7;
 
   // Build a filled-area path (polyline + drop to baseline at each end).
   const baseY = h - padB;
@@ -3677,10 +4633,10 @@ function PerformanceChart({ tracker }: { tracker: ReportTrackerPerformance }) {
   const ref100InRange = 100 >= minV && 100 <= maxV;
 
   return (
-    <svg viewBox={`0 0 ${w} ${h}`} width="100%" height="110" aria-label="Performance chart">
+    <svg viewBox={`0 0 ${w} ${h}`} width="100%" height={h} aria-label="Performance chart">
       {/* Top / bottom grid */}
-      <line x1={padL} y1={padT} x2={w - padR} y2={padT} stroke="#e2e8f0" strokeWidth={0.5} />
-      <line x1={padL} y1={h - padB} x2={w - padR} y2={h - padB} stroke="#e2e8f0" strokeWidth={0.5} />
+      <line x1={padL} y1={padT} x2={w - padR} y2={padT} stroke={gridColor} strokeWidth={0.5} />
+      <line x1={padL} y1={h - padB} x2={w - padR} y2={h - padB} stroke={gridColor} strokeWidth={0.5} />
       {/* Filled area (transparent green/red beneath the line) */}
       <path d={areaPath} fill={areaFill} />
       {/* Inception reference line at value = 100 */}
@@ -3690,7 +4646,7 @@ function PerformanceChart({ tracker }: { tracker: ReportTrackerPerformance }) {
           y1={y(100)}
           x2={w - padR}
           y2={y(100)}
-          stroke="#94a3b8"
+          stroke={dark ? "rgba(255,255,255,0.35)" : "#94a3b8"}
           strokeDasharray="4,2"
           strokeWidth={0.5}
         />
@@ -3709,21 +4665,21 @@ function PerformanceChart({ tracker }: { tracker: ReportTrackerPerformance }) {
         cy={y(last.value)}
         r={2.5}
         fill={lineColor}
-        stroke="white"
+        stroke={dark ? THEME.navy : "white"}
         strokeWidth={1}
       />
       {/* Value labels (min / max) */}
-      <text x={2} y={padT + 6} fontSize={7} fill="#64748b">
+      <text x={2} y={padT + 6} fontSize={labelSize} fill={labelColor}>
         {maxV.toFixed(1)}
       </text>
-      <text x={2} y={h - padB} fontSize={7} fill="#64748b">
+      <text x={2} y={h - padB} fontSize={labelSize} fill={labelColor}>
         {minV.toFixed(1)}
       </text>
       {/* Date labels — start and end only (no midpoint clutter). */}
-      <text x={padL} y={h - 2} fontSize={7} fill="#64748b">
+      <text x={padL} y={h - 2} fontSize={labelSize} fill={labelColor}>
         {first.date}
       </text>
-      <text x={w - padR} y={h - 2} fontSize={7} fill="#64748b" textAnchor="end">
+      <text x={w - padR} y={h - 2} fontSize={labelSize} fill={labelColor} textAnchor="end">
         {last.date}
       </text>
     </svg>
@@ -3748,7 +4704,7 @@ function YearlyReturnsTable({ tracker }: { tracker: ReportTrackerPerformance }) 
             <td className="py-0.5 text-slate-800">{r.year}</td>
             <td
               className="text-right py-0.5 tabular-nums font-semibold"
-              style={{ color: r.returnPct >= 0 ? "#166534" : "#be123c" }}
+              style={{ color: r.returnPct >= 0 ? THEME.positive : THEME.negative }}
             >
               {fmtPctSigned(r.returnPct, 2)}
             </td>
@@ -3777,7 +4733,7 @@ function XRayTable({ rows }: { rows: ReportXRayRow[] }) {
       </thead>
       <tbody>
         {rows.map((r, i) => (
-          <tr key={r.symbol} className={i % 2 ? "bg-slate-50" : ""}>
+          <tr key={r.symbol} style={i % 2 ? { backgroundColor: "rgba(222,177,101,0.10)" } : undefined}>
             <td className="py-0.5 text-slate-800">
               <span>{formatCompanyName(r.name) || r.symbol}</span>
               {r.symbol && r.symbol !== r.name && (
@@ -3807,6 +4763,7 @@ function BarList({
   tooltip,
   scale = "linear",
   minBarPct = 0,
+  size = "portrait",
 }: {
   // `color` on the row overrides `accent` (lets the caller tint each bar
   // individually — e.g. per-sector GICS colors). `tooltip` is a per-row
@@ -3827,10 +4784,13 @@ function BarList({
   // Floor for rendered bar width (as a percentage of the longest bar) so
   // the smallest slice is still clearly visible even after scaling.
   minBarPct?: number;
+  /** "slide" = larger type and bars for the 16:9 landscape canvas. */
+  size?: "portrait" | "slide";
 }) {
   if (!rows.length) {
     return <div className="text-[10px] text-slate-400 italic mt-2">No data.</div>;
   }
+  const slide = size === "slide";
   const transform = (v: number) => {
     if (scale === "sqrt") return Math.sqrt(Math.max(0, v));
     if (scale === "pow0.6") return Math.pow(Math.max(0, v), 0.6);
@@ -3838,20 +4798,23 @@ function BarList({
   };
   const maxT = Math.max(...rows.map((r) => transform(r.value)), 1);
   return (
-    <div className="mt-2 space-y-1">
+    <div className={slide ? "space-y-[7px]" : "mt-2 space-y-1"}>
       {rows.map((r) => {
         const title = r.tooltip ?? (tooltip ? tooltip(r) : undefined);
         const rawPct = (transform(r.value) / maxT) * 100;
         const pct = r.value > 0 ? Math.max(minBarPct, rawPct) : 0;
         return (
-          <div key={r.label} className="text-[10px]" title={title}>
+          <div key={r.label} className={slide ? "" : "text-[10px]"} style={slide ? { fontSize: 12.5, lineHeight: 1.35 } : undefined} title={title}>
             <div className="flex justify-between">
               <span style={{ color: textColor }}>{r.label}</span>
               <span className="tabular-nums text-slate-600 font-semibold">
                 {r.value.toFixed(1)}%
               </span>
             </div>
-            <div className="h-1.5 rounded-full bg-slate-100 mt-0.5 overflow-hidden">
+            <div
+              className={`${slide ? "h-[7px] mt-[3px]" : "h-1.5 mt-0.5"} rounded-full overflow-hidden`}
+              style={{ backgroundColor: slide ? "rgba(255,255,255,0.6)" : "rgba(10,42,80,0.07)" }}
+            >
               <div
                 className="h-full rounded-full transition-all"
                 style={{
@@ -3869,7 +4832,7 @@ function BarList({
 
 function Stat({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded border p-2" style={{ borderColor: "#e2e8f0" }}>
+    <div className="rounded border p-2" style={{ borderColor: THEME.rule, backgroundColor: THEME.card }}>
       <div className="text-[9px] uppercase tracking-wider text-slate-500">{label}</div>
       <div className="text-sm font-bold mt-0.5 tabular-nums" style={{ color: RBC_NAVY }}>
         {value}
@@ -3917,13 +4880,13 @@ function OverridableStat({
       : String(+override.toFixed(2));
 
   return (
-    <div className="rounded border p-2" style={{ borderColor: "#e2e8f0" }}>
-      <div className="text-[9px] uppercase tracking-wider text-slate-500">
+    <div className="rounded border p-2" style={{ borderColor: THEME.rule, backgroundColor: THEME.card }}>
+      <div className="text-[9px] uppercase tracking-wider" style={{ color: THEME.muted }}>
         {label}
       </div>
       <div
-        className="text-sm font-bold mt-0.5 tabular-nums"
-        style={{ color: RBC_NAVY }}
+        className="text-[17px] font-semibold mt-0.5 tabular-nums"
+        style={{ color: RBC_NAVY, fontFamily: SERIF }}
       >
         {displayStr}
       </div>
@@ -3956,3 +4919,4 @@ function OverridableStat({
     </div>
   );
 }
+
