@@ -34,6 +34,7 @@ import { usePersistedOpen } from "@/app/lib/useCollapsed";
 import { isMarketOpenOrAfterET } from "@/app/lib/market-hours";
 import { apportionColumn, fmtPct2, sameAtDisplay } from "@/app/lib/display-weights";
 import { planTrade } from "@/app/lib/trade-plan";
+import { renderPositioningPng, type PositioningSnapshot } from "@/app/lib/positioning-image";
 
 function generateId(): string {
   return Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
@@ -592,10 +593,10 @@ const POS_CLASS_LABELS: Record<PimAssetClass, string> = {
 };
 
 /** Same header colours as the Models tab so the two pages read as one system. */
-const POS_CLASS_COLORS: Record<PimAssetClass, { header: string }> = {
-  fixedIncome: { header: "bg-accent-soft text-accent" },
-  equity: { header: "bg-pos-soft text-pos" },
-  alternative: { header: "bg-warn-soft text-warn" },
+const POS_CLASS_COLORS: Record<PimAssetClass, { header: string; border: string }> = {
+  fixedIncome: { header: "bg-accent-soft text-accent", border: "border-l-accent" },
+  equity: { header: "bg-pos-soft text-pos", border: "border-l-pos" },
+  alternative: { header: "bg-warn-soft text-warn", border: "border-l-warn" },
 };
 
 type HoldingRow = {
@@ -3171,6 +3172,83 @@ export function PimPortfolio({ groups }: Props) {
   })();
   const isFullProfile = activeProfile !== "alpha" && activeProfile !== "core";
 
+  // ── Positioning snapshot (PNG) — read-only, renders on a canvas and hands
+  // the file to the browser. Uses the SAME apportioned display weights as the
+  // table (dPos), ordered by model weight so the image reads top-down. ──
+  const [snapshotBusy, setSnapshotBusy] = useState<"" | "download" | "copy">("");
+  const [snapshotNote, setSnapshotNote] = useState("");
+  const buildSnapshot = (): PositioningSnapshot => {
+    const groupName = selectedGroup?.name || "Model";
+    return {
+      title: `${groupName} · ${PROFILE_LABELS[activeProfile] ?? activeProfile} — Current positioning`,
+      subtitle: `${heldCount} of ${holdingRows.length} positions held · live weights vs model weights`,
+      asOf: pricesFetchedAt ? new Date(pricesFetchedAt) : new Date(),
+      classes: (["equity", "fixedIncome", "alternative"] as PimAssetClass[]).map((ac) => ({
+        key: ac,
+        label: POS_CLASS_LABELS[ac],
+        rows: [...positionsByClass[ac]]
+          .sort((a, b) => b.modelPct - a.modelPct || b.currentPct - a.currentPct)
+          .map((r) => ({
+            ticker: displayTicker(r.symbol),
+            name: r.name,
+            currency: r.currency,
+            live: r.units > 0 ? (dPos[ac]?.current.get(r.symbol) ?? null) : null,
+            model: r.isOrphan ? null : (dPos[ac]?.target.get(r.symbol) ?? null),
+          })),
+      })),
+      cash: hasPositions || cashTargetPct > 0 ? { live: hasPositions ? cashPct : null, model: cashTargetPct } : null,
+    };
+  };
+  const snapshotFileName = () => {
+    const d = new Date();
+    const ymd = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+    const slug = `${selectedGroup?.name || "model"}-${activeProfile}`.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+    return `positioning-${slug}-${ymd}.png`;
+  };
+  const downloadSnapshot = async () => {
+    setMoreOpen(false);
+    setSnapshotBusy("download");
+    setSnapshotNote("");
+    try {
+      const blob = await renderPositioningPng(buildSnapshot());
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = snapshotFileName();
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 10_000);
+      setSnapshotNote("Image saved");
+    } catch (e) {
+      setSnapshotNote(`Image failed: ${e instanceof Error ? e.message : String(e)}`);
+    } finally {
+      setSnapshotBusy("");
+    }
+  };
+  const copySnapshot = async () => {
+    setMoreOpen(false);
+    setSnapshotBusy("copy");
+    setSnapshotNote("");
+    try {
+      if (typeof ClipboardItem === "undefined" || !navigator.clipboard?.write) {
+        throw new Error("this browser can't copy images — use Save image instead");
+      }
+      // Pass the blob as a promise so Safari keeps the click's user activation.
+      await navigator.clipboard.write([new ClipboardItem({ "image/png": renderPositioningPng(buildSnapshot()) })]);
+      setSnapshotNote("Image copied — paste into an email or chat");
+    } catch (e) {
+      setSnapshotNote(`Copy failed: ${e instanceof Error ? e.message : String(e)}`);
+    } finally {
+      setSnapshotBusy("");
+    }
+  };
+  useEffect(() => {
+    if (!snapshotNote) return;
+    const t = setTimeout(() => setSnapshotNote(""), 5000);
+    return () => clearTimeout(t);
+  }, [snapshotNote]);
+
   const sortTh = (field: SortField, label: string, numeric = true, extra = "") => (
     <th
       className={`${numeric ? "n " : ""}cursor-pointer select-none hover:text-ink ${extra}`}
@@ -3226,6 +3304,9 @@ export function PimPortfolio({ groups }: Props) {
               </button>
             </>
           )}
+          {snapshotNote && (
+            <span className={`text-[12px] ${snapshotNote.includes("failed") ? "text-neg" : "text-ink-3"}`} role="status">{snapshotNote}</span>
+          )}
           <div className="relative" ref={moreRef}>
             <button onClick={() => setMoreOpen((v) => !v)} aria-label="More actions" title="More" className={BTN_ICON}>
               <AppIcon name="more" size={14} />
@@ -3240,6 +3321,18 @@ export function PimPortfolio({ groups }: Props) {
                   <AppIcon name="refresh" size={13} className={pricesLoading ? "animate-spin" : ""} />
                   {pricesLoading ? "Refreshing prices…" : "Refresh prices"}
                 </button>
+                {holdingRows.length > 0 && (
+                  <>
+                    <button onClick={() => void downloadSnapshot()} disabled={!!snapshotBusy} className={MENU_ITEM}>
+                      <AppIcon name="download" size={13} />
+                      {snapshotBusy === "download" ? "Rendering…" : "Save positioning image"}
+                    </button>
+                    <button onClick={() => void copySnapshot()} disabled={!!snapshotBusy} className={MENU_ITEM}>
+                      <AppIcon name="copy" size={13} />
+                      {snapshotBusy === "copy" ? "Rendering…" : "Copy positioning image"}
+                    </button>
+                  </>
+                )}
                 {/* Client Report — opens the one-pager preview in a new tab,
                     seeded with the currently-selected profile. Hidden for
                     Alpha and Core because the one-pager is only built for
@@ -3356,7 +3449,7 @@ export function PimPortfolio({ groups }: Props) {
                     {sortTh("modelPct", "Model")}
                     {hasPositions && (
                       <>
-                        {sortTh("currentPct", "Current")}
+                        {sortTh("currentPct", "Live")}
                         {/* Drift reads as figure-then-bar: the labelled,
                             sortable number comes first so the column header
                             sits over the value it names, and the bar is the
@@ -3381,10 +3474,10 @@ export function PimPortfolio({ groups }: Props) {
                     return (
                       <React.Fragment key={ac}>
                         {/* Sleeve divider row: name · count · value · live vs target */}
-                        <tr className="bg-surface-2">
-                          <td colSpan={posColCount} className="!h-auto py-1 pl-3.5 text-[11px] text-ink-3">
+                        <tr>
+                          <td colSpan={posColCount} className={`!h-auto border-l-[3px] py-1.5 pl-3 text-[11px] ${POS_CLASS_COLORS[ac].header} ${POS_CLASS_COLORS[ac].border}`}>
                             <span className="flex flex-wrap items-baseline gap-x-3 gap-y-0.5">
-                              <span className="font-medium text-ink-2">{POS_CLASS_LABELS[ac]}</span>
+                              <span className="text-[12px] font-semibold">{POS_CLASS_LABELS[ac]}</span>
                               <span>{classRows.length} holding{classRows.length === 1 ? "" : "s"}</span>
                               <span className="font-mono">{fmtCad0(classValue)}</span>
                               {hasPositions && (
