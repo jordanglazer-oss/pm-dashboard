@@ -169,6 +169,13 @@ export type ScenarioOptions = {
     targets: Record<string, number>;
     bucketOf: (symbol: string) => string;
   };
+  /**
+   * CAD share of each sleeve (0–1; USD is the rest), set by the PM. The
+   * currency split DRIVES the weights: holdings are rescaled so each
+   * currency's names add up to its share, keeping their relative sizes. A
+   * sleeve left out keeps whatever split its holdings imply.
+   */
+  currencySplit?: Partial<Record<PimAssetClass, number>>;
 };
 
 export type ScenarioDiagnostic = {
@@ -247,20 +254,53 @@ export function applyScenario(
     if (hit) touched.add(norm(hit.symbol));
   }
 
-  // 1b. Rescale the equity sleeve onto its bucket targets — the starting
-  // point the scenario's changes are then made against.
+  // 1b. Rescale the starting weights onto the sleeve-level targets — bucket
+  // shares (equity) and CAD/USD shares (any sleeve). This is the starting
+  // point the scenario's changes are then made against. When a sleeve has
+  // BOTH, a single pass can't honour them together (fixing the currency mix
+  // breaks the bucket mix and vice versa), so the two are fitted jointly by
+  // iterative proportional scaling: alternate between them until both hold.
+  // Each holding keeps its relative size inside its (bucket, currency) cell.
+  // Pinned holdings never move. An infeasible pair (e.g. a CAD target on a
+  // bucket that holds no CAD names) settles at the closest fit and shows as a
+  // "now x%" mismatch in the UI rather than failing.
   const eb = opts.equityBuckets;
-  if (eb) {
+  {
     const pinnedSet = new Set((opts.pinnedSymbols ?? []).map((p) => norm(p).replace(/\.TO$/, "-T")));
     const isPin = (sym: string) => pinnedSet.has(norm(sym).replace(/\.TO$/, "-T"));
-    for (const [bucket, target] of Object.entries(eb.targets)) {
-      const members = holdings.filter((h) => h.assetClass === "equity" && eb.bucketOf(h.symbol) === bucket);
-      const fixed = members.filter((h) => isPin(h.symbol)).reduce((t, h) => t + h.weightInClass, 0);
-      const free = members.filter((h) => !isPin(h.symbol));
+    /** Scale the free members of `group` so the group totals `target`. */
+    const fitGroup = (group: PimHolding[], target: number) => {
+      const fixed = group.filter((h) => isPin(h.symbol)).reduce((t, h) => t + h.weightInClass, 0);
+      const free = group.filter((h) => !isPin(h.symbol));
       const freeTotal = free.reduce((t, h) => t + h.weightInClass, 0);
-      if (freeTotal <= EPSILON) continue; // empty bucket — reported as unplaced below
+      if (freeTotal <= EPSILON) return; // empty — reported as unplaced below
       const scale = Math.max(0, target - fixed) / freeTotal;
       for (const h of free) h.weightInClass *= scale;
+    };
+    for (const cls of ["equity", "fixedIncome", "alternative"] as PimAssetClass[]) {
+      const inClass = holdings.filter((h) => h.assetClass === cls);
+      if (inClass.length === 0) continue;
+      const buckets = cls === "equity" && eb ? Object.entries(eb.targets) : null;
+      const cad = opts.currencySplit?.[cls];
+      const hasCcy = cad != null && Number.isFinite(cad);
+      if (!buckets && !hasCcy) continue;
+      // The currency split divides whatever the sleeve adds up to: the bucket
+      // targets when those are set, otherwise the sleeve as it stands.
+      const sleeveTotal = buckets
+        ? buckets.reduce((t, [, v]) => t + v, 0)
+        : inClass.reduce((t, h) => t + h.weightInClass, 0);
+      const rounds = buckets && hasCcy ? 200 : 1;
+      for (let i = 0; i < rounds; i++) {
+        if (hasCcy) {
+          const c = Math.min(Math.max(cad!, 0), 1);
+          fitGroup(inClass.filter((h) => h.currency === "CAD"), c * sleeveTotal);
+          fitGroup(inClass.filter((h) => h.currency !== "CAD"), (1 - c) * sleeveTotal);
+        }
+        if (buckets) {
+          for (const [bucket, target] of buckets)
+            fitGroup(inClass.filter((h) => eb!.bucketOf(h.symbol) === bucket), target);
+        }
+      }
     }
   }
 

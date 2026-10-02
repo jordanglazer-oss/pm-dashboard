@@ -96,6 +96,7 @@ type SavedScenario = {
   residualTargets?: string[];
   holdCash?: boolean;
   equityBuckets?: EquityBucketsState;
+  currencySplit?: Partial<Record<PimAssetClass, number>>;
   allocOverride?: boolean;
   pinnedSymbols?: string[];
   customAlloc?: { equity: number; fixedIncome: number; alternative: number; cash: number };
@@ -394,6 +395,22 @@ export function ModelScenarios({ groups, alwaysOpen = false }: Props) {
   const [bucketDraft, setBucketDraft] = useState<Record<string, string>>({});
   const [newBucketName, setNewBucketName] = useState("");
 
+  /** PM-set CAD share per sleeve (0–1). The split DRIVES the weights — see
+   *  the engine's currencySplit. A sleeve absent here keeps its own mix. */
+  const [ccySplit, setCcySplit] = useState<Partial<Record<PimAssetClass, number>>>({});
+  const [ccyDraft, setCcyDraft] = useState<Record<string, string>>({});
+  const setSleeveCad = (cls: PimAssetClass, cad: number) =>
+    setCcySplit((prev) => ({ ...prev, [cls]: Math.min(Math.max(cad, 0), 1) }));
+  const clearSleeveCcy = (cls: PimAssetClass) => {
+    setCcySplit((prev) => {
+      const { [cls]: _drop, ...rest } = prev;
+      void _drop;
+      return rest;
+    });
+    setCcyDraft({});
+  };
+  const ccySplitOpt = Object.keys(ccySplit).length ? ccySplit : undefined;
+
   /** Which bucket a holding sits in: an explicit scenario assignment if it
    *  points at a bucket that still exists, otherwise its Core/Alpha tag. */
   const makeBucketOf = useCallback(
@@ -507,8 +524,9 @@ export function ModelScenarios({ groups, alwaysOpen = false }: Props) {
         allocations: startAlloc,
         pinnedSymbols: pinned,
         equityBuckets: equityBucketsOpt,
+        currencySplit: ccySplitOpt,
       }),
-    [baseHoldings, actions, basis, hasActuals, actualWeights, isCore, effectiveResidual, residualTargets, startAlloc, pinned, equityBucketsOpt],
+    [baseHoldings, actions, basis, hasActuals, actualWeights, isCore, effectiveResidual, residualTargets, startAlloc, pinned, equityBucketsOpt, ccySplitOpt],
   );
 
   /** Each bucket's share of EQUITIES under the scenario as it stands. */
@@ -582,6 +600,7 @@ export function ModelScenarios({ groups, alwaysOpen = false }: Props) {
             bucketOf: makeBucketOf(other.equityBuckets.assign, other.equityBuckets.buckets),
           }
         : undefined,
+      currencySplit: other.currencySplit,
     }).holdings;
   }, [compareId, saved, baseHoldings, basis, hasActuals, actualWeights, isCore, residual, makeBucketOf]);
 
@@ -691,7 +710,7 @@ export function ModelScenarios({ groups, alwaysOpen = false }: Props) {
         (c) => !sameAtDisplay(customAlloc[c], basisAlloc[c] ?? 0),
       );
     const allocShift = shiftActive ? customAlloc : null;
-    if (!group || (actions.length === 0 && !allocShift && !equityBucketsOpt)) return [];
+    if (!group || (actions.length === 0 && !allocShift && !equityBucketsOpt && !ccySplitOpt)) return [];
     const edited = group.profiles[profile];
     const editedTgt = edited
       ? { equity: edited.equity, fixedIncome: edited.fixedIncome, alternative: edited.alternatives }
@@ -743,6 +762,7 @@ export function ModelScenarios({ groups, alwaysOpen = false }: Props) {
           basis: basis === "actual" && hasActuals ? "actual" : "model",
           actualWeights, isCore, residual: effectiveResidual, residualTargets, pinnedSymbols: pinned,
           allocations: allocAfter, targetAllocations: startAlloc, equityBuckets: equityBucketsOpt,
+          currencySplit: ccySplitOpt,
         });
         const wt = (r: typeof after, sym: string) => {
           const x = r.holdings.find((y) => y.symbol === sym);
@@ -764,7 +784,7 @@ export function ModelScenarios({ groups, alwaysOpen = false }: Props) {
         const applies = touchedClasses.some((c) => (alloc[c] ?? 0) > 0) || allocMoves.length > 0;
         return { profile: p, alloc, allocMoves, moves, applies, touchedClasses };
       });
-  }, [group, profile, actions, baseHoldings, basis, hasActuals, actualWeights, isCore, residual, effectiveResidual, residualTargets, startAlloc, pinned, allocOverride, customAlloc, basisAlloc, equityBucketsOpt]);
+  }, [group, profile, actions, baseHoldings, basis, hasActuals, actualWeights, isCore, residual, effectiveResidual, residualTargets, startAlloc, pinned, allocOverride, customAlloc, basisAlloc, equityBucketsOpt, ccySplitOpt]);
 
   /**
    * The allocation the LEFT-HAND column is scaled by — a fixed reference point.
@@ -952,6 +972,8 @@ export function ModelScenarios({ groups, alwaysOpen = false }: Props) {
     setBuckets(DEFAULT_BUCKETS);
     setBucketAssign({});
     setBucketDraft({});
+    setCcySplit({});
+    setCcyDraft({});
     setAllocOverride(false);
     setPinned([]);
     setRowDraft({});
@@ -981,6 +1003,7 @@ export function ModelScenarios({ groups, alwaysOpen = false }: Props) {
           residualTargets,
           holdCash,
           equityBuckets: { enabled: bucketsOn, buckets, assign: bucketAssign },
+          currencySplit: ccySplit,
           allocOverride,
           customAlloc,
           pinnedSymbols: pinned,
@@ -1015,6 +1038,8 @@ export function ModelScenarios({ groups, alwaysOpen = false }: Props) {
     setBuckets(s.equityBuckets?.buckets?.length ? s.equityBuckets.buckets : DEFAULT_BUCKETS);
     setBucketAssign(s.equityBuckets?.assign ?? {});
     setBucketDraft({});
+    setCcySplit(s.currencySplit ?? {});
+    setCcyDraft({});
     setAllocOverride(s.allocOverride ?? false);
     setPinned(s.pinnedSymbols ?? []);
     setCustomAlloc(s.customAlloc ?? null);
@@ -1112,6 +1137,33 @@ export function ModelScenarios({ groups, alwaysOpen = false }: Props) {
                 {actions.length} change{actions.length === 1 ? "" : "s"} · {pct(turnover)} traded
               </span>
             )}
+            {/* Saved scenarios, reachable without scrolling to the list at
+                the bottom. Loading one makes it the draft; "Update" at the
+                bottom then saves the edits back over it. */}
+            <span className={`flex items-center gap-2 ${actions.length > 0 ? "" : "sm:ml-auto"}`}>
+              {draftId && (
+                <span className="text-ink-3">
+                  Editing <span className="font-medium text-ink">{name || "saved scenario"}</span>
+                </span>
+              )}
+              <select
+                value=""
+                onChange={(e) => {
+                  const s = groupScenarios.find((x) => x.id === e.target.value);
+                  if (s) load(s);
+                }}
+                className="rounded border border-line bg-surface-2 px-2 py-1 text-ink"
+              >
+                <option value="">
+                  {groupScenarios.length ? `Open a saved scenario (${groupScenarios.length})…` : "No saved scenarios yet"}
+                </option>
+                {groupScenarios.map((s) => (
+                  <option key={s.id} value={s.id}>
+                    {s.name} — {new Date(s.updatedAt).toLocaleDateString()}
+                  </option>
+                ))}
+              </select>
+            </span>
           </div>
 
           {/* Basis + residual */}
@@ -1811,14 +1863,67 @@ export function ModelScenarios({ groups, alwaysOpen = false }: Props) {
                         sleeve is actually visible. */}
                     <div className="flex flex-wrap items-center gap-x-4 gap-y-1 border-b border-line-soft bg-surface-2 px-5 py-2 text-xs">
                       <span className="text-ink-3">Currency split</span>
-                      <span>
-                        <span className="font-mono font-semibold text-ink">{pct(cadOfClass)}</span>
-                        <span className="text-ink-3"> CAD</span>
-                      </span>
-                      <span>
-                        <span className="font-mono font-semibold text-ink">{pct(usdOfClass)}</span>
-                        <span className="text-ink-3"> USD</span>
-                      </span>
+                      {/* EDITABLE, and it drives the weights: type the CAD
+                          (or USD) share of the sleeve and every holding is
+                          rescaled so each currency adds up to it. */}
+                      {(() => {
+                        const invested = cadOfClass + usdOfClass;
+                        const nowCad = invested > 0 ? cadOfClass / invested : 0;
+                        const set = ccySplit[ac];
+                        const shown = set ?? nowCad;
+                        const box = (ccy: "CAD" | "USD") => {
+                          const k = `${ac}:${ccy}`;
+                          const v = ccy === "CAD" ? shown : 1 - shown;
+                          return (
+                            <span className="inline-flex items-center gap-1">
+                              <input
+                                inputMode="decimal"
+                                value={ccyDraft[k] ?? (v * 100).toFixed(2)}
+                                onFocus={(e) => e.currentTarget.select()}
+                                onChange={(e) => {
+                                  const raw = e.target.value;
+                                  setCcyDraft({ [k]: raw });
+                                  const n = parseFloat(raw);
+                                  if (!Number.isFinite(n) || n < 0 || n > 100) return;
+                                  setSleeveCad(ac, ccy === "CAD" ? n / 100 : 1 - n / 100);
+                                }}
+                                onBlur={() => setCcyDraft({})}
+                                onKeyDown={(e) => {
+                                  if (e.key === "Enter") e.currentTarget.blur();
+                                }}
+                                title={`${ccy} share of this sleeve — edit to set the split; the holdings rescale to match`}
+                                className="w-16 rounded border border-line bg-surface px-1.5 py-0.5 text-right font-mono font-semibold text-ink"
+                              />
+                              <span className="text-ink-3">% {ccy}</span>
+                            </span>
+                          );
+                        };
+                        return (
+                          <>
+                            {box("CAD")}
+                            {box("USD")}
+                            <span className="text-ink-faint">
+                              ≈ {pct(shown * allocTo)} / {pct((1 - shown) * allocTo)} of portfolio
+                            </span>
+                            {set != null && (
+                              <>
+                                {!sameAtDisplay(set, nowCad) && (
+                                  <span className="text-warn" title="Where the split lands after the scenario's changes">
+                                    (now {pct(nowCad)} CAD)
+                                  </span>
+                                )}
+                                <button
+                                  onClick={() => clearSleeveCcy(ac)}
+                                  title="Stop driving this sleeve's currency mix"
+                                  className="text-ink-faint underline hover:text-ink"
+                                >
+                                  reset
+                                </button>
+                              </>
+                            )}
+                          </>
+                        );
+                      })()}
                       {sameAtDisplay(classGap, 0) ? (
                         <span className="text-ink-faint">fully allocated</span>
                       ) : classGap > 0 ? (
@@ -2383,7 +2488,7 @@ export function ModelScenarios({ groups, alwaysOpen = false }: Props) {
             />
             <button
               onClick={save}
-              disabled={saving || !name.trim() || (actions.length === 0 && !bucketsOn)}
+              disabled={saving || !name.trim() || (actions.length === 0 && !bucketsOn && !ccySplitOpt)}
               className="rounded bg-accent px-3 py-1 font-medium !text-white disabled:opacity-40"
             >
               {saving ? "Saving…" : draftId ? "Update" : "Keep"}

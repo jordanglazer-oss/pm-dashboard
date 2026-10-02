@@ -49,6 +49,8 @@ export type ModelScenario = {
     buckets: { id: string; name: string; target: number }[];
     assign: Record<string, string>;
   };
+  /** PM-set CAD share (0–1) per sleeve; drives the scenario's weights. */
+  currencySplit?: Partial<Record<"equity" | "fixedIncome" | "alternative", number>>;
   /** Whether a hypothetical asset mix overrides the basis's own splits — the
    *  only way to model moving money BETWEEN sleeves without a trade. */
   allocOverride?: boolean;
@@ -131,6 +133,14 @@ export async function POST(req: NextRequest) {
       residualTargets: Array.isArray(body?.residualTargets) ? body.residualTargets : undefined,
       holdCash: typeof body?.holdCash === "boolean" ? body.holdCash : existing?.holdCash,
       equityBuckets: sanitizeBuckets(body?.equityBuckets) ?? existing?.equityBuckets,
+      currencySplit:
+        body?.currencySplit && typeof body.currencySplit === "object"
+          ? Object.fromEntries(
+              (["equity", "fixedIncome", "alternative"] as const)
+                .map((k) => [k, Number(body.currencySplit[k])] as const)
+                .filter(([, v]) => Number.isFinite(v) && v >= 0 && v <= 1),
+            )
+          : existing?.currencySplit,
       // Accepts the old allocBasis:"custom" shape so drafts saved before the
       // two controls were merged still load with their mix intact.
       allocOverride:
