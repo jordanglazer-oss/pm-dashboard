@@ -16,7 +16,7 @@
  * silently filling in defaults.
  */
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Playfair_Display } from "next/font/google";
 import {
@@ -642,7 +642,17 @@ function fmtPctFrac(v: number | null | undefined, digits = 1): string {
  *  hash of the report inputs the bullets were generated from, so the UI
  *  can tell the PM when a later "Refresh live data" has moved the numbers
  *  out from under the copy. */
-type StoredBullets = ClientReportBullets & { fingerprint: string };
+type StoredBullets = ClientReportBullets & {
+  fingerprint: string;
+  /** True once the PM has hand-edited the AI copy. Regenerating asks
+   *  before replacing edited text. */
+  edited?: boolean;
+};
+
+/** Bullets as they render on the report: blank (mid-edit) lines dropped. */
+function visibleBullets(b: StoredBullets | null): string[] {
+  return b ? b.bullets.filter((x) => x.trim().length > 0) : [];
+}
 
 type BulletsPayload = {
   profileLabel: string;
@@ -1789,7 +1799,8 @@ export default function ClientReportPage() {
   // change). Compares fingerprints rather than timestamps so a plain
   // page reload — which re-pulls identical numbers — doesn't nag.
   const bulletsStale = useMemo(() => {
-    if (!bullets || !data) return false;
+    // A hand-written set (no AI run yet) has no fingerprint to compare.
+    if (!bullets || !data || !bullets.fingerprint) return false;
     const current = fingerprintPayload(
       buildBulletsPayload(
         data,
@@ -1802,15 +1813,42 @@ export default function ClientReportPage() {
   }, [bullets, data, clientPositions, stocks, metricsOverrides, groupId, profile]);
 
   const copyBullets = useCallback(async () => {
-    if (!bullets?.bullets.length) return;
+    const lines = visibleBullets(bullets);
+    if (!lines.length) return;
     try {
-      await navigator.clipboard.writeText(bullets.bullets.join("\n"));
+      await navigator.clipboard.writeText(lines.join("\n"));
       setBulletsCopied(true);
       setTimeout(() => setBulletsCopied(false), 2000);
     } catch {
       setBulletsError("Clipboard unavailable — select the text below and copy manually.");
     }
   }, [bullets]);
+
+  // Manual edits to the AI copy. Plain state updates, so the report below
+  // re-renders on every keystroke; the existing debounced autosave above
+  // persists them inside pm:client-portfolio.presentationBullets exactly
+  // like a freshly generated set (same blob, same writer).
+  const editBullet = useCallback((index: number, text: string) => {
+    setBullets((prev) =>
+      prev
+        ? { ...prev, edited: true, bullets: prev.bullets.map((b, i) => (i === index ? text : b)) }
+        : prev,
+    );
+  }, []);
+  const removeBullet = useCallback((index: number) => {
+    setBullets((prev) =>
+      prev ? { ...prev, edited: true, bullets: prev.bullets.filter((_, i) => i !== index) } : prev,
+    );
+  }, []);
+  const addBullet = useCallback(() => {
+    setBullets((prev) =>
+      prev
+        ? { ...prev, edited: true, bullets: [...prev.bullets, ""] }
+        : // Writing from scratch before any AI run: fingerprint left empty,
+          // so the staleness banner stays quiet until a real generation.
+          { bullets: [""], generatedAt: new Date().toISOString(), fingerprint: "", edited: true },
+    );
+  }, []);
 
   // Manager commentary was removed per PM request — it was almost
   // never used. The Redis blob at `pm:client-report-notes` is left
@@ -2014,8 +2052,24 @@ export default function ClientReportPage() {
                 {bulletsCopied ? "Copied" : "Copy"}
               </button>
             )}
+            {!bullets && (
+              <button
+                onClick={addBullet}
+                className="rounded bg-slate-100 px-3 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-200"
+              >
+                Write manually
+              </button>
+            )}
             <button
-              onClick={() => generateBullets(bullets != null)}
+              onClick={() => {
+                if (
+                  bullets?.edited &&
+                  !window.confirm("Regenerating replaces your edited bullets with fresh AI copy. Continue?")
+                ) {
+                  return;
+                }
+                generateBullets(bullets != null);
+              }}
               disabled={bulletsLoading || !!error}
               className="rounded-lg px-4 py-1.5 text-xs font-semibold !text-white disabled:opacity-50"
               style={{ backgroundColor: RBC_NAVY }}
@@ -2041,24 +2095,47 @@ export default function ClientReportPage() {
 
           {bullets && (
             <div className="mt-3">
+              {/* Editable in place — every keystroke flows straight to the
+                  report below; autosave persists it. */}
               <ul className="space-y-1.5">
                 {bullets.bullets.map((b, i) => (
-                  <li
-                    key={i}
-                    className="text-[12px] leading-snug text-slate-700 pl-3 border-l-2"
-                    style={{ borderColor: RBC_GOLD }}
-                  >
-                    {b}
+                  <li key={i} className="group flex items-start gap-1.5">
+                    <textarea
+                      value={b}
+                      onChange={(e) => editBullet(i, e.target.value)}
+                      rows={2}
+                      placeholder="Type a talking point…"
+                      aria-label={`Bullet ${i + 1}`}
+                      className="flex-1 resize-none rounded-sm border border-transparent bg-transparent py-0.5 pl-3 pr-1 text-[12px] leading-snug text-slate-700 hover:border-slate-200 focus:border-slate-300 focus:bg-slate-50 focus:outline-none"
+                      style={{ borderLeft: `2px solid ${RBC_GOLD}`, fieldSizing: "content" } as React.CSSProperties}
+                    />
+                    <button
+                      onClick={() => removeBullet(i)}
+                      className="mt-0.5 px-1 text-sm text-slate-300 hover:text-rose-500"
+                      title="Remove this bullet"
+                      aria-label={`Remove bullet ${i + 1}`}
+                    >
+                      ×
+                    </button>
                   </li>
                 ))}
               </ul>
-              <div className="mt-2 text-[11px] text-slate-400">
-                Generated{" "}
-                {new Date(bullets.generatedAt).toLocaleString("en-CA", {
-                  dateStyle: "medium",
-                  timeStyle: "short",
-                })}
-                . Also renders on the PDF below.
+              <div className="mt-2 flex items-center gap-3 text-[11px] text-slate-400">
+                <button
+                  onClick={addBullet}
+                  className="font-semibold text-slate-500 hover:text-slate-800"
+                >
+                  + Add bullet
+                </button>
+                <span>
+                  {bullets.fingerprint ? "Generated " : "Written "}
+                  {new Date(bullets.generatedAt).toLocaleString("en-CA", {
+                    dateStyle: "medium",
+                    timeStyle: "short",
+                  })}
+                  {bullets.edited && bullets.fingerprint ? " · edited" : ""}
+                  . Click any bullet to edit — changes show on the report below.
+                </span>
               </div>
             </div>
           )}
@@ -2750,11 +2827,11 @@ function OnePager({
           PM has generated them, so the PDF layout is unchanged for
           anyone who never clicks the button. Deliberately free of
           individual position names — see /api/client-report-bullets. */}
-      {bullets && bullets.bullets.length > 0 && (
+      {visibleBullets(bullets).length > 0 && (
         <div className="mt-4 break-inside-avoid">
           <SectionTitle>Portfolio Highlights</SectionTitle>
           <ul className="mt-2 space-y-1.5">
-            {bullets.bullets.map((b, i) => (
+            {visibleBullets(bullets).map((b, i) => (
               <li key={i} className="flex gap-2 text-[11px] leading-snug text-slate-700">
                 <span
                   className="mt-[5px] h-1.5 w-1.5 shrink-0 rounded-full"
@@ -2981,6 +3058,10 @@ function SlideDeck({
 }) {
   const hostRef = useRef<HTMLDivElement>(null);
   const [scale, setScale] = useState(1);
+  // Set by slide 1 when the highlights don't fit even at the smallest
+  // type size — surfaced above the deck (screen only) so a clipped
+  // bullet never ends up in a client screenshot unnoticed.
+  const [highlightsOverflow, setHighlightsOverflow] = useState(false);
 
   // Fit each slide inside the visible window (width AND height) so a
   // single slide is always fully on screen for a one-shot screenshot.
@@ -3014,9 +3095,16 @@ function SlideDeck({
   const slides: React.ReactNode[] = [];
   if (data) {
     slides.push(
-      <OverviewSlide key="overview" data={data} dateStr={dateStr} metricsOverride={metricsOverride} />,
+      <OverviewSlide
+        key="overview"
+        data={data}
+        dateStr={dateStr}
+        metricsOverride={metricsOverride}
+        bullets={bullets}
+        onHighlightsOverflow={setHighlightsOverflow}
+      />,
     );
-    slides.push(<LookThroughSlide key="lookthrough" data={data} dateStr={dateStr} bullets={bullets} />);
+    slides.push(<LookThroughSlide key="lookthrough" data={data} dateStr={dateStr} />);
     if (clientPortfolio) {
       slides.push(
         <ComparisonSlide
@@ -3042,6 +3130,11 @@ function SlideDeck({
         slide straight into Prezi, or use <span className="font-semibold">Generate slide PDF</span> for
         one slide per page. The holdings-breakdown and MER audit pages stay in Portrait PDF.
       </div>
+      {highlightsOverflow && visibleBullets(bullets).length > 0 && (
+        <div className="print:hidden mx-auto mb-3 max-w-4xl rounded border border-amber-300 bg-amber-50 px-3 py-1.5 text-center text-[11px] text-amber-800">
+          The portfolio highlights are too long to fit on slide 1 — shorten or remove a bullet above.
+        </div>
+      )}
       {loading && !data && (
         <div className="p-12 text-center text-slate-500 text-sm">Loading live data…</div>
       )}
@@ -3293,24 +3386,25 @@ function SlideBullets({
 }: {
   bullets: string[];
   accent: string;
-  fontSize?: number;
+  /** px; null = inherit from the parent (used by AutoFitBullets). */
+  fontSize?: number | null;
   tone?: "light" | "dark";
 }) {
   if (!bullets.length) {
     return <div style={{ fontSize: 12, color: THEME.muted, fontStyle: "italic" }}>No items available.</div>;
   }
   return (
-    <ul className="space-y-2.5">
+    <ul className={fontSize == null ? "space-y-[0.55em]" : "space-y-2.5"}>
       {bullets.map((b, i) => (
         <li
           key={i}
           className="flex gap-2.5"
-          style={{ fontSize, lineHeight: 1.4, color: tone === "dark" ? "rgba(255,255,255,0.92)" : THEME.ink }}
+          style={{ fontSize: fontSize ?? "inherit", lineHeight: fontSize == null ? 1.35 : 1.4, color: tone === "dark" ? "rgba(255,255,255,0.92)" : THEME.ink }}
         >
           <span
             aria-hidden
             className="block shrink-0 rounded-full"
-            style={{ width: 6, height: 6, marginTop: fontSize * 0.5, backgroundColor: accent }}
+            style={{ width: 6, height: 6, marginTop: "0.5em", backgroundColor: accent }}
           />
           <span>{b}</span>
         </li>
@@ -3324,19 +3418,75 @@ function fmtStat(v: number | null | undefined, fraction: boolean): string {
   return `${(fraction ? v * 100 : v).toFixed(1)}%`;
 }
 
-/** Slide 1 — the whole one-pager story on one 16:9 canvas. */
+/** Shrinks its bullet text (down to `min` px) until it fits the box —
+ *  hand-edited highlights can be any length and must never spill off
+ *  a slide. Re-measures synchronously whenever the text changes. */
+function AutoFitBullets({
+  bullets,
+  accent,
+  tone,
+  max = 15,
+  min = 10.5,
+  onOverflow,
+}: {
+  bullets: string[];
+  accent: string;
+  tone: "light" | "dark";
+  max?: number;
+  min?: number;
+  /** Reports whether the text still overflows at `min` (too long to fit). */
+  onOverflow?: (overflowing: boolean) => void;
+}) {
+  const boxRef = useRef<HTMLDivElement>(null);
+  const innerRef = useRef<HTMLDivElement>(null);
+  const key = bullets.join("\u0000");
+  useLayoutEffect(() => {
+    const box = boxRef.current;
+    const inner = innerRef.current;
+    if (!box || !inner) return;
+    let size = max;
+    inner.style.fontSize = `${size}px`;
+    while (size > min && inner.scrollHeight > box.clientHeight + 1) {
+      size = Math.max(min, size - 0.5);
+      inner.style.fontSize = `${size}px`;
+    }
+    onOverflow?.(inner.scrollHeight > box.clientHeight + 1);
+  }, [key, max, min, onOverflow]);
+  return (
+    <div ref={boxRef} className="h-full overflow-hidden">
+      <div ref={innerRef} style={{ fontSize: max }}>
+        <SlideBullets bullets={bullets} accent={accent} fontSize={null} tone={tone} />
+      </div>
+    </div>
+  );
+}
+
+/** Slide 1 — the whole one-pager story on one 16:9 canvas, including the
+ *  portfolio highlights (the slide usually shown on its own). */
 function OverviewSlide({
   data,
   dateStr,
   metricsOverride,
+  bullets,
+  onHighlightsOverflow,
 }: {
   data: ReportData;
   dateStr: string;
   metricsOverride: MetricsOverride;
+  bullets: StoredBullets | null;
+  onHighlightsOverflow?: (overflowing: boolean) => void;
 }) {
   const t = data.tracker;
   const perf = data.performance;
   const pick = (o: number | undefined, a: number | null) => (o != null ? o : a);
+  const highlights = visibleBullets(bullets);
+  const hasHighlights = highlights.length > 0;
+  const risk = [
+    { label: "Std Dev · Portfolio", value: fmtStat(pick(metricsOverride.stdDev, perf.volatility), true) },
+    { label: "Std Dev · S&P 500", value: fmtStat(pick(metricsOverride.benchmarkStdDev, perf.benchmarkVolatility), true) },
+    { label: "Upside Capture", value: fmtStat(pick(metricsOverride.upsideCapture, perf.upsideCapture), false) },
+    { label: "Downside Capture", value: fmtStat(pick(metricsOverride.downsideCapture, perf.downsideCapture), false) },
+  ];
   return (
     <SlideFrame
       lead={`${data.profileLabel} Model,`}
@@ -3349,14 +3499,14 @@ function OverviewSlide({
           <SlideCard tone="cream" num="01" eyebrow="Top Holdings · Look-Through">
             <SlideHoldingRows
               rows={data.xray.slice(0, 10).map((r) => ({ name: r.name, symbol: r.symbol, weight: r.weight }))}
-              fontSize={13}
-              rowH={25}
+              fontSize={hasHighlights ? 12.5 : 13}
+              rowH={hasHighlights ? 20 : 25}
             />
           </SlideCard>
           <SlideCard tone="cream" num="02" eyebrow="Asset Allocation">
             <div className="flex flex-col h-full">
-              <AllocationPie slices={data.allocation} size={128} fontSize={12.5} />
-              <div className="mt-auto pt-3 flex gap-6" style={{ borderTop: `1px solid ${THEME.rule}` }}>
+              <AllocationPie slices={data.allocation} size={hasHighlights ? 112 : 128} fontSize={12.5} />
+              <div className="mt-auto pt-2 flex gap-6" style={{ borderTop: `1px solid ${THEME.rule}` }}>
                 <SlideStat label="CAD" value={`${data.totals.cad.toFixed(1)}%`} size={20} />
                 <SlideStat label="USD" value={`${data.totals.usd.toFixed(1)}%`} size={20} />
               </div>
@@ -3373,78 +3523,119 @@ function OverviewSlide({
               textColor={THEME.navy}
               scale="sqrt"
               minBarPct={12}
-              size="slide"
+              size={hasHighlights ? "slideCompact" : "slide"}
             />
           </SlideCard>
         </div>
-        <div className="grid gap-4" style={{ gridTemplateColumns: "1.75fr 1fr", height: 182 }}>
-          <SlideCard
-            tone="navy"
-            num="04"
-            eyebrow="Model Performance · Since Inception"
-            right={
-              t?.yearsOfHistory != null ? (
-                <span style={{ fontSize: 11, color: "rgba(255,255,255,0.6)" }}>
-                  {t.yearsOfHistory.toFixed(1)} years of history
-                </span>
-              ) : undefined
-            }
-          >
-            {t ? (
-              <div className="flex gap-6 h-full">
-                <div className="flex flex-col justify-between shrink-0" style={{ width: 150 }}>
-                  <SlideStat label="Annualized" value={fmtPctSigned(t.annualizedReturnPct, 2)} tone="dark" size={30} />
-                  <SlideStat label="Cumulative" value={fmtPctSigned(t.sinceInceptionReturnPct, 2)} tone="dark" size={22} />
+        {hasHighlights ? (
+          <div className="grid gap-4" style={{ gridTemplateColumns: "0.75fr 0.65fr 1.9fr", height: 244 }}>
+            <SlideCard tone="navy" num="04" eyebrow="Performance">
+              {t ? (
+                <div className="flex flex-col h-full">
+                  <div className="flex items-end gap-5">
+                    <SlideStat label="Annualized" value={fmtPctSigned(t.annualizedReturnPct, 2)} tone="dark" size={26} />
+                    <SlideStat label="Cumulative" value={fmtPctSigned(t.sinceInceptionReturnPct, 2)} tone="dark" size={20} />
+                  </div>
+                  <div className="mt-auto">
+                    <PerformanceChart tracker={t} width={215} height={104} tone="dark" />
+                  </div>
+                  {t.yearsOfHistory != null && (
+                    <div style={{ fontSize: 10.5, color: "rgba(255,255,255,0.6)", marginTop: 2 }}>
+                      Since inception · {t.yearsOfHistory.toFixed(1)} years of history
+                    </div>
+                  )}
                 </div>
-                <div className="flex-1 min-w-0 flex flex-col">
-                  <PerformanceChart tracker={t} width={560} height={86} tone="dark" />
-                  <div className="flex flex-wrap gap-x-4 gap-y-1 mt-1.5" style={{ fontSize: 11.5 }}>
-                    {t.yearlyReturns.slice(-6).map((r) => (
-                      <span key={r.year} className="tabular-nums" style={{ color: "rgba(255,255,255,0.65)" }}>
-                        {r.year}{" "}
-                        <span className="font-semibold" style={{ color: r.returnPct >= 0 ? THEME.goldBand : "#F2A39C" }}>
-                          {fmtPctSigned(r.returnPct, 1)}
-                        </span>
-                      </span>
-                    ))}
+              ) : (
+                <div style={{ fontSize: 13, color: "rgba(255,255,255,0.7)", fontStyle: "italic" }}>
+                  No performance tracker history yet.
+                </div>
+              )}
+            </SlideCard>
+            <SlideCard tone="gold" num="05" eyebrow="Risk vs S&P 500">
+              <div className="flex flex-col justify-between h-full">
+                {risk.map((r, i) => (
+                  <div
+                    key={r.label}
+                    className="flex items-baseline justify-between gap-3"
+                    style={{ borderTop: i ? "1px solid rgba(10,42,80,0.18)" : undefined, paddingTop: i ? 6 : 0 }}
+                  >
+                    <span style={{ fontSize: 12, color: THEME.navy }}>{r.label}</span>
+                    <span
+                      className="tabular-nums"
+                      style={{ fontFamily: SERIF, fontSize: 21, fontWeight: 600, color: THEME.navy, lineHeight: 1.1 }}
+                    >
+                      {r.value}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </SlideCard>
+            <SlideCard tone="cream" num="06" eyebrow="Portfolio Highlights">
+              <AutoFitBullets
+                bullets={highlights}
+                accent={THEME.gold}
+                tone="light"
+                max={14.5}
+                onOverflow={onHighlightsOverflow}
+              />
+            </SlideCard>
+          </div>
+        ) : (
+          <div className="grid gap-4" style={{ gridTemplateColumns: "1.75fr 1fr", height: 182 }}>
+            <SlideCard
+              tone="navy"
+              num="04"
+              eyebrow="Model Performance · Since Inception"
+              right={
+                t?.yearsOfHistory != null ? (
+                  <span style={{ fontSize: 11, color: "rgba(255,255,255,0.6)" }}>
+                    {t.yearsOfHistory.toFixed(1)} years of history
+                  </span>
+                ) : undefined
+              }
+            >
+              {t ? (
+                <div className="flex gap-6 h-full">
+                  <div className="flex flex-col justify-between shrink-0" style={{ width: 150 }}>
+                    <SlideStat label="Annualized" value={fmtPctSigned(t.annualizedReturnPct, 2)} tone="dark" size={30} />
+                    <SlideStat label="Cumulative" value={fmtPctSigned(t.sinceInceptionReturnPct, 2)} tone="dark" size={22} />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <PerformanceChart tracker={t} width={560} height={112} tone="dark" />
                   </div>
                 </div>
+              ) : (
+                <div style={{ fontSize: 13, color: "rgba(255,255,255,0.7)", fontStyle: "italic" }}>
+                  No performance tracker history yet.
+                </div>
+              )}
+            </SlideCard>
+            <SlideCard tone="gold" num="05" eyebrow="Risk Profile vs S&P 500">
+              <div className="grid grid-cols-2 gap-x-5 gap-y-3">
+                {risk.map((r) => (
+                  <SlideStat key={r.label} label={r.label} value={r.value} size={24} />
+                ))}
               </div>
-            ) : (
-              <div style={{ fontSize: 13, color: "rgba(255,255,255,0.7)", fontStyle: "italic" }}>
-                No performance tracker history yet.
-              </div>
-            )}
-          </SlideCard>
-          <SlideCard tone="gold" num="05" eyebrow="Risk Profile vs S&P 500">
-            <div className="grid grid-cols-2 gap-x-5 gap-y-3">
-              <SlideStat label="Std Dev · Portfolio" value={fmtStat(pick(metricsOverride.stdDev, perf.volatility), true)} size={24} />
-              <SlideStat label="Std Dev · S&P 500" value={fmtStat(pick(metricsOverride.benchmarkStdDev, perf.benchmarkVolatility), true)} size={24} />
-              <SlideStat label="Upside Capture" value={fmtStat(pick(metricsOverride.upsideCapture, perf.upsideCapture), false)} size={24} />
-              <SlideStat label="Downside Capture" value={fmtStat(pick(metricsOverride.downsideCapture, perf.downsideCapture), false)} size={24} />
-            </div>
-          </SlideCard>
-        </div>
+            </SlideCard>
+          </div>
+        )}
       </div>
     </SlideFrame>
   );
 }
 
-/** Slide 2 — look-through exposures + the AI portfolio highlights. */
+/** Slide 2 — look-through exposures (highlights live on slide 1). */
 function LookThroughSlide({
   data,
   dateStr,
-  bullets,
 }: {
   data: ReportData;
   dateStr: string;
-  bullets: StoredBullets | null;
 }) {
-  const hasBullets = !!bullets && bullets.bullets.length > 0;
   const rows = data.xray.slice(0, 12);
   return (
     <SlideFrame lead="Inside the Portfolio," accent="Look-Through" dateStr={dateStr} profileLabel={data.profileLabel}>
-      <div className="grid gap-4 h-full" style={{ gridTemplateColumns: hasBullets ? "1.2fr 1fr" : "1fr" }}>
+      <div className="grid gap-4 h-full" style={{ gridTemplateColumns: "1fr" }}>
         <SlideCard tone="cream" num="01" eyebrow="Top Exposures · Direct + Through Funds">
           {rows.length ? (
             <table className="w-full tabular-nums" style={{ fontSize: 13.5 }}>
@@ -3485,11 +3676,6 @@ function LookThroughSlide({
             </div>
           )}
         </SlideCard>
-        {hasBullets && (
-          <SlideCard tone="navy" num="02" eyebrow="Portfolio Highlights">
-            <SlideBullets bullets={bullets!.bullets} accent={THEME.goldBand} fontSize={17} tone="dark" />
-          </SlideCard>
-        )}
       </div>
     </SlideFrame>
   );
@@ -4784,13 +4970,15 @@ function BarList({
   // Floor for rendered bar width (as a percentage of the longest bar) so
   // the smallest slice is still clearly visible even after scaling.
   minBarPct?: number;
-  /** "slide" = larger type and bars for the 16:9 landscape canvas. */
-  size?: "portrait" | "slide";
+  /** "slide" = larger type and bars for the 16:9 landscape canvas;
+   *  "slideCompact" = tighter rows when the highlights share slide 1. */
+  size?: "portrait" | "slide" | "slideCompact";
 }) {
   if (!rows.length) {
     return <div className="text-[10px] text-slate-400 italic mt-2">No data.</div>;
   }
-  const slide = size === "slide";
+  const slide = size !== "portrait";
+  const compact = size === "slideCompact";
   const transform = (v: number) => {
     if (scale === "sqrt") return Math.sqrt(Math.max(0, v));
     if (scale === "pow0.6") return Math.pow(Math.max(0, v), 0.6);
@@ -4798,13 +4986,13 @@ function BarList({
   };
   const maxT = Math.max(...rows.map((r) => transform(r.value)), 1);
   return (
-    <div className={slide ? "space-y-[7px]" : "mt-2 space-y-1"}>
+    <div className={compact ? "space-y-[4px]" : slide ? "space-y-[7px]" : "mt-2 space-y-1"}>
       {rows.map((r) => {
         const title = r.tooltip ?? (tooltip ? tooltip(r) : undefined);
         const rawPct = (transform(r.value) / maxT) * 100;
         const pct = r.value > 0 ? Math.max(minBarPct, rawPct) : 0;
         return (
-          <div key={r.label} className={slide ? "" : "text-[10px]"} style={slide ? { fontSize: 12.5, lineHeight: 1.35 } : undefined} title={title}>
+          <div key={r.label} className={slide ? "" : "text-[10px]"} style={slide ? { fontSize: compact ? 12 : 12.5, lineHeight: compact ? 1.25 : 1.35 } : undefined} title={title}>
             <div className="flex justify-between">
               <span style={{ color: textColor }}>{r.label}</span>
               <span className="tabular-nums text-slate-600 font-semibold">
@@ -4812,7 +5000,7 @@ function BarList({
               </span>
             </div>
             <div
-              className={`${slide ? "h-[7px] mt-[3px]" : "h-1.5 mt-0.5"} rounded-full overflow-hidden`}
+              className={`${compact ? "h-[6px] mt-[2px]" : slide ? "h-[7px] mt-[3px]" : "h-1.5 mt-0.5"} rounded-full overflow-hidden`}
               style={{ backgroundColor: slide ? "rgba(255,255,255,0.6)" : "rgba(10,42,80,0.07)" }}
             >
               <div
@@ -4919,4 +5107,5 @@ function OverridableStat({
     </div>
   );
 }
+
 
