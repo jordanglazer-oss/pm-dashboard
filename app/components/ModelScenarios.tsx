@@ -79,6 +79,7 @@ type SavedScenario = {
   basis: WeightBasis;
   residual?: ResidualPolicy;
   residualTargets?: string[];
+  holdCash?: boolean;
   allocOverride?: boolean;
   pinnedSymbols?: string[];
   customAlloc?: { equity: number; fixedIncome: number; alternative: number; cash: number };
@@ -359,6 +360,15 @@ export function ModelScenarios({ groups, alwaysOpen = false }: Props) {
   );
 
   const [residual, setResidual] = useState<ResidualPolicy>("core");
+  /**
+   * "Hold as cash" mode. By default freed weight is reinvested at once under
+   * the residual rule, so removing a holding silently tops up the Core ETFs.
+   * In this mode nothing absorbs it: the money sits as cash and the PM places
+   * it by hand — new positions, larger existing ones — watching the running
+   * balance in the sticky bar.
+   */
+  const [holdCash, setHoldCash] = useState(false);
+  const effectiveResidual: ResidualPolicy = holdCash ? "none" : residual;
   /** Symbols that absorb under the "named" policy, split evenly. */
   const [residualTargets, setResidualTargets] = useState<string[]>([]);
   const [saving, setSaving] = useState(false);
@@ -449,12 +459,12 @@ export function ModelScenarios({ groups, alwaysOpen = false }: Props) {
         basis: basis === "actual" && hasActuals ? "actual" : "model",
         actualWeights,
         isCore,
-        residual,
+        residual: effectiveResidual,
         residualTargets,
         allocations: startAlloc,
         pinnedSymbols: pinned,
       }),
-    [baseHoldings, actions, basis, hasActuals, actualWeights, isCore, residual, residualTargets, startAlloc, pinned],
+    [baseHoldings, actions, basis, hasActuals, actualWeights, isCore, effectiveResidual, residualTargets, startAlloc, pinned],
   );
 
   // The left-hand side of the comparison: today's model, or another scenario
@@ -482,7 +492,7 @@ export function ModelScenarios({ groups, alwaysOpen = false }: Props) {
       basis: other.basis === "actual" && hasActuals ? "actual" : "model",
       actualWeights,
       isCore,
-      residual: other.residual ?? "core",
+      residual: other.holdCash ? "none" : (other.residual ?? "core"),
       residualTargets: other.residualTargets,
     }).holdings;
   }, [compareId, saved, baseHoldings, basis, hasActuals, actualWeights, isCore, residual]);
@@ -643,7 +653,7 @@ export function ModelScenarios({ groups, alwaysOpen = false }: Props) {
         });
         const after = applyScenario(baseHoldings, actions, {
           basis: basis === "actual" && hasActuals ? "actual" : "model",
-          actualWeights, isCore, residual, residualTargets, pinnedSymbols: pinned,
+          actualWeights, isCore, residual: effectiveResidual, residualTargets, pinnedSymbols: pinned,
           allocations: allocAfter, targetAllocations: startAlloc,
         });
         const wt = (r: typeof after, sym: string) => {
@@ -666,7 +676,7 @@ export function ModelScenarios({ groups, alwaysOpen = false }: Props) {
         const applies = touchedClasses.some((c) => (alloc[c] ?? 0) > 0) || allocMoves.length > 0;
         return { profile: p, alloc, allocMoves, moves, applies, touchedClasses };
       });
-  }, [group, profile, actions, baseHoldings, basis, hasActuals, actualWeights, isCore, residual, residualTargets, startAlloc, pinned, allocOverride, customAlloc, basisAlloc]);
+  }, [group, profile, actions, baseHoldings, basis, hasActuals, actualWeights, isCore, residual, effectiveResidual, residualTargets, startAlloc, pinned, allocOverride, customAlloc, basisAlloc]);
 
   /**
    * The allocation the LEFT-HAND column is scaled by — a fixed reference point.
@@ -705,6 +715,32 @@ export function ModelScenarios({ groups, alwaysOpen = false }: Props) {
     }
     return bought;
   }, [rowsByClass, profileAlloc, compareAlloc]);
+
+  /**
+   * Cash still to place, as a share of the WHOLE portfolio.
+   *   freed  — what the scenario's own changes left unallocated inside the
+   *            sleeves (a sale not yet reinvested). Only non-zero in "hold as
+   *            cash" mode, or when nothing could absorb it.
+   *   book   — cash the asset mix itself leaves outside every sleeve.
+   * Negative = more has been placed than there is.
+   */
+  const cashToPlace = useMemo(() => {
+    const bySleeve: { cls: PimAssetClass; amount: number }[] = [];
+    let freed = 0;
+    let allocTotal = 0;
+    for (const cls of ["equity", "fixedIncome", "alternative"] as PimAssetClass[]) {
+      const a = profileAlloc(cls) ?? 0;
+      allocTotal += a;
+      const inClass = result.holdings.filter((h) => h.assetClass === cls);
+      // A sleeve with no allocation and nothing in it isn't holding any cash.
+      if (a <= 0 && inClass.length === 0) continue;
+      const amount = (1 - inClass.reduce((t, h) => t + h.weightInClass, 0)) * a;
+      if (!sameAtDisplay(amount, 0)) bySleeve.push({ cls, amount });
+      freed += amount;
+    }
+    const book = 1 - allocTotal;
+    return { freed, book, total: freed + book, bySleeve };
+  }, [result.holdings, profileAlloc]);
 
   // ── Action builder ───────────────────────────────────────────────────────
   // Two modes. "Fund" is first and default because it is the change actually
@@ -823,6 +859,7 @@ export function ModelScenarios({ groups, alwaysOpen = false }: Props) {
     setBasis("actual");
     setResidual("core");
     setResidualTargets([]);
+    setHoldCash(false);
     setAllocOverride(false);
     setPinned([]);
     setRowDraft({});
@@ -850,6 +887,7 @@ export function ModelScenarios({ groups, alwaysOpen = false }: Props) {
           basis,
           residual,
           residualTargets,
+          holdCash,
           allocOverride,
           customAlloc,
           pinnedSymbols: pinned,
@@ -879,6 +917,7 @@ export function ModelScenarios({ groups, alwaysOpen = false }: Props) {
     setBasis(s.basis ?? "actual");
     setResidual(s.residual ?? "core");
     setResidualTargets(s.residualTargets ?? []);
+    setHoldCash(s.holdCash ?? false);
     setAllocOverride(s.allocOverride ?? false);
     setPinned(s.pinnedSymbols ?? []);
     setCustomAlloc(s.customAlloc ?? null);
@@ -909,6 +948,75 @@ export function ModelScenarios({ groups, alwaysOpen = false }: Props) {
 
       {(open || alwaysOpen) && (
         <div className={alwaysOpen ? "" : "border-t border-line-soft px-4 py-4"}>
+          {/* Sticky cash bar — the mode switch and the running balance stay in
+              view while scrolling the sleeves, so placing freed cash never
+              means scrolling back up to see what is left. Sticks to the
+              Models-page subwindow's scroll area; -top-3.5 cancels that
+              area's p-3.5 so rows can't show through above the bar. */}
+          <div className={`sticky ${alwaysOpen ? "-top-3.5" : "top-0"} z-20 mb-4 flex flex-col gap-2 rounded border border-line bg-surface px-3 py-2 text-xs shadow-[var(--shadow-pop)] sm:flex-row sm:flex-wrap sm:items-center sm:gap-x-4`}>
+            <div className="flex items-center gap-2">
+              <span className="shrink-0 text-ink-3">Freed cash</span>
+              <div className="flex gap-1">
+                {([
+                  [false, "Reinvest automatically"],
+                  [true, "Hold as cash"],
+                ] as const).map(([v, label]) => (
+                  <button
+                    key={label}
+                    onClick={() => setHoldCash(v)}
+                    title={
+                      v
+                        ? "Removing or trimming a holding leaves the money as cash — place it yourself"
+                        : "Removing or trimming a holding reinvests the money under the residual rule"
+                    }
+                    className={`rounded px-2.5 py-1 font-medium ${
+                      holdCash === v ? "bg-accent !text-white" : "border border-line text-ink-3 hover:text-ink"
+                    }`}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+              <span className="text-ink-3">{cashToPlace.total < 0 && !sameAtDisplay(cashToPlace.total, 0) ? "Over-allocated by" : "Cash to place"}</span>
+              <span
+                className={`font-mono text-sm font-bold ${
+                  sameAtDisplay(cashToPlace.total, 0)
+                    ? "text-ink-3"
+                    : cashToPlace.total < 0
+                      ? "text-neg"
+                      : "text-pos"
+                }`}
+              >
+                {pct(Math.abs(cashToPlace.total))}
+              </span>
+              {cashToPlace.bySleeve.map((b) => (
+                <span key={b.cls} className="whitespace-nowrap text-ink-3">
+                  {ASSET_CLASS_LABELS[b.cls]}{" "}
+                  <span className={`font-mono ${b.amount < 0 ? "text-neg" : "text-ink"}`}>
+                    {b.amount < 0 ? "−" : ""}
+                    {pct(Math.abs(b.amount))}
+                  </span>
+                </span>
+              ))}
+              {!sameAtDisplay(cashToPlace.book, 0) && (
+                <span className="whitespace-nowrap text-ink-3">
+                  {cashToPlace.bySleeve.length > 0 ? "+ " : ""}cash already in the mix{" "}
+                  <span className={`font-mono ${cashToPlace.book < 0 ? "text-neg" : "text-ink"}`}>
+                    {cashToPlace.book < 0 ? "−" : ""}
+                    {pct(Math.abs(cashToPlace.book))}
+                  </span>
+                </span>
+              )}
+            </div>
+            {actions.length > 0 && (
+              <span className="text-ink-faint sm:ml-auto">
+                {actions.length} change{actions.length === 1 ? "" : "s"} · {pct(turnover)} traded
+              </span>
+            )}
+          </div>
+
           {/* Basis + residual */}
           {/* Each label + control stays glued together while the ROW wraps, so
               on a phone the settings read as a stacked list rather than a
@@ -1041,7 +1149,7 @@ export function ModelScenarios({ groups, alwaysOpen = false }: Props) {
 
             {/* Hidden by default, but never hidden while a NON-default rule is
                 in force — a rule you can't see is a rule you'll forget. */}
-            <div className={`flex items-center gap-2 ${showAdvanced || residual !== "core" ? "" : "hidden"}`}>
+            <div className={`flex items-center gap-2 ${!holdCash && (showAdvanced || residual !== "core") ? "" : "hidden"}`}>
               <span className="text-ink-3">Freed weight goes to</span>
               <select
                 value={residual}
@@ -1053,7 +1161,7 @@ export function ModelScenarios({ groups, alwaysOpen = false }: Props) {
                 <option value="named">Specific holdings (split evenly)</option>
               </select>
             </div>
-            {residual === "named" && (
+            {residual === "named" && !holdCash && (
               <div className="flex items-center gap-2">
                 <select
                   value=""
@@ -1280,7 +1388,9 @@ export function ModelScenarios({ groups, alwaysOpen = false }: Props) {
                 Add change
               </button>
               <span className="text-ink-faint">
-                Freed weight lands per the &ldquo;{residual === "core" ? "Core ETFs" : residual === "named" ? "Specific holdings" : "All untouched holdings"}&rdquo; rule above.
+                {holdCash
+                  ? "Freed weight stays as cash until you place it."
+                  : <>Freed weight lands per the &ldquo;{residual === "core" ? "Core ETFs" : residual === "named" ? "Specific holdings" : "All untouched holdings"}&rdquo; rule above.</>}
               </span>
             </div>
           )}
@@ -1555,14 +1665,18 @@ export function ModelScenarios({ groups, alwaysOpen = false }: Props) {
                         )}
                         {!balanced && (
                           <span className="ml-2 inline-flex flex-wrap items-center gap-1 font-semibold text-neg">
+                            {/* Portfolio terms, like the label beside it and
+                                the sticky cash bar — a % of the sleeve here
+                                read as a different amount of cash. */}
                             {dToClass.total < 1
-                              ? `${pct(1 - dToClass.total)} still to allocate`
-                              : `${pct(dToClass.total - 1)} over-allocated`}
+                              ? `${pct((1 - dToClass.total) * allocTo)} still to allocate`
+                              : `${pct((dToClass.total - 1) * allocTo)} over-allocated`}
                             {/* The shortfall does not have to stay in the
                                 sleeve it came from — freeing bonds in order to
                                 hold more alternatives is an ordinary decision,
                                 and since class weights are always 100% of their
                                 own class, it is an allocation move. */}
+                            {!holdCash && (
                             <select
                               value={spillTarget(ac)}
                               onChange={(e) => setSpill(ac, e.target.value as PimAssetClass | "")}
@@ -1577,6 +1691,7 @@ export function ModelScenarios({ groups, alwaysOpen = false }: Props) {
                                   </option>
                                 ))}
                             </select>
+                            )}
                           </span>
                         )}
                         {balanced && spillTarget(ac) && (

@@ -103,8 +103,11 @@ export type WeightBasis = "actual" | "model";
  *   core         — Core-tagged ETFs absorb it, mirroring the live rebalance.
  *   proportional — every untouched holding in the class scales together.
  *   named        — specific symbols absorb it, split by `residualTargets`.
+ *   none         — nothing absorbs it. Freed weight stays as cash and each
+ *                  sleeve is left at whatever its holdings add up to, so the
+ *                  PM can place the money by hand (the "hold as cash" mode).
  */
-export type ResidualPolicy = "core" | "proportional" | "named";
+export type ResidualPolicy = "core" | "proportional" | "named" | "none";
 
 export type ScenarioOptions = {
   basis: WeightBasis;
@@ -213,6 +216,10 @@ export function applyScenario(
   // Symbols held fixed while the residual moves: everything an action touched,
   // plus anything explicitly pinned.
   const touched = new Set<string>();
+  // Currencies freed by a full sale. A dropped holding leaves the class, so it
+  // can't be found among the touched rows later — remember what it was so the
+  // freed weight still lands in the same currency.
+  const freedCcy: Record<string, Set<string>> = {};
   for (const p of opts.pinnedSymbols ?? []) {
     const hit = holdings.find((h) => sameSymbol(h.symbol, p));
     if (hit) touched.add(norm(hit.symbol));
@@ -353,6 +360,16 @@ export function applyScenario(
         }
         break;
       }
+      case "drop": {
+        if (idx < 0) {
+          warn("equity", `sell all ${a.symbol}: not in the model — ignored`);
+          break;
+        }
+        const gone = holdings[idx];
+        (freedCcy[gone.assetClass] ??= new Set()).add(gone.currency);
+        holdings.splice(idx, 1);
+        break;
+      }
       case "add": {
         if (idx >= 0) {
           warn(holdings[idx].assetClass, `add ${a.symbol}: already held — treated as a weight change`);
@@ -455,7 +472,7 @@ export function applyScenario(
     const warnings = [...(warningsByClass[cls] ?? [])];
     let absorbedBy: string[] = [];
 
-    if (Math.abs(gap) > EPSILON) {
+    if (Math.abs(gap) > EPSILON && residual !== "none") {
       // Candidates: never the holdings the scenario explicitly set, or the
       // adjustment would silently undo the instruction.
       let pool = inClass.filter((h) => !touched.has(norm(h.symbol)));
@@ -466,9 +483,10 @@ export function applyScenario(
       // Buy/Sell redistribution already follows. Falls back to the full pool
       // when the sleeve has no same-currency absorber, since a class that
       // cannot balance is worse than one whose mix moved.
-      const touchedCcy = new Set(
-        inClass.filter((h) => touched.has(norm(h.symbol))).map((h) => h.currency),
-      );
+      const touchedCcy = new Set([
+        ...inClass.filter((h) => touched.has(norm(h.symbol))).map((h) => h.currency),
+        ...(freedCcy[cls] ?? []),
+      ]);
       if (touchedCcy.size === 1) {
         const [ccy] = [...touchedCcy];
         const sameCcy = pool.filter((h) => h.currency === ccy);

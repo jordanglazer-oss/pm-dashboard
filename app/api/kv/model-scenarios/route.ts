@@ -39,6 +39,9 @@ export type ModelScenario = {
   basis: WeightBasis;
   residual?: ResidualPolicy;
   residualTargets?: string[];
+  /** "Hold as cash" mode: freed weight is NOT reinvested automatically — it
+   *  stays as cash for the PM to place by hand. Overrides `residual`. */
+  holdCash?: boolean;
   /** Whether a hypothetical asset mix overrides the basis's own splits — the
    *  only way to model moving money BETWEEN sleeves without a trade. */
   allocOverride?: boolean;
@@ -98,6 +101,7 @@ export async function POST(req: NextRequest) {
       basis: body?.basis === "model" ? "model" : "actual",
       residual: ["core", "proportional", "named"].includes(body?.residual) ? body.residual : "core",
       residualTargets: Array.isArray(body?.residualTargets) ? body.residualTargets : undefined,
+      holdCash: typeof body?.holdCash === "boolean" ? body.holdCash : existing?.holdCash,
       // Accepts the old allocBasis:"custom" shape so drafts saved before the
       // two controls were merged still load with their mix intact.
       allocOverride:
