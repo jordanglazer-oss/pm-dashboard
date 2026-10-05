@@ -70,6 +70,21 @@ function symbolToTicker(symbol: string): string {
   return symbol.endsWith("-T") ? symbol.replace(/-T$/, ".TO") : symbol;
 }
 
+/** A bucket inside the equity sleeve. `target` is a share of EQUITIES. */
+type EquityBucket = { id: string; name: string; target: number };
+type EquityBucketsState = {
+  enabled: boolean;
+  buckets: EquityBucket[];
+  /** Normalised symbol → bucket id. Unlisted symbols follow their Core/Alpha
+   *  designation. Scenario-only: never written back to pm:stocks. */
+  assign: Record<string, string>;
+};
+const DEFAULT_BUCKETS: EquityBucket[] = [
+  { id: "core", name: "Core", target: 0 },
+  { id: "alpha", name: "Alpha", target: 0 },
+];
+const bucketKey = (sym: string) => sym.replace(/\.TO$/, "-T").toUpperCase();
+
 type SavedScenario = {
   id: string;
   name: string;
@@ -79,6 +94,11 @@ type SavedScenario = {
   basis: WeightBasis;
   residual?: ResidualPolicy;
   residualTargets?: string[];
+  holdCash?: boolean;
+  equityBuckets?: EquityBucketsState;
+  currencySplit?: Partial<Record<PimAssetClass, number>>;
+  /** Past model version the scenario was built on (pm:pim-models-version:<id>). */
+  fromVersion?: string | null;
   allocOverride?: boolean;
   pinnedSymbols?: string[];
   customAlloc?: { equity: number; fixedIncome: number; alternative: number; cash: number };
@@ -114,7 +134,44 @@ export function ModelScenarios({ groups, alwaysOpen = false }: Props) {
   // looking at rather than a second, silently-diverging selection.
   const groupId = searchParams.get("model") || groups[0]?.id || "";
   const profile = (searchParams.get("version") as PimProfileType) || "balanced";
-  const group = useMemo(() => groups.find((g) => g.id === groupId) ?? groups[0], [groups, groupId]);
+  const liveGroup = useMemo(() => groups.find((g) => g.id === groupId) ?? groups[0], [groups, groupId]);
+
+  // ── Past model versions ──────────────────────────────────────────────────
+  // The snapshots taken before every Review commit / restore
+  // (pm:pim-models-versions). Picking one in "Start from" makes it the
+  // scenario's base — holdings AND profile splits — so an old model can be
+  // reopened, edited and saved as a scenario. Read-only: nothing here can
+  // restore it over the live model.
+  const [versions, setVersions] = useState<{ id: string; at: string; note: string; source: string }[]>([]);
+  const [fromVersion, setFromVersion] = useState<string | null>(null);
+  const [versionData, setVersionData] = useState<Record<string, PimModelGroup[]>>({});
+  const [versionError, setVersionError] = useState<string | null>(null);
+  useEffect(() => {
+    if (!fromVersion || versionData[fromVersion]) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch(`/api/model-versions?id=${encodeURIComponent(fromVersion)}&full=1`, { cache: "no-store" });
+        const data = await res.json();
+        if (cancelled) return;
+        if (!res.ok || !Array.isArray(data?.data?.groups)) throw new Error(data?.error || "could not load");
+        setVersionData((m) => ({ ...m, [fromVersion]: data.data.groups }));
+        setVersionError(null);
+      } catch (e) {
+        if (!cancelled) setVersionError(e instanceof Error ? e.message : "could not load");
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [fromVersion, versionData]);
+  const versionGroup = useMemo(() => {
+    const gs = fromVersion ? versionData[fromVersion] : undefined;
+    return gs?.find((g) => g.id === liveGroup?.id);
+  }, [fromVersion, versionData, liveGroup]);
+  /** The group the scenario is built on: a past version when one is picked,
+   *  otherwise the live model. */
+  const group = versionGroup ?? liveGroup;
   const baseHoldings: PimHolding[] = useMemo(() => group?.holdings ?? [], [group]);
 
   const [open, setOpen] = useState(false);
@@ -169,7 +226,9 @@ export function ModelScenarios({ groups, alwaysOpen = false }: Props) {
 
   // Only pay for prices — and the positions read — once the panel is opened.
   useEffect(() => {
-    if (!open) return;
+    // The Models-page window renders with alwaysOpen and never sets `open`;
+    // gating on `open` alone meant nothing here ever loaded in that window.
+    if (!open && !alwaysOpen) return;
     fetchPrices();
     (async () => {
       try {
@@ -182,7 +241,7 @@ export function ModelScenarios({ groups, alwaysOpen = false }: Props) {
         /* actual weights simply stay unavailable */
       }
     })();
-  }, [open, groupId]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [open, alwaysOpen, groupId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const actualWeights = useMemo(() => {
     const classTotals: Record<string, number> = {};
@@ -359,6 +418,58 @@ export function ModelScenarios({ groups, alwaysOpen = false }: Props) {
   );
 
   const [residual, setResidual] = useState<ResidualPolicy>("core");
+  /**
+   * "Hold as cash" mode. By default freed weight is reinvested at once under
+   * the residual rule, so removing a holding silently tops up the Core ETFs.
+   * In this mode nothing absorbs it: the money sits as cash and the PM places
+   * it by hand — new positions, larger existing ones — watching the running
+   * balance in the sticky bar.
+   */
+  const [holdCash, setHoldCash] = useState(false);
+  const effectiveResidual: ResidualPolicy = holdCash ? "none" : residual;
+
+  // ── Equity buckets (Core / Alpha / custom) ───────────────────────────────
+  const [bucketsOn, setBucketsOn] = useState(false);
+  const [buckets, setBuckets] = useState<EquityBucket[]>(DEFAULT_BUCKETS);
+  const [bucketAssign, setBucketAssign] = useState<Record<string, string>>({});
+  /** In-flight text for the bucket target boxes (see allocDraft). */
+  const [bucketDraft, setBucketDraft] = useState<Record<string, string>>({});
+  const [newBucketName, setNewBucketName] = useState("");
+
+  /** PM-set CAD share per sleeve (0–1). The split DRIVES the weights — see
+   *  the engine's currencySplit. A sleeve absent here keeps its own mix. */
+  const [ccySplit, setCcySplit] = useState<Partial<Record<PimAssetClass, number>>>({});
+  const [ccyDraft, setCcyDraft] = useState<Record<string, string>>({});
+  const setSleeveCad = (cls: PimAssetClass, cad: number) =>
+    setCcySplit((prev) => ({ ...prev, [cls]: Math.min(Math.max(cad, 0), 1) }));
+  const clearSleeveCcy = (cls: PimAssetClass) => {
+    setCcySplit((prev) => {
+      const { [cls]: _drop, ...rest } = prev;
+      void _drop;
+      return rest;
+    });
+    setCcyDraft({});
+  };
+  const ccySplitOpt = Object.keys(ccySplit).length ? ccySplit : undefined;
+
+  /** Which bucket a holding sits in: an explicit scenario assignment if it
+   *  points at a bucket that still exists, otherwise its Core/Alpha tag. */
+  const makeBucketOf = useCallback(
+    (assign: Record<string, string>, list: EquityBucket[]) => (symbol: string) => {
+      const a = assign[bucketKey(symbol)];
+      if (a && list.some((b) => b.id === a)) return a;
+      return isCore(symbol) ? "core" : "alpha";
+    },
+    [isCore],
+  );
+  const bucketOf = useMemo(() => makeBucketOf(bucketAssign, buckets), [makeBucketOf, bucketAssign, buckets]);
+  const equityBucketsOpt = useMemo(
+    () =>
+      bucketsOn
+        ? { targets: Object.fromEntries(buckets.map((b) => [b.id, b.target])), bucketOf }
+        : undefined,
+    [bucketsOn, buckets, bucketOf],
+  );
   /** Symbols that absorb under the "named" policy, split evenly. */
   const [residualTargets, setResidualTargets] = useState<string[]>([]);
   const [saving, setSaving] = useState(false);
@@ -398,8 +509,22 @@ export function ModelScenarios({ groups, alwaysOpen = false }: Props) {
   }, []);
 
   useEffect(() => {
-    if (open) loadSaved();
-  }, [open, loadSaved]);
+    if (open || alwaysOpen) loadSaved();
+  }, [open, alwaysOpen, loadSaved]);
+  useEffect(() => {
+    if (!open && !alwaysOpen) return;
+    (async () => {
+      try {
+        const res = await fetch("/api/model-versions", { cache: "no-store" });
+        if (res.ok) {
+          const data = await res.json();
+          setVersions(Array.isArray(data.versions) ? data.versions : []);
+        }
+      } catch {
+        /* the picker just shows no past versions */
+      }
+    })();
+  }, [open, alwaysOpen]);
 
   /** The splits implied by "Start from" — holdings and allocation always come
    *  from the same world, so nothing on screen is a blend of two. */
@@ -449,13 +574,53 @@ export function ModelScenarios({ groups, alwaysOpen = false }: Props) {
         basis: basis === "actual" && hasActuals ? "actual" : "model",
         actualWeights,
         isCore,
-        residual,
+        residual: effectiveResidual,
         residualTargets,
         allocations: startAlloc,
         pinnedSymbols: pinned,
+        equityBuckets: equityBucketsOpt,
+        currencySplit: ccySplitOpt,
       }),
-    [baseHoldings, actions, basis, hasActuals, actualWeights, isCore, residual, residualTargets, startAlloc, pinned],
+    [baseHoldings, actions, basis, hasActuals, actualWeights, isCore, effectiveResidual, residualTargets, startAlloc, pinned, equityBucketsOpt, ccySplitOpt],
   );
+
+  /** Each bucket's share of EQUITIES under the scenario as it stands. */
+  const bucketShares = useMemo(() => {
+    const out: Record<string, number> = {};
+    for (const h of result.holdings) {
+      if (h.assetClass !== "equity") continue;
+      const b = bucketOf(h.symbol);
+      out[b] = (out[b] ?? 0) + h.weightInClass;
+    }
+    return out;
+  }, [result.holdings, bucketOf]);
+
+  /** Turning the split on seeds every target with where its bucket sits right
+   *  now, so switching it on changes nothing until a target is edited. */
+  const toggleBuckets = (on: boolean) => {
+    if (on) {
+      setBuckets((prev) => prev.map((b) => ({ ...b, target: bucketShares[b.id] ?? 0 })));
+      setBucketDraft({});
+    }
+    setBucketsOn(on);
+  };
+  const setBucketTarget = (id: string, target: number) =>
+    setBuckets((prev) => prev.map((b) => (b.id === id ? { ...b, target } : b)));
+  const addBucket = () => {
+    const name = newBucketName.trim();
+    if (!name) return;
+    const id = `b-${Date.now().toString(36)}`;
+    setBuckets((prev) => [...prev, { id, name, target: 0 }]);
+    setNewBucketName("");
+  };
+  /** Its holdings fall back to their Core/Alpha tag — via makeBucketOf, which
+   *  ignores assignments to a bucket that no longer exists. */
+  const removeBucket = (id: string) => {
+    setBuckets((prev) => prev.filter((b) => b.id !== id));
+    setBucketAssign((prev) => Object.fromEntries(Object.entries(prev).filter(([, v]) => v !== id)));
+  };
+  const assignBucket = (symbol: string, id: string) =>
+    setBucketAssign((prev) => ({ ...prev, [bucketKey(symbol)]: id }));
 
   // The left-hand side of the comparison: today's model, or another scenario
   // replayed against the same base so two proposals are judged like-for-like.
@@ -474,7 +639,8 @@ export function ModelScenarios({ groups, alwaysOpen = false }: Props) {
       // The model as written. Against an actual-basis draft this shows the
       // rebase ITSELF plus your changes — the full impact of adopting today's
       // book as the new model.
-      return applyScenario(baseHoldings, [], { basis: "model", isCore, residual }).holdings;
+      // Always the LIVE model — so a past version can be read against today.
+      return applyScenario(liveGroup?.holdings ?? [], [], { basis: "model", isCore, residual }).holdings;
     }
     const other = saved.find((s) => s.id === compareId);
     if (!other) return baseHoldings;
@@ -482,10 +648,17 @@ export function ModelScenarios({ groups, alwaysOpen = false }: Props) {
       basis: other.basis === "actual" && hasActuals ? "actual" : "model",
       actualWeights,
       isCore,
-      residual: other.residual ?? "core",
+      residual: other.holdCash ? "none" : (other.residual ?? "core"),
       residualTargets: other.residualTargets,
+      equityBuckets: other.equityBuckets?.enabled
+        ? {
+            targets: Object.fromEntries(other.equityBuckets.buckets.map((b) => [b.id, b.target])),
+            bucketOf: makeBucketOf(other.equityBuckets.assign, other.equityBuckets.buckets),
+          }
+        : undefined,
+      currencySplit: other.currencySplit,
     }).holdings;
-  }, [compareId, saved, baseHoldings, basis, hasActuals, actualWeights, isCore, residual]);
+  }, [compareId, saved, baseHoldings, liveGroup, basis, hasActuals, actualWeights, isCore, residual, makeBucketOf]);
 
   const deltas = useMemo(
     () => diffHoldings(comparisonBase, result.holdings),
@@ -593,7 +766,7 @@ export function ModelScenarios({ groups, alwaysOpen = false }: Props) {
         (c) => !sameAtDisplay(customAlloc[c], basisAlloc[c] ?? 0),
       );
     const allocShift = shiftActive ? customAlloc : null;
-    if (!group || (actions.length === 0 && !allocShift)) return [];
+    if (!group || (actions.length === 0 && !allocShift && !equityBucketsOpt && !ccySplitOpt)) return [];
     const edited = group.profiles[profile];
     const editedTgt = edited
       ? { equity: edited.equity, fixedIncome: edited.fixedIncome, alternative: edited.alternatives }
@@ -643,8 +816,9 @@ export function ModelScenarios({ groups, alwaysOpen = false }: Props) {
         });
         const after = applyScenario(baseHoldings, actions, {
           basis: basis === "actual" && hasActuals ? "actual" : "model",
-          actualWeights, isCore, residual, residualTargets, pinnedSymbols: pinned,
-          allocations: allocAfter, targetAllocations: startAlloc,
+          actualWeights, isCore, residual: effectiveResidual, residualTargets, pinnedSymbols: pinned,
+          allocations: allocAfter, targetAllocations: startAlloc, equityBuckets: equityBucketsOpt,
+          currencySplit: ccySplitOpt,
         });
         const wt = (r: typeof after, sym: string) => {
           const x = r.holdings.find((y) => y.symbol === sym);
@@ -666,7 +840,7 @@ export function ModelScenarios({ groups, alwaysOpen = false }: Props) {
         const applies = touchedClasses.some((c) => (alloc[c] ?? 0) > 0) || allocMoves.length > 0;
         return { profile: p, alloc, allocMoves, moves, applies, touchedClasses };
       });
-  }, [group, profile, actions, baseHoldings, basis, hasActuals, actualWeights, isCore, residual, residualTargets, startAlloc, pinned, allocOverride, customAlloc, basisAlloc]);
+  }, [group, profile, actions, baseHoldings, basis, hasActuals, actualWeights, isCore, residual, effectiveResidual, residualTargets, startAlloc, pinned, allocOverride, customAlloc, basisAlloc, equityBucketsOpt, ccySplitOpt]);
 
   /**
    * The allocation the LEFT-HAND column is scaled by — a fixed reference point.
@@ -680,7 +854,7 @@ export function ModelScenarios({ groups, alwaysOpen = false }: Props) {
    */
   const compareAlloc = useCallback(
     (cls: PimAssetClass) => {
-      const w = group?.profiles?.[profile];
+      const w = (compareId === "model" ? liveGroup : group)?.profiles?.[profile];
       const modelAlloc =
         cls === "equity" ? w?.equity : cls === "fixedIncome" ? w?.fixedIncome : w?.alternatives;
       if (compareId === "model") return modelAlloc ?? 0;
@@ -688,7 +862,7 @@ export function ModelScenarios({ groups, alwaysOpen = false }: Props) {
       // own splits, never the override being edited.
       return basisAlloc[cls] ?? modelAlloc ?? 0;
     },
-    [compareId, basisAlloc, group, profile],
+    [compareId, basisAlloc, group, liveGroup, profile],
   );
 
   /** How much of the portfolio this scenario actually trades — the quickest
@@ -705,6 +879,32 @@ export function ModelScenarios({ groups, alwaysOpen = false }: Props) {
     }
     return bought;
   }, [rowsByClass, profileAlloc, compareAlloc]);
+
+  /**
+   * Cash still to place, as a share of the WHOLE portfolio.
+   *   freed  — what the scenario's own changes left unallocated inside the
+   *            sleeves (a sale not yet reinvested). Only non-zero in "hold as
+   *            cash" mode, or when nothing could absorb it.
+   *   book   — cash the asset mix itself leaves outside every sleeve.
+   * Negative = more has been placed than there is.
+   */
+  const cashToPlace = useMemo(() => {
+    const bySleeve: { cls: PimAssetClass; amount: number }[] = [];
+    let freed = 0;
+    let allocTotal = 0;
+    for (const cls of ["equity", "fixedIncome", "alternative"] as PimAssetClass[]) {
+      const a = profileAlloc(cls) ?? 0;
+      allocTotal += a;
+      const inClass = result.holdings.filter((h) => h.assetClass === cls);
+      // A sleeve with no allocation and nothing in it isn't holding any cash.
+      if (a <= 0 && inClass.length === 0) continue;
+      const amount = (1 - inClass.reduce((t, h) => t + h.weightInClass, 0)) * a;
+      if (!sameAtDisplay(amount, 0)) bySleeve.push({ cls, amount });
+      freed += amount;
+    }
+    const book = 1 - allocTotal;
+    return { freed, book, total: freed + book, bySleeve };
+  }, [result.holdings, profileAlloc]);
 
   // ── Action builder ───────────────────────────────────────────────────────
   // Two modes. "Fund" is first and default because it is the change actually
@@ -823,6 +1023,14 @@ export function ModelScenarios({ groups, alwaysOpen = false }: Props) {
     setBasis("actual");
     setResidual("core");
     setResidualTargets([]);
+    setHoldCash(false);
+    setBucketsOn(false);
+    setBuckets(DEFAULT_BUCKETS);
+    setBucketAssign({});
+    setBucketDraft({});
+    setCcySplit({});
+    setCcyDraft({});
+    setFromVersion(null);
     setAllocOverride(false);
     setPinned([]);
     setRowDraft({});
@@ -850,6 +1058,10 @@ export function ModelScenarios({ groups, alwaysOpen = false }: Props) {
           basis,
           residual,
           residualTargets,
+          holdCash,
+          equityBuckets: { enabled: bucketsOn, buckets, assign: bucketAssign },
+          currencySplit: ccySplit,
+          fromVersion,
           allocOverride,
           customAlloc,
           pinnedSymbols: pinned,
@@ -879,6 +1091,14 @@ export function ModelScenarios({ groups, alwaysOpen = false }: Props) {
     setBasis(s.basis ?? "actual");
     setResidual(s.residual ?? "core");
     setResidualTargets(s.residualTargets ?? []);
+    setHoldCash(s.holdCash ?? false);
+    setBucketsOn(s.equityBuckets?.enabled ?? false);
+    setBuckets(s.equityBuckets?.buckets?.length ? s.equityBuckets.buckets : DEFAULT_BUCKETS);
+    setBucketAssign(s.equityBuckets?.assign ?? {});
+    setBucketDraft({});
+    setCcySplit(s.currencySplit ?? {});
+    setCcyDraft({});
+    setFromVersion(s.fromVersion ?? null);
     setAllocOverride(s.allocOverride ?? false);
     setPinned(s.pinnedSymbols ?? []);
     setCustomAlloc(s.customAlloc ?? null);
@@ -909,6 +1129,102 @@ export function ModelScenarios({ groups, alwaysOpen = false }: Props) {
 
       {(open || alwaysOpen) && (
         <div className={alwaysOpen ? "" : "border-t border-line-soft px-4 py-4"}>
+          {/* Sticky cash bar — the mode switch and the running balance stay in
+              view while scrolling the sleeves, so placing freed cash never
+              means scrolling back up to see what is left. Sticks to the
+              Models-page subwindow's scroll area; -top-3.5 cancels that
+              area's p-3.5 so rows can't show through above the bar. */}
+          <div className={`sticky ${alwaysOpen ? "-top-3.5" : "top-0"} z-20 mb-4 flex flex-col gap-2 rounded border border-accent-border bg-accent-soft px-3 py-2 text-xs shadow-[var(--shadow-pop)] sm:flex-row sm:flex-wrap sm:items-center sm:gap-x-4`}>
+            <div className="flex items-center gap-2">
+              <span className="shrink-0 text-ink-3">Freed cash</span>
+              <div className="flex gap-1">
+                {([
+                  [false, "Reinvest automatically"],
+                  [true, "Hold as cash"],
+                ] as const).map(([v, label]) => (
+                  <button
+                    key={label}
+                    onClick={() => setHoldCash(v)}
+                    title={
+                      v
+                        ? "Removing or trimming a holding leaves the money as cash — place it yourself"
+                        : "Removing or trimming a holding reinvests the money under the residual rule"
+                    }
+                    className={`rounded px-2.5 py-1 font-medium ${
+                      holdCash === v ? "bg-accent !text-white" : "border border-line text-ink-3 hover:text-ink"
+                    }`}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+              <span className="text-ink-3">{cashToPlace.total < 0 && !sameAtDisplay(cashToPlace.total, 0) ? "Over-allocated by" : "Cash to place"}</span>
+              <span
+                className={`font-mono text-sm font-bold ${
+                  sameAtDisplay(cashToPlace.total, 0)
+                    ? "text-ink-3"
+                    : cashToPlace.total < 0
+                      ? "text-neg"
+                      : "text-pos"
+                }`}
+              >
+                {pct(Math.abs(cashToPlace.total))}
+              </span>
+              {cashToPlace.bySleeve.map((b) => (
+                <span key={b.cls} className="whitespace-nowrap text-ink-3">
+                  {ASSET_CLASS_LABELS[b.cls]}{" "}
+                  <span className={`font-mono ${b.amount < 0 ? "text-neg" : "text-ink"}`}>
+                    {b.amount < 0 ? "−" : ""}
+                    {pct(Math.abs(b.amount))}
+                  </span>
+                </span>
+              ))}
+              {!sameAtDisplay(cashToPlace.book, 0) && (
+                <span className="whitespace-nowrap text-ink-3">
+                  {cashToPlace.bySleeve.length > 0 ? "+ " : ""}cash already in the mix{" "}
+                  <span className={`font-mono ${cashToPlace.book < 0 ? "text-neg" : "text-ink"}`}>
+                    {cashToPlace.book < 0 ? "−" : ""}
+                    {pct(Math.abs(cashToPlace.book))}
+                  </span>
+                </span>
+              )}
+            </div>
+            {actions.length > 0 && (
+              <span className="text-ink-faint sm:ml-auto">
+                {actions.length} change{actions.length === 1 ? "" : "s"} · {pct(turnover)} traded
+              </span>
+            )}
+            {/* Saved scenarios, reachable without scrolling to the list at
+                the bottom. Loading one makes it the draft; "Update" at the
+                bottom then saves the edits back over it. */}
+            <span className={`flex items-center gap-2 ${actions.length > 0 ? "" : "sm:ml-auto"}`}>
+              {draftId && (
+                <span className="text-ink-3">
+                  Editing <span className="font-medium text-ink">{name || "saved scenario"}</span>
+                </span>
+              )}
+              <select
+                value=""
+                onChange={(e) => {
+                  const s = groupScenarios.find((x) => x.id === e.target.value);
+                  if (s) load(s);
+                }}
+                className="rounded border border-line bg-surface-2 px-2 py-1 text-ink"
+              >
+                <option value="">
+                  {groupScenarios.length ? `Open a saved scenario (${groupScenarios.length})…` : "No saved scenarios yet"}
+                </option>
+                {groupScenarios.map((s) => (
+                  <option key={s.id} value={s.id}>
+                    {s.name} — {new Date(s.updatedAt).toLocaleDateString()}
+                  </option>
+                ))}
+              </select>
+            </span>
+          </div>
+
           {/* Basis + residual */}
           {/* Each label + control stays glued together while the ROW wraps, so
               on a phone the settings read as a stacked list rather than a
@@ -917,14 +1233,41 @@ export function ModelScenarios({ groups, alwaysOpen = false }: Props) {
             <div className="flex items-center gap-2 min-w-0">
               <span className="shrink-0 text-ink-3">Start from</span>
               <select
-                value={basis}
-                onChange={(e) => setBasis(e.target.value as WeightBasis)}
+                value={fromVersion ? `v:${fromVersion}` : basis}
+                onChange={(e) => {
+                  const v = e.target.value;
+                  if (v.startsWith("v:")) {
+                    // A past model is a set of TARGETS — there is no book
+                    // behind it to take actual weights from.
+                    setFromVersion(v.slice(2));
+                    setBasis("model");
+                  } else {
+                    setFromVersion(null);
+                    setBasis(v as WeightBasis);
+                  }
+                }}
                 className="w-full rounded border border-line bg-surface-2 px-2 py-1 text-ink sm:w-auto"
               >
                 <option value="actual">Today&apos;s book — actual weights and splits</option>
                 <option value="model">The model as written — target weights and splits</option>
+                <optgroup label={versions.length ? "Past models (before each Review commit / restore)" : "Past models — none saved yet"}>
+                  {versions.map((v) => (
+                    <option key={v.id} value={`v:${v.id}`}>
+                      {new Date(v.at).toLocaleDateString()} — {v.note || v.source}
+                    </option>
+                  ))}
+                </optgroup>
               </select>
-              {basis === "actual" && !hasActuals && (
+              {fromVersion && !versionGroup && (
+                <span className={versionError ? "text-neg" : "text-ink-3"}>
+                  {versionError
+                    ? `couldn't load that version (${versionError}) — showing the live model`
+                    : versionData[fromVersion]
+                      ? "this group isn't in that version — showing the live model"
+                      : "loading…"}
+                </span>
+              )}
+              {basis === "actual" && !fromVersion && !hasActuals && (
                 <span className="text-warn">
                   {pricesLoading ? "loading prices…" : "no positions priced — using model weights"}
                 </span>
@@ -1041,7 +1384,7 @@ export function ModelScenarios({ groups, alwaysOpen = false }: Props) {
 
             {/* Hidden by default, but never hidden while a NON-default rule is
                 in force — a rule you can't see is a rule you'll forget. */}
-            <div className={`flex items-center gap-2 ${showAdvanced || residual !== "core" ? "" : "hidden"}`}>
+            <div className={`flex items-center gap-2 ${!holdCash && (showAdvanced || residual !== "core") ? "" : "hidden"}`}>
               <span className="text-ink-3">Freed weight goes to</span>
               <select
                 value={residual}
@@ -1053,7 +1396,7 @@ export function ModelScenarios({ groups, alwaysOpen = false }: Props) {
                 <option value="named">Specific holdings (split evenly)</option>
               </select>
             </div>
-            {residual === "named" && (
+            {residual === "named" && !holdCash && (
               <div className="flex items-center gap-2">
                 <select
                   value=""
@@ -1280,7 +1623,9 @@ export function ModelScenarios({ groups, alwaysOpen = false }: Props) {
                 Add change
               </button>
               <span className="text-ink-faint">
-                Freed weight lands per the &ldquo;{residual === "core" ? "Core ETFs" : residual === "named" ? "Specific holdings" : "All untouched holdings"}&rdquo; rule above.
+                {holdCash
+                  ? "Freed weight stays as cash until you place it."
+                  : <>Freed weight lands per the &ldquo;{residual === "core" ? "Core ETFs" : residual === "named" ? "Specific holdings" : "All untouched holdings"}&rdquo; rule above.</>}
               </span>
             </div>
           )}
@@ -1386,7 +1731,7 @@ export function ModelScenarios({ groups, alwaysOpen = false }: Props) {
               className="w-full rounded border border-line bg-surface-2 px-2 py-1 text-ink sm:w-auto"
             >
               <option value="current">Starting point (no changes)</option>
-              <option value="model">Model targets — shows the rebase too</option>
+              <option value="model">Live model targets{fromVersion ? " — what changed since that version" : " — shows the rebase too"}</option>
               {groupScenarios
                 .filter((s) => s.id !== draftId)
                 .map((s) => (
@@ -1555,14 +1900,18 @@ export function ModelScenarios({ groups, alwaysOpen = false }: Props) {
                         )}
                         {!balanced && (
                           <span className="ml-2 inline-flex flex-wrap items-center gap-1 font-semibold text-neg">
+                            {/* Portfolio terms, like the label beside it and
+                                the sticky cash bar — a % of the sleeve here
+                                read as a different amount of cash. */}
                             {dToClass.total < 1
-                              ? `${pct(1 - dToClass.total)} still to allocate`
-                              : `${pct(dToClass.total - 1)} over-allocated`}
+                              ? `${pct((1 - dToClass.total) * allocTo)} still to allocate`
+                              : `${pct((dToClass.total - 1) * allocTo)} over-allocated`}
                             {/* The shortfall does not have to stay in the
                                 sleeve it came from — freeing bonds in order to
                                 hold more alternatives is an ordinary decision,
                                 and since class weights are always 100% of their
                                 own class, it is an allocation move. */}
+                            {!holdCash && (
                             <select
                               value={spillTarget(ac)}
                               onChange={(e) => setSpill(ac, e.target.value as PimAssetClass | "")}
@@ -1577,6 +1926,7 @@ export function ModelScenarios({ groups, alwaysOpen = false }: Props) {
                                   </option>
                                 ))}
                             </select>
+                            )}
                           </span>
                         )}
                         {balanced && spillTarget(ac) && (
@@ -1599,14 +1949,67 @@ export function ModelScenarios({ groups, alwaysOpen = false }: Props) {
                         sleeve is actually visible. */}
                     <div className="flex flex-wrap items-center gap-x-4 gap-y-1 border-b border-line-soft bg-surface-2 px-5 py-2 text-xs">
                       <span className="text-ink-3">Currency split</span>
-                      <span>
-                        <span className="font-mono font-semibold text-ink">{pct(cadOfClass)}</span>
-                        <span className="text-ink-3"> CAD</span>
-                      </span>
-                      <span>
-                        <span className="font-mono font-semibold text-ink">{pct(usdOfClass)}</span>
-                        <span className="text-ink-3"> USD</span>
-                      </span>
+                      {/* EDITABLE, and it drives the weights: type the CAD
+                          (or USD) share of the sleeve and every holding is
+                          rescaled so each currency adds up to it. */}
+                      {(() => {
+                        const invested = cadOfClass + usdOfClass;
+                        const nowCad = invested > 0 ? cadOfClass / invested : 0;
+                        const set = ccySplit[ac];
+                        const shown = set ?? nowCad;
+                        const box = (ccy: "CAD" | "USD") => {
+                          const k = `${ac}:${ccy}`;
+                          const v = ccy === "CAD" ? shown : 1 - shown;
+                          return (
+                            <span className="inline-flex items-center gap-1">
+                              <input
+                                inputMode="decimal"
+                                value={ccyDraft[k] ?? (v * 100).toFixed(2)}
+                                onFocus={(e) => e.currentTarget.select()}
+                                onChange={(e) => {
+                                  const raw = e.target.value;
+                                  setCcyDraft({ [k]: raw });
+                                  const n = parseFloat(raw);
+                                  if (!Number.isFinite(n) || n < 0 || n > 100) return;
+                                  setSleeveCad(ac, ccy === "CAD" ? n / 100 : 1 - n / 100);
+                                }}
+                                onBlur={() => setCcyDraft({})}
+                                onKeyDown={(e) => {
+                                  if (e.key === "Enter") e.currentTarget.blur();
+                                }}
+                                title={`${ccy} share of this sleeve — edit to set the split; the holdings rescale to match`}
+                                className="w-16 rounded border border-line bg-surface px-1.5 py-0.5 text-right font-mono font-semibold text-ink"
+                              />
+                              <span className="text-ink-3">% {ccy}</span>
+                            </span>
+                          );
+                        };
+                        return (
+                          <>
+                            {box("CAD")}
+                            {box("USD")}
+                            <span className="text-ink-faint">
+                              ≈ {pct(shown * allocTo)} / {pct((1 - shown) * allocTo)} of portfolio
+                            </span>
+                            {set != null && (
+                              <>
+                                {!sameAtDisplay(set, nowCad) && (
+                                  <span className="text-warn" title="Where the split lands after the scenario's changes">
+                                    (now {pct(nowCad)} CAD)
+                                  </span>
+                                )}
+                                <button
+                                  onClick={() => clearSleeveCcy(ac)}
+                                  title="Stop driving this sleeve's currency mix"
+                                  className="text-ink-faint underline hover:text-ink"
+                                >
+                                  reset
+                                </button>
+                              </>
+                            )}
+                          </>
+                        );
+                      })()}
                       {sameAtDisplay(classGap, 0) ? (
                         <span className="text-ink-faint">fully allocated</span>
                       ) : classGap > 0 ? (
@@ -1619,6 +2022,110 @@ export function ModelScenarios({ groups, alwaysOpen = false }: Props) {
                         </span>
                       )}
                     </div>
+
+                    {/* Equity buckets — Core / Alpha / custom. Off: the split
+                        is shown as it falls out of the weights. On: each
+                        bucket's share of equities is typed directly and its
+                        holdings scale to fit. */}
+                    {ac === "equity" && (() => {
+                      const targetSum = buckets.reduce((t, b) => t + b.target, 0);
+                      return (
+                        <div className="flex flex-col gap-2 border-b border-line-soft bg-surface-2 px-5 py-2 text-xs">
+                          <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
+                            <span className="text-ink-3">Buckets</span>
+                            <label className="inline-flex items-center gap-1.5 text-ink-3">
+                              <input type="checkbox" checked={bucketsOn} onChange={(e) => toggleBuckets(e.target.checked)} />
+                              Set the split
+                            </label>
+                            {!bucketsOn &&
+                              buckets.map((b) => (
+                                <span key={b.id}>
+                                  <span className="text-ink-3">{b.name} </span>
+                                  <span className="font-mono font-semibold text-ink">{pct(bucketShares[b.id] ?? 0)}</span>
+                                </span>
+                              ))}
+                            {!bucketsOn && <span className="text-ink-faint">of equities</span>}
+                          </div>
+                          {bucketsOn && (
+                            <div className="flex flex-wrap items-center gap-x-5 gap-y-2">
+                              {buckets.map((b) => {
+                                const now = bucketShares[b.id] ?? 0;
+                                const off = !sameAtDisplay(now, b.target);
+                                return (
+                                  <span key={b.id} className="inline-flex items-center gap-1.5">
+                                    <span className="font-medium text-ink">{b.name}</span>
+                                    <input
+                                      inputMode="decimal"
+                                      value={bucketDraft[b.id] ?? (b.target * 100).toFixed(2)}
+                                      onFocus={(e) => e.currentTarget.select()}
+                                      onChange={(e) => {
+                                        const raw = e.target.value;
+                                        setBucketDraft((d) => ({ ...d, [b.id]: raw }));
+                                        const v = parseFloat(raw);
+                                        if (Number.isFinite(v) && v >= 0) setBucketTarget(b.id, v / 100);
+                                      }}
+                                      onBlur={() =>
+                                        setBucketDraft((d) => {
+                                          const { [b.id]: _drop, ...rest } = d;
+                                          void _drop;
+                                          return rest;
+                                        })
+                                      }
+                                      onKeyDown={(e) => {
+                                        if (e.key === "Enter") e.currentTarget.blur();
+                                      }}
+                                      title="Share of the equity sleeve"
+                                      className="w-16 rounded border border-line bg-surface px-1.5 py-0.5 text-right font-mono text-ink"
+                                    />
+                                    <span className="text-ink-3">% of equities</span>
+                                    <span className="text-ink-faint">≈ {pct(b.target * allocTo)} of portfolio</span>
+                                    {off && (
+                                      <span className={now < b.target ? "text-warn" : "text-neg"} title="Where the bucket sits after the scenario's changes">
+                                        (now {pct(now)})
+                                      </span>
+                                    )}
+                                    {b.id !== "core" && b.id !== "alpha" && (
+                                      <button
+                                        onClick={() => removeBucket(b.id)}
+                                        title="Remove this bucket — its holdings go back to Core / Alpha"
+                                        className="text-ink-faint hover:text-neg"
+                                      >
+                                        ×
+                                      </button>
+                                    )}
+                                  </span>
+                                );
+                              })}
+                              <span className={sameAtDisplay(targetSum, 1) ? "text-ink-faint" : "font-semibold text-neg"}>
+                                Total {pct(targetSum)}
+                                {!sameAtDisplay(targetSum, 1) &&
+                                  (targetSum < 1
+                                    ? ` — ${pct(1 - targetSum)} of equities left unplaced`
+                                    : ` — ${pct(targetSum - 1)} over`)}
+                              </span>
+                              <span className="inline-flex items-center gap-1.5">
+                                <input
+                                  value={newBucketName}
+                                  onChange={(e) => setNewBucketName(e.target.value)}
+                                  onKeyDown={(e) => {
+                                    if (e.key === "Enter") addBucket();
+                                  }}
+                                  placeholder="New bucket name"
+                                  className="w-36 rounded border border-line bg-surface px-1.5 py-0.5 text-ink"
+                                />
+                                <button
+                                  onClick={addBucket}
+                                  disabled={!newBucketName.trim()}
+                                  className="font-medium text-accent hover:underline disabled:opacity-40"
+                                >
+                                  + Add bucket
+                                </button>
+                              </span>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })()}
 
                     {/* Scrolls sideways rather than compressing seven columns
                         into an unreadable width; the page itself never scrolls
@@ -1636,6 +2143,14 @@ export function ModelScenarios({ groups, alwaysOpen = false }: Props) {
                             <th className="py-2.5 pr-2 text-left font-semibold">Name</th>
                             <th className="py-2.5 px-2 text-left font-semibold">Symbol</th>
                             <th className="py-2.5 px-2 text-center font-semibold">Ccy</th>
+                            {ac === "equity" && (
+                              <th
+                                className="py-2.5 px-2 text-left font-semibold"
+                                title="Scenario only — does not change the stock's Core/Alpha tag"
+                              >
+                                Bucket
+                              </th>
+                            )}
                             <th className="py-2.5 px-2 text-right font-semibold whitespace-nowrap">
                               {compareLabel} Wt
                             </th>
@@ -1708,6 +2223,21 @@ export function ModelScenarios({ groups, alwaysOpen = false }: Props) {
                                   {r.currency}
                                 </span>
                               </td>
+                              {ac === "equity" && (
+                                <td className="py-2 px-2">
+                                  <select
+                                    value={bucketOf(r.symbol)}
+                                    onChange={(e) => assignBucket(r.symbol, e.target.value)}
+                                    className="rounded border border-line bg-surface-2 px-1 py-0.5 text-xs text-ink"
+                                  >
+                                    {buckets.map((b) => (
+                                      <option key={b.id} value={b.id}>
+                                        {b.name}
+                                      </option>
+                                    ))}
+                                  </select>
+                                </td>
+                              )}
                               <td className="py-2 px-2 text-right font-mono text-xs text-ink-2">
                                 {dFromP.values[i] == null ? <span className="text-ink-faint">&mdash;</span> : pct(dFromP.values[i] as number)}
                               </td>
@@ -1820,7 +2350,7 @@ export function ModelScenarios({ groups, alwaysOpen = false }: Props) {
                             </tr>
                           ))}
                           <tr className={`${colors.bg} font-semibold`}>
-                            <td className="py-2 pl-4 pr-2 text-xs text-ink-3" colSpan={4}>
+                            <td className="py-2 pl-4 pr-2 text-xs text-ink-3" colSpan={ac === "equity" ? 5 : 4}>
                               TOTAL
                             </td>
                             <td className="py-2 px-2 text-right font-mono text-xs font-bold">{pct(dFromP.total)}</td>
@@ -1863,7 +2393,7 @@ export function ModelScenarios({ groups, alwaysOpen = false }: Props) {
                           {/* Add straight into the sleeve you're looking at —
                               the class is implied by where the row sits. */}
                           <tr>
-                            <td colSpan={12} className="py-2 pl-4 pr-4">
+                            <td colSpan={ac === "equity" ? 13 : 12} className="py-2 pl-4 pr-4">
                               {addingTo === ac ? (
                                 <span className="flex flex-col gap-2 text-xs sm:flex-row sm:flex-wrap sm:items-center">
                                   <input
@@ -2044,7 +2574,7 @@ export function ModelScenarios({ groups, alwaysOpen = false }: Props) {
             />
             <button
               onClick={save}
-              disabled={saving || !name.trim() || actions.length === 0}
+              disabled={saving || !name.trim() || (actions.length === 0 && !bucketsOn && !ccySplitOpt)}
               className="rounded bg-accent px-3 py-1 font-medium !text-white disabled:opacity-40"
             >
               {saving ? "Saving…" : draftId ? "Update" : "Keep"}
