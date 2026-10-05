@@ -7,6 +7,7 @@ import { useStocks } from "@/app/lib/StockContext";
 import { displayTicker } from "@/app/lib/ticker";
 import { AppIcon } from "@/app/components/AppIcon";
 import { apportionColumn, fmtPct2, sameAtDisplay } from "@/app/lib/display-weights";
+import { renderPositioningPng, type PositioningSnapshot } from "@/app/lib/positioning-image";
 import {
   applyScenario,
   diffHoldings,
@@ -906,6 +907,111 @@ export function ModelScenarios({ groups, alwaysOpen = false }: Props) {
     return { freed, book, total: freed + book, bySleeve };
   }, [result.holdings, profileAlloc]);
 
+  // ── Scenario image (PNG) — same renderer as the Positioning tab's export,
+  // relabelled Before / Scenario / Change. Uses the same apportioned display
+  // weights as the tables below, so the image and the screen never disagree.
+  // Read-only: renders on a canvas and hands the file to the browser.
+  const [imageBusy, setImageBusy] = useState(false);
+  const [imageNote, setImageNote] = useState("");
+  const buildImage = (): PositioningSnapshot => {
+    const classes = (["equity", "fixedIncome", "alternative"] as PimAssetClass[]).map((ac) => {
+      const rows = rowsByClass[ac];
+      const allocTo = profileAlloc(ac) ?? 0;
+      const allocFrom = compareAlloc(ac);
+      const prefer = rows.map((r) => r.changed);
+      const from = apportionColumn(
+        rows.map((r) => (r.from == null ? null : r.from * allocFrom)),
+        rows.reduce((t, r) => t + (r.from ?? 0), 0) * allocFrom,
+        { prefer },
+      );
+      const to = apportionColumn(
+        rows.map((r) => (r.to == null ? null : r.to * allocTo)),
+        rows.reduce((t, r) => t + (r.to ?? 0), 0) * allocTo,
+        { prefer },
+      );
+      return {
+        key: ac,
+        label: ASSET_CLASS_LABELS[ac],
+        rows: rows
+          .map((r, i) => ({
+            ticker: displayTicker(r.symbol),
+            name: r.to == null ? `${r.name} · sold` : r.from == null ? `${r.name} · new` : r.name,
+            currency: r.currency,
+            model: from.values[i] as number | null, // left column: Before
+            live: to.values[i] as number | null, // right column: Scenario
+          }))
+          .sort((a, b) => (b.live ?? -1) - (a.live ?? -1) || (b.model ?? 0) - (a.model ?? 0)),
+      };
+    });
+    const beforeCash =
+      1 - compareAlloc("equity") - compareAlloc("fixedIncome") - compareAlloc("alternative");
+    const showCash = !sameAtDisplay(beforeCash, 0) || !sameAtDisplay(cashToPlace.total, 0);
+    const startLabel = fromVersion
+      ? `past model ${versions.find((v) => v.id === fromVersion)?.at.slice(0, 10) ?? ""}`.trim()
+      : basis === "actual" && hasActuals
+        ? "today's book"
+        : "the model as written";
+    return {
+      title: `${group?.name ?? "Model"} · ${PROFILE_LABELS[profile] ?? profile} — ${name.trim() || "Scenario"}`,
+      subtitle: `Started from ${startLabel} · compared with ${compareLabel.toLowerCase()} · ${actions.length} change${actions.length === 1 ? "" : "s"}, ${pct(turnover)} of the portfolio traded`,
+      asOf: new Date(),
+      classes,
+      cash: showCash ? { model: Math.max(0, beforeCash), live: cashToPlace.total } : null,
+      labels: { model: "Before", live: "Scenario", diff: "Change", missingAsZero: true, colourEveryChange: true },
+      footnote: "Weights are % of total portfolio. A scenario preview — not the live model. Cash = unallocated (to place).",
+    };
+  };
+  const imageFileName = () => {
+    const d = new Date();
+    const ymd = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+    const slug = `${group?.name || "model"}-${profile}-${name.trim() || "scenario"}`
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-|-$/g, "");
+    return `scenario-${slug}-${ymd}.png`;
+  };
+  const saveImage = async () => {
+    setImageBusy(true);
+    setImageNote("");
+    try {
+      const blob = await renderPositioningPng(buildImage());
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = imageFileName();
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 10_000);
+      setImageNote("Image saved");
+    } catch (e) {
+      setImageNote(`Image failed: ${e instanceof Error ? e.message : String(e)}`);
+    } finally {
+      setImageBusy(false);
+    }
+  };
+  const copyImage = async () => {
+    setImageBusy(true);
+    setImageNote("");
+    try {
+      if (typeof ClipboardItem === "undefined" || !navigator.clipboard?.write) {
+        throw new Error("this browser can't copy images — use Save image instead");
+      }
+      // Blob passed as a promise so Safari keeps the click's user activation.
+      await navigator.clipboard.write([new ClipboardItem({ "image/png": renderPositioningPng(buildImage()) })]);
+      setImageNote("Image copied — paste into an email or chat");
+    } catch (e) {
+      setImageNote(`Copy failed: ${e instanceof Error ? e.message : String(e)}`);
+    } finally {
+      setImageBusy(false);
+    }
+  };
+  useEffect(() => {
+    if (!imageNote) return;
+    const t = setTimeout(() => setImageNote(""), 5000);
+    return () => clearTimeout(t);
+  }, [imageNote]);
+
   // ── Action builder ───────────────────────────────────────────────────────
   // Two modes. "Fund" is first and default because it is the change actually
   // being made most of the time — trim one position, buy another with the
@@ -1196,6 +1302,29 @@ export function ModelScenarios({ groups, alwaysOpen = false }: Props) {
                 {actions.length} change{actions.length === 1 ? "" : "s"} · {pct(turnover)} traded
               </span>
             )}
+            <span className="flex items-center gap-1.5">
+              <button
+                onClick={saveImage}
+                disabled={imageBusy}
+                title="Download the scenario as a PNG — Before / Scenario / Change for every holding"
+                className="rounded border border-line bg-surface px-2 py-1 font-medium text-ink-2 hover:text-ink disabled:opacity-40"
+              >
+                Save image
+              </button>
+              <button
+                onClick={copyImage}
+                disabled={imageBusy}
+                title="Copy the scenario image to the clipboard"
+                className="rounded border border-line bg-surface px-2 py-1 font-medium text-ink-2 hover:text-ink disabled:opacity-40"
+              >
+                Copy image
+              </button>
+              {imageNote && (
+                <span role="status" className={imageNote.includes("failed") ? "text-neg" : "text-ink-3"}>
+                  {imageNote}
+                </span>
+              )}
+            </span>
             {/* Saved scenarios, reachable without scrolling to the list at
                 the bottom. Loading one makes it the draft; "Update" at the
                 bottom then saves the edits back over it. */}
