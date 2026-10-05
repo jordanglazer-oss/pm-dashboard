@@ -35,6 +35,23 @@ export type PositioningSnapshot = {
   classes: SnapshotClass[];
   cash: { live: number | null; model: number } | null;
   footnote?: string;
+  /**
+   * Optional relabelling, so the same drawing serves other comparisons (the
+   * Model Scenarios export uses Before / Scenario / Change). Omitted → the
+   * Positioning tab's Model / Live / Live − Model, unchanged. `model` is
+   * always the LEFT column and `live` the right; the change is live − model.
+   */
+  labels?: {
+    model: string;
+    live: string;
+    diff: string;
+    /** Treat a missing side as 0 so an add or a sale still shows its change
+     *  (a scenario "Sold" row has no right-hand weight). Default false. */
+    missingAsZero?: boolean;
+    /** Colour every non-zero change (pos/neg) instead of only drift past the
+     *  0.5pp tolerance. Default false. */
+    colourEveryChange?: boolean;
+  };
 };
 
 /** Same hues as the Models / Positioning class headers (globals.css tokens). */
@@ -83,11 +100,22 @@ function sum(vals: (number | null)[]): number | null {
   return present.length ? present.reduce((a, b) => a + b, 0) : null;
 }
 
-function fmtDrift(live: number | null, model: number | null): { text: string; color: string } {
+const POS = "#12805c";
+const NEG = "#c2410c";
+
+type DiffOpts = { missingAsZero?: boolean; colourEveryChange?: boolean };
+
+function fmtDrift(live: number | null, model: number | null, o: DiffOpts = {}): { text: string; color: string } {
+  if (o.missingAsZero && (live != null || model != null)) {
+    live = live ?? 0;
+    model = model ?? 0;
+  }
   if (live == null || model == null) return { text: "—", color: FAINT };
   const d = Math.round((live - model) * 10_000) / 10_000;
-  if (d === 0) return { text: "0.00%", color: INK_3 };
-  return { text: `${d > 0 ? "+" : "−"}${fmtPct2(Math.abs(d))}`, color: Math.abs(d) >= DRIFT_TOLERANCE ? WARN : INK_2 };
+  if (d === 0) return { text: o.colourEveryChange ? "—" : "0.00%", color: o.colourEveryChange ? FAINT : INK_3 };
+  const text = `${d > 0 ? "+" : "−"}${fmtPct2(Math.abs(d))}`;
+  if (o.colourEveryChange) return { text, color: d > 0 ? POS : NEG };
+  return { text, color: Math.abs(d) >= DRIFT_TOLERANCE ? WARN : INK_2 };
 }
 
 function ellipsize(ctx: CanvasRenderingContext2D, text: string, maxW: number): string {
@@ -101,6 +129,8 @@ export async function renderPositioningPng(snap: PositioningSnapshot): Promise<B
   if (typeof document !== "undefined" && document.fonts?.ready) {
     try { await document.fonts.ready; } catch { /* draw with whatever loaded */ }
   }
+  const L = snap.labels ?? { model: "Model", live: "Live", diff: "Live − Model" };
+  const diffOpts: DiffOpts = { missingAsZero: L.missingAsZero, colourEveryChange: L.colourEveryChange };
   const sans = resolveFont("--font-sans", "-apple-system, Helvetica, Arial, sans-serif");
   const mono = resolveFont("--font-mono", "ui-monospace, Menlo, monospace");
 
@@ -123,7 +153,7 @@ export async function renderPositioningPng(snap: PositioningSnapshot): Promise<B
   let lx = PAD;
   let line = 0;
   for (const chip of chips) {
-    const text = `${chip.label}  ${fmtPct2(chip.live)} live · ${fmtPct2(chip.model)} model`;
+    const text = `${chip.label}  ${fmtPct2(chip.live)} ${L.live.toLowerCase()} · ${fmtPct2(chip.model)} ${L.model.toLowerCase()}`;
     const w = (measure ? measure.measureText(text).width : text.length * 6.5) + 20;
     if (lx > PAD && lx + w > W - PAD) { line += 1; lx = PAD; }
     chipLayout.push({ text, x: lx, line, w, color: chip.color, soft: chip.soft });
@@ -184,9 +214,9 @@ export async function renderPositioningPng(snap: PositioningSnapshot): Promise<B
   ctx.textAlign = "left";
   ctx.fillText("Holding", PAD + 12, y + HEAD_H / 2);
   ctx.textAlign = "right";
-  ctx.fillText("Model", COL_MODEL - 10, y + HEAD_H / 2);
-  ctx.fillText("Live", COL_LIVE - 10, y + HEAD_H / 2);
-  ctx.fillText("Live − Model", COL_DRIFT - 10, y + HEAD_H / 2);
+  ctx.fillText(L.model, COL_MODEL - 10, y + HEAD_H / 2);
+  ctx.fillText(L.live, COL_LIVE - 10, y + HEAD_H / 2);
+  ctx.fillText(L.diff, COL_DRIFT - 10, y + HEAD_H / 2);
   y += HEAD_H;
 
   const drawRow = (row: SnapshotRow) => {
@@ -213,7 +243,7 @@ export async function renderPositioningPng(snap: PositioningSnapshot): Promise<B
     ctx.fillText(fmtPct2(row.model), COL_MODEL - 10, mid);
     ctx.fillStyle = row.live == null ? FAINT : INK;
     ctx.fillText(fmtPct2(row.live), COL_LIVE - 10, mid);
-    const d = fmtDrift(row.live, row.model);
+    const d = fmtDrift(row.live, row.model, diffOpts);
     ctx.fillStyle = d.color;
     ctx.fillText(d.text, COL_DRIFT - 10, mid);
     ctx.fillStyle = LINE_SOFT;
@@ -241,7 +271,7 @@ export async function renderPositioningPng(snap: PositioningSnapshot): Promise<B
     const cl = sum(c.rows.map((r) => r.live));
     ctx.fillText(fmtPct2(cm), COL_MODEL - 10, mid);
     ctx.fillText(fmtPct2(cl), COL_LIVE - 10, mid);
-    const d = fmtDrift(cl, cm);
+    const d = fmtDrift(cl, cm, diffOpts);
     ctx.fillStyle = d.text === "—" ? FAINT : col.ink;
     ctx.fillText(d.text, COL_DRIFT - 10, mid);
     y += CLASS_H;
