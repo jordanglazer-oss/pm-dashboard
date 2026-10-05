@@ -1,21 +1,14 @@
 import type { Metadata } from "next";
-import { IBM_Plex_Sans, IBM_Plex_Mono } from "next/font/google";
+import { IBM_Plex_Sans } from "next/font/google";
 import "./globals.css";
 
-// "Precision Light" type system: IBM Plex Sans for UI/text, IBM Plex Mono for
-// numbers/tickers/prices/dates. Exposed as CSS variables consumed by the
-// Tailwind @theme tokens in globals.css (--font-sans / --font-mono).
+// One type family site-wide: IBM Plex Sans for text AND numbers (numbers use
+// tabular figures, set in globals.css). Exposed as a CSS variable consumed by
+// the Tailwind @theme tokens (--font-sans, and --font-mono which aliases it).
 const plexSans = IBM_Plex_Sans({
   variable: "--font-plex-sans",
   subsets: ["latin"],
   weight: ["400", "500", "600", "700"],
-  display: "swap",
-});
-
-const plexMono = IBM_Plex_Mono({
-  variable: "--font-plex-mono",
-  subsets: ["latin"],
-  weight: ["400", "500", "600"],
   display: "swap",
 });
 
@@ -30,7 +23,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" className={`${plexSans.variable} ${plexMono.variable}`}>
+    <html lang="en" className={plexSans.variable}>
       <body className="antialiased overflow-x-hidden">
         {children}
       </body>
