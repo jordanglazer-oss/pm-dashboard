@@ -97,6 +97,8 @@ type SavedScenario = {
   holdCash?: boolean;
   equityBuckets?: EquityBucketsState;
   currencySplit?: Partial<Record<PimAssetClass, number>>;
+  /** Past model version the scenario was built on (pm:pim-models-version:<id>). */
+  fromVersion?: string | null;
   allocOverride?: boolean;
   pinnedSymbols?: string[];
   customAlloc?: { equity: number; fixedIncome: number; alternative: number; cash: number };
@@ -132,7 +134,44 @@ export function ModelScenarios({ groups, alwaysOpen = false }: Props) {
   // looking at rather than a second, silently-diverging selection.
   const groupId = searchParams.get("model") || groups[0]?.id || "";
   const profile = (searchParams.get("version") as PimProfileType) || "balanced";
-  const group = useMemo(() => groups.find((g) => g.id === groupId) ?? groups[0], [groups, groupId]);
+  const liveGroup = useMemo(() => groups.find((g) => g.id === groupId) ?? groups[0], [groups, groupId]);
+
+  // ── Past model versions ──────────────────────────────────────────────────
+  // The snapshots taken before every Review commit / restore
+  // (pm:pim-models-versions). Picking one in "Start from" makes it the
+  // scenario's base — holdings AND profile splits — so an old model can be
+  // reopened, edited and saved as a scenario. Read-only: nothing here can
+  // restore it over the live model.
+  const [versions, setVersions] = useState<{ id: string; at: string; note: string; source: string }[]>([]);
+  const [fromVersion, setFromVersion] = useState<string | null>(null);
+  const [versionData, setVersionData] = useState<Record<string, PimModelGroup[]>>({});
+  const [versionError, setVersionError] = useState<string | null>(null);
+  useEffect(() => {
+    if (!fromVersion || versionData[fromVersion]) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch(`/api/model-versions?id=${encodeURIComponent(fromVersion)}&full=1`, { cache: "no-store" });
+        const data = await res.json();
+        if (cancelled) return;
+        if (!res.ok || !Array.isArray(data?.data?.groups)) throw new Error(data?.error || "could not load");
+        setVersionData((m) => ({ ...m, [fromVersion]: data.data.groups }));
+        setVersionError(null);
+      } catch (e) {
+        if (!cancelled) setVersionError(e instanceof Error ? e.message : "could not load");
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [fromVersion, versionData]);
+  const versionGroup = useMemo(() => {
+    const gs = fromVersion ? versionData[fromVersion] : undefined;
+    return gs?.find((g) => g.id === liveGroup?.id);
+  }, [fromVersion, versionData, liveGroup]);
+  /** The group the scenario is built on: a past version when one is picked,
+   *  otherwise the live model. */
+  const group = versionGroup ?? liveGroup;
   const baseHoldings: PimHolding[] = useMemo(() => group?.holdings ?? [], [group]);
 
   const [open, setOpen] = useState(false);
@@ -187,7 +226,9 @@ export function ModelScenarios({ groups, alwaysOpen = false }: Props) {
 
   // Only pay for prices — and the positions read — once the panel is opened.
   useEffect(() => {
-    if (!open) return;
+    // The Models-page window renders with alwaysOpen and never sets `open`;
+    // gating on `open` alone meant nothing here ever loaded in that window.
+    if (!open && !alwaysOpen) return;
     fetchPrices();
     (async () => {
       try {
@@ -200,7 +241,7 @@ export function ModelScenarios({ groups, alwaysOpen = false }: Props) {
         /* actual weights simply stay unavailable */
       }
     })();
-  }, [open, groupId]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [open, alwaysOpen, groupId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const actualWeights = useMemo(() => {
     const classTotals: Record<string, number> = {};
@@ -468,8 +509,22 @@ export function ModelScenarios({ groups, alwaysOpen = false }: Props) {
   }, []);
 
   useEffect(() => {
-    if (open) loadSaved();
-  }, [open, loadSaved]);
+    if (open || alwaysOpen) loadSaved();
+  }, [open, alwaysOpen, loadSaved]);
+  useEffect(() => {
+    if (!open && !alwaysOpen) return;
+    (async () => {
+      try {
+        const res = await fetch("/api/model-versions", { cache: "no-store" });
+        if (res.ok) {
+          const data = await res.json();
+          setVersions(Array.isArray(data.versions) ? data.versions : []);
+        }
+      } catch {
+        /* the picker just shows no past versions */
+      }
+    })();
+  }, [open, alwaysOpen]);
 
   /** The splits implied by "Start from" — holdings and allocation always come
    *  from the same world, so nothing on screen is a blend of two. */
@@ -584,7 +639,8 @@ export function ModelScenarios({ groups, alwaysOpen = false }: Props) {
       // The model as written. Against an actual-basis draft this shows the
       // rebase ITSELF plus your changes — the full impact of adopting today's
       // book as the new model.
-      return applyScenario(baseHoldings, [], { basis: "model", isCore, residual }).holdings;
+      // Always the LIVE model — so a past version can be read against today.
+      return applyScenario(liveGroup?.holdings ?? [], [], { basis: "model", isCore, residual }).holdings;
     }
     const other = saved.find((s) => s.id === compareId);
     if (!other) return baseHoldings;
@@ -602,7 +658,7 @@ export function ModelScenarios({ groups, alwaysOpen = false }: Props) {
         : undefined,
       currencySplit: other.currencySplit,
     }).holdings;
-  }, [compareId, saved, baseHoldings, basis, hasActuals, actualWeights, isCore, residual, makeBucketOf]);
+  }, [compareId, saved, baseHoldings, liveGroup, basis, hasActuals, actualWeights, isCore, residual, makeBucketOf]);
 
   const deltas = useMemo(
     () => diffHoldings(comparisonBase, result.holdings),
@@ -798,7 +854,7 @@ export function ModelScenarios({ groups, alwaysOpen = false }: Props) {
    */
   const compareAlloc = useCallback(
     (cls: PimAssetClass) => {
-      const w = group?.profiles?.[profile];
+      const w = (compareId === "model" ? liveGroup : group)?.profiles?.[profile];
       const modelAlloc =
         cls === "equity" ? w?.equity : cls === "fixedIncome" ? w?.fixedIncome : w?.alternatives;
       if (compareId === "model") return modelAlloc ?? 0;
@@ -806,7 +862,7 @@ export function ModelScenarios({ groups, alwaysOpen = false }: Props) {
       // own splits, never the override being edited.
       return basisAlloc[cls] ?? modelAlloc ?? 0;
     },
-    [compareId, basisAlloc, group, profile],
+    [compareId, basisAlloc, group, liveGroup, profile],
   );
 
   /** How much of the portfolio this scenario actually trades — the quickest
@@ -974,6 +1030,7 @@ export function ModelScenarios({ groups, alwaysOpen = false }: Props) {
     setBucketDraft({});
     setCcySplit({});
     setCcyDraft({});
+    setFromVersion(null);
     setAllocOverride(false);
     setPinned([]);
     setRowDraft({});
@@ -1004,6 +1061,7 @@ export function ModelScenarios({ groups, alwaysOpen = false }: Props) {
           holdCash,
           equityBuckets: { enabled: bucketsOn, buckets, assign: bucketAssign },
           currencySplit: ccySplit,
+          fromVersion,
           allocOverride,
           customAlloc,
           pinnedSymbols: pinned,
@@ -1040,6 +1098,7 @@ export function ModelScenarios({ groups, alwaysOpen = false }: Props) {
     setBucketDraft({});
     setCcySplit(s.currencySplit ?? {});
     setCcyDraft({});
+    setFromVersion(s.fromVersion ?? null);
     setAllocOverride(s.allocOverride ?? false);
     setPinned(s.pinnedSymbols ?? []);
     setCustomAlloc(s.customAlloc ?? null);
@@ -1075,7 +1134,7 @@ export function ModelScenarios({ groups, alwaysOpen = false }: Props) {
               means scrolling back up to see what is left. Sticks to the
               Models-page subwindow's scroll area; -top-3.5 cancels that
               area's p-3.5 so rows can't show through above the bar. */}
-          <div className={`sticky ${alwaysOpen ? "-top-3.5" : "top-0"} z-20 mb-4 flex flex-col gap-2 rounded border border-line bg-surface px-3 py-2 text-xs shadow-[var(--shadow-pop)] sm:flex-row sm:flex-wrap sm:items-center sm:gap-x-4`}>
+          <div className={`sticky ${alwaysOpen ? "-top-3.5" : "top-0"} z-20 mb-4 flex flex-col gap-2 rounded border border-accent-border bg-accent-soft px-3 py-2 text-xs shadow-[var(--shadow-pop)] sm:flex-row sm:flex-wrap sm:items-center sm:gap-x-4`}>
             <div className="flex items-center gap-2">
               <span className="shrink-0 text-ink-3">Freed cash</span>
               <div className="flex gap-1">
@@ -1174,14 +1233,41 @@ export function ModelScenarios({ groups, alwaysOpen = false }: Props) {
             <div className="flex items-center gap-2 min-w-0">
               <span className="shrink-0 text-ink-3">Start from</span>
               <select
-                value={basis}
-                onChange={(e) => setBasis(e.target.value as WeightBasis)}
+                value={fromVersion ? `v:${fromVersion}` : basis}
+                onChange={(e) => {
+                  const v = e.target.value;
+                  if (v.startsWith("v:")) {
+                    // A past model is a set of TARGETS — there is no book
+                    // behind it to take actual weights from.
+                    setFromVersion(v.slice(2));
+                    setBasis("model");
+                  } else {
+                    setFromVersion(null);
+                    setBasis(v as WeightBasis);
+                  }
+                }}
                 className="w-full rounded border border-line bg-surface-2 px-2 py-1 text-ink sm:w-auto"
               >
                 <option value="actual">Today&apos;s book — actual weights and splits</option>
                 <option value="model">The model as written — target weights and splits</option>
+                <optgroup label={versions.length ? "Past models (before each Review commit / restore)" : "Past models — none saved yet"}>
+                  {versions.map((v) => (
+                    <option key={v.id} value={`v:${v.id}`}>
+                      {new Date(v.at).toLocaleDateString()} — {v.note || v.source}
+                    </option>
+                  ))}
+                </optgroup>
               </select>
-              {basis === "actual" && !hasActuals && (
+              {fromVersion && !versionGroup && (
+                <span className={versionError ? "text-neg" : "text-ink-3"}>
+                  {versionError
+                    ? `couldn't load that version (${versionError}) — showing the live model`
+                    : versionData[fromVersion]
+                      ? "this group isn't in that version — showing the live model"
+                      : "loading…"}
+                </span>
+              )}
+              {basis === "actual" && !fromVersion && !hasActuals && (
                 <span className="text-warn">
                   {pricesLoading ? "loading prices…" : "no positions priced — using model weights"}
                 </span>
@@ -1645,7 +1731,7 @@ export function ModelScenarios({ groups, alwaysOpen = false }: Props) {
               className="w-full rounded border border-line bg-surface-2 px-2 py-1 text-ink sm:w-auto"
             >
               <option value="current">Starting point (no changes)</option>
-              <option value="model">Model targets — shows the rebase too</option>
+              <option value="model">Live model targets{fromVersion ? " — what changed since that version" : " — shows the rebase too"}</option>
               {groupScenarios
                 .filter((s) => s.id !== draftId)
                 .map((s) => (

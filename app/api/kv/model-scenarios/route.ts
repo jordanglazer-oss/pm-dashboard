@@ -51,6 +51,8 @@ export type ModelScenario = {
   };
   /** PM-set CAD share (0–1) per sleeve; drives the scenario's weights. */
   currencySplit?: Partial<Record<"equity" | "fixedIncome" | "alternative", number>>;
+  /** Past model version the scenario starts from; null = the live model. */
+  fromVersion?: string | null;
   /** Whether a hypothetical asset mix overrides the basis's own splits — the
    *  only way to model moving money BETWEEN sleeves without a trade. */
   allocOverride?: boolean;
@@ -141,6 +143,12 @@ export async function POST(req: NextRequest) {
                 .filter(([, v]) => Number.isFinite(v) && v >= 0 && v <= 1),
             )
           : existing?.currencySplit,
+      fromVersion:
+        typeof body?.fromVersion === "string"
+          ? body.fromVersion.slice(0, 80)
+          : body?.fromVersion === null
+            ? null
+            : existing?.fromVersion,
       // Accepts the old allocBasis:"custom" shape so drafts saved before the
       // two controls were merged still load with their mix intact.
       allocOverride:
