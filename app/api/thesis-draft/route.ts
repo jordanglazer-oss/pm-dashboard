@@ -10,6 +10,7 @@ import { availableMetricLines, labelMatches } from "@/app/lib/metric-resolver";
 import { canonicalTicker } from "@/app/lib/ticker";
 import { abbreviationRule } from "@/app/lib/prose-style";
 import type { SynthesisScreenCache, SynthesisEntry } from "@/app/lib/synthesis-screen-display";
+import { SONNET_MODEL, THINKING_OFF } from "@/app/lib/claude-model";
 
 /**
  * POST /api/thesis-draft { ticker } — AI-drafted thesis: pillars + conditions.
@@ -319,8 +320,8 @@ Rules:
 
     const ask = async (extra = "") => {
       const resp = await client.messages.create({
-        model: "claude-sonnet-5",
-        thinking: { type: "disabled" },
+        model: SONNET_MODEL,
+        thinking: THINKING_OFF,
         max_tokens: 1600,
         messages: [{ role: "user", content: prompt + extra }],
       });

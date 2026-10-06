@@ -192,7 +192,8 @@ export default function StockChart({ ticker, technicals, className = "", onDayCh
         layout: {
           background: { color: C.surface },
           textColor: C.ink3,
-          fontFamily: "ui-monospace, monospace",
+          // Canvas can't read CSS vars — use the page's resolved font family.
+          fontFamily: getComputedStyle(document.body).fontFamily,
           fontSize: 11,
         },
         grid: {

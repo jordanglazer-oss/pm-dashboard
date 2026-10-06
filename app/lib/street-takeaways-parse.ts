@@ -1,6 +1,7 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { parseModelJson } from "./json-repair";
 import type { TakeawayKind, StreetTakeaway, StreetFirmView, StreetGuidanceLine } from "./street-takeaways";
+import { SONNET_MODEL, THINKING_OFF } from "@/app/lib/claude-model";
 
 /**
  * Parse a FactSet "SA: Street Takeaways" alert email body into the structured
@@ -186,8 +187,8 @@ export async function parseStreetTakeaway(body: string, subject = ""): Promise<P
         ? METRICS_SCHEMA_PROMPT
         : SCHEMA_PROMPT;
   const msg = await client.messages.create({
-    model: "claude-sonnet-5",
-    thinking: { type: "disabled" },
+    model: SONNET_MODEL,
+    thinking: THINKING_OFF,
     // News flashes are a fraction of the size of an earnings roundup; the
     // larger ceiling is only needed when a full analyst panel is being read.
     max_tokens: kind === "news" ? 1500 : 3000,

@@ -39,6 +39,20 @@ export type ModelScenario = {
   basis: WeightBasis;
   residual?: ResidualPolicy;
   residualTargets?: string[];
+  /** "Hold as cash" mode: freed weight is NOT reinvested automatically — it
+   *  stays as cash for the PM to place by hand. Overrides `residual`. */
+  holdCash?: boolean;
+  /** Equity-sleeve buckets (Core / Alpha / custom) with target shares of
+   *  equities, plus scenario-only symbol → bucket assignments. */
+  equityBuckets?: {
+    enabled: boolean;
+    buckets: { id: string; name: string; target: number }[];
+    assign: Record<string, string>;
+  };
+  /** PM-set CAD share (0–1) per sleeve; drives the scenario's weights. */
+  currencySplit?: Partial<Record<"equity" | "fixedIncome" | "alternative", number>>;
+  /** Past model version the scenario starts from; null = the live model. */
+  fromVersion?: string | null;
   /** Whether a hypothetical asset mix overrides the basis's own splits — the
    *  only way to model moving money BETWEEN sleeves without a trade. */
   allocOverride?: boolean;
@@ -47,6 +61,27 @@ export type ModelScenario = {
   createdAt: string;
   updatedAt: string;
 };
+
+/** Shape-check client-supplied buckets; anything malformed is dropped rather
+ *  than stored. Returns undefined when the field is absent or unusable. */
+function sanitizeBuckets(raw: unknown): ModelScenario["equityBuckets"] {
+  if (!raw || typeof raw !== "object") return undefined;
+  const r = raw as { enabled?: unknown; buckets?: unknown; assign?: unknown };
+  if (!Array.isArray(r.buckets)) return undefined;
+  const buckets = r.buckets
+    .filter((b): b is { id: string; name: string; target: number } =>
+      !!b && typeof b.id === "string" && typeof b.name === "string" && Number.isFinite(Number(b.target)),
+    )
+    .slice(0, 12)
+    .map((b) => ({ id: b.id.slice(0, 40), name: b.name.slice(0, 40), target: Math.max(0, Number(b.target)) }));
+  const assign: Record<string, string> = {};
+  if (r.assign && typeof r.assign === "object") {
+    for (const [k, v] of Object.entries(r.assign as Record<string, unknown>).slice(0, 500)) {
+      if (typeof v === "string") assign[k.slice(0, 20)] = v.slice(0, 40);
+    }
+  }
+  return { enabled: r.enabled === true, buckets, assign };
+}
 
 const isFresh = (s: ModelScenario) => {
   const t = Date.parse(s.updatedAt || s.createdAt);
@@ -98,6 +133,22 @@ export async function POST(req: NextRequest) {
       basis: body?.basis === "model" ? "model" : "actual",
       residual: ["core", "proportional", "named"].includes(body?.residual) ? body.residual : "core",
       residualTargets: Array.isArray(body?.residualTargets) ? body.residualTargets : undefined,
+      holdCash: typeof body?.holdCash === "boolean" ? body.holdCash : existing?.holdCash,
+      equityBuckets: sanitizeBuckets(body?.equityBuckets) ?? existing?.equityBuckets,
+      currencySplit:
+        body?.currencySplit && typeof body.currencySplit === "object"
+          ? Object.fromEntries(
+              (["equity", "fixedIncome", "alternative"] as const)
+                .map((k) => [k, Number(body.currencySplit[k])] as const)
+                .filter(([, v]) => Number.isFinite(v) && v >= 0 && v <= 1),
+            )
+          : existing?.currencySplit,
+      fromVersion:
+        typeof body?.fromVersion === "string"
+          ? body.fromVersion.slice(0, 80)
+          : body?.fromVersion === null
+            ? null
+            : existing?.fromVersion,
       // Accepts the old allocBasis:"custom" shape so drafts saved before the
       // two controls were merged still load with their mix intact.
       allocOverride:

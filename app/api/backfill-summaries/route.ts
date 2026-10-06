@@ -17,6 +17,7 @@ import { callAnthropicWithRetry } from "@/app/lib/anthropic-retry";
 import { parseModelJson } from "@/app/lib/json-repair";
 import { SCORE_GROUPS, MAX_SCORE } from "@/app/lib/types";
 import { RATING_BANDS } from "@/app/lib/rating-bands";
+import { SONNET_MODEL, THINKING_OFF } from "@/app/lib/claude-model";
 
 const client = new Anthropic();
 const log = createLogger("Backfill-summaries");
@@ -59,8 +60,8 @@ export async function POST(request: NextRequest) {
 
     const message = await callAnthropicWithRetry(`Backfill ${ticker.toUpperCase()}`, () =>
       client.messages.create({
-        model: "claude-sonnet-5",
-        thinking: { type: "disabled" },
+        model: SONNET_MODEL,
+        thinking: THINKING_OFF,
         max_tokens: 700,
         messages: [
           {

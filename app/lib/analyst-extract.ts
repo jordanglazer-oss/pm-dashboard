@@ -17,6 +17,7 @@ import type { ExtractedReport, AnalystRating } from "./analyst-snapshots";
 import { parseModelJson } from "./json-repair";
 import { readStockPool, findInPool } from "./stock-pool";
 import { pickPlaybook } from "./sector-playbook";
+import { SONNET_MODEL, THINKING_OFF } from "@/app/lib/claude-model";
 
 const CACHE_KEY = "pm:analyst-report-extract-cache";
 const client = new Anthropic();
@@ -234,11 +235,11 @@ export async function extractAnalystReport(opts: {
   }
 
   const msg = await client.messages.create({
-    model: "claude-sonnet-5",
+    model: SONNET_MODEL,
     // No sampling parameters: temperature/top_p/top_k are removed on Sonnet 5
     // (400 if sent). Extraction consistency comes from the strict JSON schema
     // in PROMPT_TEMPLATE and the hash-gated cache, not from a temperature knob.
-    thinking: { type: "disabled" },
+    thinking: THINKING_OFF,
     max_tokens: 3000,
     messages: [
       {

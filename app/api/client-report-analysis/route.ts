@@ -3,6 +3,7 @@ import { parseModelJson } from "@/app/lib/json-repair";
 import { NextRequest, NextResponse } from "next/server";
 import { createHash } from "crypto";
 import { getRedis } from "@/app/lib/redis";
+import { SONNET_MODEL, THINKING_OFF } from "@/app/lib/claude-model";
 
 /**
  * Client-report AI analysis.
@@ -465,8 +466,8 @@ async function runAnalysis(
 ): Promise<ClientReportAnalysis | null> {
   const prompt = buildPrompt(body, mer, feeSavings);
   const msg = await client.messages.create({
-    model: "claude-sonnet-5",
-    thinking: { type: "disabled" },
+    model: SONNET_MODEL,
+    thinking: THINKING_OFF,
     max_tokens: 2048,
     messages: [{ role: "user", content: prompt }],
   });

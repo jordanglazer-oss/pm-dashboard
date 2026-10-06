@@ -32,6 +32,7 @@ import { computeSetup } from "@/app/lib/setup-grade";
 import { deploymentWindow, deploymentWindowLine, applyWindowBackstop } from "@/app/lib/deployment-window";
 import { loadDeployments, monthState, deploymentStateLine } from "@/app/lib/deployments";
 import { computeCashScore, NEWTON_STATES, CASH_SCORE_LIVE_SOURCE } from "@/app/lib/cash-score";
+import { SONNET_MODEL, THINKING_OFF } from "@/app/lib/claude-model";
 
 // Extended thinking makes the single brief call longer; give it room.
 export const maxDuration = 300;
@@ -76,7 +77,7 @@ const client = new Anthropic();
 //   3. If the thinking run is cut off, hits max_tokens, or yields no JSON, ONE
 //      retry with thinking off at the pre-audit cap (8,192) — the exact
 //      configuration that produced every brief before Sept 19.
-const BRIEF_MODEL = "claude-sonnet-5";
+const BRIEF_MODEL = SONNET_MODEL;
 const BRIEF_THINKING_EFFORT = "medium" as const;
 const BRIEF_MAX_TOKENS_THINKING = 24_000;
 const BRIEF_MAX_TOKENS_FALLBACK = 8_192;
@@ -103,7 +104,7 @@ async function callBriefModel(
       {
         model: BRIEF_MODEL,
         max_tokens: params.maxTokens,
-        thinking: params.thinking ? { type: "adaptive" } : { type: "disabled" },
+        thinking: params.thinking ? { type: "adaptive" } : THINKING_OFF,
         ...(params.thinking ? { output_config: { effort: BRIEF_THINKING_EFFORT } } : {}),
         messages: [{ role: "user", content: params.content }],
         system: [{ type: "text", text: params.system, cache_control: { type: "ephemeral" } }],
@@ -548,8 +549,8 @@ async function analyzeOscillatorScreenshot(
 ): Promise<string> {
   const imageBlocks = buildImageBlocks(attachments);
   const message = await client.messages.create({
-    model: "claude-sonnet-5",
-    thinking: { type: "disabled" },
+    model: SONNET_MODEL,
+    thinking: THINKING_OFF,
     max_tokens: 600,
     messages: [
       {
@@ -616,8 +617,8 @@ async function analyzeNewtonTechnical(
   const docBlocks = buildImageBlocks(attachments);
   if (docBlocks.length === 0) return "";
   const message = await client.messages.create({
-    model: "claude-sonnet-5",
-    thinking: { type: "disabled" },
+    model: SONNET_MODEL,
+    thinking: THINKING_OFF,
     max_tokens: 1500,
     messages: [
       {
@@ -688,8 +689,8 @@ async function analyzeStrategistReports(
   const docBlocks = buildImageBlocks(attachments);
   if (docBlocks.length === 0) return "";
   const message = await client.messages.create({
-    model: "claude-sonnet-5",
-    thinking: { type: "disabled" },
+    model: SONNET_MODEL,
+    thinking: THINKING_OFF,
     max_tokens: 1800,
     messages: [
       {
