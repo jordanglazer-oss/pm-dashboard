@@ -3,6 +3,7 @@ import { getRedis } from "./redis";
 import { createLogger } from "./logger";
 import { parseModelJson } from "./json-repair";
 import { callAnthropicWithRetry } from "./anthropic-retry";
+import { SONNET_MODEL, THINKING_OFF } from "./claude-model";
 import { easternToday } from "./date-eastern";
 import { buildImageBlocks, type AttachmentInput } from "./screenshot-extractors";
 import { enqueueMail } from "./mail-outbox";
@@ -238,8 +239,8 @@ export async function applySectorChangesFromNote(
   const who = strategist === "newton" ? "Mark Newton" : "Tom Lee";
   const msg = await callAnthropicWithRetry(`sector-note-${strategist}`, () =>
     client.messages.create({
-      model: "claude-sonnet-5",
-      thinking: { type: "disabled" },
+      model: SONNET_MODEL,
+      thinking: THINKING_OFF,
       max_tokens: 800,
       messages: [
         {
@@ -317,8 +318,8 @@ export async function applySectorTableScreenshot(
 
   const msg = await callAnthropicWithRetry("sector-table", () =>
     client.messages.create({
-      model: "claude-sonnet-5",
-      thinking: { type: "disabled" },
+      model: SONNET_MODEL,
+      thinking: THINKING_OFF,
       max_tokens: 1500,
       messages: [{ role: "user", content: [{ type: "text", text: TABLE_PROMPT }, ...blocks] }],
     }),
