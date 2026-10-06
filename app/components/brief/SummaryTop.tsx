@@ -300,6 +300,16 @@ const DAY_MODELS: [string, string][] = [
   ["allEquity", "All-Eq"],
 ];
 
+/** "spread today" only when the series' last point IS today (ET); before the
+ *  open it is the last completed session, so say which one. */
+function spreadLabel(asOf: string | null): string {
+  if (!asOf) return "spread today";
+  const today = new Intl.DateTimeFormat("en-CA", { timeZone: "America/New_York", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
+  if (asOf === today) return "spread today";
+  const d = new Date(`${asOf}T12:00:00Z`);
+  return `spread · ${new Intl.DateTimeFormat("en-US", { timeZone: "UTC", weekday: "short", month: "short", day: "numeric" }).format(d)} session`;
+}
+
 /**
  * The spread is the hero figure; everything supporting it reads as labelled
  * rows — per-model day returns on the left, the spread by period on the right
@@ -326,7 +336,7 @@ function AlphaCell({ s }: { s: DailySummary }) {
       <div className="mb-2.5 mt-1 flex items-start gap-2">
         <div className="min-w-0">
           <div className={`font-mono text-[22px] font-semibold leading-none ${d1 == null ? "text-ink-3" : d1 > 0 ? "text-pos" : d1 < 0 ? "text-neg" : "text-ink"}`}>{fmtPct(d1)}</div>
-          <div className="mt-1.5 break-words text-[11px] text-ink-3">spread today{mom ? ` · ${mom}` : ""}{p.lastUpdated ? ` · updated ${fmtEtClock(p.lastUpdated)}` : ""}</div>
+          <div className="mt-1.5 break-words text-[11px] text-ink-3">{spreadLabel(p.asOf)}{mom ? ` · ${mom}` : ""}{p.lastUpdated ? ` · updated ${fmtEtClock(p.lastUpdated)}` : ""}</div>
         </div>
         {p.spark.length > 2 && <Spark points={p.spark.map((x) => x.value)} baseline={100} width={72} height={26} className="ml-auto shrink-0" />}
       </div>

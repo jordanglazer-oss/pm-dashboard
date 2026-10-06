@@ -25,7 +25,7 @@
 
 import { after } from "next/server";
 import { getRedis } from "./redis";
-import { isMarketOpenOrAfterET } from "./market-hours";
+import { getTodayET, isMarketOpenOrAfterET } from "./market-hours";
 import { POST as runUpdateDailyValue } from "@/app/api/update-daily-value/route";
 
 export const PERF_STALE_MS = 15 * 60 * 1000;
@@ -40,16 +40,47 @@ export type RefreshOutcome = {
   error?: string;
 };
 
-async function readLastUpdated(): Promise<string | null> {
+type LedgerHead = { lastUpdated: string | null; alphaLastDate: string | null; coreLastDate: string | null };
+
+async function readLedgerHead(): Promise<LedgerHead> {
   try {
     const redis = await getRedis();
     const raw = await redis.get("pm:pim-performance");
-    if (!raw) return null;
-    const parsed = JSON.parse(raw) as { lastUpdated?: string };
-    return typeof parsed.lastUpdated === "string" ? parsed.lastUpdated : null;
+    if (!raw) return { lastUpdated: null, alphaLastDate: null, coreLastDate: null };
+    const parsed = JSON.parse(raw) as {
+      lastUpdated?: string;
+      models?: { groupId?: string; profile?: string; history?: { date?: string }[] }[];
+    };
+    const lastDate = (profile: string): string | null => {
+      const h = parsed.models?.find((m) => m.groupId === "pim" && m.profile === profile)?.history;
+      const d = h && h.length ? h[h.length - 1]?.date : null;
+      return typeof d === "string" ? d.slice(0, 10) : null;
+    };
+    return {
+      lastUpdated: typeof parsed.lastUpdated === "string" ? parsed.lastUpdated : null,
+      alphaLastDate: lastDate("alpha"),
+      coreLastDate: lastDate("core"),
+    };
   } catch {
-    return null;
+    return { lastUpdated: null, alphaLastDate: null, coreLastDate: null };
   }
+}
+
+async function readLastUpdated(): Promise<string | null> {
+  return (await readLedgerHead()).lastUpdated;
+}
+
+/** The most recent weekday strictly before today (ET) — the last completed
+ *  session. Ignores holidays: the morning after one, every pre-open load
+ *  re-runs a recalculation that finds nothing to add (no write) — a few
+ *  wasted Yahoo calls on a handful of mornings a year, until the open. */
+function previousWeekdayET(): string {
+  const [y, m, d] = getTodayET().split("-").map(Number);
+  const dt = new Date(Date.UTC(y, m - 1, d, 12));
+  do {
+    dt.setUTCDate(dt.getUTCDate() - 1);
+  } while (dt.getUTCDay() === 0 || dt.getUTCDay() === 6);
+  return dt.toISOString().slice(0, 10);
 }
 
 /** Run the recalculation now (no gate). */
@@ -68,20 +99,31 @@ export async function refreshDailyValues(): Promise<RefreshOutcome> {
 }
 
 /**
- * Refresh only when it can produce a different number: on a weekday at or
- * after the open (pre-market Yahoo still reports yesterday's close, so a
- * refresh then would mislabel it), and only when the ledger is older than
- * PERF_STALE_MS. Waits at most `maxWaitMs`; a slower refresh keeps running
+ * Refresh only when it can produce a different number: after the open when
+ * the ledger is older than PERF_STALE_MS, or before the open when the alpha /
+ * core series are missing the last completed session (the recalculation
+ * never records a pre-open "today", so this only ever adds that session). Waits at most `maxWaitMs`; a slower refresh keeps running
  * after the response via next/server `after()` so the NEXT load is fresh.
  */
 export async function ensureDailyValuesFresh(opts: { maxWaitMs?: number; force?: boolean } = {}): Promise<RefreshOutcome> {
   const maxWaitMs = opts.maxWaitMs ?? 12_000;
-  const lastUpdated = await readLastUpdated();
+  const head = await readLedgerHead();
+  const lastUpdated = head.lastUpdated;
   const ageMs = lastUpdated ? Date.now() - Date.parse(lastUpdated) : Infinity;
 
   if (!opts.force) {
-    if (!isMarketOpenOrAfterET()) return { ran: false, reason: "closed", lastUpdated };
-    if (ageMs < PERF_STALE_MS) return { ran: false, reason: "fresh", lastUpdated };
+    if (!isMarketOpenOrAfterET()) {
+      // Before the open (and on weekends) there is no "today" to add, but the
+      // last completed session may still be missing — the after-close cron
+      // can fail or be skipped, and then the morning brief would show the
+      // previous day's spread again. Catch up that session pre-market; the
+      // recalculation itself never writes a pre-open "today".
+      const want = previousWeekdayET();
+      const behind = [head.alphaLastDate, head.coreLastDate].some((d) => d != null && d < want);
+      if (!behind) return { ran: false, reason: "closed", lastUpdated };
+    } else if (ageMs < PERF_STALE_MS) {
+      return { ran: false, reason: "fresh", lastUpdated };
+    }
   }
 
   const work = refreshDailyValues();
