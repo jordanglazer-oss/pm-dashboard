@@ -162,6 +162,17 @@ export type RBCEntry = {
   strategy?: string;
   /** Analyst price target from the JPM list. */
   priceTarget?: number;
+  // ── Veritas V-List extras (optional; only the V-List scrape emits them) ──
+  /** Veritas intrinsic value estimate per share, in `ivCurrency`. */
+  intrinsicValue?: number;
+  /** Currency the V-List quotes the IV in ("CAD" / "USD") — a few TSX names
+   *  (QSR, WCN) are quoted in USD, so the IV is NOT always comparable to the
+   *  CAD live price of the .TO listing. */
+  ivCurrency?: string;
+  /** Current dividend yield, percent (e.g. 2.5 for "2.5%"). */
+  currentYield?: number;
+  /** Veritas quality rating, 0–5 stars in half-star steps. */
+  qualityRating?: number;
   // ── Fundstrat "Core Ideas" DQM-screen extras (optional; unused by the RBC /
   //    JPM / Equate lists). The Fundstrat Large-Cap + SMID Core Ideas cards
   //    surface these quant columns from the screenshot. All optional so they
@@ -256,6 +267,9 @@ export type ResearchState = {
   // SMID is relative to the Russell 2500. Stored as RBCEntry[] (the extra
   // quant columns are optional fields on RBCEntry). Optional for backward
   // compat with older pm:research blobs that predate these lists.
+  // RETIRED 2026-10-07: these turned out to be the same lists as
+  // fundstratLcCoreList / fundstratSmidCoreList below, which replace them.
+  // Kept on the type only so older blobs still parse; nothing reads them.
   fundstratLargeCapCore?: RBCEntry[];
   fundstratSmidCore?: RBCEntry[];
   rbcCanadianFocus: RBCEntry[];
@@ -286,6 +300,29 @@ export type ResearchState = {
   // Canadian equity list scanned from a screenshot. Optional for
   // backward compat with older pm:research blobs that predate it.
   rbccmFew?: FewEntry[];
+  // Veritas Investment Research V-List — Canadian (TSX) names only, .TO
+  // tickers. RBCEntry shape (ticker / name / sector / dateAdded). Optional for
+  // backward compat with older pm:research blobs.
+  veritasVList?: RBCEntry[];
+  // RBC Canadian Small Cap Conviction List — TSX names with a market cap of
+  // $2B or less AT THE TIME THEY WERE ADDED (a name that has since grown past
+  // $2B stays on the list). .TO tickers, RBCEntry shape. Optional.
+  rbcCadSmallCap?: RBCEntry[];
+  // Fundstrat Large-Cap / SMID Core LISTS — the full, longer lists Tom Lee
+  // publishes in his daily note ("The Current Large-cap Core List as of …",
+  // ~45 / ~65 names). DISTINCT from the Top / SMID Top Ideas (the monthly
+  // top 5). Replaced the retired fundstratLargeCapCore / fundstratSmidCore
+  // above, which held the same lists. Kept current
+  // automatically from Lee's note (app/lib/fundstrat-core-from-note.ts); a
+  // screenshot upload is the manual fallback. Bare US tickers. Optional.
+  fundstratLcCoreList?: RBCEntry[];
+  fundstratSmidCoreList?: RBCEntry[];
+  // As-of date ("M/D/YYYY") of the Large-Cap / SMID Core LISTS last applied
+  // from Tom Lee's daily note (app/lib/fundstrat-core-from-note.ts). The note
+  // repeats the same list for weeks, so a list is only re-applied when its
+  // as-of date moves — a manual edit or screenshot in between is never
+  // reverted by the next day's note. Optional.
+  coreListAsOf?: { largeCap?: string; smid?: string };
   generalNotes: string;
   attachments?: import("@/app/components/ImageUpload").BriefAttachment[];
   // Newton's sector overweight/underweight views. Pre-populated with all
@@ -384,8 +421,6 @@ export const defaultResearch: ResearchState = {
   fundstratBottom: [],
   fundstratSmidTop: [],
   fundstratSmidBottom: [],
-  fundstratLargeCapCore: [],
-  fundstratSmidCore: [],
   rbcCanadianFocus: [],
   rbcUsFocus: [],
   jpmUsAnalystFocus: [],
@@ -393,6 +428,10 @@ export const defaultResearch: ResearchState = {
   equateUsd: [],
   alphaPicks: [],
   rbccmFew: [],
+  veritasVList: [],
+  rbcCadSmallCap: [],
+  fundstratLcCoreList: [],
+  fundstratSmidCoreList: [],
   generalNotes: "",
   attachments: [],
   newtonSectors: GICS_SECTORS.map((s) => ({ sector: s, view: "neutral" as SectorView })),

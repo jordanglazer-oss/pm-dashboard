@@ -47,6 +47,10 @@ export const REMOVAL_SOURCE_LABELS: Record<RemovalSource, string> = {
   "rbc-equate-usd": "RBC Equate USD (CORE 40)",
   "seeking-alpha-picks": "Seeking Alpha — Alpha Picks",
   "rbccm-few": "RBCCM FEW",
+  "veritas-vlist": "Veritas V-List",
+  "rbc-cad-smallcap": "RBC Cdn Small Cap Conviction",
+  "fundstrat-lc-core-list": "Fundstrat Large-Cap Core List",
+  "fundstrat-smid-core-list": "Fundstrat SMID Core List",
   "newton-upticks": "Newton Upticks",
 };
 

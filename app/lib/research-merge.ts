@@ -142,7 +142,7 @@ function applyIdeaEntries(
 
 function applyRbcEntries(
   state: ResearchState,
-  source: "rbc-focus" | "rbc-us-focus" | "jpm-us-analyst-focus" | "rbc-equate-cad" | "rbc-equate-usd" | "fundstrat-largecap-core" | "fundstrat-smid-core",
+  source: "rbc-focus" | "rbc-us-focus" | "jpm-us-analyst-focus" | "rbc-equate-cad" | "rbc-equate-usd" | "fundstrat-largecap-core" | "fundstrat-smid-core" | "veritas-vlist" | "rbc-cad-smallcap" | "fundstrat-lc-core-list" | "fundstrat-smid-core-list",
   entries: ScrapedRbcRow[],
   forceAdditive: boolean,
 ): { nextState: ResearchState; summary: ResearchMergeSummary } {
@@ -153,6 +153,10 @@ function applyRbcEntries(
     : source === "rbc-equate-cad" ? "equateCad"
     : source === "rbc-equate-usd" ? "equateUsd"
     : source === "fundstrat-largecap-core" ? "fundstratLargeCapCore"
+    : source === "veritas-vlist" ? "veritasVList"
+    : source === "rbc-cad-smallcap" ? "rbcCadSmallCap"
+    : source === "fundstrat-lc-core-list" ? "fundstratLcCoreList"
+    : source === "fundstrat-smid-core-list" ? "fundstratSmidCoreList"
     : "fundstratSmidCore";
   const existing = ((state[stateKey as keyof ResearchState] as RBCEntry[]) || []);
   const existingByNorm = new Map(existing.map((r) => [normalize(r.ticker), r]));
@@ -197,6 +201,11 @@ function applyRbcEntries(
         priceVs20d: e.priceVs20d ?? ex.priceVs20d,
         ma20vs200: e.ma20vs200 ?? ex.ma20vs200,
         trendAligned: e.trendAligned ?? ex.trendAligned,
+        // Veritas V-List fields (undefined elsewhere → preserved).
+        intrinsicValue: e.intrinsicValue ?? ex.intrinsicValue,
+        ivCurrency: e.ivCurrency ?? ex.ivCurrency,
+        currentYield: e.currentYield ?? ex.currentYield,
+        qualityRating: e.qualityRating ?? ex.qualityRating,
       });
     } else {
       added += 1;
@@ -219,11 +228,15 @@ function applyRbcEntries(
         priceVs20d: e.priceVs20d,
         ma20vs200: e.ma20vs200,
         trendAligned: e.trendAligned,
+        intrinsicValue: e.intrinsicValue,
+        ivCurrency: e.ivCurrency,
+        currentYield: e.currentYield,
+        qualityRating: e.qualityRating,
       });
     }
   }
   const merged = Array.from(byNorm.values());
-  const finalList = source === "rbc-focus" || source === "rbc-equate-cad" ? dedupeRbcEntries(merged).entries : merged;
+  const finalList = source === "rbc-focus" || source === "rbc-equate-cad" || source === "veritas-vlist" || source === "rbc-cad-smallcap" ? dedupeRbcEntries(merged).entries : merged;
   const removed = mode === "replace" ? existing.length - matched : 0;
   const entryNorms = new Set(entries.map((e) => normalize(e.ticker)));
   const removedTickers = mode === "replace"
@@ -397,6 +410,10 @@ export function applyResearchEntries(
     case "rbc-equate-usd":
     case "fundstrat-largecap-core":
     case "fundstrat-smid-core":
+    case "veritas-vlist":
+    case "rbc-cad-smallcap":
+    case "fundstrat-lc-core-list":
+    case "fundstrat-smid-core-list":
       result = applyRbcEntries(state, source, entries as ScrapedRbcRow[], forceAdditive);
       break;
     case "seeking-alpha-picks":

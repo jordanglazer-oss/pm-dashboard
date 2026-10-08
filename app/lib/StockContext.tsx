@@ -1097,11 +1097,13 @@ export function StockProvider({ children }: { children: React.ReactNode }) {
       fundstratBottom?: ResearchEntry[];
       fundstratSmidTop?: ResearchEntry[];
       fundstratSmidBottom?: ResearchEntry[];
-      fundstratLargeCapCore?: ResearchEntry[];
-      fundstratSmidCore?: ResearchEntry[];
       rbcCanadianFocus?: ResearchEntry[];
       rbcUsFocus?: ResearchEntry[];
       alphaPicks?: ResearchEntry[];
+      veritasVList?: ResearchEntry[];
+      rbcCadSmallCap?: ResearchEntry[];
+      fundstratLcCoreList?: ResearchEntry[];
+      fundstratSmidCoreList?: ResearchEntry[];
     };
     let research: ResearchBlob | null = null;
     let researchTickers: string[] = [];
@@ -1118,11 +1120,13 @@ export function StockProvider({ children }: { children: React.ReactNode }) {
           ...collect(blob.fundstratBottom),
           ...collect(blob.fundstratSmidTop),
           ...collect(blob.fundstratSmidBottom),
-          ...collect(blob.fundstratLargeCapCore),
-          ...collect(blob.fundstratSmidCore),
           ...collect(blob.rbcCanadianFocus),
           ...collect(blob.rbcUsFocus),
           ...collect(blob.alphaPicks),
+          ...collect(blob.veritasVList),
+          ...collect(blob.rbcCadSmallCap),
+          ...collect(blob.fundstratLcCoreList),
+          ...collect(blob.fundstratSmidCoreList),
         ];
       }
     } catch { /* non-fatal — refresh stocks-only */ }

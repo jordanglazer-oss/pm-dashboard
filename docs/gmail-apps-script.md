@@ -17,11 +17,13 @@ handles the rest.
 | `SA: Street Takeaways …` / `SA: <any headline>` — **or just forward any email from `FactSet_Alerts@factset.com`** (sender is matched too, so the original subject works unchanged) | **The email BODY — no attachment needed** | Per-ticker FactSet store. Earnings formats (Street Takeaways / Metrics Recap / Transcript Intelligence) give per-firm PT changes, results vs consensus and guidance. A **news flash** (`Top News Summaries`) is stored as its own `news` kind — headline, the facts behind it, and every stated figure with its baseline. All of it feeds catalysts / researchCoverage / historicalValuation on the next rescore, the thesis evidence block, the synthesis screen, and the stock page's FactSet Alerts tile. Names outside the Portfolio/Watchlist are skipped (no tokens spent). |
 | `News: <TICKER> …` (also `FYI:` / `Note:`) — **ticker in CAPS** | **The email BODY — no attachment needed** | Manual catch-all for anything worth filing against a name that isn't a FactSet alert — a company PR, a wire headline, a note you typed yourself. Same `news` kind and the same downstream reach as above. The **ticker is required** in the subject, because a non-FactSet email carries no `Related Identifiers:` line. |
 | `Newton …` (or `Mark Newton …`) | **The report PDF, forwarded unedited** (or, as a fallback, the report text pasted into the body) | Brief's Strategist Notes → Mark Newton slot (`pm:market.strategistNotes`), exactly like pasting into the UI. The PDF's text layer is read locally with pdf.js — **no Anthropic spend** — and the **last 2 pages (disclosures) are always dropped**. Charts are not interpreted; text only. Dated today (Eastern) unless the subject contains a `YYYY-MM-DD`. Timing defaults to prior-close if not already set. Also appends the rolling 30-day note history. |
-| `Lee …` (or `Tom Lee …`) | Same — PDF preferred, pasted body as fallback | Same, Tom Lee slot. Timing defaults to pre-market. Lee's full FLASH runs ~9 MB, over Vercel's 4.5 MB request limit, so the script stages anything above 3 MB to Blob first (see `stageAttachmentToBlob`). |
+| `Lee …` (or `Tom Lee …`) | Same — PDF preferred, pasted body as fallback | Same, Tom Lee slot. Timing defaults to pre-market. When the note carries "The Current Large-cap / SMID Core List as of M/D/YYYY", that list REPLACES the Research tab's **Fundstrat Large-Cap / SMID Core List** (the full lists — never the Top Ideas) — only if the parsed count matches the note's stated count and the as-of date is newer than the last one applied (no AI cost). Lee's full FLASH runs ~9 MB, over Vercel's 4.5 MB request limit, so the script stages anything above 3 MB to Blob first (see `stageAttachmentToBlob`). |
 | `Fundstrat Top` / `Fundstrat Bottom` / `Fundstrat SMID Top` / `Fundstrat SMID Bottom` | Screenshot (PNG/JPG/PDF) | Respective Fundstrat list on the Research tab |
-| `Fundstrat Large-Cap Core` / `Fundstrat SMID Core` | Screenshot (PNG/JPG/PDF) of the DQM quant screen (Ticker, Company, Sector, Industry, Mkt Cap, 1M/YTD relative perf, P/E, DQM Rank, Momentum Rating, trend columns) | Respective Fundstrat "Core Ideas" list on the Research tab |
+| `Fundstrat Large-Cap Core …` / `Fundstrat SMID Core …` ("List" optional) | Screenshot (PNG/JPG/PDF) — manual fallback; normally kept current from Lee's note | Fundstrat Large-Cap / SMID Core List (the full lists) |
 | `RBC Canadian` / `RBC US` | Screenshot (PNG/JPG/PDF) | RBC Canadian / US Focus List |
 | `RBCCM FEW` | Screenshot (PNG/JPG/PDF) | RBCCM Canadian FEW Portfolio |
+| `V-List …` | Screenshot (PNG/JPG/PDF) | Veritas V-List (Canadian names only, .TO) |
+| `RBC Canadian Small Cap …` (or `RBC Small Cap …`) | Screenshot (PNG/JPG/PDF) | RBC Canadian Small Cap Conviction List (.TO) |
 | `Seeking Alpha …` *or* `Alpha Picks …` | Screenshot (PNG/JPG/PDF) | Seeking Alpha — Alpha Picks list |
 
 iPhone, Mac, and Windows screenshots all work (iOS Mail auto-converts HEIC to
@@ -247,8 +249,14 @@ function stageAttachmentToBlob(ingestUrl, secret, att) {
   }
   const t = JSON.parse(tokenRes.getContentText());
 
-  // Mirrors what @vercel/blob's put() sends: the client token carries the
-  // store id, so no separate store header is needed.
+  // Mirrors what @vercel/blob's put() sends. Re-verified against the installed
+  // SDK (v2.4.1) after the first live 9 MB note failed here: BOTH of these are
+  // sent unconditionally by the SDK and were missing, so the upload leg never
+  // worked. `x-vercel-blob-access` is set on every put() (createPutHeaders sets
+  // it first, before any option check) and MUST be "private" — the ingest route
+  // reads the file back with get({ access: "private" }). `x-vercel-blob-store-id`
+  // is sent by requestApi for every auth kind, client tokens included; the
+  // earlier assumption that the token alone carried it was wrong.
   const putRes = UrlFetchApp.fetch(t.uploadUrl, {
     method: "put",
     contentType: contentType,
@@ -256,12 +264,17 @@ function stageAttachmentToBlob(ingestUrl, secret, att) {
       Authorization: "Bearer " + t.clientToken,
       "x-api-version": String(t.apiVersion),
       "x-content-type": contentType,
+      "x-vercel-blob-access": t.access || "private",
+      // Server-provided; falls back to the store id embedded in the client
+      // token ("vercel_blob_client_<storeId>_<payload>") if an older
+      // /api/inbox/blob-token deployment doesn't return it yet.
+      "x-vercel-blob-store-id": t.storeId || String(t.clientToken).split("_")[3] || "",
     },
     payload: att.getBytes(),
     muteHttpExceptions: true,
   });
   if (putRes.getResponseCode() >= 300) {
-    throw new Error("blob PUT " + putRes.getResponseCode() + " :: " + putRes.getContentText().slice(0, 200));
+    throw new Error("blob PUT " + putRes.getResponseCode() + " :: " + putRes.getContentText().slice(0, 300));
   }
   return pathname;
 }
@@ -322,7 +335,7 @@ function processInbox() {
     //   sia         "SIA\b" could not match SIACharts or SIA_SP500: \b needs a
     //               NON-word character after "SIA", and both "C" and "_" are
     //               word characters. An unedited SIA download never matched.
-    const SUBJECT_RE = /^(?:\s*(?:fw|fwd|re|tr)\s*:\s*)*(?:analyst\s+report:|fundstrat\b|rbc\s+(?:canadian|us)\b|jpm\s+focus\b|rbccm\s+few\b|equate\b|.*\bequate\b.*\b(?:rank|all\s*cap|large\s*cap)|seeking\s+alpha\b|alpha\s+picks\b|sia(?:charts)?(?![a-z0-9])|boosted(?:ai)?\b|marketedge\b|chartscout\b|strategist\b|(?:mark\s+)?newton(?![a-z0-9])|(?:tom\s+)?lee(?![a-z0-9])|(?:sa:\s*)?(?:street\s+takeaways|streetaccount|transcript\s+intelligence)\b|.*\breports\s+Q[1-4]\b.*\bvs\b)/i;
+    const SUBJECT_RE = /^(?:\s*(?:fw|fwd|re|tr)\s*:\s*)*(?:analyst\s+report:|fundstrat\b|rbc\s+(?:canadian|us)\b|jpm\s+focus\b|rbccm\s+few\b|rbc\s+(?:cdn\s+)?small[-\s]?cap\b|v[-\s]?list\b|equate\b|.*\bequate\b.*\b(?:rank|all\s*cap|large\s*cap)|seeking\s+alpha\b|alpha\s+picks\b|sia(?:charts)?(?![a-z0-9])|boosted(?:ai)?\b|marketedge\b|chartscout\b|strategist\b|(?:mark\s+)?newton(?![a-z0-9])|(?:tom\s+)?lee(?![a-z0-9])|(?:sa:\s*)?(?:street\s+takeaways|streetaccount|transcript\s+intelligence)\b|.*\breports\s+Q[1-4]\b.*\bvs\b)/i;
     // FactSet alerts are BODY-TEXT emails (no attachment) — matched by sender so
     // a plain forward works with its original subject untouched.
     const BODY_TEXT_SENDER_RE = /factset[_.]?alerts?@factset\.com/i;
@@ -572,7 +585,7 @@ function testWebhook() {
  *  works no matter where SUBJECT_RE lives. */
 function reprocessRecent() {
   var DAYS = 3; // widen if your CSVs are older than this
-  var SUBJECT_RE = /^(?:\s*(?:fw|fwd|re|tr)\s*:\s*)*(?:analyst\s+report:|fundstrat\b|rbc\s+(?:canadian|us)\b|jpm\s+focus\b|rbccm\s+few\b|equate\b|.*\bequate\b.*\b(?:rank|all\s*cap|large\s*cap)|seeking\s+alpha\b|alpha\s+picks\b|sia(?:charts)?(?![a-z0-9])|boosted(?:ai)?\b|marketedge\b|chartscout\b|strategist\b|(?:mark\s+)?newton(?![a-z0-9])|(?:tom\s+)?lee(?![a-z0-9])|(?:sa:\s*)?(?:street\s+takeaways|streetaccount|transcript\s+intelligence)\b|.*\breports\s+Q[1-4]\b.*\bvs\b)/i;
+  var SUBJECT_RE = /^(?:\s*(?:fw|fwd|re|tr)\s*:\s*)*(?:analyst\s+report:|fundstrat\b|rbc\s+(?:canadian|us)\b|jpm\s+focus\b|rbccm\s+few\b|rbc\s+(?:cdn\s+)?small[-\s]?cap\b|v[-\s]?list\b|equate\b|.*\bequate\b.*\b(?:rank|all\s*cap|large\s*cap)|seeking\s+alpha\b|alpha\s+picks\b|sia(?:charts)?(?![a-z0-9])|boosted(?:ai)?\b|marketedge\b|chartscout\b|strategist\b|(?:mark\s+)?newton(?![a-z0-9])|(?:tom\s+)?lee(?![a-z0-9])|(?:sa:\s*)?(?:street\s+takeaways|streetaccount|transcript\s+intelligence)\b|.*\breports\s+Q[1-4]\b.*\bvs\b)/i;
   var props = PropertiesService.getScriptProperties();
   var url = props.getProperty("WEBHOOK_URL");
   var secret = props.getProperty("INBOX_SECRET");
@@ -646,7 +659,7 @@ function fixLabels() {
   if (!label) { Logger.log("No Dashboard-Processed label — nothing to do."); return; }
 
   // Identical to processInbox's copy.
-  var SUBJECT_RE = /^(?:\s*(?:fw|fwd|re|tr)\s*:\s*)*(?:analyst\s+report:|fundstrat\b|rbc\s+(?:canadian|us)\b|jpm\s+focus\b|rbccm\s+few\b|equate\b|.*\bequate\b.*\b(?:rank|all\s*cap|large\s*cap)|seeking\s+alpha\b|alpha\s+picks\b|sia(?:charts)?(?![a-z0-9])|boosted(?:ai)?\b|marketedge\b|chartscout\b|strategist\b|(?:mark\s+)?newton(?![a-z0-9])|(?:tom\s+)?lee(?![a-z0-9])|(?:sa:\s*)?(?:street\s+takeaways|streetaccount|transcript\s+intelligence)\b|.*\breports\s+Q[1-4]\b.*\bvs\b)/i;
+  var SUBJECT_RE = /^(?:\s*(?:fw|fwd|re|tr)\s*:\s*)*(?:analyst\s+report:|fundstrat\b|rbc\s+(?:canadian|us)\b|jpm\s+focus\b|rbccm\s+few\b|rbc\s+(?:cdn\s+)?small[-\s]?cap\b|v[-\s]?list\b|equate\b|.*\bequate\b.*\b(?:rank|all\s*cap|large\s*cap)|seeking\s+alpha\b|alpha\s+picks\b|sia(?:charts)?(?![a-z0-9])|boosted(?:ai)?\b|marketedge\b|chartscout\b|strategist\b|(?:mark\s+)?newton(?![a-z0-9])|(?:tom\s+)?lee(?![a-z0-9])|(?:sa:\s*)?(?:street\s+takeaways|streetaccount|transcript\s+intelligence)\b|.*\breports\s+Q[1-4]\b.*\bvs\b)/i;
   // Body-text kinds are recognised by subject here; sender matching needs
   // getMessages(), which is the expensive call this pass exists to avoid. A
   // FactSet thread whose subject does not say so is left LABELED — the safe

@@ -38,7 +38,7 @@ const client = new Anthropic();
 
 type AttachmentInput = { id: string; label: string; dataUrl: string };
 
-export type SourceKey = "fundstrat-top" | "fundstrat-bottom" | "fundstrat-smid-top" | "fundstrat-smid-bottom" | "fundstrat-largecap-core" | "fundstrat-smid-core" | "rbc-focus" | "rbc-us-focus" | "jpm-us-analyst-focus" | "rbc-equate-cad" | "rbc-equate-usd" | "seeking-alpha-picks" | "rbccm-few";
+export type SourceKey = "fundstrat-top" | "fundstrat-bottom" | "fundstrat-smid-top" | "fundstrat-smid-bottom" | "fundstrat-largecap-core" | "fundstrat-smid-core" | "rbc-focus" | "rbc-us-focus" | "jpm-us-analyst-focus" | "rbc-equate-cad" | "rbc-equate-usd" | "seeking-alpha-picks" | "rbccm-few" | "veritas-vlist" | "rbc-cad-smallcap" | "fundstrat-lc-core-list" | "fundstrat-smid-core-list";
 
 export type ResearchAttachmentInput = AttachmentInput;
 
@@ -47,8 +47,6 @@ const VALID_SOURCES: readonly SourceKey[] = [
   "fundstrat-bottom",
   "fundstrat-smid-top",
   "fundstrat-smid-bottom",
-  "fundstrat-largecap-core",
-  "fundstrat-smid-core",
   "rbc-focus",
   "rbc-us-focus",
   "jpm-us-analyst-focus",
@@ -56,6 +54,10 @@ const VALID_SOURCES: readonly SourceKey[] = [
   "rbc-equate-usd",
   "seeking-alpha-picks",
   "rbccm-few",
+  "veritas-vlist",
+  "rbc-cad-smallcap",
+  "fundstrat-lc-core-list",
+  "fundstrat-smid-core-list",
 ] as const;
 
 // ── Source-specific output shapes ──────────────────────────────────
@@ -108,6 +110,11 @@ export type ScrapedRbcRow = {
   // RBC EQUATE composite rank (1 = best in that region's universe). Set only
   // by the xlsx ingest path (app/lib/equate-parse.ts) — no scrape emits it.
   equateRank?: number;
+  // Veritas V-List extras.
+  intrinsicValue?: number;
+  ivCurrency?: string;
+  currentYield?: number;
+  qualityRating?: number;
 };
 
 /** RBCCM Canadian FEW Portfolio row: ticker (canonicalized to .TO),
@@ -369,6 +376,66 @@ ${common}
 Example: [{"ticker":"AAPL","name":"Apple Inc","industry":"Technology Hardware"},{"ticker":"BRK-B","name":"Berkshire Hathaway","industry":"Insurance"}]`;
   }
 
+  if (source === "fundstrat-lc-core-list" || source === "fundstrat-smid-core-list") {
+    const which = source === "fundstrat-lc-core-list" ? "Large-cap" : "SMID";
+    return `You are reading Fundstrat's "${which} Core List" (from Tom Lee's research — the FULL core list, typically 40-70 US names, usually grouped under GICS sector headings such as "Information Technology: $$AAPL, $$AMD, …"). Extract EVERY ticker on the list.
+
+  - Ticker → \`ticker\` (string, required, UPPERCASE). US listings — bare tickers, NO "-T" / ".TO". Strip any leading "$" or "$$". Share classes written "BRK.B" or "BRK/B" → dash form "BRK-B".
+  - The sector heading the ticker sits under → \`sector\` (string, e.g. "Information Technology")
+  - Company name → \`name\` (string) ONLY if the list shows one.
+
+Extract ONLY the ${which} Core List — ignore any other list, chart, or ticker mentioned elsewhere on the page.
+
+${common}
+
+Example: [{"ticker":"AAPL","sector":"Information Technology"},{"ticker":"JPM","sector":"Financials"}]`;
+  }
+
+  if (source === "veritas-vlist") {
+    return `You are reading the "Veritas V-List" (Veritas Investment Research) — a screenshot or PDF of a TABLE with columns COMPANY, TICKER, DATE ADDED, PRICE (C$) <date>, INTRINSIC VALUE ESTIMATE, CURRENT YIELD, QUALITY RATING. The table may continue after a page footer / contact banner — extract EVERY row from every part of the table.
+
+Every row on the V-List is a TSX-listed company. KEEP every row — including names whose price and intrinsic value are quoted in USD (e.g. Restaurant Brands "QSR", Waste Connections "WCN"); USD quoting does NOT make them US-only. Only skip a row if the company has no TSX listing at all.
+
+For each row:
+  - TICKER → \`ticker\` (string, required, UPPERCASE). ALWAYS emit the Yahoo Finance ".TO" form: "AEM" → "AEM.TO", "CNR" → "CNR.TO". A unit / class suffix becomes a dash: "BEI.un" → "BEI-UN.TO", "CTC.A" → "CTC-A.TO".
+  - COMPANY → \`name\` (string, as shown)
+  - DATE ADDED → \`dateAdded\` (string, exactly as shown, e.g. "2023-01-05")
+  - INTRINSIC VALUE ESTIMATE → \`intrinsicValue\` (NUMBER, strip "CAD"/"USD", "$" and commas: "CAD $5,500.00" → 5500) AND \`ivCurrency\` ("CAD" or "USD", whichever prefix the cell shows)
+  - CURRENT YIELD → \`currentYield\` (NUMBER percent, strip %: "3.6%" → 3.6)
+  - QUALITY RATING → \`qualityRating\` (NUMBER of FILLED stars out of 5, counting a half-filled star as 0.5: four full + one half → 4.5; three full + two empty → 3)
+
+Do NOT extract the PRICE column — the live price is fetched separately.
+
+${common}
+
+Example: [{"ticker":"AEM.TO","name":"Agnico Eagle Mines Ltd.","dateAdded":"2023-01-05","intrinsicValue":304,"ivCurrency":"CAD","currentYield":1.0,"qualityRating":4.5},{"ticker":"QSR.TO","name":"Restaurant Brands International Inc.","dateAdded":"2026-01-08","intrinsicValue":88,"ivCurrency":"USD","currentYield":3.7,"qualityRating":3.5}]`;
+  }
+
+  if (source === "rbc-cad-smallcap") {
+    const listDesc = `the "RBC Canadian Small Cap Conviction List" (RBC Capital Markets' highest-conviction Canadian small-cap ideas)`;
+    const capRule = `\nThe list's market-cap rule ($2B or less) applies AT THE TIME A NAME WAS ADDED. Do NOT drop a row because the company's market cap is now above $2B.`;
+    return `You are reading ${listDesc} — a screenshot or PDF. It is a TABLE / LIST of stock recommendations. Extract EVERY row.
+
+CANADIAN NAMES ONLY: keep only companies listed on the Toronto Stock Exchange (TSX). Skip any row that is a US-only (or other non-Canadian) listing. A Canadian company that is interlisted in the US counts — emit its TSX listing.${capRule}
+
+Columns to look for (a column may be missing — OMIT the key if so, never invent a value):
+  - Ticker / Symbol → \`ticker\` (string, required, UPPERCASE). Emit the Yahoo Finance "${"."}TO" form (e.g. "RY.TO", "CNR.TO"):
+      · "-T" or ":CA" / "TSX:" style marks → strip them, then append ".TO". No suffix → append ".TO". Already ".TO" → leave as-is.
+      · A SPACE-separated Bloomberg exchange code ("AC CN") is NOT part of the ticker — DROP it.
+      · A "/" or "." share-class designator becomes a dash: "CTC/A" → "CTC-A.TO", "BBD.B" → "BBD-B.TO". Units: "REI.UN" → "REI-UN.TO".
+  - Company / Name → \`name\` (string, the company name as shown)
+  - Sector / Industry → \`sector\` (string, the sector label as shown)
+  - Date Added / Added / Initiated → \`dateAdded\` (string, e.g. "4/15/2026")
+  - Weight / Target Weight → \`weight\` (NUMBER percent, strip %; only if the list publishes one)
+  - Price Target / Target → \`priceTarget\` (NUMBER, strip $ and commas; only if shown)
+
+Do NOT extract the current/last price — it is fetched live.
+
+${common}
+
+Example: [{"ticker":"ATZ.TO","name":"Aritzia Inc","sector":"Consumer Discretionary","dateAdded":"3/12/2026"},{"ticker":"CTC-A.TO","name":"Canadian Tire Corp","sector":"Consumer Discretionary","priceTarget":190}]`;
+  }
+
   if (source === "rbccm-few") {
     return `You are reading the "RBCCM Canadian Fundamental Equity Weighting (FEW) Portfolio" screenshot. It is a TABLE of Canadian equities. Extract EVERY row.
 
@@ -544,7 +611,7 @@ function parseRbcRows(text: string, source: SourceKey): ScrapedRbcRow[] {
         // else, or it survives canonicalization as "SHOP US.TO".
         let ticker = stripExchangeCode(String(r.ticker).trim().toUpperCase().replace(/^\$+/, "")).replace(/\//g, "-");
         // Canonicalize Canadian lists to .TO so Yahoo lookups succeed.
-        if (source === "rbc-focus" || source === "rbc-equate-cad") ticker = toCanadianYahooTicker(ticker);
+        if (source === "rbc-focus" || source === "rbc-equate-cad" || source === "veritas-vlist" || source === "rbc-cad-smallcap") ticker = toCanadianYahooTicker(ticker);
         const out: ScrapedRbcRow = { ticker };
         if (r.sector != null && String(r.sector).trim()) out.sector = String(r.sector).trim();
         if (r.weight != null) {
@@ -576,6 +643,18 @@ function parseRbcRows(text: string, source: SourceKey): ScrapedRbcRow[] {
         const momentumRating = num(r.momentumRating); if (momentumRating != null) out.momentumRating = momentumRating;
         const priceVs20d = num(r.priceVs20d); if (priceVs20d != null) out.priceVs20d = priceVs20d;
         const ma20vs200 = num(r.ma20vs200); if (ma20vs200 != null) out.ma20vs200 = ma20vs200;
+        // Veritas V-List columns.
+        // The IV cell reads "CAD $5,500.00" — tolerate the currency prefix if
+        // the model passes the cell through instead of a bare number.
+        if (r.intrinsicValue != null) {
+          const ivRaw = String(r.intrinsicValue);
+          const iv = Number(ivRaw.replace(/[^0-9.\-]/g, ""));
+          if (Number.isFinite(iv) && iv > 0) out.intrinsicValue = iv;
+          const cur = (typeof r.ivCurrency === "string" ? r.ivCurrency : ivRaw).match(/\b(CAD|USD)\b/i);
+          if (cur) out.ivCurrency = cur[1].toUpperCase();
+        }
+        const yld = num(r.currentYield); if (yld != null && yld >= 0) out.currentYield = yld;
+        const qr = num(r.qualityRating); if (qr != null && qr >= 0 && qr <= 5) out.qualityRating = Math.round(qr * 2) / 2;
         if (typeof r.trendAligned === "boolean") out.trendAligned = r.trendAligned;
         else if (typeof r.trendAligned === "string") {
           const t = r.trendAligned.trim().toLowerCase();
@@ -648,7 +727,7 @@ async function runVision(source: SourceKey, atts: AttachmentInput[]): Promise<{ 
   console.log(`[research-scrape:${source}] raw vision output:`, text.slice(0, 4000));
 
   const entries =
-    (source === "rbc-focus" || source === "rbc-us-focus" || source === "jpm-us-analyst-focus" || source === "rbc-equate-cad" || source === "rbc-equate-usd" || source === "fundstrat-largecap-core" || source === "fundstrat-smid-core") ? parseRbcRows(text, source)
+    (source === "rbc-focus" || source === "rbc-us-focus" || source === "jpm-us-analyst-focus" || source === "rbc-equate-cad" || source === "rbc-equate-usd" || source === "fundstrat-largecap-core" || source === "fundstrat-smid-core" || source === "veritas-vlist" || source === "rbc-cad-smallcap" || source === "fundstrat-lc-core-list" || source === "fundstrat-smid-core-list") ? parseRbcRows(text, source)
   : source === "seeking-alpha-picks" ? parseAlphaPickRows(text)
   : source === "rbccm-few" ? parseFewRows(text)
   : parseIdeaRows(text);

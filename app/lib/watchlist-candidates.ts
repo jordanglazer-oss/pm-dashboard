@@ -34,9 +34,11 @@ export const SOURCE_WEIGHTS = {
   "jpm-us-analyst-focus": 2,
   "fundstrat-top": 2,
   "fundstrat-smid-top": 2,
-  "fundstrat-largecap-core": 1,
-  "fundstrat-smid-core": 1,
   "rbccm-few": 1,
+  "veritas-vlist": 2,
+  "rbc-cad-smallcap": 2,
+  "fundstrat-lc-core-list": 1,
+  "fundstrat-smid-core-list": 1,
   "seeking-alpha-picks": 1,
   "newton-upticks": 1,
 } as const;

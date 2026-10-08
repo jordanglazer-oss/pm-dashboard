@@ -27,6 +27,10 @@ const SOURCE_TO_FIELD: Record<string, keyof ResearchState> = {
   "rbc-equate-usd": "equateUsd",
   "seeking-alpha-picks": "alphaPicks",
   "rbccm-few": "rbccmFew",
+  "veritas-vlist": "veritasVList",
+  "rbc-cad-smallcap": "rbcCadSmallCap",
+  "fundstrat-lc-core-list": "fundstratLcCoreList",
+  "fundstrat-smid-core-list": "fundstratSmidCoreList",
   "newton-upticks": "newtonUpticks",
 };
 

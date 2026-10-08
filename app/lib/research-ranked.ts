@@ -34,13 +34,15 @@ export type RankedListKey =
   | "fundstratBottom"
   | "fundstratSmidTop"
   | "fundstratSmidBottom"
-  | "fundstratLargeCapCore"
-  | "fundstratSmidCore"
   | "alphaPicks"
   | "rbcCanadianFocus"
   | "rbcUsFocus"
   | "jpmUsAnalystFocus"
   | "rbccmFew"
+  | "veritasVList"
+  | "rbcCadSmallCap"
+  | "fundstratLcCoreList"
+  | "fundstratSmidCoreList"
   | "equateCad"
   | "equateUsd";
 
@@ -63,13 +65,15 @@ export const RANKED_LISTS: RankedListConfig[] = [
   { key: "fundstratBottom", label: "Fundstrat Bottom Ideas", short: "FS Bottom", railKey: "research.fsBottom", bearish: true },
   { key: "fundstratSmidTop", label: "Fundstrat SMID Top", short: "FS SMID Top", railKey: "research.fsSmidTop" },
   { key: "fundstratSmidBottom", label: "Fundstrat SMID Bottom", short: "FS SMID Bottom", railKey: "research.fsSmidBottom", bearish: true },
-  { key: "fundstratLargeCapCore", label: "Fundstrat Large-Cap Core", short: "FS LC Core", railKey: "research.lcCore" },
-  { key: "fundstratSmidCore", label: "Fundstrat SMID Core", short: "FS SMID Core", railKey: "research.smidCore" },
   { key: "alphaPicks", label: "Seeking Alpha Picks", short: "Alpha Picks", railKey: "research.alpha" },
   { key: "rbcCanadianFocus", label: "RBC Canadian Focus", short: "RBC CA Focus", railKey: "research.rbcCa", canadian: true },
   { key: "rbcUsFocus", label: "RBC US Focus", short: "RBC US Focus", railKey: "research.rbcUs" },
   { key: "jpmUsAnalystFocus", label: "JPM US Analyst Focus", short: "JPM Focus", railKey: "research.jpm" },
   { key: "rbccmFew", label: "RBCCM Canadian FEW", short: "RBC FEW", railKey: "research.few", canadian: true },
+  { key: "veritasVList", label: "Veritas V-List", short: "Veritas", railKey: "research.veritas", canadian: true },
+  { key: "rbcCadSmallCap", label: "RBC Cdn Small Cap Conviction", short: "RBC Small Cap", railKey: "research.rbcSmall", canadian: true },
+  { key: "fundstratLcCoreList", label: "Fundstrat Large-Cap Core List", short: "FS LC List", railKey: "research.lcCoreList" },
+  { key: "fundstratSmidCoreList", label: "Fundstrat SMID Core List", short: "FS SMID List", railKey: "research.smidCoreList" },
   { key: "equateCad", label: "RBC Equate Canada (top decile)", short: "Equate CA", railKey: "research.equateCad", canadian: true },
   { key: "equateUsd", label: "RBC Equate US (top decile)", short: "Equate US", railKey: "research.equateUsd" },
 ];
