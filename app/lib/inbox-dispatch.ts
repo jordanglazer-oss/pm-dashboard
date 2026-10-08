@@ -114,7 +114,9 @@ export function classifySubject(subject: string): InboxKind {
   // "RBC Canadian Small Cap …" must be tested BEFORE "RBC Canadian …" (the
   // Focus List), which would otherwise swallow it.
   if (/^rbc\s+(?:canadian\s+|cdn\s+)?small[-\s]?cap\b/i.test(s)) return { kind: "research", source: "rbc-cad-smallcap" };
-  if (/^veritas\b/i.test(s)) return { kind: "research", source: "veritas-vlist" };
+  // Veritas V-List: the subject convention is "V-List …" ("Veritas …" also
+  // accepted dashboard-side, but the Apps Script only forwards "V-List").
+  if (/^(?:v[-\s]?list|veritas)\b/i.test(s)) return { kind: "research", source: "veritas-vlist" };
   if (/^rbc\s+canadian\b/i.test(s)) return { kind: "research", source: "rbc-focus" };
   if (/^rbc\s+us\b/i.test(s)) return { kind: "research", source: "rbc-us-focus" };
   if (/^jpm\s+focus\b/i.test(s)) return { kind: "research", source: "jpm-us-analyst-focus" };

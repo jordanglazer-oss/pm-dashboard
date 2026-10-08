@@ -1929,10 +1929,10 @@ export default function InboxPage() {
                 <td className="font-mono">RBCCM FEW</td>
               </tr>
               <tr>
-                <td className="font-mono">Veritas</td>
+                <td className="font-mono">V-List</td>
                 <td>Screenshot (PNG/JPG/PDF)</td>
                 <td>Merges into the Veritas V-List. Canadian (TSX) names only — US-only listings are skipped; tickers auto-suffixed .TO.</td>
-                <td className="font-mono">Veritas V-List</td>
+                <td className="font-mono">V-List</td>
               </tr>
               <tr>
                 <td className="font-mono">RBC Canadian Small Cap <span className="text-ink-3">or</span> RBC Small Cap</td>

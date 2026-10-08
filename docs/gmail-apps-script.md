@@ -23,7 +23,7 @@ handles the rest.
 | `Fundstrat Large-Cap Core List` / `Fundstrat SMID Core List` | Screenshot (PNG/JPG/PDF) — manual fallback; normally kept current from Lee's note | Fundstrat Large-Cap / SMID Core List (the full lists) |
 | `RBC Canadian` / `RBC US` | Screenshot (PNG/JPG/PDF) | RBC Canadian / US Focus List |
 | `RBCCM FEW` | Screenshot (PNG/JPG/PDF) | RBCCM Canadian FEW Portfolio |
-| `Veritas …` | Screenshot (PNG/JPG/PDF) | Veritas V-List (Canadian names only, .TO) |
+| `V-List …` | Screenshot (PNG/JPG/PDF) | Veritas V-List (Canadian names only, .TO) |
 | `RBC Canadian Small Cap …` (or `RBC Small Cap …`) | Screenshot (PNG/JPG/PDF) | RBC Canadian Small Cap Conviction List (.TO) |
 | `Seeking Alpha …` *or* `Alpha Picks …` | Screenshot (PNG/JPG/PDF) | Seeking Alpha — Alpha Picks list |
 
@@ -325,7 +325,7 @@ function processInbox() {
     //   sia         "SIA\b" could not match SIACharts or SIA_SP500: \b needs a
     //               NON-word character after "SIA", and both "C" and "_" are
     //               word characters. An unedited SIA download never matched.
-    const SUBJECT_RE = /^(?:\s*(?:fw|fwd|re|tr)\s*:\s*)*(?:analyst\s+report:|fundstrat\b|rbc\s+(?:canadian|us)\b|jpm\s+focus\b|rbccm\s+few\b|rbc\s+(?:cdn\s+)?small[-\s]?cap\b|veritas\b|equate\b|.*\bequate\b.*\b(?:rank|all\s*cap|large\s*cap)|seeking\s+alpha\b|alpha\s+picks\b|sia(?:charts)?(?![a-z0-9])|boosted(?:ai)?\b|marketedge\b|chartscout\b|strategist\b|(?:mark\s+)?newton(?![a-z0-9])|(?:tom\s+)?lee(?![a-z0-9])|(?:sa:\s*)?(?:street\s+takeaways|streetaccount|transcript\s+intelligence)\b|.*\breports\s+Q[1-4]\b.*\bvs\b)/i;
+    const SUBJECT_RE = /^(?:\s*(?:fw|fwd|re|tr)\s*:\s*)*(?:analyst\s+report:|fundstrat\b|rbc\s+(?:canadian|us)\b|jpm\s+focus\b|rbccm\s+few\b|rbc\s+(?:cdn\s+)?small[-\s]?cap\b|v[-\s]?list\b|equate\b|.*\bequate\b.*\b(?:rank|all\s*cap|large\s*cap)|seeking\s+alpha\b|alpha\s+picks\b|sia(?:charts)?(?![a-z0-9])|boosted(?:ai)?\b|marketedge\b|chartscout\b|strategist\b|(?:mark\s+)?newton(?![a-z0-9])|(?:tom\s+)?lee(?![a-z0-9])|(?:sa:\s*)?(?:street\s+takeaways|streetaccount|transcript\s+intelligence)\b|.*\breports\s+Q[1-4]\b.*\bvs\b)/i;
     // FactSet alerts are BODY-TEXT emails (no attachment) — matched by sender so
     // a plain forward works with its original subject untouched.
     const BODY_TEXT_SENDER_RE = /factset[_.]?alerts?@factset\.com/i;
@@ -575,7 +575,7 @@ function testWebhook() {
  *  works no matter where SUBJECT_RE lives. */
 function reprocessRecent() {
   var DAYS = 3; // widen if your CSVs are older than this
-  var SUBJECT_RE = /^(?:\s*(?:fw|fwd|re|tr)\s*:\s*)*(?:analyst\s+report:|fundstrat\b|rbc\s+(?:canadian|us)\b|jpm\s+focus\b|rbccm\s+few\b|rbc\s+(?:cdn\s+)?small[-\s]?cap\b|veritas\b|equate\b|.*\bequate\b.*\b(?:rank|all\s*cap|large\s*cap)|seeking\s+alpha\b|alpha\s+picks\b|sia(?:charts)?(?![a-z0-9])|boosted(?:ai)?\b|marketedge\b|chartscout\b|strategist\b|(?:mark\s+)?newton(?![a-z0-9])|(?:tom\s+)?lee(?![a-z0-9])|(?:sa:\s*)?(?:street\s+takeaways|streetaccount|transcript\s+intelligence)\b|.*\breports\s+Q[1-4]\b.*\bvs\b)/i;
+  var SUBJECT_RE = /^(?:\s*(?:fw|fwd|re|tr)\s*:\s*)*(?:analyst\s+report:|fundstrat\b|rbc\s+(?:canadian|us)\b|jpm\s+focus\b|rbccm\s+few\b|rbc\s+(?:cdn\s+)?small[-\s]?cap\b|v[-\s]?list\b|equate\b|.*\bequate\b.*\b(?:rank|all\s*cap|large\s*cap)|seeking\s+alpha\b|alpha\s+picks\b|sia(?:charts)?(?![a-z0-9])|boosted(?:ai)?\b|marketedge\b|chartscout\b|strategist\b|(?:mark\s+)?newton(?![a-z0-9])|(?:tom\s+)?lee(?![a-z0-9])|(?:sa:\s*)?(?:street\s+takeaways|streetaccount|transcript\s+intelligence)\b|.*\breports\s+Q[1-4]\b.*\bvs\b)/i;
   var props = PropertiesService.getScriptProperties();
   var url = props.getProperty("WEBHOOK_URL");
   var secret = props.getProperty("INBOX_SECRET");
@@ -649,7 +649,7 @@ function fixLabels() {
   if (!label) { Logger.log("No Dashboard-Processed label — nothing to do."); return; }
 
   // Identical to processInbox's copy.
-  var SUBJECT_RE = /^(?:\s*(?:fw|fwd|re|tr)\s*:\s*)*(?:analyst\s+report:|fundstrat\b|rbc\s+(?:canadian|us)\b|jpm\s+focus\b|rbccm\s+few\b|rbc\s+(?:cdn\s+)?small[-\s]?cap\b|veritas\b|equate\b|.*\bequate\b.*\b(?:rank|all\s*cap|large\s*cap)|seeking\s+alpha\b|alpha\s+picks\b|sia(?:charts)?(?![a-z0-9])|boosted(?:ai)?\b|marketedge\b|chartscout\b|strategist\b|(?:mark\s+)?newton(?![a-z0-9])|(?:tom\s+)?lee(?![a-z0-9])|(?:sa:\s*)?(?:street\s+takeaways|streetaccount|transcript\s+intelligence)\b|.*\breports\s+Q[1-4]\b.*\bvs\b)/i;
+  var SUBJECT_RE = /^(?:\s*(?:fw|fwd|re|tr)\s*:\s*)*(?:analyst\s+report:|fundstrat\b|rbc\s+(?:canadian|us)\b|jpm\s+focus\b|rbccm\s+few\b|rbc\s+(?:cdn\s+)?small[-\s]?cap\b|v[-\s]?list\b|equate\b|.*\bequate\b.*\b(?:rank|all\s*cap|large\s*cap)|seeking\s+alpha\b|alpha\s+picks\b|sia(?:charts)?(?![a-z0-9])|boosted(?:ai)?\b|marketedge\b|chartscout\b|strategist\b|(?:mark\s+)?newton(?![a-z0-9])|(?:tom\s+)?lee(?![a-z0-9])|(?:sa:\s*)?(?:street\s+takeaways|streetaccount|transcript\s+intelligence)\b|.*\breports\s+Q[1-4]\b.*\bvs\b)/i;
   // Body-text kinds are recognised by subject here; sender matching needs
   // getMessages(), which is the expensive call this pass exists to avoid. A
   // FactSet thread whose subject does not say so is left LABELED — the safe
