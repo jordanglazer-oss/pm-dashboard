@@ -536,6 +536,7 @@ type RBCSortKey = "ticker" | "name" | "sector" | "weight" | "dateAdded";
 type JpmSortKey = "name" | "ticker" | "industry" | "strategy" | "currentPrice" | "priceTarget";
 type EquateSortKey = "rank" | "name" | "ticker" | "industry" | "currentPrice";
 type FewSortKey = "ticker" | "name" | "industry" | "price";
+type VlistSortKey = "name" | "ticker" | "dateAdded" | "currentPrice" | "intrinsicValue" | "currentYield" | "qualityRating";
 type AlphaSortKey = "name" | "ticker" | "sector" | "rating" | "holdingWeight" | "currentPrice" | "priceWhenAdded" | "returnSinceAdded" | "dateAdded" | "days";
 type SortDir = "asc" | "desc";
 
@@ -716,6 +717,24 @@ function TickerFixBanner({ suspects, onFix, onOpenList }: {
  *  automatically instead of needing a second list kept in sync. */
 /** Sort indicator for a `.data-table` column header — an icon, not a glyph.
  *  Returns null for the inactive columns so the header stays quiet. */
+/** Veritas quality rating as five stars (half-star steps), plus the number
+ *  for screen readers / copy-paste. */
+function QualityStars({ value }: { value?: number }) {
+  if (value == null) return <span className="text-ink-faint">—</span>;
+  const stars = [0, 1, 2, 3, 4].map((i) => {
+    const fill = Math.max(0, Math.min(1, value - i)); // 1, 0.5 or 0
+    return (
+      <span key={i} className="relative inline-block w-[0.9em]">
+        <span className="text-ink-faint">☆</span>
+        {fill > 0 && (
+          <span className="absolute inset-0 overflow-hidden text-ink" style={{ width: `${fill * 100}%` }}>★</span>
+        )}
+      </span>
+    );
+  });
+  return <span className="whitespace-nowrap text-[12.5px]" title={`${value} / 5`} aria-label={`${value} out of 5`}>{stars}</span>;
+}
+
 function sortArrow(active: boolean, dir: SortDir) {
   if (!active) return null;
   return (
@@ -869,6 +888,9 @@ export default function ResearchPage() {
   const FEW_SORT_KEYS: ReadonlyArray<FewSortKey> = ["ticker", "name", "industry", "price"];
   const fewSort = readSort<FewSortKey>("research.fewSortKey", "research.fewSortDir", FEW_SORT_KEYS, "ticker", "asc");
   const setFewSort = (next: { key: FewSortKey; dir: SortDir }) => writeSort("research.fewSortKey", "research.fewSortDir", next);
+  const VLIST_SORT_KEYS: ReadonlyArray<VlistSortKey> = ["name", "ticker", "dateAdded", "currentPrice", "intrinsicValue", "currentYield", "qualityRating"];
+  const vlistSort = readSort<VlistSortKey>("research.vlistSortKey", "research.vlistSortDir", VLIST_SORT_KEYS, "name", "asc");
+  const setVlistSort = (next: { key: VlistSortKey; dir: SortDir }) => writeSort("research.vlistSortKey", "research.vlistSortDir", next);
 
   // Live prices from Yahoo Finance
   const [livePrices, setLivePrices] = useState<LivePrices>({});
@@ -1058,6 +1080,7 @@ export default function ResearchPage() {
   const equateCadView = uiPrefs["research.equateCad.view"] || "rows";
   const equateUsdView = uiPrefs["research.equateUsd.view"] || "rows";
   const fewView = uiPrefs["research.few.view"] || "rows";
+  const veritasView = uiPrefs["research.veritas.view"] || "rows";
   const alphaView = uiPrefs["research.alpha.view"] || "rows";
   const isInList = (t: string) => scoredStocks.some((s) => s.ticker === t);
   // Which synthesis picks / cautions are expanded (keyed by ticker, or
@@ -1103,6 +1126,9 @@ export default function ResearchPage() {
   }
   function toggleJpmFocusSort(key: JpmSortKey) {
     setJpmFocusSort(jpmFocusSort.key === key ? { key, dir: jpmFocusSort.dir === "asc" ? "desc" : "asc" } : { key, dir: "asc" });
+  }
+  function toggleVlistSort(key: VlistSortKey) {
+    setVlistSort(vlistSort.key === key ? { key, dir: vlistSort.dir === "asc" ? "desc" : "asc" } : { key, dir: "asc" });
   }
   function toggleFewSort(key: FewSortKey) {
     setFewSort(fewSort.key === key ? { key, dir: fewSort.dir === "asc" ? "desc" : "asc" } : { key, dir: "asc" });
@@ -1229,6 +1255,21 @@ export default function ResearchPage() {
   const euArrow = (key: EquateSortKey) => sortArrow(equateUsdSort.key === key, equateUsdSort.dir);
   const jArrow = (key: JpmSortKey) => sortArrow(jpmFocusSort.key === key, jpmFocusSort.dir);
   const fArrow = (key: FewSortKey) => sortArrow(fewSort.key === key, fewSort.dir);
+  const vArrow = (key: VlistSortKey) => sortArrow(vlistSort.key === key, vlistSort.dir);
+  function sortedVlist() {
+    const numOr = (v: number | null | undefined) => (typeof v === "number" ? v : -Infinity);
+    return [...(state.veritasVList || [])].sort((a, b) => {
+      const { key, dir } = vlistSort;
+      let cmp = 0;
+      if (key === "currentPrice") cmp = numOr(livePrices[a.ticker]) - numOr(livePrices[b.ticker]);
+      else if (key === "intrinsicValue") cmp = numOr(a.intrinsicValue) - numOr(b.intrinsicValue);
+      else if (key === "currentYield") cmp = numOr(a.currentYield) - numOr(b.currentYield);
+      else if (key === "qualityRating") cmp = numOr(a.qualityRating) - numOr(b.qualityRating);
+      else if (key === "dateAdded") cmp = dateAddedMs(a.dateAdded) - dateAddedMs(b.dateAdded);
+      else cmp = String((key === "name" ? a.name : a.ticker) || "").localeCompare(String((key === "name" ? b.name : b.ticker) || ""));
+      return dir === "asc" ? cmp : -cmp;
+    });
+  }
 
   useEffect(() => {
     fetch("/api/kv/research", { cache: "no-store" })
@@ -4200,6 +4241,56 @@ export default function ResearchPage() {
                 subtitle={<>{cfg.subtitle}</>}
                 right={<span className="font-mono text-[11.5px] text-ink-3">{list.length} names</span>}
               >
+                {cfg.key === "veritasVList" && (
+                  <ViewToggle view={veritasView} onToggle={() => setUiPref("research.veritas.view", veritasView === "rows" ? "table" : "rows")} />
+                )}
+                {cfg.key === "veritasVList" && veritasView !== "rows" ? (
+                  <div className="tbl-wrap"><table className="data-table min-w-[760px]">
+                    <thead>
+                      <tr>
+                        <th className="cursor-pointer select-none hover:text-ink" onClick={() => toggleVlistSort("name")}>Company{vArrow("name")}</th>
+                        <th className="cursor-pointer select-none hover:text-ink" onClick={() => toggleVlistSort("ticker")}>Ticker{vArrow("ticker")}</th>
+                        <th className="cursor-pointer select-none hover:text-ink" onClick={() => toggleVlistSort("dateAdded")}>Date added{vArrow("dateAdded")}</th>
+                        <th className="cursor-pointer select-none text-right hover:text-ink" onClick={() => toggleVlistSort("currentPrice")}>Price (live){vArrow("currentPrice")}</th>
+                        <th className="cursor-pointer select-none text-right hover:text-ink" onClick={() => toggleVlistSort("intrinsicValue")}>Intrinsic value{vArrow("intrinsicValue")}</th>
+                        <th className="cursor-pointer select-none text-right hover:text-ink" onClick={() => toggleVlistSort("currentYield")}>Yield{vArrow("currentYield")}</th>
+                        <th className="cursor-pointer select-none hover:text-ink" onClick={() => toggleVlistSort("qualityRating")}>Quality{vArrow("qualityRating")}</th>
+                        <th className="w-24"></th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {sortedVlist().map((item) => {
+                        const live = livePrices[item.ticker];
+                        return (
+                          <tr key={item.ticker}>
+                            <td className="max-w-[240px] truncate text-ink-2" title={item.name || item.ticker}>{item.name || <span className="text-ink-faint">—</span>}</td>
+                            <td><TickerLink ticker={item.ticker} className="font-mono font-medium text-ink hover:text-accent hover:underline">{displayTicker(item.ticker)}</TickerLink></td>
+                            <td className="font-mono text-ink-3">{item.dateAdded || "—"}</td>
+                            <td className="text-right font-mono"><FlashValue value={live ?? null}>{live != null ? `$${live.toFixed(2)}` : "—"}</FlashValue></td>
+                            <td className="text-right font-mono">
+                              {item.intrinsicValue != null
+                                ? <>{item.ivCurrency === "USD" && <span className="mr-1 text-[10.5px] text-ink-3" title="Veritas quotes this IV in USD — the live price is the CAD .TO listing">USD</span>}${item.intrinsicValue.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</>
+                                : <span className="text-ink-faint">—</span>}
+                            </td>
+                            <td className="text-right font-mono">{item.currentYield != null ? `${item.currentYield.toFixed(1)}%` : <span className="text-ink-faint">—</span>}</td>
+                            <td><QualityStars value={item.qualityRating} /></td>
+                            <td className="text-right">
+                              {isInList(item.ticker) ? (
+                                <span className="text-[11px] text-ink-3">In list</span>
+                              ) : (
+                                <button onClick={(e) => { e.stopPropagation(); addToWatchlist(item.ticker); }} className="text-[12px] text-accent hover:underline" title="Add to Watchlist">+ Watch</button>
+                              )}
+                              <button onClick={() => removeCadList(cfg.key, item.ticker)} className="ml-2 align-middle text-ink-faint transition-colors hover:text-neg" title="Remove"><AppIcon name="x" size={12} /></button>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                      {list.length === 0 && (
+                        <tr><td colSpan={8} className="!h-auto"><EmptyState className="!py-8" glyph={<AppIcon name="list" size={18} />} title="No names added yet" /></td></tr>
+                      )}
+                    </tbody>
+                  </table></div>
+                ) : (
                 <SourceRowsList
                   rows={list.map((item) => ({
                     ticker: item.ticker,
@@ -4207,6 +4298,9 @@ export default function ResearchPage() {
                     meta: [
                       item.sector && item.sector !== "—" ? item.sector : null,
                       item.priceTarget ? `PT ${item.priceTarget}` : null,
+                      item.intrinsicValue != null ? `IV ${item.ivCurrency === "USD" ? "US" : ""}$${item.intrinsicValue}` : null,
+                      item.currentYield != null ? `${item.currentYield}% yld` : null,
+                      item.qualityRating != null ? `${item.qualityRating}★` : null,
                       item.dateAdded ? `added ${item.dateAdded}` : null,
                     ].filter(Boolean).join(" · "),
                   }))}
@@ -4214,9 +4308,12 @@ export default function ResearchPage() {
                   isInList={isInList}
                   onAdd={addToWatchlist}
                   onRemove={(t) => removeCadList(cfg.key, t)}
-                  onFixTicker={(from, to) => renameTicker(cfg.key, from, to)}
+                  // All-TSX lists: a retagged ticker lands on the .TO listing
+                  // so the live price resolves.
+                  onFixTicker={(from, to) => renameTicker(cfg.key, from, cfg.key === "veritasVList" || cfg.key === "rbcCadSmallCap" ? toCanadianYahooTicker(to) : to)}
                   emptyLabel="No names added yet"
                 />
+                )}
                 <RBCAddForm onAdd={(e) => addCadList(cfg.key, e)} />
                 <ResearchScraperBlock
                   source={cfg.source}

@@ -201,6 +201,11 @@ function applyRbcEntries(
         priceVs20d: e.priceVs20d ?? ex.priceVs20d,
         ma20vs200: e.ma20vs200 ?? ex.ma20vs200,
         trendAligned: e.trendAligned ?? ex.trendAligned,
+        // Veritas V-List fields (undefined elsewhere → preserved).
+        intrinsicValue: e.intrinsicValue ?? ex.intrinsicValue,
+        ivCurrency: e.ivCurrency ?? ex.ivCurrency,
+        currentYield: e.currentYield ?? ex.currentYield,
+        qualityRating: e.qualityRating ?? ex.qualityRating,
       });
     } else {
       added += 1;
@@ -223,6 +228,10 @@ function applyRbcEntries(
         priceVs20d: e.priceVs20d,
         ma20vs200: e.ma20vs200,
         trendAligned: e.trendAligned,
+        intrinsicValue: e.intrinsicValue,
+        ivCurrency: e.ivCurrency,
+        currentYield: e.currentYield,
+        qualityRating: e.qualityRating,
       });
     }
   }

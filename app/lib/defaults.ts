@@ -162,6 +162,17 @@ export type RBCEntry = {
   strategy?: string;
   /** Analyst price target from the JPM list. */
   priceTarget?: number;
+  // ── Veritas V-List extras (optional; only the V-List scrape emits them) ──
+  /** Veritas intrinsic value estimate per share, in `ivCurrency`. */
+  intrinsicValue?: number;
+  /** Currency the V-List quotes the IV in ("CAD" / "USD") — a few TSX names
+   *  (QSR, WCN) are quoted in USD, so the IV is NOT always comparable to the
+   *  CAD live price of the .TO listing. */
+  ivCurrency?: string;
+  /** Current dividend yield, percent (e.g. 2.5 for "2.5%"). */
+  currentYield?: number;
+  /** Veritas quality rating, 0–5 stars in half-star steps. */
+  qualityRating?: number;
   // ── Fundstrat "Core Ideas" DQM-screen extras (optional; unused by the RBC /
   //    JPM / Equate lists). The Fundstrat Large-Cap + SMID Core Ideas cards
   //    surface these quant columns from the screenshot. All optional so they
