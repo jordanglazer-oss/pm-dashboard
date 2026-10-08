@@ -35,7 +35,9 @@ export type MentionSource =
   | "rbc-equate-cad"
   | "rbc-equate-usd"
   | "seeking-alpha-picks"
-  | "rbccm-few";
+  | "rbccm-few"
+  | "veritas-vlist"
+  | "rbc-cad-smallcap";
 
 export type Mention = {
   source: MentionSource;
@@ -88,6 +90,8 @@ const SOURCES: SourceConfig[] = [
   { source: "rbc-equate-usd", label: "RBC Equate USD (top decile)", field: "equateUsd", direction: "bullish" },
   { source: "seeking-alpha-picks", label: "Seeking Alpha Picks", field: "alphaPicks", direction: "bullish" },
   { source: "rbccm-few", label: "RBCCM Canadian FEW", field: "rbccmFew", direction: "bullish" },
+  { source: "veritas-vlist", label: "Veritas V-List", field: "veritasVList", direction: "bullish" },
+  { source: "rbc-cad-smallcap", label: "RBC Cdn Small Cap Conviction", field: "rbcCadSmallCap", direction: "bullish" },
 ];
 
 type ResearchListEntry = { ticker?: unknown; analyzedAt?: unknown; dateAdded?: unknown };

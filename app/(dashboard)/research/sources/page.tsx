@@ -4,7 +4,7 @@ import React, { useState, useEffect, useCallback, useMemo, useRef } from "react"
 import Link from "next/link";
 import type { ResearchState, UptickEntry, IdeaEntry, RBCEntry, SectorViewEntry, SectorView, LeeFocusArea, AlphaPickEntry, FewEntry } from "@/app/lib/defaults";
 import { defaultResearch, GICS_SECTORS } from "@/app/lib/defaults";
-import { dedupeRbcEntries } from "@/app/lib/rbc-canonical";
+import { dedupeRbcEntries, toCanadianYahooTicker } from "@/app/lib/rbc-canonical";
 import { applyResearchEntries } from "@/app/lib/research-merge";
 import { rankResearch, SUGGESTED_MIN_LISTS } from "@/app/lib/research-ranked";
 import type { RemovalSource } from "@/app/lib/research-removals";
@@ -212,7 +212,7 @@ function AlphaPickAddForm({ onAdd }: { onAdd: (e: AlphaPickEntry) => void }) {
  * zero Anthropic tokens.
  */
 function ResearchScraperBlock(props: {
-  source: "fundstrat-top" | "fundstrat-bottom" | "fundstrat-smid-top" | "fundstrat-smid-bottom" | "fundstrat-largecap-core" | "fundstrat-smid-core" | "rbc-focus" | "rbc-us-focus" | "rbc-equate-cad" | "rbc-equate-usd" | "jpm-us-analyst-focus" | "seeking-alpha-picks" | "rbccm-few";
+  source: "fundstrat-top" | "fundstrat-bottom" | "fundstrat-smid-top" | "fundstrat-smid-bottom" | "fundstrat-largecap-core" | "fundstrat-smid-core" | "rbc-focus" | "rbc-us-focus" | "rbc-equate-cad" | "rbc-equate-usd" | "jpm-us-analyst-focus" | "seeking-alpha-picks" | "rbccm-few" | "veritas-vlist" | "rbc-cad-smallcap";
   sectionLabel: string;
   helperText: string;
   attachments: BriefAttachment[];
@@ -567,6 +567,8 @@ const RAIL_GROUPS: { label: string; items: { key: string; label: string }[] }[] 
     { key: "research.rbcUs", label: "RBC US" },
     { key: "research.jpm", label: "JPM Focus" },
     { key: "research.few", label: "RBC CM FEW" },
+    { key: "research.veritas", label: "Veritas V-List" },
+    { key: "research.rbcSmall", label: "RBC Cdn Small Cap" },
   ] },
   { label: "Reference", items: [
     { key: "research.equateCad", label: "Equate CAD" },
@@ -598,6 +600,8 @@ const TICKER_LISTS: { key: keyof ResearchState; label: string; railKey: string; 
   { key: "rbcUsFocus", label: "RBC US", railKey: "research.rbcUs" },
   { key: "jpmUsAnalystFocus", label: "JPM Focus", railKey: "research.jpm" },
   { key: "rbccmFew", label: "RBC CM FEW", railKey: "research.few", canadian: true },
+  { key: "veritasVList", label: "Veritas V-List", railKey: "research.veritas", canadian: true },
+  { key: "rbcCadSmallCap", label: "RBC Cdn Small Cap", railKey: "research.rbcSmall", canadian: true },
   { key: "equateCad", label: "Equate CAD", railKey: "research.equateCad", canadian: true },
   { key: "equateUsd", label: "Equate USD", railKey: "research.equateUsd" },
 ];
@@ -743,6 +747,8 @@ const SOURCE_ATTACHMENT_SECTION: Record<string, string> = {
   "research.rbcUs": "rbc-us-focus",
   "research.jpm": "jpm-us-analyst-focus",
   "research.few": "rbccm-few",
+  "research.veritas": "veritas-vlist",
+  "research.rbcSmall": "rbc-cad-smallcap",
 };
 
 /** Short date for the rail's "last scanned" column ("Sep 2"), or "—". */
@@ -934,6 +940,8 @@ export default function ResearchPage() {
       ...(s.jpmUsAnalystFocus ?? []).map((i) => i.ticker),
       ...(s.equateCad ?? []).map((i) => i.ticker),
       ...(s.equateUsd ?? []).map((i) => i.ticker),
+      ...(s.veritasVList ?? []).map((i) => i.ticker),
+      ...(s.rbcCadSmallCap ?? []).map((i) => i.ticker),
     ];
     const unique = [...new Set(allTickers)];
     if (unique.length === 0) return;
@@ -1003,7 +1011,7 @@ export default function ResearchPage() {
   // `scrapeStatus` because its Refresh button does more than just scrape
   // (it also refreshes prices and names). The new sources are
   // scrape-only so a per-source map keeps each section's UI independent.
-  type SourceKey = "fundstrat-top" | "fundstrat-bottom" | "fundstrat-smid-top" | "fundstrat-smid-bottom" | "fundstrat-largecap-core" | "fundstrat-smid-core" | "rbc-focus" | "rbc-us-focus" | "rbc-equate-cad" | "rbc-equate-usd" | "jpm-us-analyst-focus" | "seeking-alpha-picks" | "rbccm-few";
+  type SourceKey = "fundstrat-top" | "fundstrat-bottom" | "fundstrat-smid-top" | "fundstrat-smid-bottom" | "fundstrat-largecap-core" | "fundstrat-smid-core" | "rbc-focus" | "rbc-us-focus" | "rbc-equate-cad" | "rbc-equate-usd" | "jpm-us-analyst-focus" | "seeking-alpha-picks" | "rbccm-few" | "veritas-vlist" | "rbc-cad-smallcap";
   const [scrapeLoadingMap, setScrapeLoadingMap] = useState<Partial<Record<SourceKey, boolean>>>({});
   const [scrapeStatusMap, setScrapeStatusMap] = useState<Partial<Record<SourceKey, string>>>({});
 
@@ -1458,7 +1466,7 @@ export default function ResearchPage() {
           }
 
           // Backfill missing names for both RBC lists + the JPM list.
-          for (const listKey of ["rbcCanadianFocus", "rbcUsFocus", "jpmUsAnalystFocus", "equateCad", "equateUsd"] as const) {
+          for (const listKey of ["rbcCanadianFocus", "rbcUsFocus", "jpmUsAnalystFocus", "equateCad", "equateUsd", "veritasVList", "rbcCadSmallCap"] as const) {
             const list = (research[listKey] || []) as RBCEntry[];
             const needsFill = list.filter((r) => !r.name || r.name === r.ticker || !r.sector || r.sector === "—");
             if (needsFill.length === 0) continue;
@@ -1692,7 +1700,7 @@ export default function ResearchPage() {
    * elsewhere in the app — Yahoo returns the canonical GICS sector
    * which we want to standardize on).
    */
-  const refreshRbcNames = useCallback(async (list: "rbcCanadianFocus" | "rbcUsFocus" | "jpmUsAnalystFocus" | "equateCad" | "equateUsd", overrideState?: ResearchState) => {
+  const refreshRbcNames = useCallback(async (list: "rbcCanadianFocus" | "rbcUsFocus" | "jpmUsAnalystFocus" | "equateCad" | "equateUsd" | "veritasVList" | "rbcCadSmallCap", overrideState?: ResearchState) => {
     const s = overrideState || state;
     const entries = (s[list] || []) as RBCEntry[];
     if (entries.length === 0) return;
@@ -1738,7 +1746,7 @@ export default function ResearchPage() {
     void fetchLivePrices();
     void fetchFactsetPrices();
     void refreshUptickNames();
-    (["rbcCanadianFocus", "rbcUsFocus", "jpmUsAnalystFocus", "equateCad", "equateUsd"] as const).forEach((l) => void refreshRbcNames(l));
+    (["rbcCanadianFocus", "rbcUsFocus", "jpmUsAnalystFocus", "equateCad", "equateUsd", "veritasVList", "rbcCadSmallCap"] as const).forEach((l) => void refreshRbcNames(l));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [priceRefreshNonce]);
 
@@ -1997,6 +2005,9 @@ export default function ResearchPage() {
         void fetchLivePrices(nextState);
       } else if (source === "rbccm-few") {
         void refreshFewNames(nextState);
+        void fetchLivePrices(nextState);
+      } else if (source === "veritas-vlist" || source === "rbc-cad-smallcap") {
+        void refreshRbcNames(source === "veritas-vlist" ? "veritasVList" : "rbcCadSmallCap", nextState);
         void fetchLivePrices(nextState);
       } else if (source === "fundstrat-largecap-core" || source === "fundstrat-smid-core") {
         // Core-Ideas rows carry their own company names from the DQM screen,
@@ -2261,6 +2272,17 @@ export default function ResearchPage() {
   const removeJpmFocus = (ticker: string) => {
     save({ ...state, jpmUsAnalystFocus: (state.jpmUsAnalystFocus || []).filter((r) => r.ticker !== ticker) });
   };
+  // Veritas V-List + RBC Cdn Small Cap Conviction: all-TSX lists, so a manual
+  // add is canonicalized to ".TO" (the add form takes "ATZ" as typed).
+  const addCadList = (key: "veritasVList" | "rbcCadSmallCap", entry: RBCEntry) => {
+    const list = state[key] || [];
+    const ticker = toCanadianYahooTicker(entry.ticker);
+    if (list.some((r) => r.ticker === ticker)) return;
+    save({ ...state, [key]: [...list, { ...entry, ticker }] });
+  };
+  const removeCadList = (key: "veritasVList" | "rbcCadSmallCap", ticker: string) => {
+    save({ ...state, [key]: (state[key] || []).filter((r) => r.ticker !== ticker) });
+  };
   const addFew = (entry: FewEntry) => {
     const list = state.rbccmFew || [];
     if (list.some((r) => r.ticker === entry.ticker)) return;
@@ -2442,6 +2464,8 @@ export default function ResearchPage() {
       "research.rbcUs": (state.rbcUsFocus ?? []).length,
       "research.jpm": (state.jpmUsAnalystFocus ?? []).length,
       "research.few": (state.rbccmFew ?? []).length,
+      "research.veritas": (state.veritasVList ?? []).length,
+      "research.rbcSmall": (state.rbcCadSmallCap ?? []).length,
       "research.equateCad": (state.equateCad ?? []).length,
       "research.equateUsd": (state.equateUsd ?? []).length,
       "research.quickRef": null,
@@ -2454,6 +2478,8 @@ export default function ResearchPage() {
       "research.rbcCa": state.rbcCanadianFocus,
       "research.rbcUs": state.rbcUsFocus,
       "research.jpm": state.jpmUsAnalystFocus,
+      "research.veritas": state.veritasVList,
+      "research.rbcSmall": state.rbcCadSmallCap,
       "research.equateCad": state.equateCad,
       "research.equateUsd": state.equateUsd,
     };
@@ -3597,7 +3623,7 @@ export default function ResearchPage() {
             {
               key: "lc", source: "fundstrat-largecap-core" as const, prefKey: "research.lcCore", linked: "research.smidCore",
               title: "Fundstrat Large-Cap Core Ideas", subtitle: "Fundstrat DQM quant screen · 1M / YTD relative to the S&P 500",
-              helper: "Upload a Fundstrat Large-Cap Core Ideas screenshot. On Refresh, ticker + company + sector + DQM rank + momentum + relative perf are extracted and merged.",
+              helper: `Updated automatically from Tom Lee's daily note${state.coreListAsOf?.largeCap ? ` (last applied: list as of ${state.coreListAsOf.largeCap})` : ""}. A screenshot still works as a manual override — on Refresh, ticker + company + sector + DQM rank + momentum + relative perf are extracted and merged.`,
               list: sortedLcCore(), rawLen: (state.fundstratLargeCapCore || []).length, view: lcCoreView,
               sort: lcCoreSort, toggle: toggleLcCoreSort, arrow: lcArrow, onAdd: addLcCore, onRemove: removeLcCore,
               titleClass: "text-[13px] font-semibold text-ink", border: "border-line min-w-0",
@@ -3605,7 +3631,7 @@ export default function ResearchPage() {
             {
               key: "smid", source: "fundstrat-smid-core" as const, prefKey: "research.smidCore", linked: "research.lcCore",
               title: "Fundstrat SMID Core Ideas", subtitle: "Fundstrat DQM quant screen · 1M / YTD relative to the Russell 2500",
-              helper: "Upload a Fundstrat SMID Core Ideas screenshot. On Refresh, ticker + company + sector + DQM rank + momentum + relative perf are extracted and merged.",
+              helper: `Updated automatically from Tom Lee's daily note${state.coreListAsOf?.smid ? ` (last applied: list as of ${state.coreListAsOf.smid})` : ""}. A screenshot still works as a manual override — on Refresh, ticker + company + sector + DQM rank + momentum + relative perf are extracted and merged.`,
               list: sortedSmidCore(), rawLen: (state.fundstratSmidCore || []).length, view: smidCoreView,
               sort: smidCoreSort, toggle: toggleSmidCoreSort, arrow: smcArrow, onAdd: addSmidCore, onRemove: removeSmidCore,
               titleClass: "text-[13px] font-semibold text-ink", border: "border-line min-w-0",
@@ -4318,6 +4344,69 @@ export default function ResearchPage() {
             status={scrapeStatusMap["rbccm-few"]}
           />
         </CollapsibleSection>
+        </div>
+
+        {/* ── Veritas V-List + RBC Canadian Small Cap Conviction List ──
+            Two all-TSX focus lists (.TO tickers), same flow as the RBC
+            Canadian Focus card: compact rows, manual add, screenshot scanner.
+            Built from one config array so the pair can't drift apart. */}
+        <div className="research-pair grid items-start gap-3.5 lg:grid-cols-2">
+          {([
+            {
+              key: "veritasVList" as const, source: "veritas-vlist" as const, prefKey: "research.veritas", linked: "research.rbcSmall",
+              title: "Veritas V-List", subtitle: "Veritas Investment Research top ideas — Canadian (TSX) names only",
+              helper: "Upload a Veritas V-List screenshot or PDF. On Refresh, Canadian names are extracted (ticker auto-suffixed .TO, US-only listings skipped) and merged.",
+            },
+            {
+              key: "rbcCadSmallCap" as const, source: "rbc-cad-smallcap" as const, prefKey: "research.rbcSmall", linked: "research.veritas",
+              title: "RBC Canadian Small Cap Conviction List", subtitle: "RBC Capital Markets — TSX names ≤ $2B market cap when added",
+              helper: "Upload an RBC Canadian Small Cap Conviction List screenshot or PDF. On Refresh, ticker (auto-suffixed .TO) + name + sector + date are extracted and merged. Names that have grown past $2B since being added stay on.",
+            },
+          ]).map((cfg) => {
+            const list = state[cfg.key] || [];
+            return (
+              <CollapsibleSection
+                key={cfg.key}
+                prefKey={cfg.prefKey}
+                linkedKeys={[cfg.linked]}
+                className="border-line min-w-0"
+                titleClass="text-[13px] font-semibold text-ink"
+                title={<>{cfg.title}</>}
+                subtitle={<>{cfg.subtitle}</>}
+                right={<span className="font-mono text-[11.5px] text-ink-3">{list.length} names</span>}
+              >
+                <SourceRowsList
+                  rows={list.map((item) => ({
+                    ticker: item.ticker,
+                    name: item.name,
+                    meta: [
+                      item.sector && item.sector !== "—" ? item.sector : null,
+                      item.priceTarget ? `PT ${item.priceTarget}` : null,
+                      item.dateAdded ? `added ${item.dateAdded}` : null,
+                    ].filter(Boolean).join(" · "),
+                  }))}
+                  livePrices={livePrices}
+                  isInList={isInList}
+                  onAdd={addToWatchlist}
+                  onRemove={(t) => removeCadList(cfg.key, t)}
+                  onFixTicker={(from, to) => renameTicker(cfg.key, from, to)}
+                  emptyLabel="No names added yet"
+                />
+                <RBCAddForm onAdd={(e) => addCadList(cfg.key, e)} />
+                <ResearchScraperBlock
+                  source={cfg.source}
+                  sectionLabel={cfg.title}
+                  helperText={cfg.helper}
+                  attachments={state.attachments || []}
+                  onAddAttachment={addAttachment}
+                  onRemoveAttachment={removeAttachment}
+                  onScrape={(force) => scrapeResearchSource(cfg.source, force)}
+                  loading={!!scrapeLoadingMap[cfg.source]}
+                  status={scrapeStatusMap[cfg.source]}
+                />
+              </CollapsibleSection>
+            );
+          })}
         </div>
 
         {/* ── Seeking Alpha - Alpha Picks ──

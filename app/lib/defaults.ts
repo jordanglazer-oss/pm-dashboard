@@ -286,6 +286,20 @@ export type ResearchState = {
   // Canadian equity list scanned from a screenshot. Optional for
   // backward compat with older pm:research blobs that predate it.
   rbccmFew?: FewEntry[];
+  // Veritas Investment Research V-List — Canadian (TSX) names only, .TO
+  // tickers. RBCEntry shape (ticker / name / sector / dateAdded). Optional for
+  // backward compat with older pm:research blobs.
+  veritasVList?: RBCEntry[];
+  // RBC Canadian Small Cap Conviction List — TSX names with a market cap of
+  // $2B or less AT THE TIME THEY WERE ADDED (a name that has since grown past
+  // $2B stays on the list). .TO tickers, RBCEntry shape. Optional.
+  rbcCadSmallCap?: RBCEntry[];
+  // As-of date ("M/D/YYYY") of the Large-Cap / SMID Core lists last applied
+  // from Tom Lee's daily note (app/lib/fundstrat-core-from-note.ts). The note
+  // repeats the same list for weeks, so a list is only re-applied when its
+  // as-of date moves — a manual edit or screenshot in between is never
+  // reverted by the next day's note. Optional.
+  coreListAsOf?: { largeCap?: string; smid?: string };
   generalNotes: string;
   attachments?: import("@/app/components/ImageUpload").BriefAttachment[];
   // Newton's sector overweight/underweight views. Pre-populated with all
@@ -393,6 +407,8 @@ export const defaultResearch: ResearchState = {
   equateUsd: [],
   alphaPicks: [],
   rbccmFew: [],
+  veritasVList: [],
+  rbcCadSmallCap: [],
   generalNotes: "",
   attachments: [],
   newtonSectors: GICS_SECTORS.map((s) => ({ sector: s, view: "neutral" as SectorView })),

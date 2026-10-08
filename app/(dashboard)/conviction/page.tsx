@@ -207,7 +207,7 @@ export default function ConvictionPage() {
       const lists: (keyof ResearchState)[] = [
         "jpmUsAnalystFocus", "rbcUsFocus", "rbcCanadianFocus", "fundstratTop",
         "fundstratSmidTop", "fundstratBottom", "fundstratSmidBottom", "alphaPicks",
-        "newtonUpticks", "rbccmFew",
+        "newtonUpticks", "rbccmFew", "veritasVList", "rbcCadSmallCap",
       ];
       for (const f of lists) {
         const arr = research[f] as Array<{ ticker?: string }> | undefined;

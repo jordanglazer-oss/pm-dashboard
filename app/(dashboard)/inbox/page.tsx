@@ -1929,6 +1929,18 @@ export default function InboxPage() {
                 <td className="font-mono">RBCCM FEW</td>
               </tr>
               <tr>
+                <td className="font-mono">Veritas</td>
+                <td>Screenshot (PNG/JPG/PDF)</td>
+                <td>Merges into the Veritas V-List. Canadian (TSX) names only — US-only listings are skipped; tickers auto-suffixed .TO.</td>
+                <td className="font-mono">Veritas V-List</td>
+              </tr>
+              <tr>
+                <td className="font-mono">RBC Canadian Small Cap <span className="text-ink-3">or</span> RBC Small Cap</td>
+                <td>Screenshot (PNG/JPG/PDF)</td>
+                <td>Merges into the RBC Canadian Small Cap Conviction List (.TO tickers).</td>
+                <td className="font-mono">RBC Canadian Small Cap</td>
+              </tr>
+              <tr>
                 <td className="font-mono">Seeking Alpha <span className="text-ink-3">or</span> Alpha Picks</td>
                 <td>Screenshot (PNG/JPG/PDF)</td>
                 <td>Merges into the Seeking Alpha — Alpha Picks list. Composite ticker+date key so a name can appear on multiple dates.</td>

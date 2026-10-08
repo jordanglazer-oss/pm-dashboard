@@ -38,7 +38,7 @@ const client = new Anthropic();
 
 type AttachmentInput = { id: string; label: string; dataUrl: string };
 
-export type SourceKey = "fundstrat-top" | "fundstrat-bottom" | "fundstrat-smid-top" | "fundstrat-smid-bottom" | "fundstrat-largecap-core" | "fundstrat-smid-core" | "rbc-focus" | "rbc-us-focus" | "jpm-us-analyst-focus" | "rbc-equate-cad" | "rbc-equate-usd" | "seeking-alpha-picks" | "rbccm-few";
+export type SourceKey = "fundstrat-top" | "fundstrat-bottom" | "fundstrat-smid-top" | "fundstrat-smid-bottom" | "fundstrat-largecap-core" | "fundstrat-smid-core" | "rbc-focus" | "rbc-us-focus" | "jpm-us-analyst-focus" | "rbc-equate-cad" | "rbc-equate-usd" | "seeking-alpha-picks" | "rbccm-few" | "veritas-vlist" | "rbc-cad-smallcap";
 
 export type ResearchAttachmentInput = AttachmentInput;
 
@@ -56,6 +56,8 @@ const VALID_SOURCES: readonly SourceKey[] = [
   "rbc-equate-usd",
   "seeking-alpha-picks",
   "rbccm-few",
+  "veritas-vlist",
+  "rbc-cad-smallcap",
 ] as const;
 
 // ── Source-specific output shapes ──────────────────────────────────
@@ -369,6 +371,35 @@ ${common}
 Example: [{"ticker":"AAPL","name":"Apple Inc","industry":"Technology Hardware"},{"ticker":"BRK-B","name":"Berkshire Hathaway","industry":"Insurance"}]`;
   }
 
+  if (source === "veritas-vlist" || source === "rbc-cad-smallcap") {
+    const listDesc = source === "veritas-vlist"
+      ? `the "Veritas V-List" (Veritas Investment Research's list of top independent-research ideas)`
+      : `the "RBC Canadian Small Cap Conviction List" (RBC Capital Markets' highest-conviction Canadian small-cap ideas)`;
+    const capRule = source === "rbc-cad-smallcap"
+      ? `\nThe list's market-cap rule ($2B or less) applies AT THE TIME A NAME WAS ADDED. Do NOT drop a row because the company's market cap is now above $2B.`
+      : "";
+    return `You are reading ${listDesc} — a screenshot or PDF. It is a TABLE / LIST of stock recommendations. Extract EVERY row.
+
+CANADIAN NAMES ONLY: keep only companies listed on the Toronto Stock Exchange (TSX). Skip any row that is a US-only (or other non-Canadian) listing. A Canadian company that is interlisted in the US counts — emit its TSX listing.${capRule}
+
+Columns to look for (a column may be missing — OMIT the key if so, never invent a value):
+  - Ticker / Symbol → \`ticker\` (string, required, UPPERCASE). Emit the Yahoo Finance "${"."}TO" form (e.g. "RY.TO", "CNR.TO"):
+      · "-T" or ":CA" / "TSX:" style marks → strip them, then append ".TO". No suffix → append ".TO". Already ".TO" → leave as-is.
+      · A SPACE-separated Bloomberg exchange code ("AC CN") is NOT part of the ticker — DROP it.
+      · A "/" or "." share-class designator becomes a dash: "CTC/A" → "CTC-A.TO", "BBD.B" → "BBD-B.TO". Units: "REI.UN" → "REI-UN.TO".
+  - Company / Name → \`name\` (string, the company name as shown)
+  - Sector / Industry → \`sector\` (string, the sector label as shown)
+  - Date Added / Added / Initiated → \`dateAdded\` (string, e.g. "4/15/2026")
+  - Weight / Target Weight → \`weight\` (NUMBER percent, strip %; only if the list publishes one)
+  - Price Target / Target → \`priceTarget\` (NUMBER, strip $ and commas; only if shown)
+
+Do NOT extract the current/last price — it is fetched live.
+
+${common}
+
+Example: [{"ticker":"ATZ.TO","name":"Aritzia Inc","sector":"Consumer Discretionary","dateAdded":"3/12/2026"},{"ticker":"CTC-A.TO","name":"Canadian Tire Corp","sector":"Consumer Discretionary","priceTarget":190}]`;
+  }
+
   if (source === "rbccm-few") {
     return `You are reading the "RBCCM Canadian Fundamental Equity Weighting (FEW) Portfolio" screenshot. It is a TABLE of Canadian equities. Extract EVERY row.
 
@@ -544,7 +575,7 @@ function parseRbcRows(text: string, source: SourceKey): ScrapedRbcRow[] {
         // else, or it survives canonicalization as "SHOP US.TO".
         let ticker = stripExchangeCode(String(r.ticker).trim().toUpperCase().replace(/^\$+/, "")).replace(/\//g, "-");
         // Canonicalize Canadian lists to .TO so Yahoo lookups succeed.
-        if (source === "rbc-focus" || source === "rbc-equate-cad") ticker = toCanadianYahooTicker(ticker);
+        if (source === "rbc-focus" || source === "rbc-equate-cad" || source === "veritas-vlist" || source === "rbc-cad-smallcap") ticker = toCanadianYahooTicker(ticker);
         const out: ScrapedRbcRow = { ticker };
         if (r.sector != null && String(r.sector).trim()) out.sector = String(r.sector).trim();
         if (r.weight != null) {
@@ -648,7 +679,7 @@ async function runVision(source: SourceKey, atts: AttachmentInput[]): Promise<{ 
   console.log(`[research-scrape:${source}] raw vision output:`, text.slice(0, 4000));
 
   const entries =
-    (source === "rbc-focus" || source === "rbc-us-focus" || source === "jpm-us-analyst-focus" || source === "rbc-equate-cad" || source === "rbc-equate-usd" || source === "fundstrat-largecap-core" || source === "fundstrat-smid-core") ? parseRbcRows(text, source)
+    (source === "rbc-focus" || source === "rbc-us-focus" || source === "jpm-us-analyst-focus" || source === "rbc-equate-cad" || source === "rbc-equate-usd" || source === "fundstrat-largecap-core" || source === "fundstrat-smid-core" || source === "veritas-vlist" || source === "rbc-cad-smallcap") ? parseRbcRows(text, source)
   : source === "seeking-alpha-picks" ? parseAlphaPickRows(text)
   : source === "rbccm-few" ? parseFewRows(text)
   : parseIdeaRows(text);

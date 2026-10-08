@@ -74,6 +74,8 @@ const LISTS: { field: keyof ResearchState; label: string; dir: 1 | -1 }[] = [
   { field: "alphaPicks", label: "Alpha Picks", dir: 1 },
   { field: "newtonUpticks", label: "Newton Upticks", dir: 1 },
   { field: "rbccmFew", label: "RBCCM FEW", dir: 1 },
+  { field: "veritasVList", label: "Veritas V-List", dir: 1 },
+  { field: "rbcCadSmallCap", label: "RBC Cdn Small Cap", dir: 1 },
   { field: "fundstratBottom", label: "Fundstrat Bottom", dir: -1 },
   { field: "fundstratSmidBottom", label: "Fundstrat SMID Bottom", dir: -1 },
 ];

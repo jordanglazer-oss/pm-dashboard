@@ -50,6 +50,7 @@ import { logResearchRemovals } from "./research-removals";
 import type { ResearchState } from "./defaults";
 import { defaultResearch, defaultMarketData } from "./defaults";
 import { appendStrategistNote } from "./forward-looking";
+import { syncCoreListsFromLeeNote, describeCoreSync } from "./fundstrat-core-from-note";
 import { easternToday } from "./date-eastern";
 import { extractPdfText } from "./pdf-text";
 import {
@@ -106,6 +107,10 @@ export function classifySubject(subject: string): InboxKind {
   if (/^fundstrat\s+smid\s+bottom\b/i.test(s)) return { kind: "research", source: "fundstrat-smid-bottom" };
   if (/^fundstrat\s+top\b/i.test(s)) return { kind: "research", source: "fundstrat-top" };
   if (/^fundstrat\s+bottom\b/i.test(s)) return { kind: "research", source: "fundstrat-bottom" };
+  // "RBC Canadian Small Cap …" must be tested BEFORE "RBC Canadian …" (the
+  // Focus List), which would otherwise swallow it.
+  if (/^rbc\s+(?:canadian\s+|cdn\s+)?small[-\s]?cap\b/i.test(s)) return { kind: "research", source: "rbc-cad-smallcap" };
+  if (/^veritas\b/i.test(s)) return { kind: "research", source: "veritas-vlist" };
   if (/^rbc\s+canadian\b/i.test(s)) return { kind: "research", source: "rbc-focus" };
   if (/^rbc\s+us\b/i.test(s)) return { kind: "research", source: "rbc-us-focus" };
   if (/^jpm\s+focus\b/i.test(s)) return { kind: "research", source: "jpm-us-analyst-focus" };
@@ -518,6 +523,22 @@ async function handleStrategistNote(
     console.error(`[Inbox] ${who} note history append failed:`, err),
   );
 
+  // Lee's note carries the Fundstrat Large-Cap / SMID Core lists — apply a
+  // newer list to the Research tab. Best-effort: a failure here must never
+  // fail the note itself, which is already stored.
+  let coreNote = "";
+  if (strategist === "lee") {
+    try {
+      const core = await syncCoreListsFromLeeNote(text);
+      if (core.length > 0) {
+        detail.coreLists = core;
+        coreNote = ` ${describeCoreSync(core)}.`;
+      }
+    } catch (err) {
+      console.error("[Inbox] Lee core-list sync failed:", err);
+    }
+  }
+
   const words = text.split(/\s+/).length;
   detail.date = date;
   detail.words = words;
@@ -525,7 +546,7 @@ async function handleStrategistNote(
   return {
     ok: true,
     kind,
-    message: `${who} note stored for ${date} (${words} words from ${sourceNote}). It will feed the next Morning Brief.`,
+    message: `${who} note stored for ${date} (${words} words from ${sourceNote}). It will feed the next Morning Brief.${coreNote}`,
     detail,
   };
 }

@@ -41,6 +41,8 @@ export type RankedListKey =
   | "rbcUsFocus"
   | "jpmUsAnalystFocus"
   | "rbccmFew"
+  | "veritasVList"
+  | "rbcCadSmallCap"
   | "equateCad"
   | "equateUsd";
 
@@ -70,6 +72,8 @@ export const RANKED_LISTS: RankedListConfig[] = [
   { key: "rbcUsFocus", label: "RBC US Focus", short: "RBC US Focus", railKey: "research.rbcUs" },
   { key: "jpmUsAnalystFocus", label: "JPM US Analyst Focus", short: "JPM Focus", railKey: "research.jpm" },
   { key: "rbccmFew", label: "RBCCM Canadian FEW", short: "RBC FEW", railKey: "research.few", canadian: true },
+  { key: "veritasVList", label: "Veritas V-List", short: "Veritas", railKey: "research.veritas", canadian: true },
+  { key: "rbcCadSmallCap", label: "RBC Cdn Small Cap Conviction", short: "RBC Small Cap", railKey: "research.rbcSmall", canadian: true },
   { key: "equateCad", label: "RBC Equate Canada (top decile)", short: "Equate CA", railKey: "research.equateCad", canadian: true },
   { key: "equateUsd", label: "RBC Equate US (top decile)", short: "Equate US", railKey: "research.equateUsd" },
 ];

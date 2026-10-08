@@ -1,6 +1,7 @@
 import { getRedis } from "@/app/lib/redis";
 import { NextRequest, NextResponse } from "next/server";
 import { defaultMarketData } from "@/app/lib/defaults";
+import { syncCoreListsFromLeeNote } from "@/app/lib/fundstrat-core-from-note";
 import {
   appendOscillatorEntry,
   appendPutCallEntry,
@@ -77,6 +78,14 @@ export async function PUT(req: NextRequest) {
         appendStrategistNote("lee", notes.lee, notes.leeDate).catch((err) =>
           console.error("Lee note history append failed:", err)
         );
+        // A pasted Lee note carries the Fundstrat Core lists too — same sync
+        // the emailed note runs. Awaited (a serverless function may be frozen
+        // once the response is sent) but never allowed to fail the save.
+        try {
+          await syncCoreListsFromLeeNote(notes.lee);
+        } catch (err) {
+          console.error("Lee core-list sync failed:", err);
+        }
       }
     }
 

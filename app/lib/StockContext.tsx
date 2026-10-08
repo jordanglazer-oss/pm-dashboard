@@ -1102,6 +1102,8 @@ export function StockProvider({ children }: { children: React.ReactNode }) {
       rbcCanadianFocus?: ResearchEntry[];
       rbcUsFocus?: ResearchEntry[];
       alphaPicks?: ResearchEntry[];
+      veritasVList?: ResearchEntry[];
+      rbcCadSmallCap?: ResearchEntry[];
     };
     let research: ResearchBlob | null = null;
     let researchTickers: string[] = [];
@@ -1123,6 +1125,8 @@ export function StockProvider({ children }: { children: React.ReactNode }) {
           ...collect(blob.rbcCanadianFocus),
           ...collect(blob.rbcUsFocus),
           ...collect(blob.alphaPicks),
+          ...collect(blob.veritasVList),
+          ...collect(blob.rbcCadSmallCap),
         ];
       }
     } catch { /* non-fatal — refresh stocks-only */ }
