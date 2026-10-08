@@ -29,6 +29,8 @@ const SOURCE_TO_FIELD: Record<string, keyof ResearchState> = {
   "rbccm-few": "rbccmFew",
   "veritas-vlist": "veritasVList",
   "rbc-cad-smallcap": "rbcCadSmallCap",
+  "fundstrat-lc-core-list": "fundstratLcCoreList",
+  "fundstrat-smid-core-list": "fundstratSmidCoreList",
   "newton-upticks": "newtonUpticks",
 };
 

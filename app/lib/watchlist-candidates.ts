@@ -39,6 +39,8 @@ export const SOURCE_WEIGHTS = {
   "rbccm-few": 1,
   "veritas-vlist": 2,
   "rbc-cad-smallcap": 2,
+  "fundstrat-lc-core-list": 1,
+  "fundstrat-smid-core-list": 1,
   "seeking-alpha-picks": 1,
   "newton-upticks": 1,
 } as const;

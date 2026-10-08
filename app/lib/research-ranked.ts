@@ -43,6 +43,8 @@ export type RankedListKey =
   | "rbccmFew"
   | "veritasVList"
   | "rbcCadSmallCap"
+  | "fundstratLcCoreList"
+  | "fundstratSmidCoreList"
   | "equateCad"
   | "equateUsd";
 
@@ -74,6 +76,8 @@ export const RANKED_LISTS: RankedListConfig[] = [
   { key: "rbccmFew", label: "RBCCM Canadian FEW", short: "RBC FEW", railKey: "research.few", canadian: true },
   { key: "veritasVList", label: "Veritas V-List", short: "Veritas", railKey: "research.veritas", canadian: true },
   { key: "rbcCadSmallCap", label: "RBC Cdn Small Cap Conviction", short: "RBC Small Cap", railKey: "research.rbcSmall", canadian: true },
+  { key: "fundstratLcCoreList", label: "Fundstrat Large-Cap Core List", short: "FS LC List", railKey: "research.lcCoreList" },
+  { key: "fundstratSmidCoreList", label: "Fundstrat SMID Core List", short: "FS SMID List", railKey: "research.smidCoreList" },
   { key: "equateCad", label: "RBC Equate Canada (top decile)", short: "Equate CA", railKey: "research.equateCad", canadian: true },
   { key: "equateUsd", label: "RBC Equate US (top decile)", short: "Equate US", railKey: "research.equateUsd" },
 ];

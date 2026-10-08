@@ -38,7 +38,7 @@ const client = new Anthropic();
 
 type AttachmentInput = { id: string; label: string; dataUrl: string };
 
-export type SourceKey = "fundstrat-top" | "fundstrat-bottom" | "fundstrat-smid-top" | "fundstrat-smid-bottom" | "fundstrat-largecap-core" | "fundstrat-smid-core" | "rbc-focus" | "rbc-us-focus" | "jpm-us-analyst-focus" | "rbc-equate-cad" | "rbc-equate-usd" | "seeking-alpha-picks" | "rbccm-few" | "veritas-vlist" | "rbc-cad-smallcap";
+export type SourceKey = "fundstrat-top" | "fundstrat-bottom" | "fundstrat-smid-top" | "fundstrat-smid-bottom" | "fundstrat-largecap-core" | "fundstrat-smid-core" | "rbc-focus" | "rbc-us-focus" | "jpm-us-analyst-focus" | "rbc-equate-cad" | "rbc-equate-usd" | "seeking-alpha-picks" | "rbccm-few" | "veritas-vlist" | "rbc-cad-smallcap" | "fundstrat-lc-core-list" | "fundstrat-smid-core-list";
 
 export type ResearchAttachmentInput = AttachmentInput;
 
@@ -58,6 +58,8 @@ const VALID_SOURCES: readonly SourceKey[] = [
   "rbccm-few",
   "veritas-vlist",
   "rbc-cad-smallcap",
+  "fundstrat-lc-core-list",
+  "fundstrat-smid-core-list",
 ] as const;
 
 // ── Source-specific output shapes ──────────────────────────────────
@@ -371,6 +373,21 @@ ${common}
 Example: [{"ticker":"AAPL","name":"Apple Inc","industry":"Technology Hardware"},{"ticker":"BRK-B","name":"Berkshire Hathaway","industry":"Insurance"}]`;
   }
 
+  if (source === "fundstrat-lc-core-list" || source === "fundstrat-smid-core-list") {
+    const which = source === "fundstrat-lc-core-list" ? "Large-cap" : "SMID";
+    return `You are reading Fundstrat's "${which} Core List" (from Tom Lee's research — the FULL core list, typically 40-70 US names, usually grouped under GICS sector headings such as "Information Technology: $$AAPL, $$AMD, …"). Extract EVERY ticker on the list.
+
+  - Ticker → \`ticker\` (string, required, UPPERCASE). US listings — bare tickers, NO "-T" / ".TO". Strip any leading "$" or "$$". Share classes written "BRK.B" or "BRK/B" → dash form "BRK-B".
+  - The sector heading the ticker sits under → \`sector\` (string, e.g. "Information Technology")
+  - Company name → \`name\` (string) ONLY if the list shows one.
+
+Extract ONLY the ${which} Core List — ignore any other list, chart, or ticker mentioned elsewhere on the page.
+
+${common}
+
+Example: [{"ticker":"AAPL","sector":"Information Technology"},{"ticker":"JPM","sector":"Financials"}]`;
+  }
+
   if (source === "veritas-vlist" || source === "rbc-cad-smallcap") {
     const listDesc = source === "veritas-vlist"
       ? `the "Veritas V-List" (Veritas Investment Research's list of top independent-research ideas)`
@@ -679,7 +696,7 @@ async function runVision(source: SourceKey, atts: AttachmentInput[]): Promise<{ 
   console.log(`[research-scrape:${source}] raw vision output:`, text.slice(0, 4000));
 
   const entries =
-    (source === "rbc-focus" || source === "rbc-us-focus" || source === "jpm-us-analyst-focus" || source === "rbc-equate-cad" || source === "rbc-equate-usd" || source === "fundstrat-largecap-core" || source === "fundstrat-smid-core" || source === "veritas-vlist" || source === "rbc-cad-smallcap") ? parseRbcRows(text, source)
+    (source === "rbc-focus" || source === "rbc-us-focus" || source === "jpm-us-analyst-focus" || source === "rbc-equate-cad" || source === "rbc-equate-usd" || source === "fundstrat-largecap-core" || source === "fundstrat-smid-core" || source === "veritas-vlist" || source === "rbc-cad-smallcap" || source === "fundstrat-lc-core-list" || source === "fundstrat-smid-core-list") ? parseRbcRows(text, source)
   : source === "seeking-alpha-picks" ? parseAlphaPickRows(text)
   : source === "rbccm-few" ? parseFewRows(text)
   : parseIdeaRows(text);

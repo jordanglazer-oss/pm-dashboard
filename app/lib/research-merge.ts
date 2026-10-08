@@ -142,7 +142,7 @@ function applyIdeaEntries(
 
 function applyRbcEntries(
   state: ResearchState,
-  source: "rbc-focus" | "rbc-us-focus" | "jpm-us-analyst-focus" | "rbc-equate-cad" | "rbc-equate-usd" | "fundstrat-largecap-core" | "fundstrat-smid-core" | "veritas-vlist" | "rbc-cad-smallcap",
+  source: "rbc-focus" | "rbc-us-focus" | "jpm-us-analyst-focus" | "rbc-equate-cad" | "rbc-equate-usd" | "fundstrat-largecap-core" | "fundstrat-smid-core" | "veritas-vlist" | "rbc-cad-smallcap" | "fundstrat-lc-core-list" | "fundstrat-smid-core-list",
   entries: ScrapedRbcRow[],
   forceAdditive: boolean,
 ): { nextState: ResearchState; summary: ResearchMergeSummary } {
@@ -155,6 +155,8 @@ function applyRbcEntries(
     : source === "fundstrat-largecap-core" ? "fundstratLargeCapCore"
     : source === "veritas-vlist" ? "veritasVList"
     : source === "rbc-cad-smallcap" ? "rbcCadSmallCap"
+    : source === "fundstrat-lc-core-list" ? "fundstratLcCoreList"
+    : source === "fundstrat-smid-core-list" ? "fundstratSmidCoreList"
     : "fundstratSmidCore";
   const existing = ((state[stateKey as keyof ResearchState] as RBCEntry[]) || []);
   const existingByNorm = new Map(existing.map((r) => [normalize(r.ticker), r]));
@@ -401,6 +403,8 @@ export function applyResearchEntries(
     case "fundstrat-smid-core":
     case "veritas-vlist":
     case "rbc-cad-smallcap":
+    case "fundstrat-lc-core-list":
+    case "fundstrat-smid-core-list":
       result = applyRbcEntries(state, source, entries as ScrapedRbcRow[], forceAdditive);
       break;
     case "seeking-alpha-picks":

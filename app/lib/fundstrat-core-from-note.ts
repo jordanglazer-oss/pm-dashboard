@@ -27,6 +27,9 @@
  * That keeps a manual edit or a screenshot upload made in between from being
  * reverted by the next morning's note. The screenshot scanner stays the
  * manual override.
+ *
+ * Writes ONLY fundstratLcCoreList / fundstratSmidCoreList — never the Top /
+ * SMID Top Ideas (the monthly top 5) or the DQM "Core Ideas" screens.
  */
 
 import { getRedis } from "./redis";
@@ -144,7 +147,8 @@ export type CoreListSyncResult = {
 
 /**
  * Parse Lee's note and apply any Core list whose as-of date is newer than the
- * one last applied. Read-modify-write of pm:research: only the two Core lists,
+ * one last applied. Read-modify-write of pm:research: only the two Core LISTS
+ * (fundstratLcCoreList / fundstratSmidCoreList),
  * `scanDates` and `coreListAsOf` change; every other list on the blob is
  * carried through untouched by applyResearchEntries' `{ ...state }` spread.
  *
@@ -161,7 +165,7 @@ export async function syncCoreListsFromLeeNote(text: string): Promise<CoreListSy
   let state = JSON.parse(raw) as ResearchState;
 
   const results: CoreListSyncResult[] = [];
-  const removals: { tickers: string[]; source: "fundstrat-largecap-core" | "fundstrat-smid-core" }[] = [];
+  const removals: { tickers: string[]; source: "fundstrat-lc-core-list" | "fundstrat-smid-core-list" }[] = [];
   let changed = false;
 
   for (const list of parsed) {
@@ -174,7 +178,9 @@ export async function syncCoreListsFromLeeNote(text: string): Promise<CoreListSy
     const prevAsOf = state.coreListAsOf?.[list.kind];
     if (asOfMs(list.asOf) <= asOfMs(prevAsOf)) { results.push({ ...base, status: "unchanged" }); continue; }
 
-    const source = list.kind === "largeCap" ? "fundstrat-largecap-core" : "fundstrat-smid-core";
+    // ONLY the Core LISTS. The Top / SMID Top Ideas (monthly top 5) and the
+    // DQM "Core Ideas" screens are never touched by the note.
+    const source = list.kind === "largeCap" ? "fundstrat-lc-core-list" : "fundstrat-smid-core-list";
     // No dateAdded: a name already on the list keeps its own, and the note's
     // as-of date is the list's revision date, not when each name joined.
     const entries: ScrapedRbcRow[] = list.rows.map((r) => ({ ticker: r.ticker, sector: r.sector }));
@@ -199,7 +205,7 @@ export async function syncCoreListsFromLeeNote(text: string): Promise<CoreListSy
 /** One-line human summary for the Inbox log / route response. */
 export function describeCoreSync(results: CoreListSyncResult[]): string {
   if (results.length === 0) return "";
-  const label = (k: CoreListKind) => (k === "largeCap" ? "Large-Cap Core" : "SMID Core");
+  const label = (k: CoreListKind) => (k === "largeCap" ? "Fundstrat Large-Cap Core List" : "Fundstrat SMID Core List");
   return results
     .map((r) => {
       if (r.status === "applied" && r.summary) {

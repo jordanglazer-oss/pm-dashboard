@@ -212,7 +212,7 @@ function AlphaPickAddForm({ onAdd }: { onAdd: (e: AlphaPickEntry) => void }) {
  * zero Anthropic tokens.
  */
 function ResearchScraperBlock(props: {
-  source: "fundstrat-top" | "fundstrat-bottom" | "fundstrat-smid-top" | "fundstrat-smid-bottom" | "fundstrat-largecap-core" | "fundstrat-smid-core" | "rbc-focus" | "rbc-us-focus" | "rbc-equate-cad" | "rbc-equate-usd" | "jpm-us-analyst-focus" | "seeking-alpha-picks" | "rbccm-few" | "veritas-vlist" | "rbc-cad-smallcap";
+  source: "fundstrat-top" | "fundstrat-bottom" | "fundstrat-smid-top" | "fundstrat-smid-bottom" | "fundstrat-largecap-core" | "fundstrat-smid-core" | "rbc-focus" | "rbc-us-focus" | "rbc-equate-cad" | "rbc-equate-usd" | "jpm-us-analyst-focus" | "seeking-alpha-picks" | "rbccm-few" | "veritas-vlist" | "rbc-cad-smallcap" | "fundstrat-lc-core-list" | "fundstrat-smid-core-list";
   sectionLabel: string;
   helperText: string;
   attachments: BriefAttachment[];
@@ -559,6 +559,8 @@ const RAIL_GROUPS: { label: string; items: { key: string; label: string }[] }[] 
     { key: "research.fsSmidBottom", label: "Fundstrat SMID — Bottom" },
     { key: "research.lcCore", label: "Large-Cap Core Ideas" },
     { key: "research.smidCore", label: "SMID Core Ideas" },
+    { key: "research.lcCoreList", label: "Large-Cap Core List" },
+    { key: "research.smidCoreList", label: "SMID Core List" },
     { key: "research.alpha", label: "Alpha Picks" },
   ] },
   { label: "Focus lists", items: [
@@ -595,6 +597,8 @@ const TICKER_LISTS: { key: keyof ResearchState; label: string; railKey: string; 
   { key: "fundstratSmidBottom", label: "Fundstrat SMID — Bottom", railKey: "research.fsSmidBottom" },
   { key: "fundstratLargeCapCore", label: "Large-Cap Core Ideas", railKey: "research.lcCore" },
   { key: "fundstratSmidCore", label: "SMID Core Ideas", railKey: "research.smidCore" },
+  { key: "fundstratLcCoreList", label: "Large-Cap Core List", railKey: "research.lcCoreList" },
+  { key: "fundstratSmidCoreList", label: "SMID Core List", railKey: "research.smidCoreList" },
   { key: "alphaPicks", label: "Alpha Picks", railKey: "research.alpha" },
   { key: "rbcCanadianFocus", label: "RBC Canada", railKey: "research.rbcCa", canadian: true },
   { key: "rbcUsFocus", label: "RBC US", railKey: "research.rbcUs" },
@@ -749,6 +753,8 @@ const SOURCE_ATTACHMENT_SECTION: Record<string, string> = {
   "research.few": "rbccm-few",
   "research.veritas": "veritas-vlist",
   "research.rbcSmall": "rbc-cad-smallcap",
+  "research.lcCoreList": "fundstrat-lc-core-list",
+  "research.smidCoreList": "fundstrat-smid-core-list",
 };
 
 /** Short date for the rail's "last scanned" column ("Sep 2"), or "—". */
@@ -942,6 +948,8 @@ export default function ResearchPage() {
       ...(s.equateUsd ?? []).map((i) => i.ticker),
       ...(s.veritasVList ?? []).map((i) => i.ticker),
       ...(s.rbcCadSmallCap ?? []).map((i) => i.ticker),
+      ...(s.fundstratLcCoreList ?? []).map((i) => i.ticker),
+      ...(s.fundstratSmidCoreList ?? []).map((i) => i.ticker),
     ];
     const unique = [...new Set(allTickers)];
     if (unique.length === 0) return;
@@ -1011,7 +1019,7 @@ export default function ResearchPage() {
   // `scrapeStatus` because its Refresh button does more than just scrape
   // (it also refreshes prices and names). The new sources are
   // scrape-only so a per-source map keeps each section's UI independent.
-  type SourceKey = "fundstrat-top" | "fundstrat-bottom" | "fundstrat-smid-top" | "fundstrat-smid-bottom" | "fundstrat-largecap-core" | "fundstrat-smid-core" | "rbc-focus" | "rbc-us-focus" | "rbc-equate-cad" | "rbc-equate-usd" | "jpm-us-analyst-focus" | "seeking-alpha-picks" | "rbccm-few" | "veritas-vlist" | "rbc-cad-smallcap";
+  type SourceKey = "fundstrat-top" | "fundstrat-bottom" | "fundstrat-smid-top" | "fundstrat-smid-bottom" | "fundstrat-largecap-core" | "fundstrat-smid-core" | "rbc-focus" | "rbc-us-focus" | "rbc-equate-cad" | "rbc-equate-usd" | "jpm-us-analyst-focus" | "seeking-alpha-picks" | "rbccm-few" | "veritas-vlist" | "rbc-cad-smallcap" | "fundstrat-lc-core-list" | "fundstrat-smid-core-list";
   const [scrapeLoadingMap, setScrapeLoadingMap] = useState<Partial<Record<SourceKey, boolean>>>({});
   const [scrapeStatusMap, setScrapeStatusMap] = useState<Partial<Record<SourceKey, string>>>({});
 
@@ -1466,7 +1474,7 @@ export default function ResearchPage() {
           }
 
           // Backfill missing names for both RBC lists + the JPM list.
-          for (const listKey of ["rbcCanadianFocus", "rbcUsFocus", "jpmUsAnalystFocus", "equateCad", "equateUsd", "veritasVList", "rbcCadSmallCap"] as const) {
+          for (const listKey of ["rbcCanadianFocus", "rbcUsFocus", "jpmUsAnalystFocus", "equateCad", "equateUsd", "veritasVList", "rbcCadSmallCap", "fundstratLcCoreList", "fundstratSmidCoreList"] as const) {
             const list = (research[listKey] || []) as RBCEntry[];
             const needsFill = list.filter((r) => !r.name || r.name === r.ticker || !r.sector || r.sector === "—");
             if (needsFill.length === 0) continue;
@@ -1700,7 +1708,7 @@ export default function ResearchPage() {
    * elsewhere in the app — Yahoo returns the canonical GICS sector
    * which we want to standardize on).
    */
-  const refreshRbcNames = useCallback(async (list: "rbcCanadianFocus" | "rbcUsFocus" | "jpmUsAnalystFocus" | "equateCad" | "equateUsd" | "veritasVList" | "rbcCadSmallCap", overrideState?: ResearchState) => {
+  const refreshRbcNames = useCallback(async (list: "rbcCanadianFocus" | "rbcUsFocus" | "jpmUsAnalystFocus" | "equateCad" | "equateUsd" | "veritasVList" | "rbcCadSmallCap" | "fundstratLcCoreList" | "fundstratSmidCoreList", overrideState?: ResearchState) => {
     const s = overrideState || state;
     const entries = (s[list] || []) as RBCEntry[];
     if (entries.length === 0) return;
@@ -1746,7 +1754,7 @@ export default function ResearchPage() {
     void fetchLivePrices();
     void fetchFactsetPrices();
     void refreshUptickNames();
-    (["rbcCanadianFocus", "rbcUsFocus", "jpmUsAnalystFocus", "equateCad", "equateUsd", "veritasVList", "rbcCadSmallCap"] as const).forEach((l) => void refreshRbcNames(l));
+    (["rbcCanadianFocus", "rbcUsFocus", "jpmUsAnalystFocus", "equateCad", "equateUsd", "veritasVList", "rbcCadSmallCap", "fundstratLcCoreList", "fundstratSmidCoreList"] as const).forEach((l) => void refreshRbcNames(l));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [priceRefreshNonce]);
 
@@ -2008,6 +2016,10 @@ export default function ResearchPage() {
         void fetchLivePrices(nextState);
       } else if (source === "veritas-vlist" || source === "rbc-cad-smallcap") {
         void refreshRbcNames(source === "veritas-vlist" ? "veritasVList" : "rbcCadSmallCap", nextState);
+        void fetchLivePrices(nextState);
+      } else if (source === "fundstrat-lc-core-list" || source === "fundstrat-smid-core-list") {
+        // The list carries tickers + sector only — backfill names from Yahoo.
+        void refreshRbcNames(source === "fundstrat-lc-core-list" ? "fundstratLcCoreList" : "fundstratSmidCoreList", nextState);
         void fetchLivePrices(nextState);
       } else if (source === "fundstrat-largecap-core" || source === "fundstrat-smid-core") {
         // Core-Ideas rows carry their own company names from the DQM screen,
@@ -2272,15 +2284,18 @@ export default function ResearchPage() {
   const removeJpmFocus = (ticker: string) => {
     save({ ...state, jpmUsAnalystFocus: (state.jpmUsAnalystFocus || []).filter((r) => r.ticker !== ticker) });
   };
-  // Veritas V-List + RBC Cdn Small Cap Conviction: all-TSX lists, so a manual
-  // add is canonicalized to ".TO" (the add form takes "ATZ" as typed).
-  const addCadList = (key: "veritasVList" | "rbcCadSmallCap", entry: RBCEntry) => {
+  // Veritas V-List + RBC Cdn Small Cap Conviction (all-TSX: a manual add is
+  // canonicalized to ".TO", the form takes "ATZ" as typed) and the Fundstrat
+  // Core Lists (bare US tickers, kept as typed).
+  type SimpleListKey = "veritasVList" | "rbcCadSmallCap" | "fundstratLcCoreList" | "fundstratSmidCoreList";
+  const addCadList = (key: SimpleListKey, entry: RBCEntry) => {
     const list = state[key] || [];
-    const ticker = toCanadianYahooTicker(entry.ticker);
+    const canadian = key === "veritasVList" || key === "rbcCadSmallCap";
+    const ticker = canadian ? toCanadianYahooTicker(entry.ticker) : entry.ticker;
     if (list.some((r) => r.ticker === ticker)) return;
     save({ ...state, [key]: [...list, { ...entry, ticker }] });
   };
-  const removeCadList = (key: "veritasVList" | "rbcCadSmallCap", ticker: string) => {
+  const removeCadList = (key: SimpleListKey, ticker: string) => {
     save({ ...state, [key]: (state[key] || []).filter((r) => r.ticker !== ticker) });
   };
   const addFew = (entry: FewEntry) => {
@@ -2466,6 +2481,8 @@ export default function ResearchPage() {
       "research.few": (state.rbccmFew ?? []).length,
       "research.veritas": (state.veritasVList ?? []).length,
       "research.rbcSmall": (state.rbcCadSmallCap ?? []).length,
+      "research.lcCoreList": (state.fundstratLcCoreList ?? []).length,
+      "research.smidCoreList": (state.fundstratSmidCoreList ?? []).length,
       "research.equateCad": (state.equateCad ?? []).length,
       "research.equateUsd": (state.equateUsd ?? []).length,
       "research.quickRef": null,
@@ -2480,6 +2497,8 @@ export default function ResearchPage() {
       "research.jpm": state.jpmUsAnalystFocus,
       "research.veritas": state.veritasVList,
       "research.rbcSmall": state.rbcCadSmallCap,
+      "research.lcCoreList": state.fundstratLcCoreList,
+      "research.smidCoreList": state.fundstratSmidCoreList,
       "research.equateCad": state.equateCad,
       "research.equateUsd": state.equateUsd,
     };
@@ -3623,7 +3642,7 @@ export default function ResearchPage() {
             {
               key: "lc", source: "fundstrat-largecap-core" as const, prefKey: "research.lcCore", linked: "research.smidCore",
               title: "Fundstrat Large-Cap Core Ideas", subtitle: "Fundstrat DQM quant screen · 1M / YTD relative to the S&P 500",
-              helper: `Updated automatically from Tom Lee's daily note${state.coreListAsOf?.largeCap ? ` (last applied: list as of ${state.coreListAsOf.largeCap})` : ""}. A screenshot still works as a manual override — on Refresh, ticker + company + sector + DQM rank + momentum + relative perf are extracted and merged.`,
+              helper: "Upload a Fundstrat Large-Cap Core Ideas screenshot. On Refresh, ticker + company + sector + DQM rank + momentum + relative perf are extracted and merged.",
               list: sortedLcCore(), rawLen: (state.fundstratLargeCapCore || []).length, view: lcCoreView,
               sort: lcCoreSort, toggle: toggleLcCoreSort, arrow: lcArrow, onAdd: addLcCore, onRemove: removeLcCore,
               titleClass: "text-[13px] font-semibold text-ink", border: "border-line min-w-0",
@@ -3631,7 +3650,7 @@ export default function ResearchPage() {
             {
               key: "smid", source: "fundstrat-smid-core" as const, prefKey: "research.smidCore", linked: "research.lcCore",
               title: "Fundstrat SMID Core Ideas", subtitle: "Fundstrat DQM quant screen · 1M / YTD relative to the Russell 2500",
-              helper: `Updated automatically from Tom Lee's daily note${state.coreListAsOf?.smid ? ` (last applied: list as of ${state.coreListAsOf.smid})` : ""}. A screenshot still works as a manual override — on Refresh, ticker + company + sector + DQM rank + momentum + relative perf are extracted and merged.`,
+              helper: "Upload a Fundstrat SMID Core Ideas screenshot. On Refresh, ticker + company + sector + DQM rank + momentum + relative perf are extracted and merged.",
               list: sortedSmidCore(), rawLen: (state.fundstratSmidCore || []).length, view: smidCoreView,
               sort: smidCoreSort, toggle: toggleSmidCoreSort, arrow: smcArrow, onAdd: addSmidCore, onRemove: removeSmidCore,
               titleClass: "text-[13px] font-semibold text-ink", border: "border-line min-w-0",
@@ -4346,10 +4365,12 @@ export default function ResearchPage() {
         </CollapsibleSection>
         </div>
 
-        {/* ── Veritas V-List + RBC Canadian Small Cap Conviction List ──
-            Two all-TSX focus lists (.TO tickers), same flow as the RBC
-            Canadian Focus card: compact rows, manual add, screenshot scanner.
-            Built from one config array so the pair can't drift apart. */}
+        {/* ── Veritas V-List + RBC Canadian Small Cap Conviction List, and the
+            Fundstrat Large-Cap / SMID Core LISTS ──
+            Same flow as the RBC Canadian Focus card: compact rows, manual
+            add, screenshot scanner. The Veritas / RBC pair are all-TSX (.TO);
+            the Core Lists are bare US tickers kept current from Lee's note.
+            Built from one config array so the cards can't drift apart. */}
         <div className="research-pair grid items-start gap-3.5 lg:grid-cols-2">
           {([
             {
@@ -4361,6 +4382,16 @@ export default function ResearchPage() {
               key: "rbcCadSmallCap" as const, source: "rbc-cad-smallcap" as const, prefKey: "research.rbcSmall", linked: "research.veritas",
               title: "RBC Canadian Small Cap Conviction List", subtitle: "RBC Capital Markets — TSX names ≤ $2B market cap when added",
               helper: "Upload an RBC Canadian Small Cap Conviction List screenshot or PDF. On Refresh, ticker (auto-suffixed .TO) + name + sector + date are extracted and merged. Names that have grown past $2B since being added stay on.",
+            },
+            {
+              key: "fundstratLcCoreList" as const, source: "fundstrat-lc-core-list" as const, prefKey: "research.lcCoreList", linked: "research.smidCoreList",
+              title: "Fundstrat Large-Cap Core List", subtitle: `Tom Lee's full large-cap core list — updated automatically from his daily note${state.coreListAsOf?.largeCap ? ` · list as of ${state.coreListAsOf.largeCap}` : ""}`,
+              helper: "Kept current from Tom Lee's daily note (applied when the list's as-of date changes and the name count matches). Screenshot fallback: on Refresh, every ticker + sector is extracted and merged.",
+            },
+            {
+              key: "fundstratSmidCoreList" as const, source: "fundstrat-smid-core-list" as const, prefKey: "research.smidCoreList", linked: "research.lcCoreList",
+              title: "Fundstrat SMID Core List", subtitle: `Tom Lee's full SMID core list — updated automatically from his daily note${state.coreListAsOf?.smid ? ` · list as of ${state.coreListAsOf.smid}` : ""}`,
+              helper: "Kept current from Tom Lee's daily note (applied when the list's as-of date changes and the name count matches). Screenshot fallback: on Refresh, every ticker + sector is extracted and merged.",
             },
           ]).map((cfg) => {
             const list = state[cfg.key] || [];

@@ -208,6 +208,7 @@ export default function ConvictionPage() {
         "jpmUsAnalystFocus", "rbcUsFocus", "rbcCanadianFocus", "fundstratTop",
         "fundstratSmidTop", "fundstratBottom", "fundstratSmidBottom", "alphaPicks",
         "newtonUpticks", "rbccmFew", "veritasVList", "rbcCadSmallCap",
+        "fundstratLcCoreList", "fundstratSmidCoreList",
       ];
       for (const f of lists) {
         const arr = research[f] as Array<{ ticker?: string }> | undefined;

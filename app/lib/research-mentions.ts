@@ -37,7 +37,9 @@ export type MentionSource =
   | "seeking-alpha-picks"
   | "rbccm-few"
   | "veritas-vlist"
-  | "rbc-cad-smallcap";
+  | "rbc-cad-smallcap"
+  | "fundstrat-lc-core-list"
+  | "fundstrat-smid-core-list";
 
 export type Mention = {
   source: MentionSource;
@@ -92,6 +94,8 @@ const SOURCES: SourceConfig[] = [
   { source: "rbccm-few", label: "RBCCM Canadian FEW", field: "rbccmFew", direction: "bullish" },
   { source: "veritas-vlist", label: "Veritas V-List", field: "veritasVList", direction: "bullish" },
   { source: "rbc-cad-smallcap", label: "RBC Cdn Small Cap Conviction", field: "rbcCadSmallCap", direction: "bullish" },
+  { source: "fundstrat-lc-core-list", label: "Fundstrat Large-Cap Core List", field: "fundstratLcCoreList", direction: "bullish" },
+  { source: "fundstrat-smid-core-list", label: "Fundstrat SMID Core List", field: "fundstratSmidCoreList", direction: "bullish" },
 ];
 
 type ResearchListEntry = { ticker?: unknown; analyzedAt?: unknown; dateAdded?: unknown };

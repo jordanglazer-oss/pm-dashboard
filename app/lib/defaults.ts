@@ -294,7 +294,15 @@ export type ResearchState = {
   // $2B or less AT THE TIME THEY WERE ADDED (a name that has since grown past
   // $2B stays on the list). .TO tickers, RBCEntry shape. Optional.
   rbcCadSmallCap?: RBCEntry[];
-  // As-of date ("M/D/YYYY") of the Large-Cap / SMID Core lists last applied
+  // Fundstrat Large-Cap / SMID Core LISTS — the full, longer lists Tom Lee
+  // publishes in his daily note ("The Current Large-cap Core List as of …",
+  // ~45 / ~65 names). DISTINCT from the Top / SMID Top Ideas (the monthly
+  // top 5) and from the DQM "Core Ideas" screens above. Kept current
+  // automatically from Lee's note (app/lib/fundstrat-core-from-note.ts); a
+  // screenshot upload is the manual fallback. Bare US tickers. Optional.
+  fundstratLcCoreList?: RBCEntry[];
+  fundstratSmidCoreList?: RBCEntry[];
+  // As-of date ("M/D/YYYY") of the Large-Cap / SMID Core LISTS last applied
   // from Tom Lee's daily note (app/lib/fundstrat-core-from-note.ts). The note
   // repeats the same list for weeks, so a list is only re-applied when its
   // as-of date moves — a manual edit or screenshot in between is never
@@ -409,6 +417,8 @@ export const defaultResearch: ResearchState = {
   rbccmFew: [],
   veritasVList: [],
   rbcCadSmallCap: [],
+  fundstratLcCoreList: [],
+  fundstratSmidCoreList: [],
   generalNotes: "",
   attachments: [],
   newtonSectors: GICS_SECTORS.map((s) => ({ sector: s, view: "neutral" as SectorView })),
