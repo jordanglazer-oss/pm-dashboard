@@ -34,8 +34,6 @@ export type RankedListKey =
   | "fundstratBottom"
   | "fundstratSmidTop"
   | "fundstratSmidBottom"
-  | "fundstratLargeCapCore"
-  | "fundstratSmidCore"
   | "alphaPicks"
   | "rbcCanadianFocus"
   | "rbcUsFocus"
@@ -67,8 +65,6 @@ export const RANKED_LISTS: RankedListConfig[] = [
   { key: "fundstratBottom", label: "Fundstrat Bottom Ideas", short: "FS Bottom", railKey: "research.fsBottom", bearish: true },
   { key: "fundstratSmidTop", label: "Fundstrat SMID Top", short: "FS SMID Top", railKey: "research.fsSmidTop" },
   { key: "fundstratSmidBottom", label: "Fundstrat SMID Bottom", short: "FS SMID Bottom", railKey: "research.fsSmidBottom", bearish: true },
-  { key: "fundstratLargeCapCore", label: "Fundstrat Large-Cap Core", short: "FS LC Core", railKey: "research.lcCore" },
-  { key: "fundstratSmidCore", label: "Fundstrat SMID Core", short: "FS SMID Core", railKey: "research.smidCore" },
   { key: "alphaPicks", label: "Seeking Alpha Picks", short: "Alpha Picks", railKey: "research.alpha" },
   { key: "rbcCanadianFocus", label: "RBC Canadian Focus", short: "RBC CA Focus", railKey: "research.rbcCa", canadian: true },
   { key: "rbcUsFocus", label: "RBC US Focus", short: "RBC US Focus", railKey: "research.rbcUs" },

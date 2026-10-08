@@ -29,7 +29,7 @@
  * manual override.
  *
  * Writes ONLY fundstratLcCoreList / fundstratSmidCoreList — never the Top /
- * SMID Top Ideas (the monthly top 5) or the DQM "Core Ideas" screens.
+ * SMID Top Ideas (the monthly top 5).
  */
 
 import { getRedis } from "./redis";
@@ -178,8 +178,8 @@ export async function syncCoreListsFromLeeNote(text: string): Promise<CoreListSy
     const prevAsOf = state.coreListAsOf?.[list.kind];
     if (asOfMs(list.asOf) <= asOfMs(prevAsOf)) { results.push({ ...base, status: "unchanged" }); continue; }
 
-    // ONLY the Core LISTS. The Top / SMID Top Ideas (monthly top 5) and the
-    // DQM "Core Ideas" screens are never touched by the note.
+    // ONLY the Core LISTS. The Top / SMID Top Ideas (monthly top 5) are never
+    // touched by the note.
     const source = list.kind === "largeCap" ? "fundstrat-lc-core-list" : "fundstrat-smid-core-list";
     // No dateAdded: a name already on the list keeps its own, and the note's
     // as-of date is the list's revision date, not when each name joined.

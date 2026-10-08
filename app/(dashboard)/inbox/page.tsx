@@ -1872,13 +1872,13 @@ export default function InboxPage() {
               <tr>
                 <td className="font-mono">Fundstrat Large-Cap Core</td>
                 <td>Screenshot (PNG/JPG/PDF)</td>
-                <td>Merges into the Fundstrat Large-Cap Core Ideas DQM screen (ticker, company, sector, industry, mkt cap, 1M/YTD relative perf, P/E, DQM rank, momentum rating, trend flags). Perf is relative to the S&amp;P 500.</td>
+                <td>Fundstrat Large-Cap Core List — manual fallback only; the list normally updates itself from Tom Lee&rsquo;s daily note.</td>
                 <td className="font-mono">Fundstrat Large-Cap Core</td>
               </tr>
               <tr>
                 <td className="font-mono">Fundstrat SMID Core</td>
                 <td>Screenshot (PNG/JPG/PDF)</td>
-                <td>Merges into the Fundstrat SMID Core Ideas DQM screen (same columns as Large-Cap Core). Perf is relative to the Russell 2500.</td>
+                <td>Fundstrat SMID Core List — manual fallback only; the list normally updates itself from Tom Lee&rsquo;s daily note.</td>
                 <td className="font-mono">Fundstrat SMID Core</td>
               </tr>
               <tr>

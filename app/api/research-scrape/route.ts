@@ -47,8 +47,6 @@ const VALID_SOURCES: readonly SourceKey[] = [
   "fundstrat-bottom",
   "fundstrat-smid-top",
   "fundstrat-smid-bottom",
-  "fundstrat-largecap-core",
-  "fundstrat-smid-core",
   "rbc-focus",
   "rbc-us-focus",
   "jpm-us-analyst-focus",

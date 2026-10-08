@@ -101,12 +101,11 @@ export function classifySubject(subject: string): InboxKind {
   // ── Research lists (RBC / Fundstrat / Seeking Alpha / RBCCM FEW) ──
   // Fundstrat "Core Ideas" DQM screens first — the "… Core" suffix keeps them
   // distinct from the "… Top/Bottom" idea lists below.
-  // The full Core LISTS (Lee's ~45 / ~65 names) — "… Core List" must be
-  // tested before the DQM "… Core" screens, which would otherwise match.
-  if (/^fundstrat\s+large[-\s]?cap\s+core\s+list\b/i.test(s)) return { kind: "research", source: "fundstrat-lc-core-list" };
-  if (/^fundstrat\s+smid(?:[-\s]?cap)?\s+core\s+list\b/i.test(s)) return { kind: "research", source: "fundstrat-smid-core-list" };
-  if (/^fundstrat\s+large[-\s]?cap\s+core\b/i.test(s)) return { kind: "research", source: "fundstrat-largecap-core" };
-  if (/^fundstrat\s+smid\s+core\b/i.test(s)) return { kind: "research", source: "fundstrat-smid-core" };
+  // Fundstrat Large-Cap / SMID Core Lists (Lee's full lists; normally kept
+  // current from his daily note). "… Core" and "… Core List" both route here —
+  // the older DQM "Core Ideas" lists were the same lists and are retired.
+  if (/^fundstrat\s+large[-\s]?cap\s+core\b/i.test(s)) return { kind: "research", source: "fundstrat-lc-core-list" };
+  if (/^fundstrat\s+smid(?:[-\s]?cap)?\s+core\b/i.test(s)) return { kind: "research", source: "fundstrat-smid-core-list" };
   if (/^fundstrat\s+smid\s+top\b/i.test(s)) return { kind: "research", source: "fundstrat-smid-top" };
   if (/^fundstrat\s+smid\s+bottom\b/i.test(s)) return { kind: "research", source: "fundstrat-smid-bottom" };
   if (/^fundstrat\s+top\b/i.test(s)) return { kind: "research", source: "fundstrat-top" };

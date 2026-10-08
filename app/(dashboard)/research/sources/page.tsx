@@ -212,7 +212,7 @@ function AlphaPickAddForm({ onAdd }: { onAdd: (e: AlphaPickEntry) => void }) {
  * zero Anthropic tokens.
  */
 function ResearchScraperBlock(props: {
-  source: "fundstrat-top" | "fundstrat-bottom" | "fundstrat-smid-top" | "fundstrat-smid-bottom" | "fundstrat-largecap-core" | "fundstrat-smid-core" | "rbc-focus" | "rbc-us-focus" | "rbc-equate-cad" | "rbc-equate-usd" | "jpm-us-analyst-focus" | "seeking-alpha-picks" | "rbccm-few" | "veritas-vlist" | "rbc-cad-smallcap" | "fundstrat-lc-core-list" | "fundstrat-smid-core-list";
+  source: "fundstrat-top" | "fundstrat-bottom" | "fundstrat-smid-top" | "fundstrat-smid-bottom" | "rbc-focus" | "rbc-us-focus" | "rbc-equate-cad" | "rbc-equate-usd" | "jpm-us-analyst-focus" | "seeking-alpha-picks" | "rbccm-few" | "veritas-vlist" | "rbc-cad-smallcap" | "fundstrat-lc-core-list" | "fundstrat-smid-core-list";
   sectionLabel: string;
   helperText: string;
   attachments: BriefAttachment[];
@@ -536,7 +536,6 @@ type RBCSortKey = "ticker" | "name" | "sector" | "weight" | "dateAdded";
 type JpmSortKey = "name" | "ticker" | "industry" | "strategy" | "currentPrice" | "priceTarget";
 type EquateSortKey = "rank" | "name" | "ticker" | "industry" | "currentPrice";
 type FewSortKey = "ticker" | "name" | "industry" | "price";
-type CoreSortKey = "dqmRank" | "ticker" | "name" | "sector" | "momentumRating" | "perf1M" | "perfYTD" | "pe" | "mktCap" | "currentPrice";
 type AlphaSortKey = "name" | "ticker" | "sector" | "rating" | "holdingWeight" | "currentPrice" | "priceWhenAdded" | "returnSinceAdded" | "dateAdded" | "days";
 type SortDir = "asc" | "desc";
 
@@ -557,8 +556,6 @@ const RAIL_GROUPS: { label: string; items: { key: string; label: string }[] }[] 
     { key: "research.fsBottom", label: "Fundstrat — Bottom" },
     { key: "research.fsSmidTop", label: "Fundstrat SMID — Top" },
     { key: "research.fsSmidBottom", label: "Fundstrat SMID — Bottom" },
-    { key: "research.lcCore", label: "Large-Cap Core Ideas" },
-    { key: "research.smidCore", label: "SMID Core Ideas" },
     { key: "research.lcCoreList", label: "Large-Cap Core List" },
     { key: "research.smidCoreList", label: "SMID Core List" },
     { key: "research.alpha", label: "Alpha Picks" },
@@ -595,8 +592,6 @@ const TICKER_LISTS: { key: keyof ResearchState; label: string; railKey: string; 
   { key: "fundstratBottom", label: "Fundstrat — Bottom", railKey: "research.fsBottom" },
   { key: "fundstratSmidTop", label: "Fundstrat SMID — Top", railKey: "research.fsSmidTop" },
   { key: "fundstratSmidBottom", label: "Fundstrat SMID — Bottom", railKey: "research.fsSmidBottom" },
-  { key: "fundstratLargeCapCore", label: "Large-Cap Core Ideas", railKey: "research.lcCore" },
-  { key: "fundstratSmidCore", label: "SMID Core Ideas", railKey: "research.smidCore" },
   { key: "fundstratLcCoreList", label: "Large-Cap Core List", railKey: "research.lcCoreList" },
   { key: "fundstratSmidCoreList", label: "SMID Core List", railKey: "research.smidCoreList" },
   { key: "alphaPicks", label: "Alpha Picks", railKey: "research.alpha" },
@@ -744,8 +739,6 @@ const SOURCE_ATTACHMENT_SECTION: Record<string, string> = {
   "research.fsBottom": "fundstrat-bottom",
   "research.fsSmidTop": "fundstrat-smid-top",
   "research.fsSmidBottom": "fundstrat-smid-bottom",
-  "research.lcCore": "fundstrat-largecap-core",
-  "research.smidCore": "fundstrat-smid-core",
   "research.alpha": "seeking-alpha-picks",
   "research.rbcCa": "rbc-focus",
   "research.rbcUs": "rbc-us-focus",
@@ -876,11 +869,6 @@ export default function ResearchPage() {
   const FEW_SORT_KEYS: ReadonlyArray<FewSortKey> = ["ticker", "name", "industry", "price"];
   const fewSort = readSort<FewSortKey>("research.fewSortKey", "research.fewSortDir", FEW_SORT_KEYS, "ticker", "asc");
   const setFewSort = (next: { key: FewSortKey; dir: SortDir }) => writeSort("research.fewSortKey", "research.fewSortDir", next);
-  const CORE_SORT_KEYS: ReadonlyArray<CoreSortKey> = ["dqmRank", "ticker", "name", "sector", "momentumRating", "perf1M", "perfYTD", "pe", "mktCap", "currentPrice"];
-  const lcCoreSort = readSort<CoreSortKey>("research.lcCoreSortKey", "research.lcCoreSortDir", CORE_SORT_KEYS, "dqmRank", "asc");
-  const setLcCoreSort = (next: { key: CoreSortKey; dir: SortDir }) => writeSort("research.lcCoreSortKey", "research.lcCoreSortDir", next);
-  const smidCoreSort = readSort<CoreSortKey>("research.smidCoreSortKey", "research.smidCoreSortDir", CORE_SORT_KEYS, "dqmRank", "asc");
-  const setSmidCoreSort = (next: { key: CoreSortKey; dir: SortDir }) => writeSort("research.smidCoreSortKey", "research.smidCoreSortDir", next);
 
   // Live prices from Yahoo Finance
   const [livePrices, setLivePrices] = useState<LivePrices>({});
@@ -934,8 +922,6 @@ export default function ResearchPage() {
       ...s.fundstratBottom.map((i) => i.ticker),
       ...(s.fundstratSmidTop ?? []).map((i) => i.ticker),
       ...(s.fundstratSmidBottom ?? []).map((i) => i.ticker),
-      ...(s.fundstratLargeCapCore ?? []).map((i) => i.ticker),
-      ...(s.fundstratSmidCore ?? []).map((i) => i.ticker),
       ...(s.alphaPicks ?? []).map((i) => i.ticker),
       ...(s.rbccmFew ?? []).map((i) => i.ticker),
       // RBC + JPM + Equate lists get their live price from Yahoo too (FactSet's
@@ -1019,7 +1005,7 @@ export default function ResearchPage() {
   // `scrapeStatus` because its Refresh button does more than just scrape
   // (it also refreshes prices and names). The new sources are
   // scrape-only so a per-source map keeps each section's UI independent.
-  type SourceKey = "fundstrat-top" | "fundstrat-bottom" | "fundstrat-smid-top" | "fundstrat-smid-bottom" | "fundstrat-largecap-core" | "fundstrat-smid-core" | "rbc-focus" | "rbc-us-focus" | "rbc-equate-cad" | "rbc-equate-usd" | "jpm-us-analyst-focus" | "seeking-alpha-picks" | "rbccm-few" | "veritas-vlist" | "rbc-cad-smallcap" | "fundstrat-lc-core-list" | "fundstrat-smid-core-list";
+  type SourceKey = "fundstrat-top" | "fundstrat-bottom" | "fundstrat-smid-top" | "fundstrat-smid-bottom" | "rbc-focus" | "rbc-us-focus" | "rbc-equate-cad" | "rbc-equate-usd" | "jpm-us-analyst-focus" | "seeking-alpha-picks" | "rbccm-few" | "veritas-vlist" | "rbc-cad-smallcap" | "fundstrat-lc-core-list" | "fundstrat-smid-core-list";
   const [scrapeLoadingMap, setScrapeLoadingMap] = useState<Partial<Record<SourceKey, boolean>>>({});
   const [scrapeStatusMap, setScrapeStatusMap] = useState<Partial<Record<SourceKey, string>>>({});
 
@@ -1073,8 +1059,6 @@ export default function ResearchPage() {
   const equateUsdView = uiPrefs["research.equateUsd.view"] || "rows";
   const fewView = uiPrefs["research.few.view"] || "rows";
   const alphaView = uiPrefs["research.alpha.view"] || "rows";
-  const lcCoreView = uiPrefs["research.lcCore.view"] || "rows";
-  const smidCoreView = uiPrefs["research.smidCore.view"] || "rows";
   const isInList = (t: string) => scoredStocks.some((s) => s.ticker === t);
   // Which synthesis picks / cautions are expanded (keyed by ticker, or
   // "caution:<i>"). Collapsed by default so the synthesis stays compact.
@@ -1122,12 +1106,6 @@ export default function ResearchPage() {
   }
   function toggleFewSort(key: FewSortKey) {
     setFewSort(fewSort.key === key ? { key, dir: fewSort.dir === "asc" ? "desc" : "asc" } : { key, dir: "asc" });
-  }
-  function toggleLcCoreSort(key: CoreSortKey) {
-    setLcCoreSort(lcCoreSort.key === key ? { key, dir: lcCoreSort.dir === "asc" ? "desc" : "asc" } : { key, dir: "asc" });
-  }
-  function toggleSmidCoreSort(key: CoreSortKey) {
-    setSmidCoreSort(smidCoreSort.key === key ? { key, dir: smidCoreSort.dir === "asc" ? "desc" : "asc" } : { key, dir: "asc" });
   }
 
   function sortedUpticks() {
@@ -1240,41 +1218,6 @@ export default function ResearchPage() {
     });
   }
 
-  // Fundstrat Core-Ideas sort — plain ascending comparator (the direction
-  // toggle flips it, like every other list here). Missing numeric values sort
-  // to the bottom of an ascending sort via an Infinity sentinel, so a blank
-  // DQM rank never outranks a real one. Default is DQM rank ascending (best
-  // first).
-  function compareCore(a: RBCEntry, b: RBCEntry, key: CoreSortKey): number {
-    const numOr = (v: number | undefined) => (typeof v === "number" ? v : Infinity);
-    switch (key) {
-      case "currentPrice": return (livePrices[a.ticker] ?? Infinity) - (livePrices[b.ticker] ?? Infinity);
-      case "dqmRank": return numOr(a.dqmRank) - numOr(b.dqmRank);
-      case "momentumRating": return numOr(a.momentumRating) - numOr(b.momentumRating);
-      case "perf1M": return numOr(a.perf1M) - numOr(b.perf1M);
-      case "perfYTD": return numOr(a.perfYTD) - numOr(b.perfYTD);
-      case "pe": return numOr(a.pe) - numOr(b.pe);
-      case "mktCap": return numOr(a.mktCap) - numOr(b.mktCap);
-      case "sector": return String(a.sector || "").localeCompare(String(b.sector || ""));
-      case "name": return String(a.name || "").localeCompare(String(b.name || ""));
-      default: return String(a.ticker || "").localeCompare(String(b.ticker || ""));
-    }
-  }
-  function sortedLcCore() {
-    return [...(state.fundstratLargeCapCore || [])].sort((a, b) => {
-      const { key, dir } = lcCoreSort;
-      const cmp = compareCore(a, b, key);
-      return dir === "asc" ? cmp : -cmp;
-    });
-  }
-  function sortedSmidCore() {
-    return [...(state.fundstratSmidCore || [])].sort((a, b) => {
-      const { key, dir } = smidCoreSort;
-      const cmp = compareCore(a, b, key);
-      return dir === "asc" ? cmp : -cmp;
-    });
-  }
-
   const uArrow = (key: UptickSortKey) => sortArrow(uptickSort.key === key, uptickSort.dir);
   const tArrow = (key: IdeaSortKey) => sortArrow(topSort.key === key, topSort.dir);
   const bArrow = (key: IdeaSortKey) => sortArrow(bottomSort.key === key, bottomSort.dir);
@@ -1286,8 +1229,6 @@ export default function ResearchPage() {
   const euArrow = (key: EquateSortKey) => sortArrow(equateUsdSort.key === key, equateUsdSort.dir);
   const jArrow = (key: JpmSortKey) => sortArrow(jpmFocusSort.key === key, jpmFocusSort.dir);
   const fArrow = (key: FewSortKey) => sortArrow(fewSort.key === key, fewSort.dir);
-  const lcArrow = (key: CoreSortKey) => sortArrow(lcCoreSort.key === key, lcCoreSort.dir);
-  const smcArrow = (key: CoreSortKey) => sortArrow(smidCoreSort.key === key, smidCoreSort.dir);
 
   useEffect(() => {
     fetch("/api/kv/research", { cache: "no-store" })
@@ -2021,10 +1962,6 @@ export default function ResearchPage() {
         // The list carries tickers + sector only — backfill names from Yahoo.
         void refreshRbcNames(source === "fundstrat-lc-core-list" ? "fundstratLcCoreList" : "fundstratSmidCoreList", nextState);
         void fetchLivePrices(nextState);
-      } else if (source === "fundstrat-largecap-core" || source === "fundstrat-smid-core") {
-        // Core-Ideas rows carry their own company names from the DQM screen,
-        // so no Yahoo name backfill is needed — just pull live prices.
-        void fetchLivePrices(nextState);
       }
       return true;
     } catch (e) {
@@ -2244,22 +2181,6 @@ export default function ResearchPage() {
   const removeRbcUs = (ticker: string) => {
     save({ ...state, rbcUsFocus: (state.rbcUsFocus || []).filter((r) => r.ticker !== ticker) });
   };
-  const addLcCore = (entry: RBCEntry) => {
-    const list = state.fundstratLargeCapCore || [];
-    if (list.some((r) => r.ticker === entry.ticker)) return;
-    save({ ...state, fundstratLargeCapCore: [...list, entry] });
-  };
-  const removeLcCore = (ticker: string) => {
-    save({ ...state, fundstratLargeCapCore: (state.fundstratLargeCapCore || []).filter((r) => r.ticker !== ticker) });
-  };
-  const addSmidCore = (entry: RBCEntry) => {
-    const list = state.fundstratSmidCore || [];
-    if (list.some((r) => r.ticker === entry.ticker)) return;
-    save({ ...state, fundstratSmidCore: [...list, entry] });
-  };
-  const removeSmidCore = (ticker: string) => {
-    save({ ...state, fundstratSmidCore: (state.fundstratSmidCore || []).filter((r) => r.ticker !== ticker) });
-  };
   const addEquateCad = (entry: RBCEntry) => {
     const list = state.equateCad || [];
     if (list.some((r) => r.ticker === entry.ticker)) return;
@@ -2471,8 +2392,6 @@ export default function ResearchPage() {
       "research.fsBottom": state.fundstratBottom.length,
       "research.fsSmidTop": (state.fundstratSmidTop ?? []).length,
       "research.fsSmidBottom": (state.fundstratSmidBottom ?? []).length,
-      "research.lcCore": (state.fundstratLargeCapCore ?? []).length,
-      "research.smidCore": (state.fundstratSmidCore ?? []).length,
       "research.alpha": (state.alphaPicks ?? []).length,
       "research.leeFocus": (state.leeFocusAreas ?? []).length,
       "research.rbcCa": (state.rbcCanadianFocus ?? []).length,
@@ -3628,131 +3547,6 @@ export default function ResearchPage() {
               status={scrapeStatusMap["fundstrat-smid-bottom"]}
             />
           </CollapsibleSection>
-        </div>
-
-        {/* ── Fundstrat "Core Ideas" DQM quant screens ──
-             Two ranked screens (Large-Cap, relative to the S&P 500; SMID,
-             relative to the Russell 2500). Richer than the Top/Bottom idea
-             lists — they carry sector/industry, relative 1M/YTD performance,
-             forward P/E, DQM rank, momentum rating, and trend flags. Stored
-             as RBCEntry[] (the quant columns are optional RBCEntry fields);
-             live price comes from Yahoo like the other US lists. */}
-        <div className="research-pair grid gap-3.5 lg:grid-cols-2">
-          {([
-            {
-              key: "lc", source: "fundstrat-largecap-core" as const, prefKey: "research.lcCore", linked: "research.smidCore",
-              title: "Fundstrat Large-Cap Core Ideas", subtitle: "Fundstrat DQM quant screen · 1M / YTD relative to the S&P 500",
-              helper: "Upload a Fundstrat Large-Cap Core Ideas screenshot. On Refresh, ticker + company + sector + DQM rank + momentum + relative perf are extracted and merged.",
-              list: sortedLcCore(), rawLen: (state.fundstratLargeCapCore || []).length, view: lcCoreView,
-              sort: lcCoreSort, toggle: toggleLcCoreSort, arrow: lcArrow, onAdd: addLcCore, onRemove: removeLcCore,
-              titleClass: "text-[13px] font-semibold text-ink", border: "border-line min-w-0",
-            },
-            {
-              key: "smid", source: "fundstrat-smid-core" as const, prefKey: "research.smidCore", linked: "research.lcCore",
-              title: "Fundstrat SMID Core Ideas", subtitle: "Fundstrat DQM quant screen · 1M / YTD relative to the Russell 2500",
-              helper: "Upload a Fundstrat SMID Core Ideas screenshot. On Refresh, ticker + company + sector + DQM rank + momentum + relative perf are extracted and merged.",
-              list: sortedSmidCore(), rawLen: (state.fundstratSmidCore || []).length, view: smidCoreView,
-              sort: smidCoreSort, toggle: toggleSmidCoreSort, arrow: smcArrow, onAdd: addSmidCore, onRemove: removeSmidCore,
-              titleClass: "text-[13px] font-semibold text-ink", border: "border-line min-w-0",
-            },
-          ]).map((cfg) => (
-            <CollapsibleSection
-              key={cfg.key}
-              prefKey={cfg.prefKey}
-              linkedKeys={[cfg.linked]}
-              className={cfg.border}
-              titleClass={cfg.titleClass}
-              title={<>{cfg.title}</>}
-              subtitle={<>{cfg.subtitle}</>}
-              right={<span className="font-mono text-[11.5px] text-ink-3">{cfg.rawLen} names</span>}
-            >
-              <ViewToggle view={cfg.view} onToggle={() => setUiPref(`${cfg.prefKey}.view`, cfg.view === "rows" ? "table" : "rows")} />
-              {cfg.view === "rows" ? (
-                <SourceRowsList
-                  rows={cfg.list.map((item) => ({
-                    ticker: item.ticker,
-                    name: item.name,
-                    meta: [
-                      item.sector,
-                      typeof item.dqmRank === "number" ? `DQM #${item.dqmRank}` : null,
-                      typeof item.momentumRating === "number" ? `Mom ${item.momentumRating}` : null,
-                      typeof item.perfYTD === "number" ? `YTD ${item.perfYTD >= 0 ? "+" : ""}${item.perfYTD.toFixed(1)}%` : null,
-                    ].filter(Boolean).join(" · "),
-                    priceOverride: livePrices[item.ticker] ?? null,
-                  }))}
-                  livePrices={livePrices}
-                  isInList={isInList}
-                  onAdd={addToWatchlist}
-                  onRemove={cfg.onRemove}
-                  onFixTicker={(from, to) => renameTicker(cfg.key === "lc" ? "fundstratLargeCapCore" : "fundstratSmidCore", from, to)}
-                  emptyLabel="No names added yet"
-                />
-              ) : (
-                <div className="tbl-wrap"><table className="data-table min-w-[620px]">
-                  <thead>
-                    <tr>
-                      <th className="cursor-pointer select-none hover:text-ink" onClick={() => cfg.toggle("dqmRank")}>DQM{cfg.arrow("dqmRank")}</th>
-                      <th className="cursor-pointer select-none hover:text-ink" onClick={() => cfg.toggle("ticker")}>Ticker{cfg.arrow("ticker")}</th>
-                      <th className="cursor-pointer select-none hover:text-ink" onClick={() => cfg.toggle("name")}>Name{cfg.arrow("name")}</th>
-                      <th className="cursor-pointer select-none hover:text-ink" onClick={() => cfg.toggle("sector")}>Sector{cfg.arrow("sector")}</th>
-                      <th className="n cursor-pointer select-none hover:text-ink" onClick={() => cfg.toggle("momentumRating")}>Mom{cfg.arrow("momentumRating")}</th>
-                      <th className="n cursor-pointer select-none hover:text-ink" onClick={() => cfg.toggle("perf1M")}>1M rel{cfg.arrow("perf1M")}</th>
-                      <th className="n cursor-pointer select-none hover:text-ink" onClick={() => cfg.toggle("perfYTD")}>YTD rel{cfg.arrow("perfYTD")}</th>
-                      <th className="n cursor-pointer select-none hover:text-ink" onClick={() => cfg.toggle("pe")}>P/E{cfg.arrow("pe")}</th>
-                      <th className="n cursor-pointer select-none hover:text-ink" onClick={() => cfg.toggle("currentPrice")}>Price{cfg.arrow("currentPrice")}</th>
-                      <th className="w-20"></th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {cfg.list.map((item, i) => {
-                      const live = livePrices[item.ticker] ?? null;
-                      const pct = (v: number | undefined) => typeof v === "number"
-                        ? <span className={v >= 0 ? "text-pos" : "text-neg"}>{v >= 0 ? "+" : ""}{v.toFixed(1)}%</span>
-                        : <span className="text-ink-faint">—</span>;
-                      return (
-                        <tr key={item.ticker}>
-                          <td className="font-mono text-ink-3">{typeof item.dqmRank === "number" ? item.dqmRank : "—"}</td>
-                          <td><TickerLink ticker={item.ticker} className="font-mono font-medium text-ink hover:text-accent hover:underline">{displayTicker(item.ticker)}</TickerLink></td>
-                          <td className="max-w-[200px] truncate text-ink-2" title={item.name || item.ticker}>{item.name || <span className="text-ink-faint">—</span>}</td>
-                          <td className="max-w-[140px] truncate text-ink-2" title={item.sector || ""}>{item.sector || <span className="text-ink-faint">—</span>}</td>
-                          <td className="n">{typeof item.momentumRating === "number" ? item.momentumRating : <span className="text-ink-faint">—</span>}</td>
-                          <td className="n">{pct(item.perf1M)}</td>
-                          <td className="n">{pct(item.perfYTD)}</td>
-                          <td className="n">{typeof item.pe === "number" ? `${item.pe.toFixed(1)}x` : <span className="text-ink-faint">—</span>}</td>
-                          <td className="n">{typeof live === "number" ? `$${live.toFixed(2)}` : <span className="text-ink-faint">—</span>}</td>
-                          <td className="text-right">
-                            {scoredStocks.some((s) => s.ticker === item.ticker) ? (
-                              <span className="text-[11px] text-ink-3">In list</span>
-                            ) : (
-                              <button onClick={(e) => { e.stopPropagation(); addToWatchlist(item.ticker); }} className="text-[12px] text-accent hover:underline" title="Add to Watchlist">+ Watch</button>
-                            )}
-                            <button onClick={() => cfg.onRemove(item.ticker)} className="ml-2 align-middle text-ink-faint transition-colors hover:text-neg" title="Remove"><AppIcon name="x" size={12} /></button>
-                          </td>
-                        </tr>
-                      );
-                    })}
-                    {cfg.rawLen === 0 && (
-                      <tr><td colSpan={10} className="!h-auto"><EmptyState className="!py-8" glyph={<AppIcon name="list" size={18} />} title="No names added yet" /></td></tr>
-                    )}
-                  </tbody>
-                </table></div>
-              )}
-
-              <RBCAddForm onAdd={cfg.onAdd} />
-
-              <ResearchScraperBlock
-                source={cfg.source}
-                sectionLabel={cfg.title}
-                helperText={cfg.helper}
-                attachments={state.attachments || []}
-                onAddAttachment={addAttachment}
-                onRemoveAttachment={removeAttachment}
-                onScrape={(force) => scrapeResearchSource(cfg.source, force)}
-                loading={!!scrapeLoadingMap[cfg.source]}
-                status={scrapeStatusMap[cfg.source]}
-              />
-            </CollapsibleSection>
-          ))}
         </div>
 
         {/* ── Tom Lee Focus Areas ── */}

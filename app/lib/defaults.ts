@@ -256,6 +256,9 @@ export type ResearchState = {
   // SMID is relative to the Russell 2500. Stored as RBCEntry[] (the extra
   // quant columns are optional fields on RBCEntry). Optional for backward
   // compat with older pm:research blobs that predate these lists.
+  // RETIRED 2026-10-07: these turned out to be the same lists as
+  // fundstratLcCoreList / fundstratSmidCoreList below, which replace them.
+  // Kept on the type only so older blobs still parse; nothing reads them.
   fundstratLargeCapCore?: RBCEntry[];
   fundstratSmidCore?: RBCEntry[];
   rbcCanadianFocus: RBCEntry[];
@@ -297,7 +300,8 @@ export type ResearchState = {
   // Fundstrat Large-Cap / SMID Core LISTS — the full, longer lists Tom Lee
   // publishes in his daily note ("The Current Large-cap Core List as of …",
   // ~45 / ~65 names). DISTINCT from the Top / SMID Top Ideas (the monthly
-  // top 5) and from the DQM "Core Ideas" screens above. Kept current
+  // top 5). Replaced the retired fundstratLargeCapCore / fundstratSmidCore
+  // above, which held the same lists. Kept current
   // automatically from Lee's note (app/lib/fundstrat-core-from-note.ts); a
   // screenshot upload is the manual fallback. Bare US tickers. Optional.
   fundstratLcCoreList?: RBCEntry[];
@@ -406,8 +410,6 @@ export const defaultResearch: ResearchState = {
   fundstratBottom: [],
   fundstratSmidTop: [],
   fundstratSmidBottom: [],
-  fundstratLargeCapCore: [],
-  fundstratSmidCore: [],
   rbcCanadianFocus: [],
   rbcUsFocus: [],
   jpmUsAnalystFocus: [],
