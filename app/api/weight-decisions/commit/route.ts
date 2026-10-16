@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getRedis } from "@/app/lib/redis";
 import { createLogger } from "@/app/lib/logger";
-import { WEIGHT_COMMIT_ENABLED, WEIGHT_DECISIONS_KEY, applyDecisions, inheritDecisions, reconcile, type WeightDecisionStore } from "@/app/lib/weight-decisions";
+import { WEIGHT_COMMIT_ENABLED, WEIGHT_DECISIONS_KEY, applyDecisions, inheritDecisions, reconcile, releaseWeight, type WeightDecisionStore } from "@/app/lib/weight-decisions";
+import { enforceSleeveTargets } from "@/app/lib/sleeve-targets";
 import { snapshotModels, diffModels } from "@/app/lib/model-versions";
 import type { PimModelData } from "@/app/lib/pim-types";
 import type { Stock } from "@/app/lib/types";
@@ -13,12 +14,15 @@ import type { Stock } from "@/app/lib/types";
  * In order, and it stops at the first failure:
  *   1. the month must exist, be a draft, and have at least one decision;
  *   2. `confirm` must be exactly "COMMIT <month>";
- *   3. reconcile() is re-run server-side against the LIVE model — every sleeve
- *      nets to zero, no stock breaches the 10%-of-portfolio cap, nothing untagged;
+ *   3. reconcile() is re-run server-side against the LIVE model — every bucket
+ *      (Alpha / Thematic) nets to zero, no stock breaches the 10%-of-portfolio
+ *      cap, no Core holding is decided;
  *   4. the current pm:pim-models is snapshotted (pm:pim-models-version:<id>);
  *   5. PIM gets applyDecisions() (adopt / set pin the holding; release unpins),
- *      every other model inheritDecisions(); non-equity holdings and unknown
- *      fields pass through untouched; revision is bumped so stale tabs are refused;
+ *      every other model inheritDecisions(); with bucket targets the Alpha
+ *      re-split (enforceSleeveTargets) then runs so the commit lands on target;
+ *      non-equity holdings and unknown fields pass through untouched; revision
+ *      is bumped so stale tabs are refused;
  *   6. the month is marked committed with the version id;
  *   7. each adopt / set / release is journaled.
  * Returns the diff per model.
@@ -50,7 +54,8 @@ export async function POST(req: NextRequest) {
     if (!pim) return NextResponse.json({ error: `model ${groupId} not found` }, { status: 404 });
 
     // 3. Reconcile against the live model, never the client's view of it.
-    const recon = reconcile(pim, stocks, review.decisions);
+    const releaseW = releaseWeight(pim, stocks, review.decisions, models.sleeveTargets);
+    const recon = reconcile(pim, stocks, review.decisions, releaseW);
     if (!recon.ok) {
       return NextResponse.json({ error: "decisions do not reconcile against the live model", recon }, { status: 409 });
     }
@@ -60,7 +65,9 @@ export async function POST(req: NextRequest) {
     if (!versionId) return NextResponse.json({ error: "could not snapshot the current models — nothing written" }, { status: 500 });
 
     // 5. Apply to PIM, inherit everywhere else. Read-modify-write on the blob just read.
-    const nextGroups = models.groups.map((g) => (g.id === groupId ? applyDecisions(g, review.decisions, month) : inheritDecisions(pim, g, stocks, review.decisions)));
+    const applied = models.groups.map((g) => (g.id === groupId ? applyDecisions(g, review.decisions, month, releaseW) : inheritDecisions(pim, g, stocks, review.decisions, releaseW)));
+    // Three-bucket model: same re-split the client runs on every model write.
+    const nextGroups = enforceSleeveTargets({ ...models, groups: applied }, stocks).groups;
     // Every equity sleeve must still sum to 1 — refuse rather than write a broken model.
     for (const g of nextGroups) {
       const eq = g.holdings.filter((h) => h.assetClass === "equity").reduce((a, h) => a + h.weightInClass, 0);

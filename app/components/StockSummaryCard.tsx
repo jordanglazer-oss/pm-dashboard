@@ -5,13 +5,13 @@ import { useStocks } from "@/app/lib/StockContext";
 import type { ScoredStock } from "@/app/lib/types";
 import { MAX_SCORE } from "@/app/lib/types";
 import { computeSetup } from "@/app/lib/setup-grade";
-import { sleevesOf, isCoreDesignated, isFund } from "@/app/lib/sleeves";
+import { isFund } from "@/app/lib/sleeves";
+import { bucketOf } from "@/app/lib/sleeve-targets";
 import { useLiveModelWeights } from "@/app/lib/useLiveModelWeights";
 import { canonicalTicker } from "@/app/lib/ticker";
 import { skewWord, SKEW_TONE } from "@/app/lib/synthesis-screen-display";
-import { isPlanComplete, type TacticalPlan } from "@/app/lib/tactical-plan";
 
-/* Summary card — the one screen a reader needs on a stock page: sleeve,
+/* Summary card — the one screen a reader needs on a stock page: bucket,
  * thesis status, score, setup, synthesis and the evidence on file, each with
  * its source underneath, plus model target vs live and the next earnings date.
  * Read-only; every figure comes from the same stores the tiles below read. */
@@ -24,11 +24,11 @@ export function StockSummaryCard({ stock }: { stock: ScoredStock }) {
   const tk = stock.ticker.toUpperCase();
   const held = stock.bucket === "Portfolio";
   const scoreable = !stock.instrumentType || stock.instrumentType === "stock";
-  const sl = sleevesOf(stock);
-  const core = isCoreDesignated(stock);
+  // Three-bucket model: Core / Thematic / Alpha (app/lib/sleeve-targets).
+  const bucket = bucketOf(stock.ticker, [stock]);
+  const core = bucket === "core";
 
   const [thesis, setThesis] = useState<{ status: ThesisStatus; pillars?: number; reviewBy?: string } | null>(null);
-  const [plan, setPlan] = useState<TacticalPlan | null>(null);
   const [synth, setSynth] = useState<{ skew: number; generatedAt: string; stale: boolean } | null | undefined>(undefined);
   const [factset, setFactset] = useState<{ n: number; last: string | null } | null>(null);
   const { weights: live } = useLiveModelWeights("pim", "balanced");
@@ -45,7 +45,6 @@ export function StockSummaryCard({ stock }: { stock: ScoredStock }) {
     ]).then(([health, watch, theses, syn, fs]) => {
       if (!alive) return;
       const t = theses?.theses?.[tk];
-      setPlan((t?.tacticalPlan as TacticalPlan | undefined) ?? null);
       if (held) {
         const hv = (health?.thesisHealth?.holdings ?? []).find((h: { ticker: string }) => h.ticker.toUpperCase() === tk)?.verdict as string | undefined;
         const w = (watch?.holdings ?? []).find((h: { ticker: string }) => h.ticker.toUpperCase() === tk) as { reUnderwriteBy?: string } | undefined;
@@ -86,18 +85,15 @@ export function StockSummaryCard({ stock }: { stock: ScoredStock }) {
   const chip = (text: string, cls: string) => <span className={`inline-flex h-[22px] items-center rounded px-2 text-[12px] font-medium ${cls}`}>{text}</span>;
   const dotWord = (dot: string, text: string, cls = "text-ink") => <span className="inline-flex items-center gap-1.5"><span className={`dot ${dot}`} /><span className={`text-[14px] font-medium ${cls}`}>{text}</span></span>;
 
-  // Sleeve cell
-  const sleeveMain = core ? chip("Core", "bg-line-soft text-ink-2") : !held ? chip("Watchlist", "bg-line-soft text-ink-2") : sl.thesis && sl.tactical ? <span className="inline-flex gap-1">{chip("Thesis", "border border-accent-border bg-accent-soft text-accent")}{chip("Tactical", "border border-violet-border bg-violet-soft text-violet")}</span> : sl.thesis ? chip("Thesis", "border border-accent-border bg-accent-soft text-accent") : sl.tactical ? chip("Tactical", "border border-violet-border bg-violet-soft text-violet") : chip("Untagged", "bg-warn-soft text-warn");
-  const sleeveSub = core ? "indexed / passive" : !held ? "not owned" : sl.thesis && sl.tactical ? "long-run hold with a tactical overweight" : sl.thesis ? "long-run hold — sold only on a broken thesis" : sl.tactical ? "held on a plan — stop, target, review date" : "tag it on Holdings";
+  // Bucket cell
+  const bucketMain = core ? chip("Core", "bg-line-soft text-ink-2") : !held ? chip("Watchlist", "bg-line-soft text-ink-2") : bucket === "thematic" ? chip("Thematic", "border border-pos-border bg-pos-soft text-pos") : chip("Alpha", "border border-accent-border bg-accent-soft text-accent");
+  const bucketSub = core ? "indexed / passive" : !held ? "not owned" : bucket === "thematic" ? "thematic fund — held at a set weight" : "individual stock — equal share of the Alpha bucket";
 
-  // Thesis / plan cell
+  // Thesis cell
   let statusMain: React.ReactNode = <span className="text-[13px] text-ink-faint">—</span>;
   let statusSub: React.ReactNode = "not owned";
   if (held && !core) {
-    if (sl.tactical && !sl.thesis) {
-      statusMain = !plan ? dotWord("bg-warn", "No plan", "text-warn") : !isPlanComplete(plan) ? dotWord("bg-warn", "Plan incomplete", "text-warn") : dotWord("bg-pos", "On plan");
-      statusSub = plan ? `stop ${plan.stop ?? "—"} · target ${plan.target ?? "—"} · review ${plan.reviewBy ?? "—"}` : "write the plan below";
-    } else if (thesis) {
+    if (thesis) {
       const s = thesis.status;
       statusMain = s === "broken" ? dotWord("bg-neg", "Broken", "text-neg") : s === "eroding" ? dotWord("bg-warn", "Eroding", "text-warn") : s === "stale" ? dotWord("bg-warn", "Stale", "text-warn") : s === "intact" ? dotWord("bg-pos", "Intact") : dotWord("bg-ink-faint", "Not written", "text-ink-3");
       statusSub = s === "none" ? "underwrite below" : `${thesis.pillars ? `${thesis.pillars} pillars` : "no pillars"}${thesis.reviewBy ? ` · review ${fmtDate(thesis.reviewBy)}` : ""}${s === "stale" ? " (overdue)" : ""}`;
@@ -110,8 +106,8 @@ export function StockSummaryCard({ stock }: { stock: ScoredStock }) {
   return (
     <section className="panel px-4 py-3.5">
       <div className="grid grid-cols-2 gap-x-4 gap-y-3 md:grid-cols-3 xl:grid-cols-6">
-        {cell("Sleeve", sleeveMain, sleeveSub)}
-        {cell(held && sl.tactical && !sl.thesis ? "Plan status" : "Thesis status", statusMain, statusSub)}
+        {cell("Bucket", bucketMain, bucketSub)}
+        {cell("Thesis status", statusMain, statusSub)}
         {cell(
           "Score",
           scoreable ? <span><span className="font-mono text-[18px] font-semibold tabular-nums text-ink">{Number(stock.adjusted.toFixed(1))}</span><span className="text-[11px] text-ink-faint">/{MAX_SCORE}</span> <span className={`text-[12px] ${/Buy/.test(stock.ratingLabel || stock.rating) ? "text-pos" : /Underweight|Sell/.test(stock.ratingLabel || stock.rating) ? "text-neg" : "text-ink-2"}`}>{stock.ratingLabel || stock.rating}</span></span> : <span className="text-[13px] text-ink-faint">n/a for a fund</span>,

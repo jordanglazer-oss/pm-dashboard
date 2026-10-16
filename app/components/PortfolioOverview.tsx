@@ -11,8 +11,6 @@ import { useNotifications } from "@/app/lib/NotificationsContext";
 import { SkeletonTable } from "@/app/components/Skeleton";
 import { SCORE_GROUPS, MAX_SCORE } from "@/app/lib/types";
 import { SetupChip } from "./SetupChip";
-import { SleeveTags } from "./SleeveTags";
-import { sleevesOf, isUntagged, sleeveCounts } from "@/app/lib/sleeves";
 import type { ScoredStock, ScoreKey, HealthData, FundHolding, FundSectorWeight } from "@/app/lib/types";
 import type { TechnicalIndicators, RiskAlert } from "@/app/lib/technicals";
 import { groupTotal, isScoreable, normalizeSector, computeScores } from "@/app/lib/scoring";
@@ -1410,9 +1408,6 @@ export function PortfolioOverview({
                     <th className={fThClass} onClick={() => handleFundSort("role")}>
                       Role<FundSortIcon field="role" sortField={fundSort} sortDir={fundSortDir} />
                     </th>
-                    <th className="whitespace-nowrap" title="Alpha sleeve — Thesis (long-run hold) or Tactical (shorter-horizon). A fund sits in one sleeve only. Core holdings have no sleeve.">
-                      Sleeve
-                    </th>
                     <th className={`text-right ${fThClass}`} onClick={() => handleFundSort("oneYear")}>
                       1Y<FundSortIcon field="oneYear" sortField={fundSort} sortDir={fundSortDir} />
                     </th>
@@ -1509,7 +1504,6 @@ export function PortfolioOverview({
                             );
                           })()}
                         </td>
-                        <td><SleeveTags stock={s} /></td>
                         <td className={`n ${fundReturnColor(perf?.oneYear)}`}>{fundReturnFmt(perf?.oneYear)}</td>
                         <td className={`n ${fundReturnColor(perf?.threeYear)}`}>{fundReturnFmt(perf?.threeYear)}</td>
                       </tr>
@@ -1690,7 +1684,7 @@ function RankingTable({
   const prefPrefix = flagType === "review" ? "rankPort" : "rankWatch";
   // Canvas header state: Stale/Flagged chips + search (transient view state),
   // and the ⋯ menu holding the action cluster.
-  const [chipFilter, setChipFilter] = useState<"all" | "stale" | "flagged" | "thesis" | "tactical" | "untagged">("all");
+  const [chipFilter, setChipFilter] = useState<"all" | "stale" | "flagged">("all");
   const [query, setQuery] = useState("");
   const [menuOpen, setMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
@@ -1734,9 +1728,6 @@ function RankingTable({
     if (q && !(st.ticker.toLowerCase().includes(q) || (st.name || "").toLowerCase().includes(q) || (st.sector || "").toLowerCase().includes(q))) return false;
     if (chipFilter === "stale" && !isStaleRow(st)) return false;
     if (chipFilter === "flagged" && !isFlaggedRow(st)) return false;
-    if (chipFilter === "thesis" && !sleevesOf(st).thesis) return false;
-    if (chipFilter === "tactical" && !sleevesOf(st).tactical) return false;
-    if (chipFilter === "untagged" && !isUntagged(st)) return false;
     return true;
   });
   const sorted = [...filteredStocks].sort((a, b) => {
@@ -1992,35 +1983,6 @@ function RankingTable({
               >
                 Stale <span className="font-mono text-[11px] text-ink-3">{staleN}</span>
               </button>
-              {showWeight && (() => {
-                // Alpha sleeves — Portfolio only. Counts are names, not weight.
-                const sc = sleeveCounts(stocks);
-                const chip = (key: "thesis" | "tactical" | "untagged", label: string, n: number, title: string, warn = false) => (
-                  <button
-                    key={key}
-                    onClick={() => setChipFilter(chipFilter === key ? "all" : key)}
-                    aria-pressed={chipFilter === key}
-                    className={`inline-flex h-7 items-center gap-1.5 rounded-control border px-2.5 text-[12.5px] transition-colors ${chipFilter === key ? "border-accent-border bg-accent-soft text-accent" : warn && n > 0 ? "border-warn-soft bg-warn-soft text-warn hover:border-warn-border" : "border-line bg-surface text-ink-2 hover:bg-surface-hover"}`}
-                    title={title}
-                  >
-                    {label} <span className="font-mono text-[11px] text-ink-3">{n}</span>
-                  </button>
-                );
-                void chip;
-                return (
-                  <select
-                    value={chipFilter === "thesis" || chipFilter === "tactical" || chipFilter === "untagged" ? chipFilter : "all"}
-                    onChange={(e) => setChipFilter(e.target.value as typeof chipFilter)}
-                    className={`h-7 rounded-control border px-2 text-[12.5px] ${sc.untagged > 0 && chipFilter === "all" ? "border-warn-soft bg-warn-soft text-warn" : "border-line bg-surface text-ink-2"}`}
-                    title="Filter by Alpha sleeve"
-                  >
-                    <option value="all">All sleeves</option>
-                    <option value="thesis">Thesis · {sc.thesis}</option>
-                    <option value="tactical">Tactical · {sc.tactical}</option>
-                    <option value="untagged">Untagged · {sc.untagged}</option>
-                  </select>
-                );
-              })()}
             </>
           );
         })()}
@@ -2306,7 +2268,6 @@ function RankingTable({
                 Ticker{arrow("ticker")}
               </th>
               {showWeight && <th className={`${thClass} text-right`}>Wt %</th>}
-              {showWeight && <th className={`${thClass} hidden md:table-cell`} title="Alpha sleeve — Thesis (long-run hold) and/or Tactical (shorter-horizon). Both on = a Thesis name carrying a tactical overweight.">Sleeve</th>}
               <th className={`${thClass} hidden lg:table-cell`} title="Latest synthesis — the sign of its risk/reward skew. Bull / Neutral / Bear.">Synthesis</th>
               <th className={`${thClass} text-right`} onClick={() => toggleSort("adjusted")}>Score{arrow("adjusted")}</th>
               <th className={`${thClass} hidden md:table-cell`} title="Setup grade — SIA + BoostedAI + MarketEdge (/6), plus your charting read once scored (/9). Timing, read beside the conviction score.">Setup</th>
@@ -2415,7 +2376,6 @@ function RankingTable({
                       })()}
                     </td>
                   )}
-                  {showWeight && <td className="hidden md:table-cell"><SleeveTags stock={s} /></td>}
                   <td className="hidden lg:table-cell">
                     {(() => {
                       const sv = synthesisByTicker?.get(canonicalTicker(s.ticker));
@@ -2451,9 +2411,6 @@ function RankingTable({
                       // Thesis status: the written thesis's automated read.
                       // Held names only — a watchlist name has no thesis.
                       if (!showWeight) return <span className="text-ink-faint">—</span>;
-                      // A Tactical-only name is judged on its plan, not a thesis.
-                      const sl = sleevesOf(s);
-                      if (sl.tactical && !sl.thesis) return <span className="text-[11px] text-ink-faint" title="Tactical position — judged on its plan (see the Thesis desk)">tactical · plan</span>;
                       const st = thesisByTicker?.get(s.ticker.toUpperCase()) ?? "none";
                       const cell = (dot: string, text: string, cls: string, title?: string) => (
                         <span className="inline-flex items-center gap-1.5 text-[12px]" title={title}>
@@ -2481,7 +2438,7 @@ function RankingTable({
                 </tr>
                 {expanded && (
                   <tr className="bg-surface-2">
-                    <td colSpan={showWeight ? 8 : 6} className="!h-auto whitespace-normal !px-3.5 !py-3 align-top">
+                    <td colSpan={showWeight ? 7 : 6} className="!h-auto whitespace-normal !px-3.5 !py-3 align-top">
                       <div className="grid gap-x-6 gap-y-3 md:grid-cols-2">
                         <div className="min-w-0">
                           <div className="mb-1 text-[11px] text-ink-3">What they do</div>

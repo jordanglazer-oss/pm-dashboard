@@ -317,8 +317,8 @@ export type KillCondition = {
 
 /** "info" = the condition's trigger is met but it is INFORMATIONAL for this
  *  holding — it is shown, never counted as a trip and never alerted. Today
- *  that is the 200-day breaker on a Thesis-sleeve name (a long-run hold is
- *  sold on a broken thesis, not on trend). */
+ *  that is the 200-day breaker on any HELD name (a long-run hold is sold
+ *  on a broken thesis, not on trend). */
 export type KillStatus = "ok" | "tripped" | "unknown" | "manual" | "info";
 
 export type KillCheck = {
@@ -551,7 +551,7 @@ export function checkCondition(c: KillCondition, s: KillSignals): KillCheck {
 }
 
 export type CheckOptions = {
-  /** Thesis-sleeve name: a met 200-day condition reads "info", not "tripped". */
+  /** Held name: a met 200-day condition reads "info", not "tripped". */
   ma200Informational?: boolean;
 };
 

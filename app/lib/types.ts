@@ -537,10 +537,8 @@ export type Stock = {
    *  Oct 2026 three-bucket model). Every `=== "core"` check treats Thematic
    *  like Alpha (pass-through, never absorbs residual) — the intended rule. */
   designation?: "core" | "alpha" | "thematic";
-  /** Alpha sleeve tags (app/lib/sleeves.ts). Thesis = long-run hold; Tactical =
-   *  shorter-horizon. A stock may carry both (Thesis name with a tactical
-   *  overweight); a fund carries at most one. Tags only — no weight math reads
-   *  them yet. Read through sleevesOf(), never directly. */
+  /** LEGACY (retired Oct 2026): the Thesis / Tactical alpha-sleeve tags. Old
+   *  records may still carry them; nothing reads or writes them any more. */
   inThesis?: boolean;
   inTactical?: boolean;
   /** Trading currency from Yahoo Finance (e.g. "USD", "CAD", "DKK").

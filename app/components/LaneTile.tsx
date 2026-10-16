@@ -25,7 +25,7 @@ export function LaneTile({ ticker }: { ticker: string }) {
       className="border-line"
       titleClass="text-[13px] font-semibold text-ink"
       title="Path"
-      subtitle="Thesis or Tactical — what it is still missing"
+      subtitle="Ready / Wait / Watch — what it is still missing"
       right={lane ? <LaneChip lane={lane} /> : null}
     >
       {lane ? <LaneChecklist lane={lane} /> : <p className="text-[12px] text-ink-3">Not on the entry scan (watchlist and suggested stocks only).</p>}

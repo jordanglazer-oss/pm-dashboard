@@ -1,33 +1,41 @@
-/* ─── Lanes: is a watchlist / suggested name ready as a THESIS or a TACTICAL position? ───
+/* ─── Lanes: is a watchlist / suggested name ready to buy? ───
  *
- * The two lanes answer different questions and a name may qualify for both:
- *   Thesis-ready    is the CASE proven well enough to hold for years?
- *   Tactical-ready  does the TAPE say now?
- * Thesis wins when both are true — it is bought as a Thesis position, now; the
- * tactical read is only timing. The Tactical lane is for names whose tape is
- * ready BEFORE their case is, so they are held on terms (a plan) instead.
+ * Two independent reads, kept apart because they answer different questions:
+ *   Case  is the CASE proven well enough to hold for years?
+ *         analyst reports on file AND a synthesis generated AFTER the latest
+ *         report, fresh, verdict "advance" AND conviction Hold or better
+ *   Tape  does the TAPE say now?
+ *         setup ≥ Constructive AND a live trigger AND no critical alert
+ *   A synthesis verdict of "pass" blocks both.
  *
- *   Thesis-ready   analyst reports on file AND a synthesis generated AFTER the
- *                  latest report, fresh, verdict "advance" AND conviction Hold
- *                  or better (Jordan, 2026-09-23: one band below Moderate Buy)
- *   Tactical-ready setup ≥ Constructive AND a live trigger AND no critical
- *                  alert (the entry floor — a conviction minimum — is deferred)
- *   A synthesis verdict of "pass" blocks BOTH lanes.
+ * Lanes (since the Thesis/Tactical tags retired — the old "Tactical" lane, a
+ * tape-ready name whose case wasn't proven yet, folds into Ready):
+ *   ready  the tape says now (case proven or not)
+ *   wait   case proven, tape not yet
+ *   watch  neither
+ * The stored read keeps its field names (`thesis` = case checks, `tactical` =
+ * tape checks) so cached pm:entry-scan rows stay readable; normalizeLane maps
+ * the retired lane values a cached row may still carry.
  *
  * Pure. A synthesis is never generated here — it stays report-driven. */
 
 import { RATING_BANDS } from "./rating-bands";
 
 export type LaneCheck = { key: string; label: string; ok: boolean | null; reading: string };
-export type Lane = "thesis-now" | "thesis-wait" | "tactical" | "watch";
-export type LaneRead = { lane: Lane; thesisReady: boolean; tacticalReady: boolean; thesis: LaneCheck[]; tactical: LaneCheck[] };
+export type Lane = "ready" | "wait" | "watch";
+/** Retired lane values a cached entry-scan row may still carry. */
+type LegacyLane = "thesis-now" | "thesis-wait" | "tactical";
+export type LaneRead = { lane: Lane | LegacyLane; thesisReady: boolean; tacticalReady: boolean; thesis: LaneCheck[]; tactical: LaneCheck[] };
 
 export const LANE_LABEL: Record<Lane, string> = {
-  "thesis-now": "Thesis — enter now",
-  "thesis-wait": "Thesis — wait for setup",
-  tactical: "Tactical",
+  ready: "Ready",
+  wait: "Wait — case proven, tape not yet",
   watch: "Watch",
 };
+
+export function normalizeLane(l: Lane | LegacyLane): Lane {
+  return l === "thesis-now" || l === "tactical" ? "ready" : l === "thesis-wait" ? "wait" : l;
+}
 
 export type LaneInputs = {
   /** ISO of the newest analyst report (RBC / JPM / Morningstar) on file, or null. */
@@ -53,7 +61,7 @@ export function computeLane(i: LaneInputs): LaneRead {
   const tactical: LaneCheck[] = [];
   const pass = i.synthesis?.verdict === "pass";
 
-  // ── Thesis ──
+  // ── Case (stored as `thesis` for cached rows) ──
   thesis.push({ key: "reports", label: "Analyst reports on file", ok: Boolean(i.latestReportAt), reading: i.latestReportAt ? `latest ${i.latestReportAt.slice(0, 10)}` : "none — send the reports in" });
   if (!i.synthesis) thesis.push({ key: "synthesis", label: "Synthesis after the reports: Advance", ok: false, reading: i.latestReportAt ? "not generated yet" : "needs the reports first" });
   else {
@@ -73,7 +81,7 @@ export function computeLane(i: LaneInputs): LaneRead {
   }
   thesis.push({ key: "conviction", label: "Conviction Hold or better", ok: i.conviction == null ? null : i.conviction >= RATING_BANDS.hold, reading: i.conviction == null ? "not scored" : `${i.conviction.toFixed(1)} / 33` });
 
-  // ── Tactical ──
+  // ── Tape (stored as `tactical` for cached rows) ──
   const setupOk = i.setupGrade === "Strong" || i.setupGrade === "Constructive";
   tactical.push({ key: "setup", label: "Setup Constructive or better", ok: i.setupGrade ? setupOk : null, reading: i.setupGrade ?? "not enough feeds" });
   const triggers: string[] = [];
@@ -95,6 +103,6 @@ export function computeLane(i: LaneInputs): LaneRead {
 
   const thesisReady = thesis.every((c) => c.ok === true);
   const tacticalReady = tactical.every((c) => c.ok === true);
-  const lane: Lane = thesisReady ? (tacticalReady ? "thesis-now" : "thesis-wait") : tacticalReady ? "tactical" : "watch";
+  const lane: Lane = tacticalReady ? "ready" : thesisReady ? "wait" : "watch";
   return { lane, thesisReady, tacticalReady, thesis, tactical };
 }

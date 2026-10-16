@@ -5,13 +5,13 @@ import Link from "next/link";
 import { useStocks } from "@/app/lib/StockContext";
 import { useLiveModelWeights } from "@/app/lib/useLiveModelWeights";
 import { canonicalTicker, displayTicker } from "@/app/lib/ticker";
-import { sleevesOf, isCoreDesignated, isFund } from "@/app/lib/sleeves";
-import { computeSleeveLegs, CORE_SHARE, DEFAULT_THESIS_SHARE, MAX_STOCK_PORTFOLIO_WEIGHT, maxEquityAllocation } from "@/app/lib/sleeve-weights";
-import { applyDecisions, inheritDecisions, monthKey, reconcile, REF_PER_STOCK, WEIGHT_COMMIT_ENABLED, type DecisionAction, type MonthReview, type WeightDecision, type WeightDecisionStore } from "@/app/lib/weight-decisions";
-import { LegVerdictChips, useSleeveVerdicts } from "@/app/components/LegVerdicts";
+import { isFund } from "@/app/lib/sleeves";
+import { BUCKET_LABELS, bucketOf, enforceSleeveTargets } from "@/app/lib/sleeve-targets";
+import { applyDecisions, inheritDecisions, MAX_STOCK_PORTFOLIO_WEIGHT, maxEquityAllocation, monthKey, reconcile, releaseWeight, WEIGHT_COMMIT_ENABLED, type DecisionAction, type DecisionBucket, type MonthReview, type WeightDecision, type WeightDecisionStore } from "@/app/lib/weight-decisions";
+import { ThesisVerdictChip, useThesisVerdicts } from "@/app/components/ThesisVerdictChip";
 import { CollapsibleSection } from "@/app/components/CollapsibleSection";
-import { TacticalBench } from "@/app/components/TacticalBench";
-import { SleeveConcentration } from "@/app/components/SleeveConcentration";
+import { Bench } from "@/app/components/Bench";
+import { ClusterConcentration } from "@/app/components/ClusterConcentration";
 import { ModelVersions } from "@/app/components/ModelVersions";
 import { AppIcon } from "@/app/components/AppIcon";
 import { THESIS_VERDICT_LABEL, type ThesisVerdict } from "@/app/lib/thesis-verdict";
@@ -20,14 +20,15 @@ import type { PimProfileType } from "@/app/lib/pim-types";
 /**
  * /review — the monthly meeting's one-pager and the daily portfolio hub.
  *
- * One table: every held Alpha name with its sleeve, per-leg verdicts, TARGET
- * weight, LIVE weight, drift, 1M return vs its sector, and the month's decision
- * (keep / adopt live / set). Decisions save as a DRAFT to pm:weight-decisions;
- * the commit that turns them into model targets is disabled on this build
- * (WEIGHT_COMMIT_ENABLED) — preview shares the database with production.
+ * One table: every PIM Alpha stock and Thematic fund with its bucket, thesis
+ * verdict, TARGET weight, LIVE weight, drift, 1M return vs its sector, and the
+ * month's decision (keep / adopt live / set / release). Decisions save as a
+ * DRAFT to pm:weight-decisions; the commit turns them into model targets.
  *
- * Rule: a change nets to zero INSIDE its sleeve. The strip shows what is still
- * unallocated per sleeve; commit is blocked until both read zero.
+ * Rule: a change nets to zero INSIDE its bucket (Alpha / Thematic — the
+ * three-bucket model, app/lib/sleeve-targets). Core is never decided. The
+ * strip shows what is still unallocated per bucket; commit is blocked until
+ * both read zero.
  *
  * Every weight the PM sees is % of the chosen profile's portfolio; the record
  * stores weightInClass so it is profile-independent.
@@ -48,7 +49,6 @@ type ReviewData = {
     verdictChanges: Array<{ ticker: string; from: ThesisVerdict | null; to: ThesisVerdict | null; date: string; summary: string }>;
     trips: Array<{ ticker: string; tripped: number; auto: number; what: string[] }>;
     reUnderwriteDue: Array<{ ticker: string; due: string }>;
-    planFlags: Array<{ ticker: string; flags: string[]; severity: string }>;
     verdictNow: Record<string, ThesisVerdict>;
   };
 };
@@ -58,8 +58,7 @@ type Row = {
   ticker: string;
   name: string;
   kind: "stock" | "fund";
-  sleeve: "thesis" | "tactical" | "both";
-  netSleeve: "thesis" | "tactical";
+  bucket: DecisionBucket;
   targetInClass: number;
   pinned?: { month: string };
   target: number; // % of portfolio (fraction)
@@ -74,7 +73,7 @@ export default function ReviewPage() {
   const group = pimModels.groups.find((g) => g.id === groupId);
   const eqAlloc = group?.profiles[profile]?.equity ?? 0.66;
   const { weights: live, refetch } = useLiveModelWeights(groupId, profile);
-  const verdicts = useSleeveVerdicts();
+  const verdicts = useThesisVerdicts();
 
   const [data, setData] = useState<ReviewData | null>(null);
   const [store, setStore] = useState<WeightDecisionStore | null>(null);
@@ -97,7 +96,7 @@ export default function ReviewPage() {
   const decisions = useMemo(() => review?.decisions ?? {}, [review]);
   const committed = review?.status === "committed";
 
-  // ── Rows: held Alpha equity holdings of the PIM group ──
+  // ── Rows: the PIM group's Alpha stocks and Thematic funds (Core is never decided) ──
   const byTicker = useMemo(() => {
     const m = new Map<string, (typeof stocks)[number]>();
     for (const s of stocks) if (s.bucket === "Portfolio") m.set(canonicalTicker(s.ticker), s);
@@ -108,19 +107,17 @@ export default function ReviewPage() {
     const out: Row[] = [];
     for (const h of group.holdings) {
       if (h.assetClass !== "equity") continue;
+      const b = bucketOf(h.symbol, stocks);
+      if (b === "core") continue;
       const s = byTicker.get(canonicalTicker(h.symbol));
-      if (!s || isCoreDesignated(s)) continue;
-      const sl = sleevesOf(s);
-      if (!sl.thesis && !sl.tactical) continue;
       const lv = live?.get(canonicalTicker(h.symbol));
       const liveFrac = lv != null ? lv / 100 : null;
       out.push({
         symbol: h.symbol,
-        ticker: s.ticker,
+        ticker: s?.ticker ?? h.symbol.replace(/-T$/, ".TO"),
         name: h.name,
-        kind: isFund(s) ? "fund" : "stock",
-        sleeve: sl.thesis && sl.tactical ? "both" : sl.thesis ? "thesis" : "tactical",
-        netSleeve: sl.tactical ? "tactical" : "thesis",
+        kind: (s && isFund(s)) || b === "thematic" ? "fund" : "stock",
+        bucket: b,
         targetInClass: h.weightInClass,
         pinned: h.pinned ? { month: h.pinned.month } : undefined,
         target: h.weightInClass * eqAlloc,
@@ -128,27 +125,25 @@ export default function ReviewPage() {
         liveInClass: liveFrac != null && eqAlloc > 0 ? liveFrac / eqAlloc : null,
       });
     }
-    const order = { thesis: 0, both: 1, tactical: 2 };
-    return out.sort((a, b) => order[a.sleeve] - order[b.sleeve] || (a.kind === b.kind ? a.symbol.localeCompare(b.symbol) : a.kind === "fund" ? -1 : 1));
-  }, [group, byTicker, live, eqAlloc]);
-  const untagged = useMemo(() => {
-    if (!group) return [];
-    return group.holdings.filter((h) => h.assetClass === "equity").filter((h) => { const s = byTicker.get(canonicalTicker(h.symbol)); return s && !isCoreDesignated(s) && !sleevesOf(s).thesis && !sleevesOf(s).tactical; }).map((h) => h.symbol);
-  }, [group, byTicker]);
+    const order = { alpha: 0, thematic: 1 };
+    return out.sort((a, b) => order[a.bucket] - order[b.bucket] || a.symbol.localeCompare(b.symbol));
+  }, [group, stocks, byTicker, live, eqAlloc]);
 
-  // ── Sleeve totals: target vs live vs the rule's budget ──
-  const legs = useMemo(() => computeSleeveLegs(group, stocks, DEFAULT_THESIS_SHARE), [group, stocks]);
+  // ── Bucket totals: target vs live vs the bucket target ──
   const totals = useMemo(() => {
-    const t = { thesis: { target: 0, live: 0, liveKnown: true }, tactical: { target: 0, live: 0, liveKnown: true } };
+    const t = { alpha: { target: 0, live: 0, liveKnown: true }, thematic: { target: 0, live: 0, liveKnown: true } };
     for (const r of rows) {
-      const k = r.netSleeve;
+      const k = r.bucket;
       t[k].target += r.target;
       if (r.live == null) t[k].liveKnown = false; else t[k].live += r.live;
     }
     return t;
   }, [rows]);
 
-  const recon = useMemo(() => (group ? reconcile(group, stocks, decisions) : null), [group, stocks, decisions]);
+  // A released stock returns to the Alpha per-stock share (or the old rule weight
+  // when the models have no bucket targets yet).
+  const releaseW = useMemo(() => (group ? releaseWeight(group, stocks, decisions, pimModels.sleeveTargets) : 0), [group, stocks, decisions, pimModels.sleeveTargets]);
+  const recon = useMemo(() => (group ? reconcile(group, stocks, decisions, releaseW) : null), [group, stocks, decisions, releaseW]);
   const capInClass = group ? MAX_STOCK_PORTFOLIO_WEIGHT / maxEquityAllocation(group) : 1;
 
   // ── Decision editing (draft, read-merge-write per symbol) ──
@@ -204,12 +199,15 @@ export default function ReviewPage() {
   // ── Diff preview across every model ──
   const diff = useMemo(() => {
     if (!group || !showDiff) return [];
+    // Same path as the commit: apply / inherit, then the bucket re-split.
+    const applied = pimModels.groups.map((g) => (g.id === groupId ? applyDecisions(g, decisions, undefined, releaseW) : inheritDecisions(group, g, stocks, decisions, releaseW)));
+    const afterGroups = enforceSleeveTargets({ ...pimModels, groups: applied }, stocks).groups;
     return pimModels.groups.map((g) => {
-      const after = g.id === groupId ? applyDecisions(g, decisions) : inheritDecisions(group, g, stocks, decisions);
+      const after = afterGroups.find((x) => x.id === g.id) ?? g;
       const changes = g.holdings.filter((h) => h.assetClass === "equity").map((h) => ({ symbol: h.symbol, before: h.weightInClass, after: after.holdings.find((x) => x.symbol === h.symbol)?.weightInClass ?? h.weightInClass })).filter((c) => Math.abs(c.after - c.before) > 0.00005);
       return { id: g.id, name: g.name, changes };
     });
-  }, [group, pimModels.groups, stocks, decisions, showDiff]);
+  }, [group, pimModels, stocks, decisions, showDiff, releaseW]);
 
   const months = useMemo(() => {
     const set = new Set<string>([monthKey(), ...Object.keys(store?.months ?? {})]);
@@ -228,15 +226,15 @@ export default function ReviewPage() {
       {sub && <div className="text-[11px] leading-snug text-ink-3">{sub}</div>}
     </div>
   );
-  const sleeveCell = (k: "thesis" | "tactical", label: string) => {
-    const budget = (1 - CORE_SHARE) * (k === "thesis" ? DEFAULT_THESIS_SHARE : 1 - DEFAULT_THESIS_SHARE) * eqAlloc;
-    const net = recon?.nets.find((n) => n.sleeve === k);
+  const bucketCell = (k: DecisionBucket, label: string) => {
+    const budget = pimModels.sleeveTargets ? pimModels.sleeveTargets[k] * eqAlloc : null;
+    const net = recon?.nets.find((n) => n.bucket === k);
     const unalloc = net ? -net.delta * eqAlloc : 0;
     return cell(
       label,
       <>{pct(totals[k].target, 1)}<span className="ml-1.5 text-[11px] font-normal text-ink-3">target</span></>,
       <>
-        live {totals[k].liveKnown ? pct(totals[k].live, 1) : "—"} · rule {pct(budget, 1)}
+        live {totals[k].liveKnown ? pct(totals[k].live, 1) : "—"}{budget != null && <> · bucket target {pct(budget, 1)}</>}
         {net && !net.ok && <span className="block font-medium text-warn">{unalloc > 0 ? `${pct(unalloc)} freed — assign it to a ${label} name` : `${pct(-unalloc)} over — trim a ${label} name`}</span>}
         {net && net.ok && decided > 0 && <span className="block text-pos">nets to zero</span>}
       </>,
@@ -268,15 +266,15 @@ export default function ReviewPage() {
       {/* Strip */}
       <div className="grid grid-cols-2 gap-2 md:grid-cols-5">
         {cell("Model · " + (profile === "allEquity" ? "All-Equity" : profile), <span className={tone(data?.model.mtd)}>{signed(data?.model.mtd)}</span>, <>MTD · 1M {signed(data?.model.r1m)} · SPY 1M {signed(spy)}{data?.model.asOf ? ` · as of ${data.model.asOf}` : ""}</>)}
-        {sleeveCell("thesis", "Thesis")}
-        {sleeveCell("tactical", "Tactical")}
+        {bucketCell("alpha", "Alpha")}
+        {bucketCell("thematic", "Thematic")}
         {cell("Decisions", <>{decided}<span className="ml-1.5 text-[11px] font-normal text-ink-3">of {rows.length}</span></>, committed ? `committed ${review?.committedAt?.slice(0, 10)}` : review ? `draft · ${review.updatedAt.slice(0, 10)}` : "nothing decided yet")}
-        {cell("Attention", <>{(data?.since.trips.length ?? 0) + (data?.since.planFlags.length ?? 0) + (data?.since.verdictChanges.filter((v) => v.to && v.to !== "intact").length ?? 0)}</>, <>{data?.since.trips.length ?? 0} trips · {data?.since.planFlags.length ?? 0} plan flags · {data?.since.reUnderwriteDue.length ?? 0} re-underwrites due</>)}
+        {cell("Attention", <>{(data?.since.trips.length ?? 0) + (data?.since.verdictChanges.filter((v) => v.to && v.to !== "intact").length ?? 0)}</>, <>{data?.since.trips.length ?? 0} trips · {data?.since.reUnderwriteDue.length ?? 0} re-underwrites due</>)}
       </div>
 
-      {(untagged.length > 0 || (recon && recon.capBreaches.length > 0) || commitMsg) && (
+      {((recon && (recon.capBreaches.length > 0 || recon.coreDecided.length > 0)) || commitMsg) && (
         <div className="rounded-card border border-warn-border bg-warn-soft px-3 py-2 text-[12px] text-warn">
-          {untagged.length > 0 && <div>Untagged Alpha holdings (tag them on Holdings before deciding): {untagged.join(", ")}</div>}
+          {recon && recon.coreDecided.length > 0 && <div>Core holdings carry a decision — Core is never decided (it absorbs the residual). Undo: {recon.coreDecided.join(", ")}</div>}
           {recon?.capBreaches.map((c) => <div key={c.symbol}>{c.symbol} target {pct(c.targetInClass * eqAlloc)} breaches the {pct(MAX_STOCK_PORTFOLIO_WEIGHT, 0)}-of-portfolio stock cap ({pct(c.capInClass * eqAlloc)} in this profile).</div>)}
           {commitMsg && <div>{commitMsg}</div>}
         </div>
@@ -288,7 +286,7 @@ export default function ReviewPage() {
           <thead>
             <tr>
               <th>Name</th>
-              <th>Sleeve</th>
+              <th>Bucket</th>
               <th className="hidden lg:table-cell">Verdict</th>
               <th className="text-right" title="Model target, % of this profile's portfolio">Target</th>
               <th className="text-right" title="Positions × live prices">Live</th>
@@ -305,7 +303,7 @@ export default function ReviewPage() {
               const ret = data?.returns.rows[r.ticker.toUpperCase()];
               const rel = ret?.r1m != null && ret.sector1m != null ? ret.r1m - ret.sector1m : null;
               const drift = r.live != null ? (r.live - r.target) * 10000 : null;
-              const newTarget = d?.action === "keep" ? r.target : d?.action === "release" ? REF_PER_STOCK * eqAlloc : d?.targetInClass != null ? d.targetInClass * eqAlloc : null;
+              const newTarget = d?.action === "keep" ? r.target : d?.action === "release" ? releaseW * eqAlloc : d?.targetInClass != null ? d.targetInClass * eqAlloc : null;
               const busy = saving === r.symbol;
               return (
                 <tr key={r.symbol} className={d ? "" : "opacity-95"}>
@@ -315,8 +313,8 @@ export default function ReviewPage() {
                     {r.kind === "fund" && <span className="ml-1.5 text-[10.5px] text-ink-faint">fund</span>}
                     {r.pinned && <span className="ml-1.5 text-[10.5px] text-accent" title={`Pinned in the ${r.pinned.month} review — the rebalance rule skips this name until the pin is released`}>📌 {r.pinned.month}</span>}
                   </td>
-                  <td><span className={`text-[11.5px] ${r.sleeve === "tactical" ? "text-violet" : "text-accent"}`}>{r.sleeve === "both" ? "Thesis + Tactical" : r.sleeve === "thesis" ? "Thesis" : "Tactical"}</span></td>
-                  <td className="hidden lg:table-cell"><span className="inline-flex flex-wrap gap-1"><LegVerdictChips legs={verdicts[r.ticker.toUpperCase()]} /></span></td>
+                  <td><span className={`text-[11.5px] ${r.bucket === "thematic" ? "text-pos" : "text-accent"}`}>{BUCKET_LABELS[r.bucket]}</span></td>
+                  <td className="hidden lg:table-cell"><span className="inline-flex flex-wrap gap-1"><ThesisVerdictChip entry={verdicts[r.ticker.toUpperCase()]} /></span></td>
                   <td className="n">{pct(r.target)}</td>
                   <td className="n">{pct(r.live)}</td>
                   <td className={`n ${drift == null ? "text-ink-faint" : Math.abs(drift) >= 50 ? (drift > 0 ? "text-pos" : "text-neg") : "text-ink-3"}`}>{drift == null ? "—" : `${drift >= 0 ? "+" : ""}${drift.toFixed(0)}`}</td>
@@ -344,7 +342,7 @@ export default function ReviewPage() {
                       <button type="button" disabled={committed || busy} className={d?.action === "keep" ? "on" : ""} onClick={() => setAction(r, "keep")} title="The drift is noise — trade back to the current target">Keep</button>
                       <button type="button" disabled={committed || busy || r.live == null} className={d?.action === "adopt" ? "on" : ""} onClick={() => setAction(r, "adopt")} title={r.live == null ? "No live weight — save positions first" : "Let it ride — the live weight becomes the new target, no trade"}>Adopt live</button>
                       <button type="button" disabled={committed || busy} className={d?.action === "set" ? "on" : ""} onClick={() => setAction(r, "set")} title="An explicit trim or add — type the new target. Pins the name.">Set</button>
-                      {r.pinned && r.kind === "stock" && <button type="button" disabled={committed || busy} className={d?.action === "release" ? "on" : ""} onClick={() => releasePin(r)} title={`Release the pin — back to the rule weight (${pct(REF_PER_STOCK * eqAlloc)}). Nets within the sleeve like any change.`}>Release</button>}
+                      {r.pinned && r.kind === "stock" && <button type="button" disabled={committed || busy} className={d?.action === "release" ? "on" : ""} onClick={() => releasePin(r)} title={`Release the pin — back to the Alpha per-stock weight (${pct(releaseW * eqAlloc)}). Nets within the bucket like any change.`}>Release</button>}
                     </div>
                     {d && !committed && <button type="button" onClick={() => saveDecision(r.symbol, null)} className="ml-1.5 inline-flex h-6 items-center rounded-control border border-line bg-surface px-1.5 text-[11px] text-ink-2 hover:bg-surface-hover" title="Undo — remove this decision; the current target stands">Undo</button>}
                   </td>
@@ -356,11 +354,16 @@ export default function ReviewPage() {
                 </tr>
               );
             })}
-            {rows.length === 0 && <tr><td colSpan={10} className="text-ink-3">No tagged Alpha holdings in PIM — tag names Thesis / Tactical on Holdings.</td></tr>}
+            {rows.length === 0 && <tr><td colSpan={10} className="text-ink-3">No Alpha stocks or Thematic funds in the PIM model.</td></tr>}
           </tbody>
         </table>
         <div className="flex flex-wrap items-center gap-3 border-t border-line-soft px-3 py-2 text-[11.5px] text-ink-3">
-          <span>Rule: stocks {pct(legs.thesisLeg * eqAlloc)} Thesis leg · {pct(legs.tacticalLeg * eqAlloc)} Tactical leg (equal legs, {(DEFAULT_THESIS_SHARE * 100).toFixed(0)}/{((1 - DEFAULT_THESIS_SHARE) * 100).toFixed(0)} split) — targets above are what the models hold today.</span>
+          <span>
+            {pimModels.sleeveTargets
+              ? <>Bucket targets: Core {pct(pimModels.sleeveTargets.core * eqAlloc)} · Thematic {pct(pimModels.sleeveTargets.thematic * eqAlloc)} · Alpha {pct(pimModels.sleeveTargets.alpha * eqAlloc)} — change them in Stage changes on the Models page.</>
+              : <>No bucket targets yet — apply a three-bucket draft in Stage changes on the Models page.</>}
+            {" "}Targets above are what the models hold today.
+          </span>
           <span className="flex-grow" />
           {decided > 0 && !committed && (
             <button type="button" onClick={() => { if (window.confirm(`Clear all ${decided} decisions for ${month}? Targets are unchanged either way.`)) void saveDecision("__all__", null); }} className="inline-flex h-7 items-center rounded-control border border-line bg-surface px-2.5 text-[12px] text-ink-2 hover:bg-surface-hover" title="Remove every decision drafted this month">Clear all</button>
@@ -371,7 +374,7 @@ export default function ReviewPage() {
             onClick={() => { setShowDiff(true); setConfirming(true); }}
             disabled={!WEIGHT_COMMIT_ENABLED || committed || !recon?.ok || decided === 0 || confirming}
             className="inline-flex h-7 items-center rounded-control bg-ink px-3 text-[12px] font-medium text-surface disabled:opacity-40"
-            title={!WEIGHT_COMMIT_ENABLED ? "Commit is disabled on this build." : !recon?.ok ? "Blocked: every sleeve must net to zero and no stock may breach the cap." : "Write these targets to every model. The current models are snapshotted first, so this can be undone from Versions."}
+            title={!WEIGHT_COMMIT_ENABLED ? "Commit is disabled on this build." : !recon?.ok ? "Blocked: every bucket must net to zero, no Core holding may be decided, and no stock may breach the cap." : "Write these targets to every model. The current models are snapshotted first, so this can be undone from Versions."}
           >
             {committed ? "Committed" : "Commit targets…"}
           </button>
@@ -404,7 +407,7 @@ export default function ReviewPage() {
       {/* Since the last meeting */}
       <CollapsibleSection prefKey="review.since" className="border-line" titleClass="text-[13px] font-semibold text-ink" title="Since the last meeting" subtitle={data ? `changes since ${data.lastMeeting}` : undefined}>
         {!data ? <p className="text-[12px] text-ink-3">Loading…</p> : (
-          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4 text-[12px]">
+          <div className="grid gap-3 md:grid-cols-3 text-[12px]">
             <div>
               <div className="mb-1 font-medium text-ink">Thesis verdicts</div>
               {data.since.verdictChanges.length === 0 ? <div className="text-ink-faint">no verdict changed</div> : data.since.verdictChanges.map((v) => (
@@ -415,12 +418,6 @@ export default function ReviewPage() {
               <div className="mb-1 font-medium text-ink">Kill conditions tripped</div>
               {data.since.trips.length === 0 ? <div className="text-ink-faint">none tripped</div> : data.since.trips.map((t) => (
                 <div key={t.ticker} className="mb-1"><Link href={`/stock/${t.ticker.toLowerCase()}`} className="font-mono font-medium hover:underline">{displayTicker(t.ticker)}</Link> <span className="text-neg">{t.tripped} of {t.auto}</span> <span className="text-ink-3">{t.what.join(" · ")}</span></div>
-              ))}
-            </div>
-            <div>
-              <div className="mb-1 font-medium text-ink">Tactical plan flags</div>
-              {data.since.planFlags.length === 0 ? <div className="text-ink-faint">every plan within terms</div> : data.since.planFlags.map((p) => (
-                <div key={p.ticker} className="mb-1"><Link href={`/stock/${p.ticker.toLowerCase()}`} className="font-mono font-medium hover:underline">{displayTicker(p.ticker)}</Link> <span className={p.severity === "high" ? "text-neg" : "text-warn"}>{p.flags.join(" · ")}</span></div>
               ))}
             </div>
             <div>
@@ -436,9 +433,9 @@ export default function ReviewPage() {
 
       <ModelVersions onRestored={async () => { await reloadPimModels(); }} />
 
-      <SleeveConcentration />
+      <ClusterConcentration />
 
-      <TacticalBench />
+      <Bench />
     </main>
   );
 }

@@ -104,10 +104,10 @@ export async function runAlertDigest(opts?: {
 }> {
   try {
     const redis = await getRedis();
-    const { thesis, transition, risk, context, killWatch, tacticalWatch, thesisVerdicts } = await loadAlertInputs();
+    const { thesis, transition, risk, context, killWatch, thesisVerdicts } = await loadAlertInputs();
 
     // Entry-ready pushes retired 2026-09-23 (the lanes replaced them).
-    const alerts = computeAlerts({ thesis, transition, risk, context, killWatch, tacticalWatch, thesisVerdicts });
+    const alerts = computeAlerts({ thesis, transition, risk, context, killWatch, thesisVerdicts });
     const counts = alertCounts(alerts);
     const today = new Date().toISOString().slice(0, 10);
 

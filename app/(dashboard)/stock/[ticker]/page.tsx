@@ -30,10 +30,7 @@ import { AppIcon } from "@/app/components/AppIcon";
 import { usePrevPage } from "@/app/lib/nav-history";
 import { ScoreDelta } from "@/app/components/ScoreDelta";
 import { CollapsibleSection } from "@/app/components/CollapsibleSection";
-import { SleeveTags } from "@/app/components/SleeveTags";
-import { isSleeveTaggable, sleevesOf } from "@/app/lib/sleeves";
-import { TacticalPlanTile } from "@/app/components/TacticalPlanTile";
-import { LegVerdictChips, useSleeveVerdicts } from "@/app/components/LegVerdicts";
+import { ThesisVerdictChip, useThesisVerdicts } from "@/app/components/ThesisVerdictChip";
 import { colorForSector } from "@/app/lib/sectorColors";
 import { useNotifications } from "@/app/lib/NotificationsContext";
 import { EditableNumberCell, ConsensusButton } from "@/app/components/EditableScoreInputs";
@@ -1116,7 +1113,7 @@ export default function StockDetailPage() {
   }, [menuOpen]);
 
   const scoreable = stock ? isScoreable(stock) : true;
-  const legVerdicts = useSleeveVerdicts();
+  const legVerdicts = useThesisVerdicts();
 
   // ?action=rescore (from the command palette): kick off the same rescore the
   // Score button runs, once, then strip the param so refresh/back can't
@@ -1602,7 +1599,9 @@ export default function StockDetailPage() {
         {railGroup("WL funds & ETFs", watchlistFundTickers)}
       </div>
 
-      {stock.bucket === "Portfolio" && (scoreable || sleevesOf(stock).thesis || sleevesOf(stock).tactical) && (
+      {/* The banner only shows for a name on the thesis-watch "missing" list
+          (held stocks, and held funds that have a thesis started). */}
+      {stock.bucket === "Portfolio" && (
         <ThesisRequiredBanner ticker={stock.ticker} />
       )}
 
@@ -1621,9 +1620,7 @@ export default function StockDetailPage() {
           </span>
         )}
         <span className="text-[12px] text-ink-3">{identityMeta}</span>
-        {/* Alpha sleeve tags — held equity Alpha only (Core / bond / alt render nothing). */}
-        {stock.bucket === "Portfolio" && isSleeveTaggable(stock) && <SleeveTags stock={stock} size="md" />}
-        {stock.bucket === "Portfolio" && <LegVerdictChips legs={legVerdicts[stock.ticker.toUpperCase()]} />}
+        {stock.bucket === "Portfolio" && <ThesisVerdictChip entry={legVerdicts[stock.ticker.toUpperCase()]} />}
         <div className="ml-auto flex items-center gap-2">
           {scoreable && (
             <button
@@ -2539,17 +2536,14 @@ export default function StockDetailPage() {
         {/* RIGHT */}
         <div className="flex min-w-0 flex-col gap-3.5">
           {scoreable && <StockSynthesisTile ticker={stock.ticker} />}
-          {/* Unowned names: the Thesis / Tactical lane read and its checklist. */}
+          {/* Unowned names: the Ready / Wait / Watch lane read and its checklist. */}
           {scoreable && stock.bucket !== "Portfolio" && <LaneTile ticker={stock.ticker} />}
-          {/* Tactical plan — terms of a Tactical-sleeve position (stocks and funds). */}
-          {stock.bucket === "Portfolio" && sleevesOf(stock).tactical && (
-            <TacticalPlanTile stock={stock} alsoThesis={sleevesOf(stock).thesis} />
-          )}
           {/* Thesis & kill conditions — pre-registered exit criteria, checked
               deterministically from data already on this page. */}
-          {(scoreable || (stock.bucket === "Portfolio" && sleevesOf(stock).thesis)) && (() => {
-            // Thesis-sleeve FUNDS are underwritten too (a fund held for the long
-            // run has a case that can break). Their composite / revisions are
+          {(scoreable || (stock.bucket === "Portfolio" && stock.designation !== "core")) && (() => {
+            // Held non-Core FUNDS (Thematic) can be underwritten too (a fund held
+            // for the long run has a case that can break) — this is also how an
+            // existing fund thesis stays visible. Their composite / revisions are
             // n/a, so those signals read "unknown" — never a fabricated OK.
             const snap = getAnalystSnapshot(stock.ticker)?.factset;
             const revUp = typeof snap?.revUp === "number" ? snap.revUp : null;

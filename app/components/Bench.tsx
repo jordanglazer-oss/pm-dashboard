@@ -4,30 +4,26 @@ import React, { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useStocks } from "@/app/lib/StockContext";
 import { computeSetup } from "@/app/lib/setup-grade";
-import { sleevesOf, isCoreDesignated } from "@/app/lib/sleeves";
-import { isScoreable } from "@/app/lib/scoring";
 import { displayTicker } from "@/app/lib/ticker";
 import { CollapsibleSection } from "@/app/components/CollapsibleSection";
 import { LaneChip } from "@/app/components/LaneChecklist";
 import type { EntryScan, EntryRow } from "@/app/lib/entry-scan";
-import type { Lane } from "@/app/lib/lanes";
+import { normalizeLane, type Lane } from "@/app/lib/lanes";
 
 /* The bench — where the next position comes from, sorted into lanes by the
- * readiness engine (app/lib/lanes): Thesis-ready names (enter now / wait for
- * setup), Tactical-ready names (tape before case — held on a plan), everything
- * else with what it is missing, and held Thesis names with a working setup as
- * overlay candidates. Watchlist AND Suggested names, from /api/entry-scan.
- * Read-only. The Tactical entry floor is deferred and not enforced. */
+ * readiness engine (app/lib/lanes): Ready (the tape says now), Wait (case
+ * proven, tape not yet), Watch (neither — hover the chip for what is missing).
+ * Watchlist AND Suggested names, from /api/entry-scan. Read-only. */
 
 const GRADE_ORDER: Record<string, number> = { Strong: 0, Constructive: 1, Neutral: 2, Weak: 3, Broken: 4 };
 const gradeCls = (g: string | null | undefined) => (g === "Strong" || g === "Constructive" ? "text-pos" : g === "Weak" || g === "Broken" ? "text-neg" : "text-ink-3");
-const LANES: Array<{ key: Lane | "thesis"; title: string; hint: string; match: (l: Lane) => boolean }> = [
-  { key: "thesis", title: "Thesis lane", hint: "case proven — reports on file, synthesis Advance after them, conviction Hold+", match: (l) => l === "thesis-now" || l === "thesis-wait" },
-  { key: "tactical", title: "Tactical lane", hint: "tape ready before the case is — held on a plan", match: (l) => l === "tactical" },
-  { key: "watch", title: "Watch", hint: "neither lane yet — hover the chip for what is missing", match: (l) => l === "watch" },
+const LANES: Array<{ key: Lane; title: string; hint: string }> = [
+  { key: "ready", title: "Ready", hint: "the tape says now — setup Constructive+, a live trigger, no critical alert" },
+  { key: "wait", title: "Wait", hint: "case proven (reports, synthesis Advance after them, conviction Hold+), tape not yet" },
+  { key: "watch", title: "Watch", hint: "neither yet — hover the chip for what is missing" },
 ];
 
-export function TacticalBench() {
+export function Bench() {
   const { scoredStocks } = useStocks();
   const [scan, setScan] = useState<EntryScan | null>(null);
   const [state, setState] = useState<"loading" | "ok" | "none">("loading");
@@ -44,15 +40,10 @@ export function TacticalBench() {
     return { r, s, grade: s ? computeSetup(s).grade : (grade && GRADE_ORDER[grade] != null ? grade : null) };
   }), [scan, byTicker]);
 
-  const laneRows = (match: (l: Lane) => boolean) => rows
-    .filter(({ r }) => r.lane && match(r.lane.lane))
-    .sort((a, b) => (a.r.lane!.lane === "thesis-now" ? -1 : 0) - (b.r.lane!.lane === "thesis-now" ? -1 : 0) || Number(b.r.ready) - Number(a.r.ready) || b.r.met - a.r.met || (GRADE_ORDER[a.grade ?? "Neutral"] ?? 2) - (GRADE_ORDER[b.grade ?? "Neutral"] ?? 2));
-
-  const overlay = useMemo(() => scoredStocks
-    .filter((s) => s.bucket === "Portfolio" && isScoreable(s) && !isCoreDesignated(s) && sleevesOf(s).thesis && !sleevesOf(s).tactical)
-    .map((s) => ({ s, setup: computeSetup(s) }))
-    .filter((x) => x.setup.grade === "Strong" || x.setup.grade === "Constructive")
-    .sort((a, b) => GRADE_ORDER[a.setup.grade!] - GRADE_ORDER[b.setup.grade!] || b.s.adjusted - a.s.adjusted), [scoredStocks]);
+  const laneRows = (key: Lane) => rows
+    .filter(({ r }) => r.lane && normalizeLane(r.lane.lane) === key)
+    // Within Ready, a proven case first.
+    .sort((a, b) => Number(b.r.lane!.thesisReady) - Number(a.r.lane!.thesisReady) || Number(b.r.ready) - Number(a.r.ready) || b.r.met - a.r.met || (GRADE_ORDER[a.grade ?? "Neutral"] ?? 2) - (GRADE_ORDER[b.grade ?? "Neutral"] ?? 2));
 
   const table = (list: Array<{ r: EntryRow; s: (typeof scoredStocks)[number] | undefined; grade: string | null }>) => (
     <div className="overflow-auto"><table className="data-table">
@@ -77,11 +68,11 @@ export function TacticalBench() {
   );
 
   return (
-    <CollapsibleSection prefKey="review.bench" className="border-line" titleClass="text-[13px] font-semibold text-ink" title="Bench" subtitle="where the next Thesis or Tactical position comes from — Thesis wins when a name reads both; no entry floor is enforced yet" defaultCollapsed>
+    <CollapsibleSection prefKey="review.bench" className="border-line" titleClass="text-[13px] font-semibold text-ink" title="Bench" subtitle="where the next position comes from — Ready / Wait / Watch" defaultCollapsed>
       {state === "loading" ? <p className="text-[12px] text-ink-3">Loading…</p> : state === "none" ? <p className="text-[12px] text-ink-3">Entry scan unavailable.</p> : (
         <div className="grid gap-4 xl:grid-cols-2">
           {LANES.map((l) => {
-            const list = laneRows(l.match);
+            const list = laneRows(l.key);
             return (
               <div key={l.key}>
                 <div className="mb-1 text-[11.5px] font-medium text-ink-2">{l.title} · {list.length} <span className="font-normal text-ink-3">— {l.hint}</span></div>
@@ -89,23 +80,6 @@ export function TacticalBench() {
               </div>
             );
           })}
-          <div>
-            <div className="mb-1 text-[11.5px] font-medium text-ink-2">Overlay candidates · {overlay.length} <span className="font-normal text-ink-3">— held Thesis names with a working setup and no tactical leg</span></div>
-            <div className="overflow-auto"><table className="data-table">
-              <thead><tr><th>Name</th><th>Setup</th><th className="text-right">Score</th><th className="text-right">Next</th></tr></thead>
-              <tbody>
-                {overlay.map(({ s, setup }) => (
-                  <tr key={s.ticker}>
-                    <td><Link href={`/stock/${s.ticker.toLowerCase()}`} className="font-mono font-medium text-ink hover:underline">{displayTicker(s.ticker)}</Link><span className="ml-2 hidden text-[11.5px] text-ink-3 md:inline">{s.name}</span></td>
-                    <td><span className={gradeCls(setup.grade)}>{setup.grade} {setup.rawPoints}/{setup.availableMax}</span></td>
-                    <td className="n">{Number(s.adjusted.toFixed(1))} <span className="text-[11px] text-ink-3">{s.ratingLabel || s.rating}</span></td>
-                    <td className="n"><span className="text-[11.5px] text-ink-2">tag Tactical on Holdings to add the overlay</span></td>
-                  </tr>
-                ))}
-                {overlay.length === 0 && <tr><td colSpan={4} className="text-ink-3">No Thesis name reads Strong or Constructive right now.</td></tr>}
-              </tbody>
-            </table></div>
-          </div>
         </div>
       )}
     </CollapsibleSection>

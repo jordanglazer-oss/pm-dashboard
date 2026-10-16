@@ -138,7 +138,7 @@ export async function buildActionsSection(brief: MorningBrief | null): Promise<A
   }
 
   // Alerts (thesis / regime / technical). Entry-ready pushes retired 2026-09-23.
-  const alerts = computeAlerts({ thesis: inputs.thesis, transition: inputs.transition, risk: inputs.risk, context: inputs.context, killWatch: inputs.killWatch, tacticalWatch: inputs.tacticalWatch, thesisVerdicts: inputs.thesisVerdicts });
+  const alerts = computeAlerts({ thesis: inputs.thesis, transition: inputs.transition, risk: inputs.risk, context: inputs.context, killWatch: inputs.killWatch, thesisVerdicts: inputs.thesisVerdicts });
   for (const a of alerts) {
     // Kill trips are already listed above with a finer id.
     if (a.category === "thesis" && /kill/i.test(a.title)) continue;

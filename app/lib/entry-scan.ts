@@ -49,7 +49,7 @@ export type EntryRow = {
   readySince?: string;
   /** "Why I'm watching" captured at Advance time (pm:entry-cases). */
   why?: string;
-  /** Thesis / Tactical lane read (app/lib/lanes) — additive. */
+  /** Ready / Wait / Watch lane read (app/lib/lanes) — additive. */
   lane?: LaneRead;
 };
 

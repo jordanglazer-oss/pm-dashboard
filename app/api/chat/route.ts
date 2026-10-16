@@ -2,7 +2,6 @@ import Anthropic from "@anthropic-ai/sdk";
 import { NextRequest } from "next/server";
 import { getRedis } from "@/app/lib/redis";
 import type { Stock } from "@/app/lib/types";
-import { sleeveLabel } from "@/app/lib/sleeves";
 import type {
   PimPerformanceData,
   PimPortfolioPositions,
@@ -152,8 +151,7 @@ CRITICAL — PORTFOLIO AWARENESS:
       const watchlist = stocks.filter((s) => s.bucket === "Watchlist");
       // Trim per-stock fields to keep the block compact.
       const fmtStock = (s: Stock) => {
-        const sleeve = s.bucket === "Portfolio" ? sleeveLabel(s) : null;
-        const designation = (s.designation ? ` [${s.designation}]` : "") + (sleeve ? ` [${sleeve.toLowerCase()}]` : "");
+        const designation = s.designation ? ` [${s.designation}]` : "";
         const weight = s.weights?.portfolio != null ? `${fmtNum(s.weights.portfolio, 2)}%` : "n/a";
         return `- **${s.ticker}** (${s.sector ?? "?"}) ${s.name ?? ""}${designation} · weight ${weight}`;
       };
