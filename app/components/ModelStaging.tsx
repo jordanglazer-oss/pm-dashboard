@@ -25,6 +25,7 @@ import {
 } from "@/app/lib/model-staging";
 import type { EquityBucket, PimAssetClass, PimHolding, PimModelGroup, PimProfileType } from "@/app/lib/pim-types";
 import { BUCKET_LABELS, bucketOf } from "@/app/lib/sleeve-targets";
+import { apportionColumn } from "@/app/lib/display-weights";
 import { ZERO_SCORES, type InstrumentType, type Stock } from "@/app/lib/types";
 
 /**
@@ -729,9 +730,22 @@ function ModelDiffPanel({
                 const c = typeof va === "string" || typeof vb === "string" ? String(va).localeCompare(String(vb)) : (va as number) - (vb as number);
                 return sortDir === "asc" ? c : -c;
               });
+              // 2-decimal columns that sum exactly — what is shown is what gets
+              // typed into the modelling tool.
+              const coreFlags = rows.map((r) => r.after != null && bucketFn(r.symbol) === "core");
+              // Same apportioning as the Models / Positioning tables: equal
+              // weights stay equal, the remainder lands on a Core ETF.
+              const col = (v: (number | null)[]) => apportionColumn(v, undefined, { prefer: coreFlags }).values;
+              const shown = {
+                cls: col(rows.map((r) => r.after)),
+                port: col(rows.map((r) => (r.after == null ? null : r.after * allocOf(group, profile, ac)))),
+                cad: col(rows.map((r) => (r.after == null ? null : ccyNew.rows[r.symbol]?.cad ?? null))),
+                usd: col(rows.map((r) => (r.after == null ? null : ccyNew.rows[r.symbol]?.usd ?? null))),
+              };
+              const shownAt = (k: keyof typeof shown, sym: string) => shown[k][rows.findIndex((x) => x.symbol === sym)] ?? null;
+              const colTotal = (k: keyof typeof shown) => shown[k].reduce<number>((a, v) => a + (v ?? 0), 0);
               const liveSum = rows.reduce((a, r) => a + (r.before ?? 0), 0);
               const newSum = rows.reduce((a, r) => a + (r.after ?? 0), 0);
-              const alloc = allocOf(group, profile, ac);
               return (
                 <React.Fragment key={ac}>
                   <tr><td colSpan={buckets ? 11 : 10} className="bg-surface-hover pl-3.5 text-[11.5px] font-semibold text-ink-2">{CLASS_LABELS[ac]}</td></tr>
@@ -766,9 +780,9 @@ function ModelDiffPanel({
                         <td className="text-right">
                           {r.after == null ? "—" : (
                             <input
-                              key={`${r.symbol}-${r.after}`}
-                              defaultValue={(r.after * 100).toFixed(4).replace(/0+$/, "").replace(/\.$/, "")}
-                              onBlur={(e) => { if (Math.abs(parseFloat(e.target.value) / 100 - (r.after ?? 0)) > 1e-7) setWeight(r.symbol, e.target.value); }}
+                              key={`${r.symbol}-${r.after}-${shownAt("cls", r.symbol)}`}
+                              defaultValue={((shownAt("cls", r.symbol) ?? 0) * 100).toFixed(2)}
+                              onBlur={(e) => { if (e.target.value.trim() !== ((shownAt("cls", r.symbol) ?? 0) * 100).toFixed(2)) setWeight(r.symbol, e.target.value); }}
                               onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); }}
                               className={`${INPUT} h-6 w-[84px] text-right tabular-nums`}
                               aria-label={`${r.symbol} proposed weight in class`}
@@ -778,10 +792,10 @@ function ModelDiffPanel({
                         <td className={`text-right tabular-nums ${Math.abs(delta) < 1e-6 ? "text-ink-3" : delta > 0 ? "text-pos" : "text-neg"}`}>
                           {Math.abs(delta) < 1e-6 ? "—" : `${delta > 0 ? "+" : ""}${(delta * 100).toFixed(2)}`}
                         </td>
-                        <td className="text-right tabular-nums">{r.after == null ? "—" : pct(r.after * alloc)}</td>
+                        <td className="text-right tabular-nums">{r.after == null ? "—" : pct(shownAt("port", r.symbol))}</td>
                         {(["cad", "usd"] as const).map((k) => {
                           const lv = ccyLive.rows[r.symbol]?.[k] ?? null;
-                          const nv = r.after == null ? null : ccyNew.rows[r.symbol]?.[k] ?? null;
+                          const nv = r.after == null ? null : shownAt(k, r.symbol);
                           if (lv == null && nv == null) return <td key={k} className="text-right text-ink-faint">·</td>;
                           const moved = lv == null || nv == null || Math.abs(nv - lv) > 0.00005;
                           return (
@@ -807,11 +821,11 @@ function ModelDiffPanel({
                   <tr className="font-medium">
                     <td colSpan={buckets ? 4 : 3} className="pl-3.5 text-[11.5px] text-ink-3">{CLASS_LABELS[ac]} total</td>
                     <td className="text-right tabular-nums">{pct(liveSum)}</td>
-                    <td className={`text-right tabular-nums ${Math.abs(newSum - 1) > 0.002 ? "text-neg" : ""}`}>{pct(newSum)}</td>
+                    <td className={`text-right tabular-nums ${Math.abs(newSum - 1) > 0.002 ? "text-neg" : ""}`}>{pct(colTotal("cls"))}</td>
                     <td />
-                    <td className="text-right tabular-nums">{pct(newSum * alloc)}</td>
+                    <td className="text-right tabular-nums">{pct(colTotal("port"))}</td>
                     {(["cad", "usd"] as const).map((k) => {
-                      const t = rows.reduce((a, r) => a + (r.after == null ? 0 : ccyNew.rows[r.symbol]?.[k] ?? 0), 0);
+                      const t = colTotal(k);
                       return <td key={k} className="text-right tabular-nums">{t > 0 ? pct(t) : "—"}</td>;
                     })}
                     <td />
