@@ -676,6 +676,22 @@ export function PimPortfolio({ groups }: Props) {
   const [showSwitch, setShowSwitch] = useState(false);
   // Rebalance prices are shared across profiles (cross-model price sharing)
   const [rebalancePrices, setRebalancePrices] = useState<Record<string, string>>({});
+  /** Symbols the latest staged-model apply removed from the PIM model
+   *  (pm:model-drafts history[0].exits.pim). Rebalance sells EXACTLY these to
+   *  zero when still held — any other position the model lacks stays an
+   *  untraded orphan, as before. Empty when no apply happened in 45 days. */
+  const [stagedExits, setStagedExits] = useState<string[]>([]);
+  useEffect(() => {
+    fetch("/api/kv/model-drafts", { cache: "no-store" })
+      .then((r) => r.json())
+      .then((j) => {
+        const last = Array.isArray(j?.history) ? j.history[0] : null;
+        const fresh = last?.appliedAt && Date.now() - Date.parse(last.appliedAt) < 45 * 86_400_000;
+        const exits = fresh && Array.isArray(last?.exits?.[selectedGroupId]) ? (last.exits[selectedGroupId] as string[]) : [];
+        setStagedExits(exits);
+      })
+      .catch(() => {});
+  }, [pimModels.revision, selectedGroupId]);
   /** Tickers bought in the last executed batch that still owe a thesis
    *  (cleared when dismissed; the Dashboard banner keeps following them). */
   const [thesisOwed, setThesisOwed] = useState<string[]>([]);
@@ -1300,8 +1316,16 @@ export function PimPortfolio({ groups }: Props) {
       const fxRate = h.currency === "USD" ? prevCloseUsdCad : 1;
       total += units * pc * fxRate;
     }
+    // Positions a staged apply removed are sold by this rebalance, so their
+    // proceeds belong in the total the targets are sized from.
+    for (const p of currentPositions?.positions ?? []) {
+      if (p.units <= 0 || !stagedExits.some((x) => symbolEq(x, p.symbol))) continue;
+      if (selectedGroup?.holdings.some((h) => symbolEq(h.symbol, p.symbol))) continue;
+      const pc = prevCloses[p.symbol] || livePrices[p.symbol] || 0;
+      total += p.units * pc * (tickerIsUsd(p.symbol) ? prevCloseUsdCad : 1);
+    }
     return total;
-  }, [effectiveGroup, profileWeights, prevCloses, livePrices, positionMap, currentPositions, prevCloseUsdCad]);
+  }, [effectiveGroup, selectedGroup, profileWeights, prevCloses, livePrices, positionMap, currentPositions, prevCloseUsdCad, stagedExits]);
 
   const cashBalance = currentPositions?.cashBalance || 0;
   const cashPct = totalValueCadSummary > 0 ? cashBalance / totalValueCadSummary : 0;
@@ -1592,6 +1616,18 @@ export function PimPortfolio({ groups }: Props) {
       totalValCad += units * priceCad;
       holdingInfo.push({ symbol: h.symbol, modelPct, units, priceCad, currency: h.currency, costBasis });
     }
+    // Names the latest staged apply removed from the model: target 0, so the
+    // loop below sells them out (MF → pending dollar sell). Matched against the
+    // UNFILTERED group so a Core ETF is never mistaken for an exit on Alpha.
+    for (const pos of profPortfolio?.positions || []) {
+      if (pos.units <= 0 || !stagedExits.some((x) => symbolEq(x, pos.symbol))) continue;
+      if (selectedGroup.holdings.some((h) => symbolEq(h.symbol, pos.symbol))) continue;
+      const usd = tickerIsUsd(pos.symbol);
+      const price = prevCloses[pos.symbol] || livePrices[pos.symbol] || 0;
+      const priceCad = price * (usd ? prevCloseUsdCad : 1);
+      totalValCad += pos.units * priceCad;
+      holdingInfo.push({ symbol: pos.symbol, modelPct: 0, units: pos.units, priceCad, currency: usd ? "USD" : "CAD", costBasis: pos.costBasis || sharedCostBasisMap.get(pos.symbol) || 0 });
+    }
 
     const transactions: PimTransaction[] = [];
     const updatedPositionMap = new Map<string, { units: number; costBasis: number }>();
@@ -1677,7 +1713,7 @@ export function PimPortfolio({ groups }: Props) {
     }
 
     return { transactions, positionUpdates: newPositions };
-  }, [selectedGroup, positions, selectedGroupId, prevCloses, livePrices, usdCadRate, prevCloseUsdCad, sharedCostBasisMap, coreSymbols]);
+  }, [selectedGroup, positions, selectedGroupId, prevCloses, livePrices, usdCadRate, prevCloseUsdCad, sharedCostBasisMap, coreSymbols, stagedExits]);
 
   // Compute pending trades across all profiles
   const pendingTrades = useMemo(() => {
@@ -3094,7 +3130,7 @@ export function PimPortfolio({ groups }: Props) {
   // and settle later), lifted out so the panel header can count trades and
   // gross value before anything is queued.
   const rebalanceRows = useMemo<RebalanceRow[]>(() => {
-    return sortedRows.filter((r) => r.modelPct > 0).map((r) => {
+    return sortedRows.filter((r) => r.modelPct > 0 || (r.isOrphan && r.units > 0 && stagedExits.some((x) => symbolEq(x, r.symbol)))).map((r) => {
       const pcPrice = prevCloses[r.symbol] || r.price;
       const pcFx = r.currency === "USD" ? prevCloseUsdCad : 1;
       const pcPriceCad = pcPrice * pcFx;
@@ -3122,7 +3158,7 @@ export function PimPortfolio({ groups }: Props) {
         pcPrice, costCad,
       };
     });
-  }, [sortedRows, prevCloses, prevCloseUsdCad, prevCloseTotalCad, rebalancePrices, usdCadRate]);
+  }, [sortedRows, prevCloses, prevCloseUsdCad, prevCloseTotalCad, rebalancePrices, usdCadRate, stagedExits]);
   const rebalanceTrades = rebalanceRows.filter((r) => r.action !== "HOLD");
   const rebalanceGross = rebalanceTrades.reduce((s, r) => s + Math.abs(r.deltaValueCad), 0);
   // Display-only counts for the slimmed rebalance summary (the per-trade list

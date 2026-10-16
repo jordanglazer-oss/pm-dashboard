@@ -46,6 +46,7 @@ type Props = {
   /** Opens the Models page's Scenarios subwindow. The launcher lives in this
    *  component's toolbar so the page's first row is one toolbar, not two. */
   onOpenScenarios?: () => void;
+  onOpenStaging?: () => void;
 };
 
 /** Locked specialty symbols — weights set by the per-group Balanced % input,
@@ -97,7 +98,7 @@ const BTN_SECONDARY = "inline-flex h-7 items-center gap-1.5 rounded-control bord
 const BTN_ICON = "grid h-7 w-7 place-items-center rounded-control border border-line bg-surface text-ink-2 hover:bg-surface-hover disabled:opacity-50";
 const INPUT = "h-7 rounded-control border border-line bg-surface px-2.5 text-[12.5px] text-ink outline-none placeholder:text-ink-3 focus:border-accent-border";
 
-export function PimModel({ groups, onOpenScenarios }: Props) {
+export function PimModel({ groups, onOpenScenarios, onOpenStaging }: Props) {
   const { getGroupState, uiPrefs, setUiPref, addStock, stocks, pimPortfolioState } = useStocks();
   // "Weight math" column — hidden by default, toggled per user via pm:ui-prefs.
   const showWeightMath = uiPrefs["models.showWeightMath"] === "1";
@@ -1163,6 +1164,16 @@ export function PimModel({ groups, onOpenScenarios }: Props) {
             title="Opens a subwindow — previews changes, never writes the live model"
           >
             Model Scenarios…
+          </button>
+        )}
+
+        {onOpenStaging && (
+          <button
+            onClick={onOpenStaging}
+            className={BTN_SECONDARY}
+            title="Upload a target-model screenshot and review the changes to every model before applying them"
+          >
+            Stage changes…
           </button>
         )}
 
