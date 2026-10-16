@@ -41,7 +41,7 @@ const INPUT = "h-7 rounded-control border border-line bg-surface px-2 text-[12.5
 
 const CLASS_LABELS: Record<PimAssetClass, string> = { fixedIncome: "Fixed Income", equity: "Equities", alternative: "Alternatives" };
 const PROFILE_LABELS: Record<PimProfileType, string> = {
-  conservative: "Conservative", balanced: "Balanced", growth: "Growth", allEquity: "All-Equity", alpha: "Alpha", core: "Core",
+  conservative: "Conservative", balanced: "Balanced", growth: "Growth", allEquity: "All-Equity", alpha: "Alpha", core: "Core", thematic: "Thematic",
 };
 const pct = (v: number | null | undefined, dp = 2) => (v == null ? "—" : `${(v * 100).toFixed(dp)}%`);
 const allocOf = (g: PimModelGroup | undefined, profile: PimProfileType, ac: PimAssetClass): number => {
@@ -478,7 +478,7 @@ export function ModelStaging() {
             <label className="ml-auto flex items-center gap-1.5 text-[12px] text-ink-3">
               Portfolio % as
               <select value={profile} onChange={(e) => setUiPref("staging.profile", e.target.value)} className={INPUT}>
-                {(Object.keys(sel.profiles) as PimProfileType[]).filter((p) => p !== "alpha" && p !== "core").map((p) => <option key={p} value={p}>{PROFILE_LABELS[p]}</option>)}
+                {(Object.keys(sel.profiles) as PimProfileType[]).filter((p) => p !== "alpha" && p !== "core" && p !== "thematic").map((p) => <option key={p} value={p}>{PROFILE_LABELS[p]}</option>)}
               </select>
             </label>
           </div>

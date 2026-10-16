@@ -88,6 +88,7 @@ const PROFILE_LABELS: Record<PimProfileType, string> = {
   allEquity: "All-Equity",
   alpha: "Alpha",
   core: "Core",
+  thematic: "Thematic",
 };
 
 const PAGE_SIZE = 50;

@@ -60,12 +60,16 @@ async function computeWeightsFor(
 
   const isAlpha = profile === "alpha";
   const isCore = profile === "core";
+  const isThematic = profile === "thematic";
   const EQUITY_ONLY = { cash: 0, fixedIncome: 0, equity: 1, alternatives: 0 };
-  const profileWeights = isAlpha || isCore ? EQUITY_ONLY : group.profiles[profile];
+  const profileWeights = isAlpha || isCore || isThematic ? EQUITY_ONLY : group.profiles[profile];
   if (!profileWeights) return;
 
   const coreSymbols = new Set<string>();
   for (const s of stocks) if (s.designation === "core") coreSymbols.add(s.ticker);
+  // Thematic funds: their own sleeve, out of Alpha (mirrors update-daily-value).
+  const thematicSymbols = new Set<string>();
+  for (const s of stocks) if (s.designation === "thematic") thematicSymbols.add(s.ticker);
 
   entry.inFlight = true;
   try {
@@ -83,12 +87,13 @@ async function computeWeightsFor(
     const posMap = new Map(positions.positions.map((p) => [p.symbol, p]));
 
     let activeHoldings;
-    if (isAlpha || isCore) {
+    if (isAlpha || isCore || isThematic) {
       activeHoldings = group.holdings.filter((h) => {
         if (h.assetClass !== "equity") return false;
         const tk = h.symbol.endsWith("-T") ? h.symbol.replace(/-T$/, ".TO") : h.symbol;
         const isCoreSym = coreSymbols.has(tk);
-        return isAlpha ? !isCoreSym : isCoreSym;
+        if (isThematic) return thematicSymbols.has(tk);
+        return isAlpha ? !isCoreSym && !thematicSymbols.has(tk) : isCoreSym;
       });
     } else {
       activeHoldings = group.holdings.filter((h) => {

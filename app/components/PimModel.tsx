@@ -78,6 +78,7 @@ const PROFILE_LABELS: Record<PimProfileType, string> = {
   allEquity: "All-Equity",
   alpha: "Alpha",
   core: "Core",
+  thematic: "Thematic",
 };
 
 const ASSET_CLASS_LABELS: Record<PimAssetClass, string> = {
@@ -346,6 +347,13 @@ export function PimModel({ groups, onOpenScenarios, onOpenStaging }: Props) {
     }
     return set;
   }, [stocks]);
+  // Thematic funds (three-bucket model) — their own standalone view, and
+  // excluded from the Alpha view, mirroring the daily series.
+  const thematicSymbols = useMemo(() => {
+    const set = new Set<string>();
+    for (const s of stocks) if (s.designation === "thematic") set.add(s.ticker);
+    return set;
+  }, [stocks]);
 
   const availableProfiles = useMemo<PimProfileType[]>(() => {
     if (!selectedGroup) return [];
@@ -360,10 +368,11 @@ export function PimModel({ groups, onOpenScenarios, onOpenStaging }: Props) {
       if (hasEquity) {
         base.push("alpha");
         base.push("core");
+        if (thematicSymbols.size > 0) base.push("thematic");
       }
     }
     return base;
-  }, [selectedGroup]);
+  }, [selectedGroup, thematicSymbols]);
 
   const activeProfile = availableProfiles.includes(selectedProfile)
     ? selectedProfile
@@ -416,7 +425,7 @@ export function PimModel({ groups, onOpenScenarios, onOpenStaging }: Props) {
   // from designation:"alpha" / designation:"core" stocks respectively.
   const ALPHA_WEIGHTS = { cash: 0, fixedIncome: 0, equity: 1, alternatives: 0 };
   const CORE_WEIGHTS = { cash: 0, fixedIncome: 0, equity: 1, alternatives: 0 };
-  const profileWeights = activeProfile === "alpha"
+  const profileWeights = activeProfile === "alpha" || activeProfile === "thematic"
     ? ALPHA_WEIGHTS
     : activeProfile === "core"
     ? CORE_WEIGHTS
@@ -431,13 +440,22 @@ export function PimModel({ groups, onOpenScenarios, onOpenStaging }: Props) {
     // Alpha: equity-only, exclude core ETFs, re-normalize proportionally
     if (activeProfile === "alpha") {
       const alphaHoldings = selectedGroup.holdings.filter(
-        (h) => h.assetClass === "equity" && !coreSymbols.has(symbolToTicker(h.symbol))
+        (h) => h.assetClass === "equity" && !coreSymbols.has(symbolToTicker(h.symbol)) && !thematicSymbols.has(symbolToTicker(h.symbol))
       );
       const totalWeight = alphaHoldings.reduce((s, h) => s + h.weightInClass, 0);
       const normalized = totalWeight > 0
         ? alphaHoldings.map((h) => ({ ...h, weightInClass: h.weightInClass / totalWeight }))
         : alphaHoldings;
       return { ...selectedGroup, holdings: normalized };
+    }
+
+    // Thematic: equity-only, ONLY thematic-designated funds, renormalized.
+    if (activeProfile === "thematic") {
+      const th = selectedGroup.holdings.filter(
+        (h) => h.assetClass === "equity" && thematicSymbols.has(symbolToTicker(h.symbol))
+      );
+      const totalWeight = th.reduce((s, h) => s + h.weightInClass, 0);
+      return { ...selectedGroup, holdings: totalWeight > 0 ? th.map((h) => ({ ...h, weightInClass: h.weightInClass / totalWeight })) : th };
     }
 
     // Core: equity-only, ONLY core-designated ETFs/funds, weighted
@@ -485,7 +503,7 @@ export function PimModel({ groups, onOpenScenarios, onOpenStaging }: Props) {
     }
 
     return selectedGroup;
-  }, [selectedGroup, activeProfile, coreSymbols, pimGroup]);
+  }, [selectedGroup, activeProfile, coreSymbols, thematicSymbols, pimGroup]);
 
   // Fetch live prices for all holdings
   const fetchPrices = useCallback(async () => {
@@ -593,7 +611,7 @@ export function PimModel({ groups, onOpenScenarios, onOpenStaging }: Props) {
     // and have no Core ETF to absorb a residual). Alpha/Core virtual
     // profiles also keep actual-share (their views drop the Core sleeve).
     // DISPLAY-ONLY — none of this feeds weightInClass or rebalance math.
-    const isVirtualProfile = activeProfile === "alpha" || activeProfile === "core";
+    const isVirtualProfile = activeProfile === "alpha" || activeProfile === "core" || activeProfile === "thematic";
     const isCoreHolding = (h: PimHolding) => coreSymbols.has(symbolToTicker(h.symbol));
     // Per-currency equity construction, decided by whether the sleeve has
     // Core ETFs to absorb a residual:
@@ -702,7 +720,7 @@ export function PimModel({ groups, onOpenScenarios, onOpenStaging }: Props) {
     // Both Alpha and Core are firm-wide standalone models — same single
     // pair of return numbers powers Dynamic Wt across every group.
     // Skip on Alpha / Core profiles themselves (no sleeves to drift).
-    const skipDrift = activeProfile === "alpha" || activeProfile === "core";
+    const skipDrift = activeProfile === "alpha" || activeProfile === "core" || activeProfile === "thematic";
     const alphaReturn = skipDrift
       ? null
       : returnSinceRebalance("pim", "alpha", firmRebalanceDate, alphaLiveToday);
@@ -974,6 +992,7 @@ export function PimModel({ groups, onOpenScenarios, onOpenStaging }: Props) {
   const dynamicWeightDiagnostic = useMemo<string | null>(() => {
     if (activeProfile === "alpha") return "alpha profile shows no drift";
     if (activeProfile === "core") return "core profile shows no drift";
+    if (activeProfile === "thematic") return "thematic profile shows no drift";
     if (perfBackfilling) return null;
     if (!perfData) return "perf data not loaded yet";
     const pimRebal = getGroupState("pim").lastRebalance?.date;

@@ -303,6 +303,7 @@ const PROFILE_LABELS: Record<PimProfileType, string> = {
   allEquity: "All-Equity",
   alpha: "Alpha",
   core: "Core",
+  thematic: "Thematic",
 };
 
 // ── Workspace control vocabulary (see design-pro/BUILD-BRIEF.md) ──

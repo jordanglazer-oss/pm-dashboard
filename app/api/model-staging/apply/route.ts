@@ -5,7 +5,7 @@ import { snapshotModels, diffModels } from "@/app/lib/model-versions";
 import { readDraftStore } from "@/app/lib/model-drafts-store";
 import { MODEL_DRAFTS_KEY, draftHasBuckets, sameSymbol, stagedBucket, validateHoldings, withPins, type StagingStock } from "@/app/lib/model-staging";
 import type { EquityBucket } from "@/app/lib/pim-types";
-import type { PimModelData } from "@/app/lib/pim-types";
+import type { PimModelData, PimPerformanceData } from "@/app/lib/pim-types";
 
 /**
  * POST /api/model-staging/apply — write the active staged draft into pm:pim-models.
@@ -115,9 +115,56 @@ export async function POST(req: NextRequest) {
       log.warn("draft history write failed (models already applied):", e);
     }
 
+    // First three-bucket apply: start the firm-wide Thematic series at an
+    // inception base of 100 (no fabricated history — same as the Conservative
+    // seed). /api/update-daily-value then accrues it daily; the Alpha series
+    // stops counting Thematic funds from the day they are tagged. Read-merge-
+    // write appending ONE model, pre-image stashed; never touches existing series.
+    let thematicSeries = "not needed";
+    if (Object.keys(roles).length) {
+      try {
+        const perfRaw = await redis.get("pm:pim-performance");
+        if (perfRaw) {
+          const perf = JSON.parse(perfRaw) as PimPerformanceData;
+          if (!perf.models.some((m) => m.groupId === "pim" && m.profile === "thematic")) {
+            const etDate = (daysAgo: number) =>
+              new Intl.DateTimeFormat("en-CA", { timeZone: "America/New_York", year: "numeric", month: "2-digit", day: "2-digit" })
+                .format(new Date(Date.now() - daysAgo * 86_400_000));
+            await redis.set(`pm:pim-performance.pre-thematic-seed-${Date.now()}`, perfRaw);
+            const model = {
+              groupId: "pim",
+              profile: "thematic" as const,
+              history: [
+                { date: etDate(2), value: 100, dailyReturn: 0 },
+                { date: etDate(1), value: 100, dailyReturn: 0 },
+              ],
+              lastUpdated: at,
+            };
+            await redis.set("pm:pim-performance", JSON.stringify({ ...perf, models: [...perf.models, model] }));
+            thematicSeries = `seeded at 100 from ${etDate(1)}`;
+            // Matching Appendix ledger (the Performance tile re-seeds a group's
+            // series from the ledgers, so a series without one could be dropped).
+            const appRaw = await redis.get("pm:appendix-daily-values");
+            if (appRaw) {
+              const app = JSON.parse(appRaw) as { ledgers: { profile: string }[] };
+              if (Array.isArray(app.ledgers) && !app.ledgers.some((l) => l.profile === "thematic")) {
+                const ledger = { profile: "thematic", entries: model.history.map((p) => ({ ...p, addedAt: at })) };
+                await redis.set("pm:appendix-daily-values", JSON.stringify({ ...app, ledgers: [...app.ledgers, ledger] }));
+              }
+            }
+          } else {
+            thematicSeries = "already exists — untouched";
+          }
+        }
+      } catch (e) {
+        log.warn("thematic series seed failed (models already applied):", e);
+        thematicSeries = "seed failed";
+      }
+    }
+
     const diff = diffModels(models, nextModels);
     log.info(`applied "${draft.name}" — ${staged.length} models, ${diff.length} weight changes, snapshot ${versionId}`);
-    return NextResponse.json({ ok: true, versionId, revision: nextModels.revision, diff, exits, roles, sleeveTargets: Object.keys(roles).length ? sleeveTargets : undefined });
+    return NextResponse.json({ ok: true, versionId, revision: nextModels.revision, diff, exits, roles, thematicSeries, sleeveTargets: Object.keys(roles).length ? sleeveTargets : undefined });
   } catch (e) {
     log.error("failed:", e);
     return NextResponse.json({ error: "apply failed" }, { status: 500 });
