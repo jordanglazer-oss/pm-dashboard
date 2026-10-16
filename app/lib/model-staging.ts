@@ -36,6 +36,10 @@ export const MODEL_DRAFTS_KEY = "pm:model-drafts";
 export const REF_PER_STOCK = 0.018182;
 const LEGACY_LOCKED = new Set(["FID5982", "FID5982-T", "GRNJ"]);
 const NO_US_SITUS = "no-us-situs";
+/** The one model with a real currency split: its CAD sleeve is CAD STOCKS
+ *  only, so its CAD weight is a pure function of the CAD stocks it holds.
+ *  Every other model is built 50% CAD / 50% USD. */
+const PC_USA = "pc-usa";
 
 export type ParsedKind = "stock" | "etf" | "fund";
 
@@ -102,17 +106,34 @@ const round6 = (v: number) => parseFloat(v.toFixed(6));
 export type HoldingRole = "stock" | "fund" | "core";
 
 /** Same three pools rebalanceStockWeights uses: individual stocks, Alpha
- *  (pass-through) funds, Core (residual-absorbing) ETFs. A name with no
- *  pm:stocks record falls back to the parsed kind, then the legacy lock list. */
-export function roleOf(symbol: string, stocks: StagingStock[], parsedKind?: ParsedKind): HoldingRole {
+ *  (pass-through) funds, Core (residual-absorbing) ETFs.
+ *  - pm:stocks record → its instrument type + designation (default Alpha).
+ *  - NEW name from the screenshot (no record) → a stock is a stock; a fund
+ *    whose name says INDEX is Core (QQC.F, QQQX.U), anything else is Alpha
+ *    (GRNY) — which is what it becomes once added to the book untagged.
+ *  - neither → the legacy lock list, else Core (rebalanceStockWeights' rule). */
+export function roleOf(symbol: string, stocks: StagingStock[], parsedRow?: Pick<ParsedRow, "kind" | "name">): HoldingRole {
   const rec = stocks.find((s) => sameSymbol(s.ticker, symbol));
   if (rec) {
     if (!rec.instrumentType || rec.instrumentType === "stock") return "stock";
     return rec.designation === "core" ? "core" : "fund";
   }
-  if (parsedKind === "stock") return "stock";
+  if (parsedRow) {
+    if (parsedRow.kind === "stock") return "stock";
+    return /\bINDEX\b/i.test(parsedRow.name) ? "core" : "fund";
+  }
   if (LEGACY_LOCKED.has(symbol.toUpperCase())) return "fund";
   return "core";
+}
+
+/** Core membership exactly as the Models tab's CAD/USD columns read it
+ *  (designation === "core" on the pm:stocks record); a brand-new screenshot
+ *  name with no record uses roleOf's heuristic. */
+export function isCoreForDisplay(symbol: string, stocks: StagingStock[], parsed: ParsedRow[]): boolean {
+  const rec = stocks.find((s) => sameSymbol(s.ticker, symbol));
+  if (rec) return rec.designation === "core";
+  const row = parsed.find((r) => sameSymbol(r.symbol, symbol));
+  return row ? roleOf(symbol, stocks, row) === "core" : false;
 }
 
 function isFundserv(t: string): boolean {
@@ -210,8 +231,7 @@ export function propagate(
   parsed: ParsedRow[],
 ): StagedModel {
   const notes: string[] = [];
-  const kindOf = (sym: string) => parsed.find((r) => sameSymbol(r.symbol, sym))?.kind;
-  const role = (sym: string) => roleOf(sym, stocks, kindOf(sym));
+  const role = (sym: string) => roleOf(sym, stocks, parsed.find((r) => sameSymbol(r.symbol, sym)));
   const classes = [...new Set(srcAfter.map((h) => h.assetClass))].filter((ac) =>
     parsed.some((r) => r.assetClass === ac),
   );
@@ -259,7 +279,8 @@ export function propagate(
       const rec = stocks.find((s) => sameSymbol(s.ticker, a.symbol));
       const ineligible = rec?.modelEligibility?.[other.id] === false;
       const situs = other.id === NO_US_SITUS && isUsSitus(a.symbol, a.currency);
-      if (ineligible || situs) { skipped.push(`${a.symbol}${situs ? " (US situs)" : ""}`); continue; }
+      const cadFund = other.id === PC_USA && a.currency === "CAD" && role(a.symbol) !== "stock";
+      if (ineligible || situs || cadFund) { skipped.push(`${a.symbol}${situs ? " (US situs)" : cadFund ? " (PC USA's CAD sleeve is CAD stocks only)" : ""}`); continue; }
       next.push({ name: a.name, symbol: a.symbol, currency: a.currency, assetClass: ac, weightInClass: a.weightInClass });
       added.push(a.symbol);
     }
@@ -277,28 +298,44 @@ export function propagate(
       srcCoreAfter.length > 0 &&
       coreHere.every((h) => srcCoreBefore.some((s) => sameSymbol(s.symbol, h.symbol)));
 
-    let core: PimHolding[];
+    // The Core pool this model will hold, and the ratios it is filled by.
+    let pool: { h: PimHolding; ratio: number }[];
     if (mirrors) {
       // Same index ETFs as the source → take the source's new Core mix,
       // dropping any ETF this model may not hold.
-      const eligible = srcCoreAfter.filter((s) => !(other.id === NO_US_SITUS && isUsSitus(s.symbol, s.currency)));
-      const tot = sum(eligible.map((s) => s.weightInClass));
-      core = eligible.map((s) => {
+      const eligible = srcCoreAfter.filter((s) =>
+        !(other.id === NO_US_SITUS && isUsSitus(s.symbol, s.currency)) && !(other.id === PC_USA && s.currency === "CAD"),
+      );
+      pool = eligible.map((s) => {
         const existing = coreHere.find((h) => sameSymbol(h.symbol, s.symbol));
-        const w = tot > 0 ? (s.weightInClass / tot) * residual : 0;
-        return existing ? { ...existing, weightInClass: w } : { name: s.name, symbol: s.symbol, currency: s.currency, assetClass: ac, weightInClass: w };
+        return { h: existing ?? { name: s.name, symbol: s.symbol, currency: s.currency, assetClass: ac, weightInClass: 0 }, ratio: s.weightInClass };
       });
-      const joined = core.filter((c) => !coreHere.some((h) => sameSymbol(h.symbol, c.symbol))).map((c) => c.symbol);
-      const left = coreHere.filter((h) => !core.some((c) => sameSymbol(c.symbol, h.symbol))).map((h) => h.symbol);
+      const joined = pool.filter((c) => !coreHere.some((h) => sameSymbol(h.symbol, c.h.symbol))).map((c) => c.h.symbol);
+      const left = coreHere.filter((h) => !pool.some((c) => sameSymbol(c.h.symbol, h.symbol))).map((h) => h.symbol);
       if (joined.length) notes.push(`Core follows the source's index mix — joins: ${joined.join(", ")}.`);
       if (left.length) notes.push(`Core follows the source's index mix — leaves: ${left.join(", ")}.`);
     } else {
-      const tot = sum(coreHere.map((h) => h.weightInClass));
-      core = coreHere.map((h) => ({
-        ...h,
-        weightInClass: tot > 0 ? (h.weightInClass / tot) * residual : residual / Math.max(1, coreHere.length),
-      }));
-      if (coreHere.length) notes.push("Own Core sleeve kept — rescaled to absorb the residual.");
+      pool = coreHere.map((h) => ({ h, ratio: h.weightInClass }));
+      if (coreHere.length) notes.push("Own Core sleeve kept — resized to absorb the residual.");
+    }
+    const spread = (items: { h: PimHolding; ratio: number }[], total: number) => {
+      const tot = sum(items.map((c) => c.ratio));
+      return items.map((c) => ({ ...c.h, weightInClass: tot > 0 ? (c.ratio / tot) * total : total / Math.max(1, items.length) }));
+    };
+    // Equity in every model but PC USA is built 50% CAD / 50% USD, so each
+    // currency's Core fills ITS half: 0.5 − that currency's non-Core names.
+    // Falls back to one shared residual when a currency has no Core ETF or is
+    // already over its half (noted, so the PM can see why the split moved).
+    let core: PimHolding[];
+    const half = (ccy: "CAD" | "USD") => 0.5 - sum(nonCore.filter((h) => h.currency === ccy).map((h) => h.weightInClass));
+    const byCcy = ac === "equity" && other.id !== PC_USA;
+    const cadPool = pool.filter((c) => c.h.currency === "CAD");
+    const usdPool = pool.filter((c) => c.h.currency === "USD");
+    if (byCcy && cadPool.length && usdPool.length && half("CAD") >= 0 && half("USD") >= 0) {
+      core = [...spread(cadPool, half("CAD")), ...spread(usdPool, half("USD"))];
+    } else {
+      if (byCcy && pool.length) notes.push("Could not hold 50% CAD / 50% USD (a currency has no Core ETF or its names exceed 50%) — Core resized as one pool.");
+      core = spread(pool, residual);
     }
     if (residual < -1e-6) notes.push(`Non-Core names sum to ${((1 - residual) * 100).toFixed(2)}% — over 100%, Core is zero. Trim something before applying.`);
     if (core.length === 0 && Math.abs(residual) > 1e-4) notes.push(`No Core ETF here to absorb ${(residual * 100).toFixed(2)}% — edit before applying.`);
@@ -394,8 +431,7 @@ export function validateHoldings(holdings: PimHolding[]): string[] {
 export function withPins(holdings: PimHolding[], stocks: StagingStock[], month: string, at: string, parsed: ParsedRow[]): PimHolding[] {
   return holdings.map((h) => {
     if (h.assetClass !== "equity") return h;
-    const kind = parsed.find((r) => sameSymbol(r.symbol, h.symbol))?.kind;
-    if (roleOf(h.symbol, stocks, kind) !== "stock") return h;
+    if (roleOf(h.symbol, stocks, parsed.find((r) => sameSymbol(r.symbol, h.symbol))) !== "stock") return h;
     if (Math.abs(h.weightInClass - REF_PER_STOCK) < 1e-6) {
       if (!h.pinned) return h;
       const { pinned: _drop, ...rest } = h;
@@ -404,4 +440,95 @@ export function withPins(holdings: PimHolding[], stocks: StagingStock[], month: 
     }
     return { ...h, pinned: { weightInClass: h.weightInClass, month, at } };
   });
+}
+
+/* ── CAD / USD model columns (display only) ───────────────────────── */
+
+export type CurrencyWeights = {
+  /** Per holding symbol: weight in the CAD / USD model (null = not that currency). */
+  rows: Record<string, { cad: number | null; usd: number | null }>;
+  /** Each currency sub-account as a share of the whole portfolio. */
+  account: { CAD: number; USD: number };
+};
+
+/** The Models tab's "CAD model wt" / "USD model wt" columns, for any holdings
+ *  list (live or staged). MIRRORS PimModel.tsx `computedHoldings` for the
+ *  non-virtual profiles — keep the two in step:
+ *   - PC USA (the only real split): weight inside that currency's account =
+ *     weightInClass × classAlloc / accountTotal, across every class. Its CAD
+ *     account is its CAD stocks, so it moves linearly with them.
+ *   - every other model, equity: built 50/50 — a non-Core name shows at 2× its
+ *     class weight and the same-currency Core ETFs fill the residual; a
+ *     currency with no Core normalises to 100% at the All-Equity allocation.
+ *   - FI / alternatives: share of that currency's sleeve × class allocation.
+ *  Never feeds a stored weight. */
+export function currencyModelWeights(
+  holdingsIn: PimHolding[],
+  group: PimModelGroup,
+  profile: PimProfileType,
+  isCore: (symbol: string) => boolean,
+): CurrencyWeights {
+  const pw = group.profiles[profile];
+  const out: CurrencyWeights = { rows: {}, account: { CAD: 0, USD: 0 } };
+  if (!pw) return out;
+  // Non-PIM groups: equity normalised to 1 as a safety net (as the Models tab does).
+  let holdings = holdingsIn;
+  if (group.id !== "pim") {
+    const eqTot = sum(holdingsIn.filter((h) => h.assetClass === "equity").map((h) => h.weightInClass));
+    if (eqTot > 0) holdings = holdingsIn.map((h) => (h.assetClass === "equity" ? { ...h, weightInClass: h.weightInClass / eqTot } : h));
+  }
+  const allocFor = (ac: PimAssetClass) => (ac === "fixedIncome" ? pw.fixedIncome : ac === "equity" ? pw.equity : pw.alternatives);
+  const cadT: Record<string, number> = {};
+  const usdT: Record<string, number> = {};
+  for (const h of holdings) {
+    if (h.currency === "CAD") cadT[h.assetClass] = (cadT[h.assetClass] || 0) + h.weightInClass;
+    else if (h.currency === "USD") usdT[h.assetClass] = (usdT[h.assetClass] || 0) + h.weightInClass;
+  }
+  for (const ac of ["equity", "fixedIncome", "alternative"] as const) {
+    out.account.CAD += allocFor(ac) * (cadT[ac] || 0);
+    out.account.USD += allocFor(ac) * (usdT[ac] || 0);
+  }
+  const allEquityAlloc = group.profiles.allEquity?.equity ?? 1;
+  const eqInfo = (ccy: "CAD" | "USD") => {
+    const eq = holdings.filter((h) => h.assetClass === "equity" && h.currency === ccy);
+    const core = eq.filter((h) => isCore(h.symbol));
+    const nonCoreSum = sum(eq.filter((h) => !isCore(h.symbol)).map((h) => h.weightInClass));
+    return {
+      hasCore: core.length > 0,
+      residualClass: Math.max(0, 1 - nonCoreSum * 2),
+      coreStoredTotal: sum(core.map((h) => h.weightInClass)),
+      coreCount: core.length,
+      classTotal: sum(eq.map((h) => h.weightInClass)),
+    };
+  };
+  const info = { CAD: eqInfo("CAD"), USD: eqInfo("USD") };
+  for (const h of holdings) {
+    const alloc = allocFor(h.assetClass);
+    let cad: number | null = null;
+    let usd: number | null = null;
+    if (group.id === PC_USA) {
+      const total = out.account[h.currency];
+      const w = total > 0 ? (h.weightInClass * alloc) / total : null;
+      if (h.currency === "CAD") cad = w; else usd = w;
+    } else if (h.assetClass === "equity") {
+      const i = info[h.currency];
+      let w: number | null;
+      if (i.hasCore) {
+        if (isCore(h.symbol)) {
+          const ratio = i.coreStoredTotal > 0 ? h.weightInClass / i.coreStoredTotal : i.coreCount > 0 ? 1 / i.coreCount : 0;
+          w = i.residualClass * ratio * alloc;
+        } else {
+          w = h.weightInClass * 2 * alloc;
+        }
+      } else {
+        w = i.classTotal > 0 ? (h.weightInClass / i.classTotal) * allEquityAlloc : null;
+      }
+      if (h.currency === "CAD") cad = w; else usd = w;
+    } else {
+      cad = h.currency === "CAD" && (cadT[h.assetClass] || 0) > 0 ? (h.weightInClass / cadT[h.assetClass]) * alloc : null;
+      usd = h.currency === "USD" && (usdT[h.assetClass] || 0) > 0 ? (h.weightInClass / usdT[h.assetClass]) * alloc : null;
+    }
+    out.rows[h.symbol] = { cad, usd };
+  }
+  return out;
 }

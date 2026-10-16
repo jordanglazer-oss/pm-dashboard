@@ -6,10 +6,13 @@ import { useStocks } from "@/app/lib/StockContext";
 import { AppIcon } from "@/app/components/AppIcon";
 import {
   buildDraftModels,
+  currencyModelWeights,
   diffHoldings,
+  isCoreForDisplay,
   propagate,
   sameSymbol,
   validateHoldings,
+  type CurrencyWeights,
   type DiffRow,
   type ModelDraft,
   type ParsedKind,
@@ -281,6 +284,10 @@ export function ModelStaging() {
 
   const sel = groups.find((g) => g.id === selectedId) ?? groups[0];
   const staged = draft && sel ? draft.models[sel.id] : undefined;
+  const isCore = (sym: string) => isCoreForDisplay(sym, stocks, draft?.parsed ?? []);
+  const ccyProfile: PimProfileType = sel?.profiles[profile] ? profile : "balanced";
+  const ccyLive = sel ? currencyModelWeights(sel.holdings, sel, ccyProfile, isCore) : null;
+  const ccyNew = sel && staged ? currencyModelWeights(staged.holdings, sel, ccyProfile, isCore) : null;
   const selIdx = groups.findIndex((g) => g.id === sel?.id);
 
   return (
@@ -388,18 +395,20 @@ export function ModelStaging() {
             <label className="ml-auto flex items-center gap-1.5 text-[12px] text-ink-3">
               Portfolio % as
               <select value={profile} onChange={(e) => setUiPref("staging.profile", e.target.value)} className={INPUT}>
-                {(Object.keys(sel.profiles) as PimProfileType[]).map((p) => <option key={p} value={p}>{PROFILE_LABELS[p]}</option>)}
+                {(Object.keys(sel.profiles) as PimProfileType[]).filter((p) => p !== "alpha" && p !== "core").map((p) => <option key={p} value={p}>{PROFILE_LABELS[p]}</option>)}
               </select>
             </label>
           </div>
 
-          {staged ? (
+          {staged && ccyLive && ccyNew ? (
             <ModelDiffPanel
               group={sel}
               staged={staged}
               diff={diffs[sel.id] ?? []}
               isSource={sel.id === draft.sourceGroupId}
-              profile={profile}
+              profile={ccyProfile}
+              ccyLive={ccyLive}
+              ccyNew={ccyNew}
               errors={errorsFor(sel.id)}
               onChange={(h, add) => setModel(sel.id, h, add)}
               onRepropagate={() => repropagate(sel.id)}
@@ -436,13 +445,15 @@ export function ModelStaging() {
 /* ── One model's proposed vs live ─────────────────────────────────── */
 
 function ModelDiffPanel({
-  group, staged, diff, isSource, profile, errors, onChange, onRepropagate,
+  group, staged, diff, isSource, profile, ccyLive, ccyNew, errors, onChange, onRepropagate,
 }: {
   group: PimModelGroup;
   staged: StagedModel;
   diff: DiffRow[];
   isSource: boolean;
   profile: PimProfileType;
+  ccyLive: CurrencyWeights;
+  ccyNew: CurrencyWeights;
   errors: string[];
   onChange: (holdings: PimHolding[], parsedAdd?: ParsedRow) => void;
   onRepropagate: () => void;
@@ -490,6 +501,19 @@ function ModelDiffPanel({
           <button className={`${BTN} ml-auto`} onClick={onRepropagate}><AppIcon name="refresh" size={13} />Re-derive from screenshot</button>
         )}
       </div>
+      <div className="flex flex-wrap gap-x-5 gap-y-1 border-b border-line-soft px-3.5 py-2 text-[12px] text-ink-2">
+        {(["CAD", "USD"] as const).map((c) => (
+          <span key={c}>
+            <span className="font-semibold text-ink">{c} account</span> · {PROFILE_LABELS[profile]}{" "}
+            <span className="tabular-nums text-ink-3">{pct(ccyLive.account[c])}</span> →{" "}
+            <span className={`tabular-nums font-medium ${Math.abs(ccyNew.account[c] - ccyLive.account[c]) > 0.00005 ? "text-accent" : "text-ink"}`}>{pct(ccyNew.account[c])}</span>
+            <span className="text-ink-3"> of portfolio</span>
+          </span>
+        ))}
+        <span className="text-ink-3">
+          {group.id === "pc-usa" ? "PC USA: the CAD account is its CAD stocks — it moves with them." : "Built 50% CAD / 50% USD in equity."}
+        </span>
+      </div>
       {staged.notes.length > 0 && (
         <ul className="border-b border-line-soft px-3.5 py-2 text-[11.5px] text-ink-3">
           {staged.notes.map((n, i) => <li key={i}>· {n}</li>)}
@@ -507,6 +531,8 @@ function ModelDiffPanel({
               <th className="text-right">Proposed · class</th>
               <th className="text-right">Δ</th>
               <th className="text-right">Proposed · {PROFILE_LABELS[profile]}</th>
+              <th className="text-right">CAD model</th>
+              <th className="text-right">USD model</th>
               <th />
             </tr>
           </thead>
@@ -518,7 +544,7 @@ function ModelDiffPanel({
               const alloc = allocOf(group, profile, ac);
               return (
                 <React.Fragment key={ac}>
-                  <tr><td colSpan={8} className="bg-surface-hover pl-3.5 text-[11.5px] font-semibold text-ink-2">{CLASS_LABELS[ac]}</td></tr>
+                  <tr><td colSpan={10} className="bg-surface-hover pl-3.5 text-[11.5px] font-semibold text-ink-2">{CLASS_LABELS[ac]}</td></tr>
                   {rows.map((r) => {
                     const delta = (r.after ?? 0) - (r.before ?? 0);
                     const chip = r.kind === "add" ? "bg-pos-soft text-pos" : r.kind === "remove" ? "bg-neg-soft text-neg" : r.kind === "change" ? "bg-accent-soft text-accent" : "";
@@ -547,6 +573,18 @@ function ModelDiffPanel({
                           {Math.abs(delta) < 1e-6 ? "—" : `${delta > 0 ? "+" : ""}${(delta * 100).toFixed(2)}`}
                         </td>
                         <td className="text-right tabular-nums">{r.after == null ? "—" : pct(r.after * alloc)}</td>
+                        {(["cad", "usd"] as const).map((k) => {
+                          const lv = ccyLive.rows[r.symbol]?.[k] ?? null;
+                          const nv = r.after == null ? null : ccyNew.rows[r.symbol]?.[k] ?? null;
+                          if (lv == null && nv == null) return <td key={k} className="text-right text-ink-faint">·</td>;
+                          const moved = lv == null || nv == null || Math.abs(nv - lv) > 0.00005;
+                          return (
+                            <td key={k} className="whitespace-nowrap text-right tabular-nums">
+                              {moved && <span className="text-[11px] text-ink-3">{pct(lv)} → </span>}
+                              <span className={moved ? "font-medium text-ink" : "text-ink-2"}>{pct(nv)}</span>
+                            </td>
+                          );
+                        })}
                         <td className="whitespace-nowrap pr-2 text-right">
                           {r.after == null ? (
                             <button className="text-[11.5px] text-accent hover:underline" onClick={() => restore(r.symbol)}>keep</button>
@@ -566,6 +604,10 @@ function ModelDiffPanel({
                     <td className={`text-right tabular-nums ${Math.abs(newSum - 1) > 0.002 ? "text-neg" : ""}`}>{pct(newSum)}</td>
                     <td />
                     <td className="text-right tabular-nums">{pct(newSum * alloc)}</td>
+                    {(["cad", "usd"] as const).map((k) => {
+                      const t = rows.reduce((a, r) => a + (r.after == null ? 0 : ccyNew.rows[r.symbol]?.[k] ?? 0), 0);
+                      return <td key={k} className="text-right tabular-nums">{t > 0 ? pct(t) : "—"}</td>;
+                    })}
                     <td />
                   </tr>
                 </React.Fragment>
