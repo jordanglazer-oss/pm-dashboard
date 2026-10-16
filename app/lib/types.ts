@@ -532,7 +532,11 @@ export type Stock = {
   usEquityPct?: number;
   modelEligibility?: Record<string, boolean>; // PIM model group id → eligible (default all true)
   modelWeights?: Record<string, number>; // PIM model group id → weight% in Balanced (overrides weights.portfolio)
-  designation?: "core" | "alpha"; // Core = indexed/passive, Alpha = active picks (default alpha)
+  /** Core = indexed/passive; Alpha = active picks (default); Thematic = a
+   *  thematic / specialty fund held at a set weight (its own bucket since the
+   *  Oct 2026 three-bucket model). Every `=== "core"` check treats Thematic
+   *  like Alpha (pass-through, never absorbs residual) — the intended rule. */
+  designation?: "core" | "alpha" | "thematic";
   /** Alpha sleeve tags (app/lib/sleeves.ts). Thesis = long-run hold; Tactical =
    *  shorter-horizon. A stock may carry both (Thesis name with a tactical
    *  overweight); a fund carries at most one. Tags only — no weight math reads

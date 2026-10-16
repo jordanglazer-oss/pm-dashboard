@@ -41,7 +41,7 @@ type StockLite = {
   ticker: string;
   bucket?: string;
   instrumentType?: string;
-  designation?: "core" | "alpha";
+  designation?: "core" | "alpha" | "thematic";
   inThesis?: boolean;
   inTactical?: boolean;
   name?: string;

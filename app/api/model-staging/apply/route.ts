@@ -3,7 +3,8 @@ import { getRedis } from "@/app/lib/redis";
 import { createLogger } from "@/app/lib/logger";
 import { snapshotModels, diffModels } from "@/app/lib/model-versions";
 import { readDraftStore } from "@/app/lib/model-drafts-store";
-import { MODEL_DRAFTS_KEY, sameSymbol, validateHoldings, withPins, type StagingStock } from "@/app/lib/model-staging";
+import { MODEL_DRAFTS_KEY, draftHasBuckets, sameSymbol, stagedBucket, validateHoldings, withPins, type StagingStock } from "@/app/lib/model-staging";
+import type { EquityBucket } from "@/app/lib/pim-types";
 import type { PimModelData } from "@/app/lib/pim-types";
 
 /**
@@ -23,6 +24,12 @@ import type { PimModelData } from "@/app/lib/pim-types";
  *      per-stock rule weight are pinned; revision is bumped;
  *   6. the draft moves to history with the version id + the symbols each
  *      model exited (Positioning's Rebalance sells exactly those to zero).
+ *   Three-bucket drafts (rows carry a Core / Thematic / Alpha bucket) also
+ *   write `sleeveTargets` (the source model's bucket shares, from now on)
+ *   and return `roles` — the bucket of every source equity name — which the
+ *   client writes to pm:stocks through its normal path (this route never
+ *   writes pm:stocks: the client persists that array whole, so a server write
+ *   would be overwritten by the next client save).
  * Returns the per-holding diff.
  *
  * Touches pm:pim-models (read-modify-write), pm:model-drafts, and the version
@@ -74,13 +81,28 @@ export async function POST(req: NextRequest) {
       exits[g.id] = g.holdings.filter((h) => !m.holdings.some((s) => sameSymbol(s.symbol, h.symbol))).map((h) => h.symbol);
       return { ...g, holdings: withPins(m.holdings, stocks, month, at, draft.parsed) };
     });
-    const nextModels: PimModelData = { ...models, groups: nextGroups, revision: liveRev + 1, lastUpdated: at };
+    // Three-bucket drafts: the source model's bucket shares become the targets.
+    let sleeveTargets: PimModelData["sleeveTargets"] = models.sleeveTargets;
+    const roles: Record<string, EquityBucket> = {};
+    const src = draft.models[draft.sourceGroupId];
+    if (draftHasBuckets(draft.parsed) && src && (!wanted || wanted.has(draft.sourceGroupId))) {
+      const t = { core: 0, thematic: 0, alpha: 0 };
+      for (const h of src.holdings) {
+        if (h.assetClass !== "equity") continue;
+        const b = stagedBucket(h.symbol, stocks, draft.parsed);
+        t[b] += h.weightInClass;
+        roles[h.symbol] = b;
+      }
+      const r6 = (v: number) => parseFloat(v.toFixed(6));
+      sleeveTargets = { core: r6(t.core), thematic: r6(t.thematic), alpha: r6(t.alpha), since: at };
+    }
+    const nextModels: PimModelData = { ...models, groups: nextGroups, revision: liveRev + 1, lastUpdated: at, ...(sleeveTargets ? { sleeveTargets } : {}) };
     await redis.set("pm:pim-models", JSON.stringify(nextModels));
 
     // Draft → history (read-merge-write on a fresh read; other fields kept).
     try {
       const fresh = await readDraftStore();
-      const applied = { ...draft, status: "applied" as const, appliedAt: at, versionId, exits };
+      const applied = { ...draft, status: "applied" as const, appliedAt: at, versionId, exits, ...(Object.keys(roles).length && sleeveTargets ? { sleeveTargets: { core: sleeveTargets.core, thematic: sleeveTargets.thematic, alpha: sleeveTargets.alpha } } : {}) };
       await redis.set(
         MODEL_DRAFTS_KEY,
         JSON.stringify({
@@ -95,7 +117,7 @@ export async function POST(req: NextRequest) {
 
     const diff = diffModels(models, nextModels);
     log.info(`applied "${draft.name}" — ${staged.length} models, ${diff.length} weight changes, snapshot ${versionId}`);
-    return NextResponse.json({ ok: true, versionId, revision: nextModels.revision, diff, exits });
+    return NextResponse.json({ ok: true, versionId, revision: nextModels.revision, diff, exits, roles, sleeveTargets: Object.keys(roles).length ? sleeveTargets : undefined });
   } catch (e) {
     log.error("failed:", e);
     return NextResponse.json({ error: "apply failed" }, { status: 500 });

@@ -35,7 +35,7 @@ type Stock = {
   ticker: string;
   name?: string;
   bucket?: string;
-  designation?: "core" | "alpha";
+  designation?: "core" | "alpha" | "thematic";
   instrumentType?: string;
   modelEligibility?: Record<string, boolean>;
 };

@@ -1490,14 +1490,21 @@ export function PortfolioOverview({
                             if (isBondOrAlt) return <span className="text-[10px] text-ink-faint">—</span>;
                             return (
                               <button
-                                onClick={() => updateStockFields(s.ticker, { designation: (s.designation || "alpha") === "core" ? "alpha" : "core" })}
+                                // Cycles Alpha → Thematic → Core → Alpha (three-bucket model).
+                                onClick={() => {
+                                  const cur = s.designation || "alpha";
+                                  updateStockFields(s.ticker, { designation: cur === "alpha" ? "thematic" : cur === "thematic" ? "core" : "alpha" });
+                                }}
+                                title="Click to cycle Alpha → Thematic → Core"
                                 className={`rounded-md px-2 py-0.5 text-[10px] font-bold transition-colors ${
                                   (s.designation || "alpha") === "core"
                                     ? "bg-accent-soft text-accent hover:bg-accent-soft"
+                                    : s.designation === "thematic"
+                                    ? "bg-pos-soft text-pos hover:bg-pos-soft"
                                     : "bg-warn-soft text-warn hover:bg-warn-soft"
                                 }`}
                               >
-                                {(s.designation || "alpha") === "core" ? "Core" : "Alpha"}
+                                {(s.designation || "alpha") === "core" ? "Core" : s.designation === "thematic" ? "Thematic" : "Alpha"}
                               </button>
                             );
                           })()}

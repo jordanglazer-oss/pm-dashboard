@@ -83,7 +83,7 @@ type StoredStock = {
   bucket?: string;
   price?: number;
   instrumentType?: string;
-  designation?: "core" | "alpha";
+  designation?: "core" | "alpha" | "thematic";
   inThesis?: boolean;
   inTactical?: boolean;
   /** YYYY-MM-DD (Yahoo calendarEvents) — feeds the catalyst-aware escalation. */

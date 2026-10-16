@@ -8,7 +8,10 @@ import {
   buildDraftModels,
   currencyModelWeights,
   diffHoldings,
+  draftHasBuckets,
   isCoreForDisplay,
+  rescaleBuckets,
+  stagedBucket,
   propagate,
   sameSymbol,
   validateHoldings,
@@ -19,7 +22,9 @@ import {
   type ParsedRow,
   type StagedModel,
 } from "@/app/lib/model-staging";
-import type { PimAssetClass, PimHolding, PimModelGroup, PimProfileType } from "@/app/lib/pim-types";
+import type { EquityBucket, PimAssetClass, PimHolding, PimModelGroup, PimProfileType } from "@/app/lib/pim-types";
+import { BUCKET_LABELS, bucketOf } from "@/app/lib/sleeve-targets";
+import { ZERO_SCORES, type InstrumentType, type Stock } from "@/app/lib/types";
 
 /**
  * Model staging — upload the target model as a screenshot, review what it
@@ -70,7 +75,7 @@ async function fileToDataUrl(file: File): Promise<string> {
 }
 
 export function ModelStaging() {
-  const { pimModels, stocks, reloadPimModels, moveBucket, uiPrefs, setUiPref } = useStocks();
+  const { pimModels, stocks, reloadPimModels, moveBucket, updateStockFields, addStock, uiPrefs, setUiPref } = useStocks();
   const groups = pimModels.groups;
   const [draft, setDraft] = useState<ModelDraft | null>(null);
   const [loaded, setLoaded] = useState(false);
@@ -81,7 +86,7 @@ export function ModelStaging() {
   const [saveState, setSaveState] = useState<"" | "saving" | "saved" | "error">("");
   const [confirmText, setConfirmText] = useState("");
   const [applying, setApplying] = useState(false);
-  const [applyResult, setApplyResult] = useState<{ versionId: string; changes: number; exits: Record<string, string[]> } | null>(null);
+  const [applyResult, setApplyResult] = useState<{ versionId: string; changes: number; exits: Record<string, string[]>; roleNote?: string } | null>(null);
   const [showParsed, setShowParsed] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
 
@@ -165,6 +170,27 @@ export function ModelStaging() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [draft, groups, sourceGroupId, stocks, update]);
 
+  /** A draft that starts from the LIVE models — for resizing the buckets (or
+   *  any edit) without a screenshot. Every PIM equity row carries its current
+   *  bucket, so the draft is a three-bucket draft. */
+  const startFromLive = useCallback(() => {
+    if (draft && !window.confirm("Replace the current draft with a copy of the live models?")) return;
+    const pim = groups.find((g) => g.id === "pim");
+    if (!pim) return;
+    const now = new Date().toISOString();
+    const parsed: ParsedRow[] = pim.holdings.filter((h) => h.assetClass === "equity").map((h) => {
+      const b = bucketOf(h.symbol, stocks);
+      return { name: h.name, symbol: h.symbol, currency: h.currency, assetClass: "equity", kind: b === "alpha" ? "stock" : "etf", classPct: h.weightInClass * 100, portfolioPct: null, bucket: b };
+    });
+    const models: Record<string, StagedModel> = {};
+    for (const g of groups) models[g.id] = { holdings: g.holdings, origin: g.id === "pim" ? "source" : "propagated", notes: [] };
+    setError("");
+    setApplyResult(null);
+    update({ id: `md-${Date.now().toString(36)}`, name: `Live models · ${now.slice(0, 10)}`, sourceGroupId: "pim", parsed, models, status: "draft", createdAt: now, updatedAt: now }, true);
+    setSelectedId("pim");
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [draft, groups, stocks, update]);
+
   useEffect(() => {
     const onPaste = (e: ClipboardEvent) => {
       const item = [...(e.clipboardData?.items ?? [])].find((i) => i.type.startsWith("image/"));
@@ -192,9 +218,9 @@ export function ModelStaging() {
   // ── Editing ──
   /** Write one model's holdings; editing the source re-propagates to every
    *  model the PM has not hand-edited. */
-  const setModel = useCallback((gid: string, holdings: PimHolding[], parsedAdd?: ParsedRow) => {
+  const setModel = useCallback((gid: string, holdings: PimHolding[], parsedAdd?: ParsedRow, parsedReplace?: ParsedRow[]) => {
     if (!draft) return;
-    const parsed = parsedAdd ? [...draft.parsed, parsedAdd] : draft.parsed;
+    const parsed = parsedReplace ?? (parsedAdd ? [...draft.parsed, parsedAdd] : draft.parsed);
     const models: Record<string, StagedModel> = { ...draft.models };
     if (gid === draft.sourceGroupId) {
       models[gid] = { ...models[gid], holdings, origin: "source" };
@@ -211,6 +237,19 @@ export function ModelStaging() {
     update({ ...draft, parsed, models });
   }, [draft, groups, stocks, update]);
 
+  /** Move one source-model name to another bucket (re-derives the other models). */
+  const setBucket = (symbol: string, bucket: EquityBucket) => {
+    if (!draft) return;
+    const src = draft.models[draft.sourceGroupId];
+    const h = src?.holdings.find((x) => sameSymbol(x.symbol, symbol));
+    if (!src || !h) return;
+    const exists = draft.parsed.some((r) => sameSymbol(r.symbol, symbol));
+    const parsed = exists
+      ? draft.parsed.map((r) => (sameSymbol(r.symbol, symbol) ? { ...r, bucket } : r))
+      : [...draft.parsed, { name: h.name, symbol: h.symbol, currency: h.currency, assetClass: "equity" as const, kind: (bucket === "alpha" ? "stock" : "etf") as ParsedKind, classPct: h.weightInClass * 100, portfolioPct: null, bucket }];
+    setModel(draft.sourceGroupId, src.holdings, undefined, parsed);
+  };
+
   const repropagate = (gid: string) => {
     if (!draft) return;
     const src = groups.find((g) => g.id === draft.sourceGroupId);
@@ -224,6 +263,45 @@ export function ModelStaging() {
     await fetch(`/api/kv/model-drafts?id=${encodeURIComponent(draft.id)}`, { method: "DELETE" }).catch(() => {});
     setDraft(null);
     setSaveState("");
+  };
+
+  /** After a three-bucket apply: write each source name's bucket to pm:stocks
+   *  through the normal client path (designation, a Portfolio record for a
+   *  name the book doesn't track yet, Watchlist → Portfolio for a name now in
+   *  the models). Never touches pm:pim-models (skipPimModels). */
+  const syncRoles = (roles: Record<string, EquityBucket>, parsed: ParsedRow[]): string | undefined => {
+    const entries = Object.entries(roles);
+    if (entries.length === 0) return undefined;
+    let tagged = 0, created = 0, promoted = 0;
+    for (const [symbol, b] of entries) {
+      const rec = stocks.find((s) => sameSymbol(s.ticker, symbol));
+      if (rec) {
+        const isStk = !rec.instrumentType || rec.instrumentType === "stock";
+        const want = b === "core" ? "core" : b === "thematic" ? "thematic" : "alpha";
+        // A stock is always Alpha; only funds carry Core / Thematic.
+        if (!isStk && (rec.designation || "alpha") !== want) { updateStockFields(rec.ticker, { designation: want }); tagged++; }
+        if (rec.bucket === "Watchlist") { moveBucket(rec.ticker, { skipPimModels: true }); promoted++; }
+        continue;
+      }
+      const row = parsed.find((r) => sameSymbol(r.symbol, symbol));
+      const instrumentType: InstrumentType = b === "alpha" ? "stock" : row?.kind === "fund" ? "mutual-fund" : "etf";
+      const stock: Stock = {
+        ticker: symbol.replace(/-T$/, ".TO"),
+        name: row?.name ?? symbol,
+        instrumentType,
+        bucket: "Portfolio",
+        sector: "",
+        beta: 1.0,
+        weights: { portfolio: 0 },
+        scores: { ...ZERO_SCORES },
+        notes: "",
+        ...(instrumentType !== "stock" ? { designation: b === "core" ? "core" as const : "thematic" as const } : {}),
+      };
+      addStock(stock, { skipPimModels: true, assetClass: "equity" });
+      created++;
+    }
+    const parts = [tagged && `${tagged} re-tagged`, created && `${created} added to the book`, promoted && `${promoted} moved Watchlist → Portfolio`].filter(Boolean);
+    return parts.length ? `Book roles synced: ${parts.join(", ")}.` : "Book roles already matched.";
   };
 
   // ── Apply ──
@@ -249,8 +327,9 @@ export function ModelStaging() {
       }
       if (!res.ok) { setError([j?.error, ...(j?.problems ?? [])].filter(Boolean).join(" · ") || "Apply failed."); return; }
       await reloadPimModels();
+      const roleNote = syncRoles((j.roles ?? {}) as Record<string, EquityBucket>, draft.parsed);
       setLastApplied({ ...draft, status: "applied", appliedAt: new Date().toISOString(), versionId: j.versionId, exits: j.exits });
-      setApplyResult({ versionId: j.versionId, changes: Array.isArray(j.diff) ? j.diff.length : 0, exits: j.exits ?? {} });
+      setApplyResult({ versionId: j.versionId, changes: Array.isArray(j.diff) ? j.diff.length : 0, exits: j.exits ?? {}, roleNote });
       setDraft(null);
       setConfirmText("");
     } finally {
@@ -314,6 +393,9 @@ export function ModelStaging() {
             <AppIcon name="upload" size={13} />
             {parsing ? "Reading screenshot…" : "Upload screenshot"}
           </button>
+          <button className={BTN} onClick={startFromLive} disabled={parsing} title="Start a draft from the live models — e.g. to resize the Core / Thematic / Alpha buckets without a screenshot">
+            Start from live models
+          </button>
           <span className="text-[11.5px] text-ink-3">
             Every other model is derived from it — names dropped leave, weight changes carry over, new names join where eligible, Core ETFs absorb the rest.
           </span>
@@ -347,6 +429,7 @@ export function ModelStaging() {
       {applyResult && (
         <section className="panel border-l-2 border-l-pos px-3.5 py-3 text-[12.5px]">
           <div className="font-semibold text-ink">Applied — {applyResult.changes} weight changes written.</div>
+          {applyResult.roleNote && <div className="mt-1 text-ink-2">{applyResult.roleNote}</div>}
           <div className="mt-1 text-ink-2">
             Undo: restore version <span className="font-mono">{applyResult.versionId}</span> from the model version history on the Review page.
             {" "}Next: <Link href="/portfolio" className="!text-accent underline">Positioning → Rebalance</Link> trades the PIM book to the new model
@@ -409,6 +492,10 @@ export function ModelStaging() {
               profile={ccyProfile}
               ccyLive={ccyLive}
               ccyNew={ccyNew}
+              buckets={draftHasBuckets(draft.parsed)}
+              liveBucket={(sym) => bucketOf(sym, stocks)}
+              stagedBucket={(sym) => stagedBucket(sym, stocks, draft.parsed)}
+              onSetBucket={setBucket}
               errors={errorsFor(sel.id)}
               onChange={(h, add) => setModel(sel.id, h, add)}
               onRepropagate={() => repropagate(sel.id)}
@@ -445,7 +532,7 @@ export function ModelStaging() {
 /* ── One model's proposed vs live ─────────────────────────────────── */
 
 function ModelDiffPanel({
-  group, staged, diff, isSource, profile, ccyLive, ccyNew, errors, onChange, onRepropagate,
+  group, staged, diff, isSource, profile, ccyLive, ccyNew, buckets, liveBucket, stagedBucket: bucketFn, onSetBucket, errors, onChange, onRepropagate,
 }: {
   group: PimModelGroup;
   staged: StagedModel;
@@ -454,6 +541,10 @@ function ModelDiffPanel({
   profile: PimProfileType;
   ccyLive: CurrencyWeights;
   ccyNew: CurrencyWeights;
+  buckets: boolean;
+  liveBucket: (symbol: string) => EquityBucket;
+  stagedBucket: (symbol: string) => EquityBucket;
+  onSetBucket: (symbol: string, bucket: EquityBucket) => void;
   errors: string[];
   onChange: (holdings: PimHolding[], parsedAdd?: ParsedRow) => void;
   onRepropagate: () => void;
@@ -514,6 +605,21 @@ function ModelDiffPanel({
           {group.id === "pc-usa" ? "PC USA: the CAD account is its CAD stocks — it moves with them." : "Built 50% CAD / 50% USD in equity."}
         </span>
       </div>
+      {buckets && (
+        <BucketPanel
+          group={group}
+          staged={staged}
+          isSource={isSource}
+          profile={profile}
+          liveBucket={liveBucket}
+          bucketFn={bucketFn}
+          onResize={(t) => {
+            const { holdings, problems } = rescaleBuckets(staged.holdings, bucketFn, t);
+            if (problems.length) { window.alert(`Can't resize: ${problems.join("; ")}`); return; }
+            onChange(holdings);
+          }}
+        />
+      )}
       {staged.notes.length > 0 && (
         <ul className="border-b border-line-soft px-3.5 py-2 text-[11.5px] text-ink-3">
           {staged.notes.map((n, i) => <li key={i}>· {n}</li>)}
@@ -527,6 +633,7 @@ function ModelDiffPanel({
               <th className="pl-3.5">Holding</th>
               <th>Symbol</th>
               <th>Ccy</th>
+              {buckets && <th>Bucket</th>}
               <th className="text-right">Live · class</th>
               <th className="text-right">Proposed · class</th>
               <th className="text-right">Δ</th>
@@ -544,7 +651,7 @@ function ModelDiffPanel({
               const alloc = allocOf(group, profile, ac);
               return (
                 <React.Fragment key={ac}>
-                  <tr><td colSpan={10} className="bg-surface-hover pl-3.5 text-[11.5px] font-semibold text-ink-2">{CLASS_LABELS[ac]}</td></tr>
+                  <tr><td colSpan={buckets ? 11 : 10} className="bg-surface-hover pl-3.5 text-[11.5px] font-semibold text-ink-2">{CLASS_LABELS[ac]}</td></tr>
                   {rows.map((r) => {
                     const delta = (r.after ?? 0) - (r.before ?? 0);
                     const chip = r.kind === "add" ? "bg-pos-soft text-pos" : r.kind === "remove" ? "bg-neg-soft text-neg" : r.kind === "change" ? "bg-accent-soft text-accent" : "";
@@ -556,6 +663,22 @@ function ModelDiffPanel({
                         </td>
                         <td className="font-mono">{r.symbol}</td>
                         <td>{r.currency}</td>
+                        {buckets && (
+                          <td>
+                            {ac !== "equity" ? null : isSource && r.after != null ? (
+                              <select
+                                value={bucketFn(r.symbol)}
+                                onChange={(e) => onSetBucket(r.symbol, e.target.value as EquityBucket)}
+                                className={`${INPUT} h-6 px-1 text-[11.5px]`}
+                                aria-label={`${r.symbol} bucket`}
+                              >
+                                {(["core", "thematic", "alpha"] as EquityBucket[]).map((b) => <option key={b} value={b}>{BUCKET_LABELS[b]}</option>)}
+                              </select>
+                            ) : (
+                              <span className="text-[11.5px] text-ink-2">{BUCKET_LABELS[r.after == null ? liveBucket(r.symbol) : bucketFn(r.symbol)]}</span>
+                            )}
+                          </td>
+                        )}
                         <td className="text-right tabular-nums">{pct(r.before)}</td>
                         <td className="text-right">
                           {r.after == null ? "—" : (
@@ -599,7 +722,7 @@ function ModelDiffPanel({
                     );
                   })}
                   <tr className="font-medium">
-                    <td colSpan={3} className="pl-3.5 text-[11.5px] text-ink-3">{CLASS_LABELS[ac]} total</td>
+                    <td colSpan={buckets ? 4 : 3} className="pl-3.5 text-[11.5px] text-ink-3">{CLASS_LABELS[ac]} total</td>
                     <td className="text-right tabular-nums">{pct(liveSum)}</td>
                     <td className={`text-right tabular-nums ${Math.abs(newSum - 1) > 0.002 ? "text-neg" : ""}`}>{pct(newSum)}</td>
                     <td />
@@ -640,5 +763,70 @@ function ModelDiffPanel({
         <span className="ml-auto text-[11.5px] text-ink-3">Weights are % of the asset class (stored); the {PROFILE_LABELS[profile]} column is display-only.</span>
       </div>
     </section>
+  );
+}
+
+/* ── Core / Thematic / Alpha bucket strip ─────────────────────────── */
+
+function BucketPanel({
+  group, staged, isSource, profile, liveBucket, bucketFn, onResize,
+}: {
+  group: PimModelGroup;
+  staged: StagedModel;
+  isSource: boolean;
+  profile: PimProfileType;
+  liveBucket: (symbol: string) => EquityBucket;
+  bucketFn: (symbol: string) => EquityBucket;
+  onResize: (t: Record<EquityBucket, number>) => void;
+}) {
+  const tot = (hs: PimHolding[], f: (s: string) => EquityBucket) => {
+    const o: Record<EquityBucket, number> = { core: 0, thematic: 0, alpha: 0 };
+    for (const h of hs) if (h.assetClass === "equity") o[f(h.symbol)] += h.weightInClass;
+    return o;
+  };
+  const live = tot(group.holdings, liveBucket);
+  const next = tot(staged.holdings, bucketFn);
+  const eqAlloc = allocOf(group, profile, "equity");
+  const cell = (k: EquityBucket) => (
+    <span key={k} className="whitespace-nowrap">
+      <span className="font-semibold text-ink">{BUCKET_LABELS[k]}</span>{" "}
+      <span className="tabular-nums text-ink-3">{pct(live[k])}</span> →{" "}
+      <span className={`tabular-nums font-medium ${Math.abs(next[k] - live[k]) > 0.00005 ? "text-accent" : "text-ink"}`}>{pct(next[k])}</span>
+      <span className="text-ink-3"> of equity · {pct(next[k] * eqAlloc)} {PROFILE_LABELS[profile]}</span>
+    </span>
+  );
+  return (
+    <div className="flex flex-wrap items-center gap-x-5 gap-y-1.5 border-b border-line-soft px-3.5 py-2 text-[12px] text-ink-2">
+      {(["core", "thematic", "alpha"] as EquityBucket[]).map(cell)}
+      {isSource && (
+        <BucketInputs key={`${next.alpha.toFixed(6)}|${next.thematic.toFixed(6)}`} alpha0={next.alpha} thematic0={next.thematic} onResize={onResize} />
+      )}
+    </div>
+  );
+}
+
+/** Target inputs, re-seeded (via `key`) whenever the staged totals change. */
+function BucketInputs({ alpha0, thematic0, onResize }: { alpha0: number; thematic0: number; onResize: (t: Record<EquityBucket, number>) => void }) {
+  const [alpha, setAlpha] = useState((alpha0 * 100).toFixed(2));
+  const [thematic, setThematic] = useState((thematic0 * 100).toFixed(2));
+  const a = parseFloat(alpha) / 100;
+  const t = parseFloat(thematic) / 100;
+  const coreT = 1 - (Number.isFinite(a) ? a : 0) - (Number.isFinite(t) ? t : 0);
+  return (
+    <span className="ml-auto flex items-center gap-1.5">
+      Alpha
+      <input value={alpha} onChange={(e) => setAlpha(e.target.value)} className={`${INPUT} h-6 w-[64px] text-right tabular-nums`} aria-label="Alpha bucket % of equity" />
+      Thematic
+      <input value={thematic} onChange={(e) => setThematic(e.target.value)} className={`${INPUT} h-6 w-[64px] text-right tabular-nums`} aria-label="Thematic bucket % of equity" />
+      <span className="text-ink-3">Core {Number.isFinite(coreT) ? (coreT * 100).toFixed(2) : "—"}%</span>
+      <button
+        className={BTN}
+        disabled={!Number.isFinite(a) || !Number.isFinite(t) || a < 0 || t < 0 || coreT < 0}
+        onClick={() => onResize({ alpha: a, thematic: t, core: coreT })}
+        title="Scale each bucket's holdings proportionally to these shares of equity"
+      >
+        Resize buckets
+      </button>
+    </span>
   );
 }

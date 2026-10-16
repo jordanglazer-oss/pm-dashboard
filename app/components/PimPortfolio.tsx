@@ -2482,7 +2482,7 @@ export function PimPortfolio({ groups }: Props) {
       if (guardError) return { ok: false, error: guardError };
 
       const nextPim = { ...originalPim, groups: updatedGroups, lastUpdated: nowIso };
-      updatePimModels(nextPim);
+      updatePimModels(nextPim, buyStockForRebalance ? [buyStockForRebalance] : undefined);
       pimModelsRef.current = nextPim;
 
       // An individual stock's target is equal-weighted by construction, so a
@@ -2555,7 +2555,7 @@ export function PimPortfolio({ groups }: Props) {
       if (guardError) return { ok: false, error: guardError };
 
       const nextPim = { ...originalPim, groups: updatedGroups, lastUpdated: nowIso };
-      updatePimModels(nextPim);
+      updatePimModels(nextPim, buyStockForRebalance ? [buyStockForRebalance] : undefined);
       // Sync the ref so the next trade in the queue sees this update.
       pimModelsRef.current = nextPim;
     }
@@ -2592,7 +2592,7 @@ export function PimPortfolio({ groups }: Props) {
       const guardError = assertClassSumsSafe(originalPim.groups, updatedGroups, affectedGroupIds);
       if (guardError) return { ok: false, error: guardError };
       const nextPim = { ...originalPim, groups: updatedGroups, lastUpdated: nowIso };
-      updatePimModels(nextPim);
+      updatePimModels(nextPim, buyStockForRebalance ? [buyStockForRebalance] : undefined);
       pimModelsRef.current = nextPim;
     }
 

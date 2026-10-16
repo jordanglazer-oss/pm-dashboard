@@ -19,7 +19,7 @@
 export type AlphaSleeve = "thesis" | "tactical";
 
 type SleeveFields = {
-  designation?: "core" | "alpha";
+  designation?: "core" | "alpha" | "thematic";
   inThesis?: boolean;
   inTactical?: boolean;
   instrumentType?: string;
@@ -49,6 +49,8 @@ export function isBondOrAltFund(s: Pick<SleeveFields, "name" | "sector">): boole
 /** Can this holding carry a Thesis/Tactical tag at all? Equity Alpha only. */
 export function isSleeveTaggable(s: SleeveFields): boolean {
   if (isCoreDesignated(s)) return false;
+  // Thematic funds are their own bucket (three-bucket model), not Alpha.
+  if (s.designation === "thematic") return false;
   if (isFund(s) && isBondOrAltFund(s)) return false;
   return true;
 }

@@ -72,7 +72,7 @@ export type WeightDecisionStore = { months: Record<string, MonthReview> };
 
 export const monthKey = (d = new Date()) => d.toISOString().slice(0, 7);
 
-type StockLite = { ticker: string; bucket?: string; instrumentType?: string; designation?: "core" | "alpha"; inThesis?: boolean; inTactical?: boolean; name?: string; sector?: string };
+type StockLite = { ticker: string; bucket?: string; instrumentType?: string; designation?: "core" | "alpha" | "thematic"; inThesis?: boolean; inTactical?: boolean; name?: string; sector?: string };
 
 export type DecisionSleeve = "thesis" | "tactical";
 

@@ -26,7 +26,7 @@
  *
  * Weights are weightInClass (fraction of the asset class), never pre-scaled. */
 
-import type { PimAssetClass, PimHolding, PimModelGroup, PimProfileType } from "./pim-types";
+import type { EquityBucket, PimAssetClass, PimHolding, PimModelGroup, PimProfileType } from "./pim-types";
 import { canonicalTicker } from "./ticker";
 
 export const MODEL_DRAFTS_KEY = "pm:model-drafts";
@@ -52,6 +52,10 @@ export type ParsedRow = {
   kind: ParsedKind;
   classPct: number | null;
   portfolioPct: number | null;
+  /** Three-bucket model: read off the row's colour band (or set by hand in
+   *  the staging window). Overrides the pm:stocks designation for staging,
+   *  and is written to pm:stocks after an apply. */
+  bucket?: EquityBucket;
 };
 
 export type StagedModel = {
@@ -75,6 +79,8 @@ export type ModelDraft = {
   updatedAt: string;
   appliedAt?: string;
   versionId?: string;
+  /** Bucket targets the apply wrote (three-bucket drafts only). */
+  sleeveTargets?: { core: number; thematic: number; alpha: number };
   /** Per group: symbols the apply removed. Positioning's Rebalance sells these
    *  to zero (only these — never any other position the model lacks). */
   exits?: Record<string, string[]>;
@@ -85,9 +91,10 @@ export type ModelDraftStore = { active: ModelDraft | null; history: ModelDraft[]
 /** The bits of a pm:stocks record staging reads. */
 export type StagingStock = {
   ticker: string;
+  name?: string;
   bucket?: string;
   instrumentType?: string;
-  designation?: "core" | "alpha";
+  designation?: "core" | "alpha" | "thematic";
   modelEligibility?: Record<string, boolean>;
 };
 
@@ -112,7 +119,9 @@ export type HoldingRole = "stock" | "fund" | "core";
  *    whose name says INDEX is Core (QQC.F, QQQX.U), anything else is Alpha
  *    (GRNY) — which is what it becomes once added to the book untagged.
  *  - neither → the legacy lock list, else Core (rebalanceStockWeights' rule). */
-export function roleOf(symbol: string, stocks: StagingStock[], parsedRow?: Pick<ParsedRow, "kind" | "name">): HoldingRole {
+export function roleOf(symbol: string, stocks: StagingStock[], parsedRow?: Pick<ParsedRow, "kind" | "name" | "bucket">): HoldingRole {
+  // A bucket from the screenshot (or set in the staging window) is the new truth.
+  if (parsedRow?.bucket) return parsedRow.bucket === "alpha" ? "stock" : parsedRow.bucket === "core" ? "core" : "fund";
   const rec = stocks.find((s) => sameSymbol(s.ticker, symbol));
   if (rec) {
     if (!rec.instrumentType || rec.instrumentType === "stock") return "stock";
@@ -130,6 +139,8 @@ export function roleOf(symbol: string, stocks: StagingStock[], parsedRow?: Pick<
  *  (designation === "core" on the pm:stocks record); a brand-new screenshot
  *  name with no record uses roleOf's heuristic. */
 export function isCoreForDisplay(symbol: string, stocks: StagingStock[], parsed: ParsedRow[]): boolean {
+  const bucket = parsed.find((r) => sameSymbol(r.symbol, symbol))?.bucket;
+  if (bucket) return bucket === "core";
   const rec = stocks.find((s) => sameSymbol(s.ticker, symbol));
   if (rec) return rec.designation === "core";
   const row = parsed.find((r) => sameSymbol(r.symbol, symbol));
@@ -429,9 +440,19 @@ export function validateHoldings(holdings: PimHolding[]): string[] {
  *  trade's rebalance keeps it; one staged back at the rule weight is unpinned.
  *  Funds never carry a pin. */
 export function withPins(holdings: PimHolding[], stocks: StagingStock[], month: string, at: string, parsed: ParsedRow[]): PimHolding[] {
+  // Three-bucket drafts: the Alpha bucket re-splits on its own (sleeve-targets),
+  // so a pin would only stop a stock following it — every staged stock is
+  // left unpinned, at exactly the weight the draft gives it.
+  const buckets = draftHasBuckets(parsed);
   return holdings.map((h) => {
     if (h.assetClass !== "equity") return h;
     if (roleOf(h.symbol, stocks, parsed.find((r) => sameSymbol(r.symbol, h.symbol))) !== "stock") return h;
+    if (buckets) {
+      if (!h.pinned) return h;
+      const { pinned: _p, ...rest } = h;
+      void _p;
+      return rest;
+    }
     if (Math.abs(h.weightInClass - REF_PER_STOCK) < 1e-6) {
       if (!h.pinned) return h;
       const { pinned: _drop, ...rest } = h;
@@ -531,4 +552,40 @@ export function currencyModelWeights(
     out.rows[h.symbol] = { cad, usd };
   }
   return out;
+}
+
+/* ── Three-bucket helpers ─────────────────────────────────────────── */
+
+/** Bucket of a staged holding: the draft's row bucket, else the role the
+ *  staging rules give it (stock → Alpha, Core → Core, other fund → Thematic). */
+export function stagedBucket(symbol: string, stocks: StagingStock[], parsed: ParsedRow[]): EquityBucket {
+  const row = parsed.find((r) => sameSymbol(r.symbol, symbol));
+  if (row?.bucket) return row.bucket;
+  const r = roleOf(symbol, stocks, row);
+  return r === "stock" ? "alpha" : r === "core" ? "core" : "thematic";
+}
+
+export const draftHasBuckets = (parsed: ParsedRow[]) => parsed.some((r) => r.bucket);
+
+/** Scale each bucket's equity members proportionally to its target share of
+ *  the class. Members keep their ratios (11 equal stocks stay equal). A bucket
+ *  with no members can't take a target — reported, not invented. */
+export function rescaleBuckets(
+  holdings: PimHolding[],
+  bucket: (symbol: string) => EquityBucket,
+  targets: Record<EquityBucket, number>,
+): { holdings: PimHolding[]; problems: string[] } {
+  const problems: string[] = [];
+  const cur: Record<EquityBucket, number> = { core: 0, thematic: 0, alpha: 0 };
+  for (const h of holdings) if (h.assetClass === "equity") cur[bucket(h.symbol)] += h.weightInClass;
+  for (const k of ["core", "thematic", "alpha"] as EquityBucket[]) {
+    if (targets[k] > 0 && cur[k] <= 0) problems.push(`${k} has no holdings to size`);
+  }
+  const next = holdings.map((h) => {
+    if (h.assetClass !== "equity") return h;
+    const k = bucket(h.symbol);
+    if (cur[k] <= 0) return h;
+    return { ...h, weightInClass: round6((h.weightInClass / cur[k]) * targets[k]) };
+  });
+  return { holdings: next, problems };
 }

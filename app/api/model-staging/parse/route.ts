@@ -3,7 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { SONNET_MODEL, THINKING_OFF } from "@/app/lib/claude-model";
 import { createLogger } from "@/app/lib/logger";
 import type { ParsedRow, ParsedKind } from "@/app/lib/model-staging";
-import type { PimAssetClass } from "@/app/lib/pim-types";
+import type { EquityBucket, PimAssetClass } from "@/app/lib/pim-types";
 
 /**
  * POST /api/model-staging/parse — model screenshot → rows.
@@ -29,12 +29,19 @@ For each row return:
   - "kind": "stock" for a single company, "etf" for an exchange-traded fund, "fund" for a mutual fund (FUNDSERV codes like FID5982, DYN3361)
   - "classPct": the Weight (Asset Class) number as shown, e.g. 1.67 (no % sign); null if absent
   - "portfolioPct": the Weight (Portfolio) number as shown, e.g. 1.10; null if absent
+  - "fill": the row's background colour as one or two plain words (e.g. "orange", "light blue", "green", "purple", "white")
+  - "bucket": the equity bucket, decided by COLOUR BAND, never by the name:
+      "alpha"    — individual company stocks (whatever their colour)
+      "core"     — the fund colour band that contains the broad-market index ETFs (S&P 500 / total-market)
+      "thematic" — any other fund colour band (a small-cap index fund sitting in that band is still thematic)
+    Use null for non-equity rows, or when the rows are not colour-coded.
 
 Rules: read numbers exactly as printed, do not round or recompute; skip header and total rows; never invent a row.
 Respond with ONLY a JSON array, no prose, no code fences. If you cannot read it, respond [].`;
 
 const KINDS: ParsedKind[] = ["stock", "etf", "fund"];
 const CLASSES: PimAssetClass[] = ["equity", "fixedIncome", "alternative"];
+const BUCKETS: EquityBucket[] = ["core", "thematic", "alpha"];
 
 function num(v: unknown): number | null {
   if (v == null || v === "") return null;
@@ -65,6 +72,9 @@ function parseRows(text: string): ParsedRow[] {
       kind,
       classPct: num(r.classPct),
       portfolioPct: num(r.portfolioPct),
+      ...(assetClass === "equity" && BUCKETS.includes(r.bucket as EquityBucket)
+        ? { bucket: kind === "stock" ? "alpha" : r.bucket === "alpha" ? "thematic" : (r.bucket as EquityBucket) }
+        : {}),
     });
   }
   return out;

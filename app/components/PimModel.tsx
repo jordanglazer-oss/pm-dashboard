@@ -4,6 +4,8 @@ import React, { useState, useMemo, useRef, useEffect, useCallback } from "react"
 import { ZERO_SCORES as ALL_ZERO_SCORES } from "@/app/lib/types";
 import Link from "next/link";
 import { useSearchParams, useRouter, usePathname } from "next/navigation";
+import type { EquityBucket } from "@/app/lib/pim-types";
+import { bucketOf } from "@/app/lib/sleeve-targets";
 import type { PimHolding, PimModelGroup, PimProfileType, PimComputedHolding, PimAssetClass, PimPerformanceData } from "@/app/lib/pim-types";
 import type { Stock, InstrumentType, ScoreKey } from "@/app/lib/types";
 import { displayTicker } from "@/app/lib/ticker";
@@ -55,11 +57,15 @@ const WEIGHT_MATH_LOCKED = new Set(["FID5982", "FID5982-T", "GRNJ"]);
 const REF_PER_STOCK = 0.018182;
 
 /** How a holding's weight is derived — the "weight math" column. */
-function weightMathLabel(h: { symbol: string; assetClass: string; weightInClass: number; pinned?: { month: string } }): { text: string; cls: string; locked?: boolean } {
+function weightMathLabel(h: { symbol: string; assetClass: string; weightInClass: number; pinned?: { month: string } }, bucket?: EquityBucket): { text: string; cls: string; locked?: boolean } {
   if (h.assetClass !== "equity") {
     return { text: h.assetClass === "fixedIncome" ? "FI sleeve" : "Alt sleeve", cls: "text-ink-3" };
   }
   if (h.pinned) return { text: `Pinned · ${h.pinned.month}`, cls: "text-accent", locked: true };
+  // Three-bucket model (sleeve targets set): the bucket says how it is sized.
+  if (bucket === "alpha") return { text: "Alpha · equal split", cls: "text-ink-2" };
+  if (bucket === "thematic") return { text: "Thematic · set weight", cls: "text-warn", locked: true };
+  if (bucket === "core") return { text: "Core · residual", cls: "text-accent-ink" };
   if (WEIGHT_MATH_LOCKED.has(h.symbol)) return { text: "Balanced %", cls: "text-warn", locked: true };
   if (Math.abs(h.weightInClass - REF_PER_STOCK) < 0.0005) return { text: "Stock · 1.82%", cls: "text-ink-2" };
   return { text: "ETF · residual", cls: "text-accent-ink" };
@@ -99,7 +105,7 @@ const BTN_ICON = "grid h-7 w-7 place-items-center rounded-control border border-
 const INPUT = "h-7 rounded-control border border-line bg-surface px-2.5 text-[12.5px] text-ink outline-none placeholder:text-ink-3 focus:border-accent-border";
 
 export function PimModel({ groups, onOpenScenarios, onOpenStaging }: Props) {
-  const { getGroupState, uiPrefs, setUiPref, addStock, stocks, pimPortfolioState } = useStocks();
+  const { getGroupState, uiPrefs, setUiPref, addStock, stocks, pimPortfolioState, pimModels } = useStocks();
   // "Weight math" column — hidden by default, toggled per user via pm:ui-prefs.
   const showWeightMath = uiPrefs["models.showWeightMath"] === "1";
   const [selectedGroupId, setSelectedGroupId] = useState(groups[0]?.id || "");
@@ -1505,7 +1511,7 @@ export function PimModel({ groups, onOpenScenarios, onOpenStaging }: Props) {
                       {showWeightMath && (
                         <td>
                           {(() => {
-                            const wm = weightMathLabel(h);
+                            const wm = weightMathLabel(h, pimModels.sleeveTargets ? bucketOf(h.symbol, stocks) : undefined);
                             return (
                               <span className={`inline-flex items-center gap-1 ${wm.cls}`}>
                                 {wm.locked && <AppIcon name="lock" size={11} />}
