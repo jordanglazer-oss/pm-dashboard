@@ -10,6 +10,7 @@ import {
   diffHoldings,
   draftHasBuckets,
   isCoreForDisplay,
+  MODEL_SUBSTITUTES,
   rescaleBuckets,
   stagedBucket,
   propagate,
@@ -258,6 +259,19 @@ export function ModelStaging() {
     update({ ...draft, models: { ...draft.models, [gid]: propagate(src, draft.models[draft.sourceGroupId].holdings, g, stocks, draft.parsed) } });
   };
 
+  const rederiveAll = () => {
+    if (!draft) return;
+    const src = groups.find((g) => g.id === draft.sourceGroupId);
+    const srcStaged = draft.models[draft.sourceGroupId];
+    if (!src || !srcStaged) return;
+    const models = { ...draft.models };
+    for (const g of groups) {
+      if (g.id === draft.sourceGroupId || models[g.id]?.origin !== "edited") continue;
+      models[g.id] = propagate(src, srcStaged.holdings, g, stocks, draft.parsed);
+    }
+    update({ ...draft, models });
+  };
+
   const discard = async () => {
     if (!draft || !window.confirm("Discard this draft? The live models are not affected.")) return;
     await fetch(`/api/kv/model-drafts?id=${encodeURIComponent(draft.id)}`, { method: "DELETE" }).catch(() => {});
@@ -299,6 +313,18 @@ export function ModelStaging() {
       };
       addStock(stock, { skipPimModels: true, assetClass: "equity" });
       created++;
+    }
+    // Substitutes (FINN in Non-Res for FID5982) take their source's bucket.
+    for (const list of Object.values(MODEL_SUBSTITUTES)) {
+      for (const x of list) {
+        const b = Object.entries(roles).find(([sym]) => sameSymbol(sym, x.source))?.[1];
+        if (!b || b === "alpha") continue;
+        const rec = stocks.find((st) => x.local.some((l) => sameSymbol(l, st.ticker)));
+        if (rec && rec.instrumentType && rec.instrumentType !== "stock" && (rec.designation || "alpha") !== b) {
+          updateStockFields(rec.ticker, { designation: b });
+          tagged++;
+        }
+      }
     }
     const parts = [tagged && `${tagged} re-tagged`, created && `${created} added to the book`, promoted && `${promoted} moved Watchlist → Portfolio`].filter(Boolean);
     return parts.length ? `Book roles synced: ${parts.join(", ")}.` : "Book roles already matched.";
@@ -364,7 +390,13 @@ export function ModelStaging() {
   const sel = groups.find((g) => g.id === selectedId) ?? groups[0];
   const staged = draft && sel ? draft.models[sel.id] : undefined;
   const isCore = (sym: string) => isCoreForDisplay(sym, stocks, draft?.parsed ?? []);
-  const ccyProfile: PimProfileType = sel?.profiles[profile] ? profile : "balanced";
+  // A model without the chosen profile shows its HIGHEST-equity profile
+  // (CGF tops out at Growth, 77% equity — never more), not Balanced.
+  const ccyProfile: PimProfileType = !sel || sel.profiles[profile]
+    ? profile
+    : ((Object.entries(sel.profiles) as [PimProfileType, { equity: number }][])
+        .filter(([p]) => p !== "alpha" && p !== "core" && p !== "thematic")
+        .sort((a, b) => b[1].equity - a[1].equity)[0]?.[0] ?? "balanced");
   const ccyLive = sel ? currencyModelWeights(sel.holdings, sel, ccyProfile, isCore) : null;
   const ccyNew = sel && staged ? currencyModelWeights(staged.holdings, sel, ccyProfile, isCore) : null;
   const selIdx = groups.findIndex((g) => g.id === sel?.id);
@@ -469,12 +501,18 @@ export function ModelStaging() {
                 return (
                   <button key={g.id} onClick={() => setSelectedId(g.id)} className={g.id === sel.id ? "on" : ""}>
                     {g.name}
+                    {draft.models[g.id]?.origin === "edited" && <span title="Edited by hand — PIM changes no longer carry here" className="ml-1 text-warn">✎</span>}
                     {n > 0 && <span className={`ml-1 rounded-full px-1.5 text-[10.5px] ${bad ? "bg-neg-soft text-neg" : "bg-accent-soft text-accent"}`}>{n}</span>}
                   </button>
                 );
               })}
             </div>
             <button className={BTN} disabled={selIdx >= groups.length - 1} onClick={() => setSelectedId(groups[selIdx + 1].id)} aria-label="Next model"><AppIcon name="chevR" size={13} /></button>
+            {groups.some((g) => g.id !== draft.sourceGroupId && draft.models[g.id]?.origin === "edited") && (
+              <button className={BTN} onClick={rederiveAll} title="Throw away hand edits on every other model and derive them from the source again">
+                <AppIcon name="refresh" size={13} />Re-derive edited models ({groups.filter((g) => g.id !== draft.sourceGroupId && draft.models[g.id]?.origin === "edited").length})
+              </button>
+            )}
             <label className="ml-auto flex items-center gap-1.5 text-[12px] text-ink-3">
               Portfolio % as
               <select value={profile} onChange={(e) => setUiPref("staging.profile", e.target.value)} className={INPUT}>
@@ -483,6 +521,9 @@ export function ModelStaging() {
             </label>
           </div>
 
+          {sel.profiles[profile] == null && (
+            <div className="text-[11.5px] text-ink-3">{sel.name} has no {PROFILE_LABELS[profile]} profile — showing {PROFILE_LABELS[ccyProfile]} ({pct(sel.profiles[ccyProfile]?.equity ?? 0, 0)} equity), its highest.</div>
+          )}
           {staged && ccyLive && ccyNew ? (
             <ModelDiffPanel
               group={sel}
@@ -531,6 +572,8 @@ export function ModelStaging() {
 
 /* ── One model's proposed vs live ─────────────────────────────────── */
 
+type SortKey = "status" | "name" | "symbol" | "ccy" | "bucket" | "live" | "proposed" | "delta" | "port" | "cad" | "usd";
+
 function ModelDiffPanel({
   group, staged, diff, isSource, profile, ccyLive, ccyNew, buckets, liveBucket, stagedBucket: bucketFn, onSetBucket, errors, onChange, onRepropagate,
 }: {
@@ -552,6 +595,37 @@ function ModelDiffPanel({
   const [adding, setAdding] = useState<{ symbol: string; name: string; currency: "CAD" | "USD"; assetClass: PimAssetClass; kind: ParsedKind; pct: string } | null>(null);
   const classes = (["fixedIncome", "equity", "alternative"] as PimAssetClass[]).filter((ac) => diff.some((r) => r.assetClass === ac));
   const kindOrder = { add: 0, change: 1, remove: 2, same: 3 } as const;
+  // Column sort (within each asset class). Persisted like the other staging
+  // prefs so the order survives a refresh.
+  const { uiPrefs, setUiPref } = useStocks();
+  const [sortKey, sortDir] = ((uiPrefs["staging.sort"] as string) || "status:asc").split(":") as [SortKey, "asc" | "desc"];
+  const setSort = (k: SortKey, d: "asc" | "desc") => setUiPref("staging.sort", `${k}:${d}`);
+  const sortVal = (r: DiffRow, ac: PimAssetClass): number | string => {
+    switch (sortKey) {
+      case "name": return r.name;
+      case "symbol": return r.symbol;
+      case "ccy": return r.currency;
+      case "bucket": return BUCKET_LABELS[r.after == null ? liveBucket(r.symbol) : bucketFn(r.symbol)];
+      case "live": return r.before ?? -1;
+      case "proposed": return r.after ?? -1;
+      case "delta": return (r.after ?? 0) - (r.before ?? 0);
+      case "port": return (r.after ?? -1) * allocOf(group, profile, ac);
+      case "cad": return (r.after == null ? null : ccyNew.rows[r.symbol]?.cad) ?? -1;
+      case "usd": return (r.after == null ? null : ccyNew.rows[r.symbol]?.usd) ?? -1;
+      default: return 0;
+    }
+  };
+  const sortTh = (k: SortKey, label: string, right?: boolean, className = "") => (
+    <th key={k} className={`${right ? "text-right" : ""} ${className}`}>
+      <button
+        className={`inline-flex items-center gap-1 hover:text-ink ${sortKey === k ? "text-ink" : ""}`}
+        onClick={() => setSort(k, sortKey === k && sortDir === "desc" ? "asc" : sortKey === k ? "desc" : (["name", "symbol", "ccy", "bucket"].includes(k) ? "asc" : "desc"))}
+      >
+        {label}
+        {sortKey === k && <AppIcon name={sortDir === "asc" ? "sortAsc" : "sortDesc"} size={11} />}
+      </button>
+    </th>
+  );
 
   const setWeight = (symbol: string, pctStr: string) => {
     const v = parseFloat(pctStr);
@@ -586,7 +660,7 @@ function ModelDiffPanel({
       <div className="panel-h flex-wrap gap-2 py-2">
         <span className="t">{group.name}</span>
         <span className="m">
-          {isSource ? "from the screenshot" : staged.origin === "edited" ? "edited by hand — no longer follows the screenshot" : "derived from the screenshot"}
+          {isSource ? "the source — edits here carry to every other model" : staged.origin === "edited" ? <span className="font-medium text-warn">edited by hand — PIM changes no longer carry here</span> : "follows the source automatically"}
         </span>
         {!isSource && staged.origin === "edited" && (
           <button className={`${BTN} ml-auto`} onClick={onRepropagate}><AppIcon name="refresh" size={13} />Re-derive from screenshot</button>
@@ -630,22 +704,31 @@ function ModelDiffPanel({
         <table className="data-table">
           <thead>
             <tr>
-              <th className="pl-3.5">Holding</th>
-              <th>Symbol</th>
-              <th>Ccy</th>
-              {buckets && <th>Bucket</th>}
-              <th className="text-right">Live · class</th>
-              <th className="text-right">Proposed · class</th>
-              <th className="text-right">Δ</th>
-              <th className="text-right">Proposed · {PROFILE_LABELS[profile]}</th>
-              <th className="text-right">CAD model</th>
-              <th className="text-right">USD model</th>
-              <th />
+              {sortTh("name", "Holding", false, "pl-3.5")}
+              {sortTh("symbol", "Symbol", false)}
+              {sortTh("ccy", "Ccy", false)}
+              {buckets && sortTh("bucket", "Bucket", false)}
+              {sortTh("live", "Live · class", true)}
+              {sortTh("proposed", "Proposed · class", true)}
+              {sortTh("delta", "Δ", true)}
+              {sortTh("port", `Proposed · ${PROFILE_LABELS[profile]}`, true)}
+              {sortTh("cad", "CAD model", true)}
+              {sortTh("usd", "USD model", true)}
+              <th>
+                {sortKey !== "status" && (
+                  <button className="text-[11px] font-normal text-ink-3 hover:text-ink" onClick={() => setSort("status", "asc")} title="Back to the default order (new, changed, removed, then by weight)">reset</button>
+                )}
+              </th>
             </tr>
           </thead>
           <tbody>
             {classes.map((ac) => {
-              const rows = diff.filter((r) => r.assetClass === ac).sort((a, b) => kindOrder[a.kind] - kindOrder[b.kind] || (b.after ?? 0) - (a.after ?? 0));
+              const rows = diff.filter((r) => r.assetClass === ac).sort((a, b) => {
+                if (sortKey === "status") return kindOrder[a.kind] - kindOrder[b.kind] || (b.after ?? 0) - (a.after ?? 0);
+                const va = sortVal(a, ac), vb = sortVal(b, ac);
+                const c = typeof va === "string" || typeof vb === "string" ? String(va).localeCompare(String(vb)) : (va as number) - (vb as number);
+                return sortDir === "asc" ? c : -c;
+              });
               const liveSum = rows.reduce((a, r) => a + (r.before ?? 0), 0);
               const newSum = rows.reduce((a, r) => a + (r.after ?? 0), 0);
               const alloc = allocOf(group, profile, ac);

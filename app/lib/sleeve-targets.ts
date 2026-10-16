@@ -18,7 +18,7 @@
  * Pure, client- and server-safe. */
 
 import type { EquityBucket, PimHolding, PimModelData, PimModelGroup, SleeveTargets } from "./pim-types";
-import { sameSymbol } from "./model-staging";
+import { sameSymbol, substituteSource } from "./model-staging";
 
 export type BucketStock = { ticker: string; instrumentType?: string; designation?: "core" | "alpha" | "thematic" };
 
@@ -28,6 +28,10 @@ const LEGACY_LOCKED = new Set(["FID5982", "FID5982-T", "GRNJ"]);
  *  "core" is Core, any other fund is Thematic. No record: the legacy lock list
  *  is Thematic, anything else Core (rebalanceStockWeights' no-record rule). */
 export function bucketOf(symbol: string, stocks: BucketStock[]): EquityBucket {
+  // A per-model substitute (FINN in Non-Res for FID5982) sits in the bucket of
+  // the security it replaces.
+  const src = substituteSource(symbol);
+  if (src) return bucketOf(src, stocks);
   const rec = stocks.find((s) => sameSymbol(s.ticker, symbol));
   if (rec) {
     if (!rec.instrumentType || rec.instrumentType === "stock") return "alpha";

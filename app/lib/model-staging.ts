@@ -161,6 +161,25 @@ export function isUsSitus(symbol: string, currency?: string): boolean {
   return currency ? currency.toUpperCase() === "USD" : true;
 }
 
+/* ── Per-model substitutes ────────────────────────────────────────── */
+
+/** A model that holds a DIFFERENT security in place of a source holding.
+ *  Non-Res holds Fidelity Global Innovators as the ETF (FINN) instead of the
+ *  mutual fund (FID5982): whatever the source does to FID5982 — weight change,
+ *  bucket, removal — happens to FINN there. `local` lists the forms the
+ *  stored model may use (FINN moved from TSX:FINN-T to NEO:FINN.NE). */
+export const MODEL_SUBSTITUTES: Record<string, { source: string; local: string[]; name: string; currency: "CAD" | "USD" }[]> = {
+  "non-res": [{ source: "FID5982-T", local: ["FINN.NE", "FINN-T"], name: "FIDELITY GLOBAL INNOVATORS ETF", currency: "CAD" }],
+};
+
+/** If `symbol` stands in for a source holding in some model, that source symbol. */
+export function substituteSource(symbol: string): string | null {
+  for (const list of Object.values(MODEL_SUBSTITUTES)) {
+    for (const s of list) if (s.local.some((l) => sameSymbol(l, symbol))) return s.source;
+  }
+  return null;
+}
+
 /* ── Screenshot rows → the source model's proposal ────────────────── */
 
 const sum = (xs: number[]) => xs.reduce((a, b) => a + b, 0);
@@ -242,7 +261,23 @@ export function propagate(
   parsed: ParsedRow[],
 ): StagedModel {
   const notes: string[] = [];
-  const role = (sym: string) => roleOf(sym, stocks, parsed.find((r) => sameSymbol(r.symbol, sym)));
+  // Substitutes: rewrite the source's holdings into this model's own securities
+  // (FID5982 → FINN in Non-Res) so every rule below applies to the local one.
+  // Skipped when the model also holds the source security itself.
+  const subs = (MODEL_SUBSTITUTES[other.id] ?? []).filter((x) => !other.holdings.some((h) => sameSymbol(h.symbol, x.source)));
+  const toLocal = (h: PimHolding): PimHolding => {
+    const x = subs.find((s) => sameSymbol(s.source, h.symbol));
+    if (!x) return h;
+    const held = other.holdings.find((o) => x.local.some((l) => sameSymbol(l, o.symbol)));
+    return { ...h, symbol: held?.symbol ?? x.local[0], name: held?.name ?? x.name, currency: held?.currency ?? x.currency };
+  };
+  if (subs.length) {
+    srcBefore = { ...srcBefore, holdings: srcBefore.holdings.map(toLocal) };
+    srcAfter = srcAfter.map(toLocal);
+  }
+  const origin = (sym: string) => subs.find((x) => x.local.some((l) => sameSymbol(l, sym)))?.source ?? sym;
+  // A substitute takes the role (and bucket) of the security it stands in for.
+  const role = (sym: string) => roleOf(origin(sym), stocks, parsed.find((r) => sameSymbol(r.symbol, origin(sym))));
   const classes = [...new Set(srcAfter.map((h) => h.assetClass))].filter((ac) =>
     parsed.some((r) => r.assetClass === ac),
   );
@@ -559,6 +594,8 @@ export function currencyModelWeights(
 /** Bucket of a staged holding: the draft's row bucket, else the role the
  *  staging rules give it (stock → Alpha, Core → Core, other fund → Thematic). */
 export function stagedBucket(symbol: string, stocks: StagingStock[], parsed: ParsedRow[]): EquityBucket {
+  const src = substituteSource(symbol);
+  if (src) return stagedBucket(src, stocks, parsed);
   const row = parsed.find((r) => sameSymbol(r.symbol, symbol));
   if (row?.bucket) return row.bucket;
   const r = roleOf(symbol, stocks, row);
