@@ -139,6 +139,8 @@ export function roleOf(symbol: string, stocks: StagingStock[], parsedRow?: Pick<
  *  (designation === "core" on the pm:stocks record); a brand-new screenshot
  *  name with no record uses roleOf's heuristic. */
 export function isCoreForDisplay(symbol: string, stocks: StagingStock[], parsed: ParsedRow[]): boolean {
+  const src = substituteSource(symbol);
+  if (src) return isCoreForDisplay(src, stocks, parsed);
   const bucket = parsed.find((r) => sameSymbol(r.symbol, symbol))?.bucket;
   if (bucket) return bucket === "core";
   const rec = stocks.find((s) => sameSymbol(s.ticker, symbol));
@@ -170,6 +172,9 @@ export function isUsSitus(symbol: string, currency?: string): boolean {
  *  stored model may use (FINN moved from TSX:FINN-T to NEO:FINN.NE). */
 export const MODEL_SUBSTITUTES: Record<string, { source: string; local: string[]; name: string; currency: "CAD" | "USD" }[]> = {
   "non-res": [{ source: "FID5982-T", local: ["FINN.NE", "FINN-T"], name: "FIDELITY GLOBAL INNOVATORS ETF", currency: "CAD" }],
+  // PC USA holds the US-listed Nasdaq-100 ETF in place of the Canadian USD
+  // class: QQQM is held at QQQX.U's share of the USD model (see propagate).
+  "pc-usa": [{ source: "QQQX.U", local: ["QQQM"], name: "INVESCO NASDAQ 100 ETF", currency: "USD" }],
 };
 
 /** If `symbol` stands in for a source holding in some model, that source symbol. */
@@ -361,9 +366,27 @@ export function propagate(
       if (joined.length) notes.push(`Core follows the source's index mix — joins: ${joined.join(", ")}.`);
       if (left.length) notes.push(`Core follows the source's index mix — leaves: ${left.join(", ")}.`);
     } else {
-      pool = coreHere.map((h) => ({ h, ratio: h.weightInClass }));
-      if (coreHere.length) notes.push("Own Core sleeve kept — resized to absorb the residual.");
+      pool = coreHere.filter((h) => origin(h.symbol) === h.symbol).map((h) => ({ h, ratio: h.weightInClass }));
+      if (pool.length) notes.push("Own Core sleeve kept — resized to absorb the residual.");
     }
+    // A substitute index ETF (QQQM for QQQX.U in PC USA) is held at the source
+    // ETF's share of its CURRENCY model — 10% of PIM's USD model is 10% of
+    // PC USA's USD model — and the rest of the Core sleeve absorbs around it.
+    // (In a mirroring model the substitute is already in the pool above.)
+    const subFixed: PimHolding[] = mirrors ? [] : srcCoreAfter
+      .filter((s2) => origin(s2.symbol) !== s2.symbol)
+      .map((s2) => {
+        const held = coreHere.find((h) => sameSymbol(h.symbol, s2.symbol));
+        const srcTot = sum(after.filter((h) => h.currency === s2.currency).map((h) => h.weightInClass));
+        // This model's share of the class in that currency: everything except
+        // the other currency's names (PC USA: 1 − its CAD stocks).
+        const otherCcy = sum(nonCore.filter((h) => h.currency !== s2.currency).map((h) => h.weightInClass));
+        const ccyShare = other.id === PC_USA ? 1 - otherCcy : 0.5;
+        const w = srcTot > 0 ? (s2.weightInClass / srcTot) * ccyShare : 0;
+        notes.push(`${s2.symbol} stands in for ${origin(s2.symbol)} — held at its ${(srcTot > 0 ? (s2.weightInClass / srcTot) * 100 : 0).toFixed(2)}% share of the ${s2.currency} model.`);
+        return { ...(held ?? { name: s2.name, symbol: s2.symbol, currency: s2.currency, assetClass: ac }), weightInClass: w };
+      });
+    const subTotal = (ccy?: "CAD" | "USD") => sum(subFixed.filter((h) => !ccy || h.currency === ccy).map((h) => h.weightInClass));
     const spread = (items: { h: PimHolding; ratio: number }[], total: number) => {
       const tot = sum(items.map((c) => c.ratio));
       return items.map((c) => ({ ...c.h, weightInClass: tot > 0 ? (c.ratio / tot) * total : total / Math.max(1, items.length) }));
@@ -396,11 +419,11 @@ export function propagate(
       }
       return [...fixed, ...spread(absorbers, left)];
     };
-    if (byCcy && cadPool.length && usdPool.length && half("CAD") >= 0 && half("USD") >= 0) {
-      core = [...fillCcy(cadPool, "CAD", half("CAD")), ...fillCcy(usdPool, "USD", half("USD"))];
+    if (byCcy && cadPool.length && usdPool.length && half("CAD") - subTotal("CAD") >= 0 && half("USD") - subTotal("USD") >= 0) {
+      core = [...fillCcy(cadPool, "CAD", half("CAD") - subTotal("CAD")), ...fillCcy(usdPool, "USD", half("USD") - subTotal("USD")), ...subFixed];
     } else {
       if (byCcy && pool.length) notes.push("Could not hold 50% CAD / 50% USD (a currency has no Core ETF or its names exceed 50%) — Core resized as one pool.");
-      core = spread(pool, residual);
+      core = [...spread(pool, Math.max(0, residual - subTotal())), ...subFixed];
     }
     if (residual < -1e-6) notes.push(`Non-Core names sum to ${((1 - residual) * 100).toFixed(2)}% — over 100%, Core is zero. Trim something before applying.`);
     if (core.length === 0 && Math.abs(residual) > 1e-4) notes.push(`No Core ETF here to absorb ${(residual * 100).toFixed(2)}% — edit before applying.`);
