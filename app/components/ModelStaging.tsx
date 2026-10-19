@@ -252,6 +252,27 @@ export function ModelStaging() {
     setModel(draft.sourceGroupId, src.holdings, undefined, parsed);
   };
 
+  // Models that FOLLOW the source are always derived, never authored: recompute
+  // them once each time a draft is opened, so a saved draft picks up rule
+  // changes (e.g. QQQM in PC USA) and the latest live models. Hand-edited
+  // models are left exactly as the PM left them.
+  const refreshedFor = useRef<string | null>(null);
+  useEffect(() => {
+    if (!draft || refreshedFor.current === draft.id || groups.length === 0 || stocks.length === 0) return;
+    refreshedFor.current = draft.id;
+    const src = groups.find((g) => g.id === draft.sourceGroupId);
+    const srcStaged = draft.models[draft.sourceGroupId];
+    if (!src || !srcStaged) return;
+    const models = { ...draft.models };
+    let changed = false;
+    for (const g of groups) {
+      if (g.id === draft.sourceGroupId || models[g.id]?.origin === "edited") continue;
+      const next = propagate(src, srcStaged.holdings, g, stocks, draft.parsed);
+      if (JSON.stringify(next) !== JSON.stringify(models[g.id])) { models[g.id] = next; changed = true; }
+    }
+    if (changed) update({ ...draft, models });
+  }, [draft, groups, stocks, update]);
+
   const repropagate = (gid: string) => {
     if (!draft) return;
     const src = groups.find((g) => g.id === draft.sourceGroupId);
