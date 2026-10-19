@@ -377,8 +377,27 @@ export function propagate(
     const byCcy = ac === "equity" && other.id !== PC_USA;
     const cadPool = pool.filter((c) => c.h.currency === "CAD");
     const usdPool = pool.filter((c) => c.h.currency === "USD");
+    // An index ETF NEW to this model (joining from the source's mix) keeps the
+    // source's share of its CURRENCY model — QQQX.U at 10% of PIM's USD model
+    // is 10% of every model's USD model. The index ETFs the model already held
+    // absorb the rest of that currency's half (in the source's ratios). Sizing
+    // a newcomer off the leftover room instead made it grow in any model with
+    // fewer US stocks (QQQX.U 16.67% of No US Situs's USD model).
+    const srcCcyTotal = (ccy: "CAD" | "USD") => sum(after.filter((h) => h.currency === ccy).map((h) => h.weightInClass));
+    const fillCcy = (items: { h: PimHolding; ratio: number }[], ccy: "CAD" | "USD", target: number): PimHolding[] => {
+      const joiners = mirrors ? items.filter((c) => !coreHere.some((h) => sameSymbol(h.symbol, c.h.symbol))) : [];
+      const absorbers = items.filter((c) => !joiners.includes(c));
+      const srcTot = srcCcyTotal(ccy);
+      const fixed = joiners.map((c) => ({ ...c.h, weightInClass: srcTot > 0 ? (c.ratio / srcTot) * 0.5 : 0 }));
+      const left = target - sum(fixed.map((h) => h.weightInClass));
+      if (absorbers.length === 0 || left < 0) {
+        if (joiners.length) notes.push(`${ccy}: no index ETF already held here can absorb the rest — ${ccy} Core sized as one pool.`);
+        return spread(items, target);
+      }
+      return [...fixed, ...spread(absorbers, left)];
+    };
     if (byCcy && cadPool.length && usdPool.length && half("CAD") >= 0 && half("USD") >= 0) {
-      core = [...spread(cadPool, half("CAD")), ...spread(usdPool, half("USD"))];
+      core = [...fillCcy(cadPool, "CAD", half("CAD")), ...fillCcy(usdPool, "USD", half("USD"))];
     } else {
       if (byCcy && pool.length) notes.push("Could not hold 50% CAD / 50% USD (a currency has no Core ETF or its names exceed 50%) — Core resized as one pool.");
       core = spread(pool, residual);
