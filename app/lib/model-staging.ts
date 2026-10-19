@@ -170,11 +170,15 @@ export function isUsSitus(symbol: string, currency?: string): boolean {
  *  mutual fund (FID5982): whatever the source does to FID5982 — weight change,
  *  bucket, removal — happens to FINN there. `local` lists the forms the
  *  stored model may use (FINN moved from TSX:FINN-T to NEO:FINN.NE). */
-export const MODEL_SUBSTITUTES: Record<string, { source: string; local: string[]; name: string; currency: "CAD" | "USD" }[]> = {
+export const MODEL_SUBSTITUTES: Record<string, { source: string; local: string[]; name: string; currency: "CAD" | "USD"; alsoFrom?: string[] }[]> = {
   "non-res": [{ source: "FID5982-T", local: ["FINN.NE", "FINN-T"], name: "FIDELITY GLOBAL INNOVATORS ETF", currency: "CAD" }],
-  // PC USA holds the US-listed Nasdaq-100 ETF in place of the Canadian USD
-  // class: QQQM is held at QQQX.U's share of the USD model (see propagate).
-  "pc-usa": [{ source: "QQQX.U", local: ["QQQM"], name: "INVESCO NASDAQ 100 ETF", currency: "USD" }],
+  // PC USA holds the US-listed Nasdaq-100 ETF in place of BOTH of PIM's
+  // Nasdaq ETFs: its CAD side is CAD stocks only, so the CAD-hedged QQC.F has
+  // no home there. QQQM carries PIM's whole Nasdaq weight — QQQX.U + QQC.F —
+  // so the Nasdaq share of the TOTAL model matches PIM; its share of PC USA's
+  // USD model then follows from the currency split (10% ÷ 94.99% = 10.53%
+  // with 3 CAD stocks at 1.67%). `alsoFrom` = other source ETFs folded in.
+  "pc-usa": [{ source: "QQQX.U", local: ["QQQM"], name: "INVESCO NASDAQ 100 ETF", currency: "USD", alsoFrom: ["QQC.F-T"] }],
 };
 
 /** If `symbol` stands in for a source holding in some model, that source symbol. */
@@ -305,7 +309,10 @@ export function propagate(
     for (const h of mine) {
       const a = inAfter(h.symbol);
       const wasInSource = beforeW(h.symbol) != null;
-      if (!a && wasInSource) { removed.push(h.symbol); continue; }
+      // A substitute fed by several source ETFs (QQQM) is sized below and
+      // only goes when ALL of them have left the source.
+      const multiSub = subs.find((x) => x.alsoFrom?.length && x.local.some((l) => sameSymbol(l, h.symbol)));
+      if (!a && wasInSource && !multiSub) { removed.push(h.symbol); continue; }
       if (a && role(h.symbol) !== "core") {
         const b = beforeW(h.symbol);
         if (b == null || Math.abs(a.weightInClass - b) > 1e-6) {
@@ -373,18 +380,34 @@ export function propagate(
     // ETF's share of its CURRENCY model — 10% of PIM's USD model is 10% of
     // PC USA's USD model — and the rest of the Core sleeve absorbs around it.
     // (In a mirroring model the substitute is already in the pool above.)
-    const subFixed: PimHolding[] = mirrors ? [] : srcCoreAfter
-      .filter((s2) => origin(s2.symbol) !== s2.symbol)
-      .map((s2) => {
-        const held = coreHere.find((h) => sameSymbol(h.symbol, s2.symbol));
-        const srcTot = sum(after.filter((h) => h.currency === s2.currency).map((h) => h.weightInClass));
-        // This model's share of the class in that currency: everything except
-        // the other currency's names (PC USA: 1 − its CAD stocks).
-        const otherCcy = sum(nonCore.filter((h) => h.currency !== s2.currency).map((h) => h.weightInClass));
-        const ccyShare = other.id === PC_USA ? 1 - otherCcy : 0.5;
-        const w = srcTot > 0 ? (s2.weightInClass / srcTot) * ccyShare : 0;
-        notes.push(`${s2.symbol} stands in for ${origin(s2.symbol)} — held at its ${(srcTot > 0 ? (s2.weightInClass / srcTot) * 100 : 0).toFixed(2)}% share of the ${s2.currency} model.`);
-        return { ...(held ?? { name: s2.name, symbol: s2.symbol, currency: s2.currency, assetClass: ac }), weightInClass: w };
+    const subFixed: PimHolding[] = mirrors ? [] : subs
+      .filter((x) => role(x.source) === "core")
+      .flatMap((x) => {
+        const isLocal = (sym: string) => x.local.some((l) => sameSymbol(l, sym));
+        const held = coreHere.find((h) => isLocal(h.symbol));
+        const fromSrc = after.filter((h) => isLocal(h.symbol) || (x.alsoFrom ?? []).some((f) => sameSymbol(f, h.symbol)));
+        if (fromSrc.length === 0) {
+          if (held) notes.push(`Removed: ${held.symbol} (${x.source} left the source).`);
+          return [];
+        }
+        let w: number;
+        if (x.alsoFrom?.length) {
+          // Same share of the TOTAL model as the source's combined ETFs; the
+          // currency split decides what that is within the currency model.
+          w = sum(fromSrc.map((h) => h.weightInClass));
+          const ccyTot = 1 - sum(nonCore.filter((h) => h.currency !== x.currency).map((h) => h.weightInClass));
+          notes.push(`${x.local[0]} stands in for ${[x.source, ...x.alsoFrom].join(" + ")} — ${(w * 100).toFixed(2)}% of the model, as in the source (${ccyTot > 0 ? ((w / ccyTot) * 100).toFixed(2) : "—"}% of the ${x.currency} model after the currency split).`);
+        } else {
+          // Single source: held at the source ETF's share of its CURRENCY model.
+          const srcW = sum(fromSrc.map((h) => h.weightInClass));
+          const srcTot = sum(after.filter((h) => h.currency === x.currency).map((h) => h.weightInClass));
+          const otherCcy = sum(nonCore.filter((h) => h.currency !== x.currency).map((h) => h.weightInClass));
+          const ccyShare = other.id === PC_USA ? 1 - otherCcy : 0.5;
+          w = srcTot > 0 ? (srcW / srcTot) * ccyShare : 0;
+          notes.push(`${x.local[0]} stands in for ${x.source} — held at its ${(srcTot > 0 ? (srcW / srcTot) * 100 : 0).toFixed(2)}% share of the ${x.currency} model.`);
+        }
+        const base = held ?? { name: x.name, symbol: x.local[0], currency: x.currency, assetClass: ac };
+        return [{ ...base, weightInClass: w }];
       });
     const subTotal = (ccy?: "CAD" | "USD") => sum(subFixed.filter((h) => !ccy || h.currency === ccy).map((h) => h.weightInClass));
     const spread = (items: { h: PimHolding; ratio: number }[], total: number) => {
