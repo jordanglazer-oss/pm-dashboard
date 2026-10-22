@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { yahooClassShare } from "@/app/lib/yahoo-symbol";
 import type { OHLCVBar } from "@/app/lib/technicals";
 import { computeSMASeries } from "@/app/lib/technicals";
 
@@ -14,7 +15,7 @@ function toYahoo(ticker: string): string {
 
 async function fetchBars(ticker: string, range: string, interval: string): Promise<OHLCVBar[]> {
   const yahooSymbol = toYahoo(ticker);
-  const url = `${YAHOO_BASE}/v8/finance/chart/${encodeURIComponent(yahooSymbol)}?range=${range}&interval=${interval}`;
+  const url = `${YAHOO_BASE}/v8/finance/chart/${encodeURIComponent(yahooClassShare(yahooSymbol))}?range=${range}&interval=${interval}`;
   const res = await fetch(url, {
     cache: "no-store",
     headers: { "User-Agent": UA },

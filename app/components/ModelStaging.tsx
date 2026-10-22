@@ -26,6 +26,8 @@ import {
 import type { EquityBucket, PimAssetClass, PimHolding, PimModelGroup, PimProfileType } from "@/app/lib/pim-types";
 import { BUCKET_LABELS, bucketOf } from "@/app/lib/sleeve-targets";
 import { apportionColumn } from "@/app/lib/display-weights";
+import { usePersistedOpen } from "@/app/lib/useCollapsed";
+import type { BookPlan } from "@/app/lib/staged-rebalance";
 import { ZERO_SCORES, type InstrumentType, type Stock } from "@/app/lib/types";
 
 /**
@@ -77,7 +79,7 @@ async function fileToDataUrl(file: File): Promise<string> {
 }
 
 export function ModelStaging() {
-  const { pimModels, stocks, reloadPimModels, moveBucket, updateStockFields, addStock, uiPrefs, setUiPref } = useStocks();
+  const { pimModels, stocks, reloadPimModels, moveBucket, updateStockFields, addStock, flushStocks, uiPrefs, setUiPref } = useStocks();
   const groups = pimModels.groups;
   const [draft, setDraft] = useState<ModelDraft | null>(null);
   const [loaded, setLoaded] = useState(false);
@@ -586,6 +588,35 @@ export function ModelStaging() {
               </button>
             </div>
           </section>
+
+          <StagedRebalancePanel
+            draft={draft}
+            revision={pimModels.revision ?? 0}
+            groupIds={changedGroups.map((g) => g.id)}
+            blocked={blocking.length > 0}
+            onBeforeRun={async () => {
+              if (saveTimer.current) { clearTimeout(saveTimer.current); saveTimer.current = null; }
+              const s2 = await fetch("/api/kv/model-drafts", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ draft }) });
+              return s2.ok;
+            }}
+            onDone={async (j) => {
+              // Book follow-through (pm:stocks, through the normal client path):
+              // tag roles, then move names that left EVERY model to the Watchlist.
+              syncRoles((j.roles ?? {}) as Record<string, EquityBucket>, draft.parsed);
+              const stillHeld = (sym: string) => Object.values(draft.models).some((m) => m.holdings.some((h) => sameSymbol(h.symbol, sym)));
+              const exited = new Set<string>();
+              for (const syms of Object.values(j.exits ?? {})) for (const sym of syms) if (!stillHeld(sym)) exited.add(sym);
+              for (const sym of exited) {
+                const rec = stocks.find((st) => sameSymbol(st.ticker, sym));
+                if (rec && rec.bucket === "Portfolio") moveBucket(rec.ticker, { skipPimModels: true });
+              }
+              await new Promise((r) => setTimeout(r, 300));
+              await flushStocks();
+              // Every surface (Models, Positioning, Holdings, Performance) re-reads
+              // the new state; no stale tab state can write over it.
+              window.location.reload();
+            }}
+          />
         </>
       )}
     </div>
@@ -946,5 +977,175 @@ function BucketInputs({ alpha0, thematic0, onResize }: { alpha0: number; themati
         Resize buckets
       </button>
     </span>
+  );
+}
+
+/* ── Apply + record the rebalance the desk traded on the previous day ── */
+
+const prevWeekdayET = () => {
+  const today = new Intl.DateTimeFormat("en-CA", { timeZone: "America/New_York", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
+  const d = new Date(`${today}T12:00:00Z`);
+  do d.setUTCDate(d.getUTCDate() - 1);
+  while (d.getUTCDay() === 0 || d.getUTCDay() === 6);
+  return d.toISOString().slice(0, 10);
+};
+
+type PlanSymbol = { symbol: string; name: string; isMF: boolean; traded: boolean; sizingClose: { price: number; date: string } | null; asOfClose: number | null; netUnits: number; needsPrice: boolean };
+type PlanResponse = { asOf: string; sizingDate: string; fx: { sizing: number | null; asOf: number | null }; symbols: PlanSymbol[]; books: BookPlan[]; problems: string[]; revision: number };
+type RebalanceDone = { roles?: Record<string, EquityBucket>; exits?: Record<string, string[]>; versionId: string; trades: number; stashes: string[] };
+
+function StagedRebalancePanel({
+  draft, revision, groupIds, blocked, onBeforeRun, onDone,
+}: {
+  draft: ModelDraft;
+  revision: number;
+  groupIds: string[];
+  blocked: boolean;
+  onBeforeRun: () => Promise<boolean>;
+  onDone: (j: RebalanceDone) => Promise<void>;
+}) {
+  const asOf = prevWeekdayET();
+  const [plan, setPlan] = useState<PlanResponse | null>(null);
+  const [busy, setBusy] = useState<"" | "plan" | "commit">("");
+  const [err, setErr] = useState("");
+  const [px, setPx] = useState<Record<string, string>>({});
+  const [confirm, setConfirm] = useState("");
+  const [detailOpen, toggleDetail] = usePersistedOpen("staging.rebalance.detail", false);
+
+  const build = async () => {
+    setBusy("plan");
+    setErr("");
+    try {
+      if (!(await onBeforeRun())) { setErr("Could not save the draft first — nothing built."); return; }
+      const r = await fetch("/api/model-staging/rebalance", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ mode: "plan", draftId: draft.id, asOf }) });
+      const j = await r.json();
+      if (!r.ok) { setErr(j.error ?? "Could not build the trade list."); return; }
+      setPlan(j);
+    } finally {
+      setBusy("");
+    }
+  };
+  const need = (plan?.symbols ?? []).filter((s) => s.needsPrice);
+  const missing = need.filter((s) => !(parseFloat(px[s.symbol] ?? "") > 0));
+  const commit = async () => {
+    if (!plan) return;
+    setBusy("commit");
+    setErr("");
+    try {
+      if (!(await onBeforeRun())) { setErr("Could not save the draft first — nothing written."); return; }
+      const execPrices = Object.fromEntries(need.map((s) => [s.symbol, parseFloat(px[s.symbol])]));
+      const r = await fetch("/api/model-staging/rebalance", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ mode: "commit", draftId: draft.id, asOf, expectedRevision: revision, execPrices, confirm: confirm.trim(), groupIds }),
+      });
+      const j = await r.json();
+      if (!r.ok) { setErr([j.error, ...(j.problems ?? []), ...(j.missing ?? []), j.note].filter(Boolean).join(" · ")); return; }
+      await onDone(j);
+    } finally {
+      setBusy("");
+    }
+  };
+
+  const fmt = (v: number | null | undefined, dp = 2) => (v == null ? "—" : v.toLocaleString("en-CA", { minimumFractionDigits: dp, maximumFractionDigits: dp }));
+  return (
+    <section className="panel px-3.5 py-3 text-[12.5px]">
+      <div className="flex flex-wrap items-center gap-2.5">
+        <span className="font-semibold text-ink">Apply + record the rebalance traded on {asOf}</span>
+        <span className="text-ink-3">Writes the models AND every PIM positions book as of {asOf}&apos;s close.</span>
+      </div>
+      <p className="mt-1 text-[11.5px] text-ink-3">
+        Performance: {asOf}&apos;s return stays on the old holdings (locked first); from the next day it uses the new models and positions. Units are sized off the prior close like the desk; you enter the average fill for stocks / ETFs (cost basis); mutual funds fill at the {asOf} NAV automatically. The Alpha book becomes stocks-only. Names leaving every model move to the Watchlist. Each store is copied aside first, and the models are snapshotted.
+      </p>
+      {err && <div className="mt-2 rounded-control bg-neg-soft px-2.5 py-1.5 text-[12px] text-neg">{err}</div>}
+      <div className="mt-2 flex flex-wrap items-center gap-2">
+        <button className={BTN} disabled={!!busy || blocked} onClick={build}>
+          <AppIcon name="refresh" size={13} />{busy === "plan" ? "Building trade list…" : plan ? "Rebuild trade list" : "Build trade list"}
+        </button>
+        {blocked && <span className="text-[11.5px] text-neg">Fix the model errors above first.</span>}
+      </div>
+
+      {plan && (
+        <div className="mt-3 flex flex-col gap-2.5">
+          {plan.problems.length > 0 && <div className="rounded-control bg-neg-soft px-2.5 py-1.5 text-[12px] text-neg">Can&apos;t commit: {plan.problems.join(" · ")}</div>}
+          <div className="text-[11.5px] text-ink-3">
+            Sizing close {plan.sizingDate} · USD/CAD {fmt(plan.fx.sizing, 4)} (sizing) / {fmt(plan.fx.asOf, 4)} ({plan.asOf}, cost basis of USD buys) · {plan.books.length} books: {plan.books.map((b) => b.profile).join(", ")}
+          </div>
+          <div className="tbl-wrap overflow-x-auto">
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th className="pl-3.5">Holding</th><th>Symbol</th>
+                  <th className="text-right">Prior close ({plan.sizingDate})</th>
+                  <th className="text-right">Close {plan.asOf}</th>
+                  <th className="text-right">Net units (all books)</th>
+                  <th className="text-right">Average fill price</th>
+                </tr>
+              </thead>
+              <tbody>
+                {plan.symbols.filter((s) => s.traded).sort((a, b) => Number(a.isMF) - Number(b.isMF) || a.symbol.localeCompare(b.symbol)).map((s) => (
+                  <tr key={s.symbol}>
+                    <td className="pl-3.5">{s.name}</td>
+                    <td className="font-mono">{s.symbol}</td>
+                    <td className="text-right tabular-nums">{fmt(s.sizingClose?.price ?? null, 4)}</td>
+                    <td className="text-right tabular-nums">{fmt(s.asOfClose, 4)}</td>
+                    <td className={`text-right tabular-nums ${s.netUnits > 0 ? "text-pos" : s.netUnits < 0 ? "text-neg" : "text-ink-3"}`}>{s.netUnits > 0 ? "+" : ""}{fmt(s.netUnits, 4)}</td>
+                    <td className="text-right">
+                      {s.isMF ? (
+                        <span className="text-[11.5px] text-ink-3">NAV {fmt(s.asOfClose, 4)} · auto</span>
+                      ) : (
+                        <input
+                          value={px[s.symbol] ?? ""}
+                          onChange={(e) => setPx((p) => ({ ...p, [s.symbol]: e.target.value }))}
+                          placeholder={s.asOfClose != null ? s.asOfClose.toFixed(2) : "price"}
+                          inputMode="decimal"
+                          className={`${INPUT} h-6 w-[100px] text-right tabular-nums ${parseFloat(px[s.symbol] ?? "") > 0 ? "" : "border-warn-border"}`}
+                          aria-label={`${s.symbol} average fill price`}
+                        />
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <button className="self-start text-[12px] text-accent hover:underline" onClick={toggleDetail}>{detailOpen ? "Hide" : "Show"} each book&apos;s trades</button>
+          {detailOpen && (
+            <div className="grid gap-3 lg:grid-cols-2">
+              {plan.books.map((b) => (
+                <div key={b.profile} className="rounded-card border border-line">
+                  <div className="border-b border-line-soft px-3 py-1.5 text-[12px] font-medium text-ink">{b.profile} <span className="font-normal text-ink-3">· value {fmt(b.totalCad, 0)} CAD at the prior close · cash {fmt(b.cash, 0)}</span></div>
+                  <table className="data-table">
+                    <thead><tr><th className="pl-3">Symbol</th><th className="text-right">Target</th><th className="text-right">Units now</th><th className="text-right">Units after</th><th>Trade</th></tr></thead>
+                    <tbody>
+                      {b.rows.map((r) => (
+                        <tr key={r.symbol}>
+                          <td className="pl-3 font-mono">{r.symbol}{r.exit && <span className="ml-1 text-[10.5px] text-neg">exit</span>}</td>
+                          <td className="text-right tabular-nums">{(r.modelPct * 100).toFixed(2)}%</td>
+                          <td className="text-right tabular-nums">{fmt(r.unitsBefore, 4)}</td>
+                          <td className="text-right tabular-nums">{fmt(r.unitsAfter, 4)}</td>
+                          <td className={r.action === "BUY" ? "text-pos" : r.action === "SELL" ? "text-neg" : "text-ink-3"}>{r.action}{r.action !== "HOLD" && ` ${fmt(Math.abs(r.deltaUnits), 4)}`}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              ))}
+            </div>
+          )}
+          <div className="flex flex-wrap items-center gap-2 border-t border-line-soft pt-2.5">
+            {missing.length > 0 && <span className="text-[12px] text-warn">{missing.length} average price{missing.length === 1 ? "" : "s"} still to enter.</span>}
+            <input value={confirm} onChange={(e) => setConfirm(e.target.value)} placeholder={`Type REBALANCE ${asOf}`} className={`${INPUT} w-[230px] font-mono`} />
+            <button
+              className={BTN_PRIMARY}
+              disabled={!!busy || blocked || plan.problems.length > 0 || missing.length > 0 || confirm.trim() !== `REBALANCE ${asOf}`}
+              onClick={commit}
+            >
+              {busy === "commit" ? "Applying + recording…" : `Apply models + record rebalance (${asOf})`}
+            </button>
+          </div>
+        </div>
+      )}
+    </section>
   );
 }

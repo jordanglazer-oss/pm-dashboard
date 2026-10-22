@@ -1,4 +1,5 @@
 import { getRedis } from "@/app/lib/redis";
+import { yahooClassShare } from "./yahoo-symbol";
 import { normalizeSector } from "./scoring";
 
 /**
@@ -81,8 +82,8 @@ export type JournalAttribution = {
 
 export function toYahoo(ticker: string): string {
   if (ticker.endsWith(".U")) return ticker.replace(/\.U$/, "-U.TO");
-  if (ticker.endsWith("-T")) return ticker.replace(/-T$/, ".TO");
-  return ticker;
+  if (ticker.endsWith("-T")) return yahooClassShare(ticker.replace(/-T$/, ".TO"));
+  return yahooClassShare(ticker);
 }
 
 export async function fetchCloses(ticker: string): Promise<Map<string, number> | null> {

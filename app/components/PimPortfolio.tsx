@@ -736,6 +736,14 @@ export function PimPortfolio({ groups }: Props) {
     }
     return set;
   }, [stocks]);
+  // Thematic funds (three-bucket model): their own bucket, so the Alpha book
+  // is stocks only — same rule as the Alpha performance series.
+  const thematicSymbols = useMemo(() => {
+    const set = new Set<string>();
+    for (const s of stocks) if (s.designation === "thematic") set.add(s.ticker);
+    return set;
+  }, [stocks]);
+  const notAlpha = useCallback((symbol: string) => coreSymbols.has(symbolToTicker(symbol)) || thematicSymbols.has(symbolToTicker(symbol)), [coreSymbols, thematicSymbols]);
 
   const availableProfiles = useMemo<PimProfileType[]>(() => {
     if (!selectedGroup) return [];
@@ -799,10 +807,10 @@ export function PimPortfolio({ groups }: Props) {
   const effectiveGroup = useMemo(() => {
     if (!selectedGroup) return selectedGroup;
 
-    // Alpha: equity-only, EXCLUDE core ETFs, re-normalize proportionally
+    // Alpha: equity-only, EXCLUDE Core ETFs and Thematic funds, re-normalize
     if (activeProfile === "alpha") {
       const alphaHoldings = selectedGroup.holdings.filter(
-        (h) => h.assetClass === "equity" && !coreSymbols.has(symbolToTicker(h.symbol))
+        (h) => h.assetClass === "equity" && !notAlpha(h.symbol)
       );
       const totalWeight = alphaHoldings.reduce((s, h) => s + h.weightInClass, 0);
       const normalized = totalWeight > 0
@@ -873,7 +881,7 @@ export function PimPortfolio({ groups }: Props) {
     }
 
     return selectedGroup;
-  }, [selectedGroup, activeProfile, coreSymbols, pimGroup]);
+  }, [selectedGroup, activeProfile, coreSymbols, notAlpha, pimGroup]);
 
   // Load positions from KV
   useEffect(() => {
@@ -1584,7 +1592,7 @@ export function PimPortfolio({ groups }: Props) {
     let profGroup = selectedGroup;
     if (profile === "alpha") {
       const alphaHoldings = selectedGroup.holdings.filter(
-        (h) => h.assetClass === "equity" && !coreSymbols.has(symbolToTicker(h.symbol))
+        (h) => h.assetClass === "equity" && !notAlpha(h.symbol)
       );
       const totalW = alphaHoldings.reduce((s, h) => s + h.weightInClass, 0);
       profGroup = {
@@ -1712,7 +1720,7 @@ export function PimPortfolio({ groups }: Props) {
     }
 
     return { transactions, positionUpdates: newPositions };
-  }, [selectedGroup, positions, selectedGroupId, prevCloses, livePrices, usdCadRate, prevCloseUsdCad, sharedCostBasisMap, coreSymbols, stagedExits]);
+  }, [selectedGroup, positions, selectedGroupId, prevCloses, livePrices, usdCadRate, prevCloseUsdCad, sharedCostBasisMap, coreSymbols, notAlpha, stagedExits]);
 
   // Compute pending trades across all profiles
   const pendingTrades = useMemo(() => {
@@ -2790,7 +2798,7 @@ export function PimPortfolio({ groups }: Props) {
           // only a sleeve that COULD have held the sold name is a real miss.
           const soldIsCore = coreSymbols.has(symbolToTicker(trade.sellSymbol));
           const expectedHere =
-            (pp.profile !== "core" || soldIsCore) && (pp.profile !== "alpha" || !soldIsCore);
+            (pp.profile !== "core" || soldIsCore) && (pp.profile !== "alpha" || !notAlpha(trade.sellSymbol));
           if (expectedHere) {
             const gName = pimModelsRef.current.groups.find((g) => g.id === pp.groupId)?.name ?? pp.groupId;
             unitlessBuyGroups.push(`${gName}/${pp.profile}`);
@@ -2912,9 +2920,9 @@ export function PimPortfolio({ groups }: Props) {
         // Target share of THIS profile's portfolio.
         let targetPct = 0;
         if (pp.profile === "alpha") {
-          // Alpha is equity-only and excludes Core ETFs, renormalized to 100%.
+          // Alpha is equity-only stocks (no Core ETFs, no Thematic funds), renormalized to 100%.
           const alphaHoldings = g.holdings.filter(
-            (h) => h.assetClass === "equity" && !coreSymbols.has(symbolToTicker(h.symbol)),
+            (h) => h.assetClass === "equity" && !notAlpha(h.symbol),
           );
           const alphaTotal = alphaHoldings.reduce((sum, h) => sum + h.weightInClass, 0);
           const inAlpha = alphaHoldings.some((h) => tickerEq(h.symbol, buyTicker));
@@ -3019,7 +3027,7 @@ export function PimPortfolio({ groups }: Props) {
     }
 
     return { ok: true, warning };
-  }, [pimPortfolioState, selectedGroupId, updatePimPortfolioState, scoredStocks, addStock, pimModels, updatePimModels, moveBucket, stocks, positions, usdCadRate, rebalanceStockWeights, updateStockFields, coreSymbols, livePrices]);
+  }, [pimPortfolioState, selectedGroupId, updatePimPortfolioState, scoredStocks, addStock, pimModels, updatePimModels, moveBucket, stocks, positions, usdCadRate, rebalanceStockWeights, updateStockFields, coreSymbols, notAlpha, livePrices]);
 
   /**
    * Run every valid trade in the queue sequentially. Skips invalid rows

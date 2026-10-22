@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { yahooClassShare } from "@/app/lib/yahoo-symbol";
 import { getRedis } from "@/app/lib/redis";
 import type {
   PimModelGroup,
@@ -39,11 +40,11 @@ async function fetchHistory(
       const period1 = Math.floor(new Date(startDate).getTime() / 1000);
       const period2 = Math.floor(Date.now() / 1000);
       url = `https://query2.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(
-        yahooSymbol
+        yahooClassShare(yahooSymbol)
       )}?period1=${period1}&period2=${period2}&interval=1d`;
     } else {
       url = `https://query2.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(
-        yahooSymbol
+        yahooClassShare(yahooSymbol)
       )}?range=1y&interval=1d`;
     }
 
@@ -85,7 +86,7 @@ async function fetchCurrentPrice(symbol: string): Promise<number | null> {
 
   try {
     const url = `https://query2.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(
-      yahooSymbol
+      yahooClassShare(yahooSymbol)
     )}?range=1d&interval=1m`;
     const res = await fetch(url, {
       cache: "no-store",
