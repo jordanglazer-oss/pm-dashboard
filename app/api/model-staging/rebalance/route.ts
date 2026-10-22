@@ -179,6 +179,10 @@ export async function POST(req: NextRequest) {
       if (last && !last.anchored) { last.anchored = true; anchored++; }
     }
     await redis.set("pm:pim-performance", JSON.stringify({ ...perf, lastUpdated: new Date().toISOString() }));
+    // The cut-over history, kept to re-assert in step 5: the Brief / Daily
+    // Summary can trigger a performance refresh at any moment, and one that
+    // lands mid-commit could rewrite asOf on the new positions or drop the anchor.
+    const cutHistory = new Map(perf.models.map((m) => [`${m.groupId}|${m.profile}`, m.history.map((h) => ({ ...h }))]));
 
     // 3. Models.
     const groupIds = Array.isArray(body.groupIds) ? [...new Set([...body.groupIds, GROUP])] : undefined;
@@ -267,7 +271,28 @@ export async function POST(req: NextRequest) {
     };
     await redis.set("pm:pim-portfolio-state", JSON.stringify(nextState));
 
-    // 5. Today on the new holdings (best effort).
+    // 5. Re-assert the cut-over (history up to asOf exactly as anchored in step 2,
+    //    nothing after it — whatever a concurrent refresh did), then compute
+    //    today on the new holdings.
+    try {
+      const freshRaw = await redis.get("pm:pim-performance");
+      if (freshRaw) {
+        const fresh = JSON.parse(freshRaw) as PimPerformanceData;
+        let reasserted = 0;
+        for (const m of fresh.models) {
+          const cut = cutHistory.get(`${m.groupId}|${m.profile}`);
+          const before = JSON.stringify(m.history);
+          m.history = cut ? cut.map((h) => ({ ...h })) : m.history.filter((h) => h.date <= asOf);
+          if (JSON.stringify(m.history) !== before) reasserted++;
+        }
+        if (reasserted) {
+          log.warn(`re-asserted the ${asOf} cut-over on ${reasserted} series (a refresh ran mid-commit)`);
+          await redis.set("pm:pim-performance", JSON.stringify(fresh));
+        }
+      }
+    } catch (e) {
+      log.warn("cut-over re-assert failed:", e);
+    }
     try { await updateDailyValue(); } catch (e) { log.warn("post-commit performance refresh failed:", e); }
 
     log.info(`staged rebalance as of ${asOf}: ${transactions.length} trades across ${nextBooks.size} books, models v${applied.after.revision}, perf anchored ${anchored} / dropped ${dropped}`);
