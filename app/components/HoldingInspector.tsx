@@ -8,7 +8,7 @@ import { SCORE_GROUPS, ALL_GROUPS, SETUP_GROUP, MAX_SCORE, type ScoreKey } from 
 import { groupTotal } from "@/app/lib/scoring";
 import { canonicalTicker, displayTicker } from "@/app/lib/ticker";
 import { skewWord, SKEW_TONE, type SynthesisResult, type StaleReason } from "@/app/lib/synthesis-screen-display";
-import { LegVerdictChips, useSleeveVerdicts } from "./LegVerdicts";
+import { ThesisVerdictChip, useThesisVerdicts } from "./ThesisVerdictChip";
 import { describeCondition, type KillCondition } from "@/app/lib/kill-conditions";
 import { AppIcon } from "./AppIcon";
 import { SetupChip } from "./SetupChip";
@@ -71,7 +71,7 @@ export function HoldingInspector({
 
   // Loaded data is keyed by ticker so switching names shows fresh state
   // without a synchronous reset inside the effect.
-  const legVerdicts = useSleeveVerdicts();
+  const legVerdicts = useThesisVerdicts();
   const [synthBy, setSynth] = useState<{ t: string; v: SynthRow | null } | null>(null);
   const [thesisBy, setThesis] = useState<{ t: string; v: ThesisEntry | null } | null>(null);
   const [checkBy, setCheck] = useState<{ t: string; v: ThesisCheck | null } | null>(null);
@@ -137,7 +137,7 @@ export function HoldingInspector({
           <span className={`inline-flex h-[18px] items-center rounded px-1.5 text-[11px] font-medium ${word ? SKEW_TONE[word] : "bg-surface-2 text-ink-2"}`} title="Risk/reward lean of the latest synthesis">
             {word ?? "Not generated"}
           </span>
-          {legs && <LegVerdictChips legs={legs} />}
+          {legs && <ThesisVerdictChip entry={legs} />}
           {synth?.entry?.generatedAt && <span>{fmtDate(synth.entry.generatedAt)}{synth.stale.length > 0 ? " · stale" : ""}</span>}
         </span>
       }

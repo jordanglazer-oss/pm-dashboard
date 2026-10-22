@@ -1,4 +1,3 @@
-import { sanitizePlan, type TacticalPlan } from "@/app/lib/tactical-plan";
 import { getRedis } from "@/app/lib/redis";
 import { NextRequest, NextResponse } from "next/server";
 
@@ -48,9 +47,10 @@ type PositionThesis = {
    *  whenever the prose, pillars or conditions change on a save that carries
    *  `versionReason`. */
   history?: ThesisVersion[];
-  /** Terms of a Tactical-sleeve position (app/lib/tactical-plan). Independent
-   *  of the thesis half: a Tactical-only name may carry a plan and no thesis. */
-  tacticalPlan?: TacticalPlan;
+  /** LEGACY: the retired Tactical sleeve's plan (entry / target / stop).
+   *  Nothing reads or writes it any more; it is carried through untouched by
+   *  the read-merge-write below so no stored data is lost. */
+  tacticalPlan?: unknown;
 };
 type ThesisVersion = {
   savedAt: string;
@@ -123,13 +123,6 @@ export async function POST(req: NextRequest) {
     if (typeof body?.underwritePrice === "number") next.underwritePrice = body.underwritePrice;
     if (typeof body?.reUnderwriteBy === "string") next.reUnderwriteBy = body.reUnderwriteBy;
     if (typeof body?.aiDrafted === "boolean") next.aiDrafted = body.aiDrafted;
-    // Tactical plan: applied only when the key is present. `null` (or a plan
-    // with every field blank) clears it; anything else is sanitized and stored.
-    if (body?.tacticalPlan !== undefined) {
-      const plan = sanitizePlan(body.tacticalPlan);
-      if (plan) next.tacticalPlan = plan;
-      else delete next.tacticalPlan;
-    }
     // Append-only, de-duplicated, capped — a learned blocklist, not user prose.
     if (Array.isArray(body?.unverifiableNotes)) {
       const incoming = (body.unverifiableNotes as unknown[])

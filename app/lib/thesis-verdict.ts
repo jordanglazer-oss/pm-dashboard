@@ -1,6 +1,6 @@
-/* ─── Thesis verdict: the name-level read of a Thesis-sleeve holding ───
+/* ─── Thesis verdict: the name-level read of a held, underwritten name ───
  *
- * A Thesis name is judged on its THESIS, never on price. The post-earnings
+ * A held name is judged on its THESIS, never on price. The post-earnings
  * review (app/lib/thesis-review) already reads each pillar against new
  * evidence as confirmed / contested / broken; this rolls those up into the
  * one word the monthly meeting works from:

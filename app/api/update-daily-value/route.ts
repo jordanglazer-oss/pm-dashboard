@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { yahooClassShare } from "@/app/lib/yahoo-symbol";
 import { getRedis } from "@/app/lib/redis";
 import { getTodayET, isMarketOpenOrAfterET } from "@/app/lib/market-hours";
 import { fetchLivePriceSnapshot, type LivePriceSnapshot } from "@/app/lib/live-prices";
@@ -43,7 +44,7 @@ async function fetchAdjustedCloses(symbol: string, range: string = "15d"): Promi
   if (/^[A-Z]{2,4}\d{2,5}$/i.test(symbol)) return { history: [], chartPreviousClose: null };
 
   try {
-    const url = `https://query2.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(yahooSymbol)}?range=${range}&interval=1d`;
+    const url = `https://query2.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(yahooClassShare(yahooSymbol))}?range=${range}&interval=1d`;
     const res = await fetch(url, { cache: "no-store", headers: { "User-Agent": UA } });
     if (!res.ok) return { history: [], chartPreviousClose: null };
     const data = await res.json();
@@ -230,11 +231,22 @@ export async function POST() {
       : { portfolios: [] };
 
     // Build core symbols set for alpha filtering
-    type StockEntry = { ticker: string; designation?: "core" | "alpha" };
+    type StockEntry = { ticker: string; designation?: "core" | "alpha" | "thematic" };
     const stocksList: StockEntry[] = stocksRaw ? JSON.parse(stocksRaw) : [];
     const coreSymbols = new Set<string>();
+    // Three-bucket model (Oct 2026): Thematic funds are their own sleeve, so
+    // they leave the Alpha series (stocks + untagged funds) from the day they
+    // are tagged. Append-only, so past Alpha history is never recomputed.
+    const thematicSymbols = new Set<string>();
+    // -T / .TO tolerant, and FUNDSERV codes compared bare (the book may hold
+    // "FID5982" while the model holds "FID5982-T").
+    const thematicKey = (t: string) => {
+      const u = (t || "").toUpperCase().replace(/-T$/, ".TO");
+      return /^[A-Z]{2,4}\d{2,5}\.TO$/.test(u) ? u.slice(0, -3) : u;
+    };
     for (const s of stocksList) {
       if (s.designation === "core") coreSymbols.add(s.ticker);
+      else if (s.designation === "thematic") thematicSymbols.add(thematicKey(s.ticker));
     }
 
     // Helper to convert PIM symbol to ticker for designation lookup
@@ -347,11 +359,12 @@ export async function POST() {
 
       const isAlpha = model.profile === "alpha";
       const isCore = model.profile === "core";
-      // Alpha + Core are firm-wide standalone models — PIM group only.
-      if ((isAlpha || isCore) && model.groupId !== "pim") continue;
+      const isThematic = (model.profile as string) === "thematic";
+      // Alpha + Core + Thematic are firm-wide standalone models — PIM group only.
+      if ((isAlpha || isCore || isThematic) && model.groupId !== "pim") continue;
       const ALPHA_WEIGHTS = { cash: 0, fixedIncome: 0, equity: 1, alternatives: 0 };
       const CORE_WEIGHTS = { cash: 0, fixedIncome: 0, equity: 1, alternatives: 0 };
-      const profileWeights = isAlpha
+      const profileWeights = isAlpha || isThematic
         ? ALPHA_WEIGHTS
         : isCore
         ? CORE_WEIGHTS
@@ -362,12 +375,14 @@ export async function POST() {
       // everything-except-core).
       // For core: equity-only, ONLY core ETFs (the inverse filter).
       // Both renormalize their selected holdings to sum to 1.0.
-      const effectiveHoldings = (isAlpha || isCore)
+      const effectiveHoldings = (isAlpha || isCore || isThematic)
         ? (() => {
             const filtered = group.holdings.filter((h) => {
               if (h.assetClass !== "equity") return false;
               const isCoreSym = coreSymbols.has(pimSymbolToTicker(h.symbol));
-              return isAlpha ? !isCoreSym : isCoreSym;
+              const isThematicSym = thematicSymbols.has(thematicKey(h.symbol));
+              if (isThematic) return isThematicSym;
+              return isAlpha ? !isCoreSym && !isThematicSym : isCoreSym;
             });
             const total = filtered.reduce((s, h) => s + h.weightInClass, 0);
             return total > 0 ? filtered.map((h) => ({ ...h, weightInClass: h.weightInClass / total })) : filtered;

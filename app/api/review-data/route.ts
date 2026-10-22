@@ -4,7 +4,7 @@ import { createLogger } from "@/app/lib/logger";
 import { loadAlertInputs } from "@/app/lib/alert-inputs";
 import { fetchCloses, SECTOR_ETFS } from "@/app/lib/journal-attribution";
 import { VERDICT_LOG_KEY, type VerdictLog } from "@/app/lib/thesis-verdict";
-import { nextFirstMonday } from "@/app/lib/tactical-plan";
+import { nextFirstMonday } from "@/app/lib/review-calendar";
 import type { PimPerformanceData } from "@/app/lib/pim-types";
 
 /**
@@ -15,7 +15,7 @@ import type { PimPerformanceData } from "@/app/lib/pim-types";
  *   model     month-to-date and 1M return of the requested model series
  *             (pm:pim-performance, read-only)
  *   since     what changed since the last first-Monday meeting: verdict-log
- *             rows, tripped kill conditions, plan flags, re-underwrites due
+ *             rows, tripped kill conditions, re-underwrites due
  * Read-only against everything but its own cache. Zero model spend.
  */
 
@@ -58,7 +58,7 @@ export async function GET(req: NextRequest) {
   const today = new Date().toISOString().slice(0, 10);
   try {
     const redis = await getRedis();
-    const [{ context, killWatch, tacticalWatch, thesisVerdicts }, perfRaw, logRaw, cacheRaw] = await Promise.all([
+    const [{ context, killWatch, thesisVerdicts }, perfRaw, logRaw, cacheRaw] = await Promise.all([
       loadAlertInputs(),
       redis.get("pm:pim-performance"),
       redis.get(VERDICT_LOG_KEY),
@@ -122,7 +122,6 @@ export async function GET(req: NextRequest) {
     });
     const trips = killWatch.filter((k) => k.tripped > 0).map((k) => ({ ticker: k.ticker, tripped: k.tripped, auto: k.auto, what: k.checks.filter((c) => c.status === "tripped").map((c) => `${c.condition.theme ?? c.condition.kind}: ${c.reading}`) }));
     const reUnderwriteDue = killWatch.filter((k) => k.reUnderwriteBy && k.reUnderwriteBy <= today).map((k) => ({ ticker: k.ticker, due: k.reUnderwriteBy! }));
-    const planFlags = tacticalWatch.filter((t) => t.flags.length).map((t) => ({ ticker: t.ticker, flags: t.flags.map((f) => f.text), severity: t.flags.some((f) => f.severity === "high") ? "high" : "medium" }));
     const verdictNow = Object.fromEntries(thesisVerdicts.map((v) => [v.ticker, v.verdict]));
 
     return NextResponse.json({
@@ -131,8 +130,7 @@ export async function GET(req: NextRequest) {
       nextMeeting: nextFirstMonday(today),
       returns: cache ? { computedAt: cache.computedAt, spy1m: cache.spy1m, rows: cache.rows } : { computedAt: null, spy1m: null, rows: {} },
       model,
-      since: { verdictChanges, trips, reUnderwriteDue, planFlags, verdictNow },
-      sleeves: Object.fromEntries(held.map(([tk, c]) => [tk, c.sleeves ?? null])),
+      since: { verdictChanges, trips, reUnderwriteDue, verdictNow },
     });
   } catch (e) {
     log.error("failed:", e);

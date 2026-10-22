@@ -1,3 +1,4 @@
+import { yahooClassShare } from "./yahoo-symbol";
 /**
  * Shared live-price snapshot helper.
  *
@@ -66,7 +67,7 @@ async function fetchPrice(ticker: string): Promise<{ price: number | null; previ
   try {
     const yahooSymbol = toYahoo(ticker);
     const res = await fetch(
-      `https://query2.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(yahooSymbol)}?range=1d&interval=1d`,
+      `https://query2.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(yahooClassShare(yahooSymbol))}?range=1d&interval=1d`,
       {
         headers: {
           "User-Agent":

@@ -4,10 +4,6 @@ import type { MarketRegimeData } from "@/app/lib/market-regime";
 import type { StockContext } from "@/app/lib/alerts";
 import { checkAll, trippedCount, withBaselineConditions, type KillCondition, type KillCheck, type TechnicalInput } from "@/app/lib/kill-conditions";
 import { loadKillSignalSources, killSignalExtrasFor } from "./metric-resolver";
-import { sleevesOf } from "./sleeves";
-import { checkTacticalPlan, type PlanFlag, type TacticalPlan } from "./tactical-plan";
-import { computeSetup } from "./setup-grade";
-import type { Stock } from "./types";
 import { thesisVerdictOf, type PillarRead, type ThesisVerdict } from "./thesis-verdict";
 
 /**
@@ -49,19 +45,15 @@ export type AlertInputs = {
   /** Kill-condition evaluation per underwritten holding (thesis discipline).
    *  Deterministic — same evaluator as the stock-page tile, run fleet-wide. */
   killWatch: KillWatchRow[];
-  /** Every held Tactical-sleeve position that has a plan, with its live flags
-   *  (stop / target / review due / setup deteriorated) — `flags` is empty when
-   *  the position is within plan. Same evaluator as the stock-page tile. */
-  tacticalWatch: TacticalWatchRow[];
+  /** Latest pillar review of every held, underwritten name. */
   thesisVerdicts: ThesisVerdictRow[];
 };
 
-/** Latest pillar-by-pillar review of a Thesis-sleeve holding (intact included,
+/** Latest pillar-by-pillar review of a held, underwritten name (intact included,
  *  so the desk can show it). Reviews the PM already applied / re-signed are
  *  left out — the next review speaks for the re-signed thesis. */
 export type ThesisVerdictRow = { ticker: string; verdict: ThesisVerdict; pillars: PillarRead[]; summary: string; generatedAt: string };
 
-export type TacticalWatchRow = { ticker: string; flags: PlanFlag[]; reviewBy?: string };
 
 export type KillWatchRow = {
   ticker: string;
@@ -83,9 +75,7 @@ type StoredStock = {
   bucket?: string;
   price?: number;
   instrumentType?: string;
-  designation?: "core" | "alpha";
-  inThesis?: boolean;
-  inTactical?: boolean;
+  designation?: "core" | "alpha" | "thematic";
   /** YYYY-MM-DD (Yahoo calendarEvents) — feeds the catalyst-aware escalation. */
   earningsDate?: string;
   riskAlert?: { level?: string; summary?: string; signals?: Array<{ name: string; status: string }> };
@@ -188,7 +178,6 @@ export async function loadAlertInputs(): Promise<AlertInputs> {
       revDown: typeof fs?.revDown === "number" ? fs.revDown : null,
       riskLevel: s.riskAlert?.level ?? null,
       instrumentType: s.instrumentType ?? null,
-      sleeves: s.bucket === "Portfolio" ? sleevesOf(s) : undefined,
       earningsDate:
         typeof s.earningsDate === "string"
           ? s.earningsDate.slice(0, 10)
@@ -207,7 +196,7 @@ export async function loadAlertInputs(): Promise<AlertInputs> {
 
   // ── Kill-condition sweep: every underwritten name, evaluated with the SAME
   //    pure checker the stock-page tile uses, from the signals loaded above. ──
-  const posTheses = parse<Record<string, { why?: string; killConditions?: KillCondition[]; underwrittenAt?: string; reUnderwriteBy?: string; aiDrafted?: boolean; tacticalPlan?: TacticalPlan }>>(posThesesRaw, {});
+  const posTheses = parse<Record<string, { why?: string; killConditions?: KillCondition[]; underwrittenAt?: string; reUnderwriteBy?: string; aiDrafted?: boolean }>>(posThesesRaw, {});
   const stockByTicker = new Map<string, StoredStock>();
   for (const s of stocks) if (s.ticker) stockByTicker.set(s.ticker.toUpperCase(), s);
   const killWatch: KillWatchRow[] = [];
@@ -235,44 +224,25 @@ export async function loadAlertInputs(): Promise<AlertInputs> {
       price: typeof st?.price === "number" ? st.price : st?.healthData?.currentPrice ?? null,
       ma200: st?.healthData?.twoHundredDayAvg ?? null,
       technicals: st?.technicals ?? null,
-    }, { ma200Informational: st?.bucket === "Portfolio" && sleevesOf(st).thesis });
+    },
+    // A held name's 200-day break is shown, never counted as a trip: held
+    // positions are long-run holds sold on a broken thesis, not on trend.
+    // (Was Thesis-tagged names only until the Thesis/Tactical tags retired.)
+    { ma200Informational: st?.bucket === "Portfolio" });
     const { tripped, auto } = trippedCount(checks);
     killWatch.push({ ticker: tk, why: t?.why, checks, tripped, auto, underwrittenAt: t?.underwrittenAt, reUnderwriteBy: t?.reUnderwriteBy, aiDrafted: t?.aiDrafted });
   }
   killWatch.sort((a, b) => b.tripped - a.tripped || a.ticker.localeCompare(b.ticker));
 
-  // ── Tactical-plan sweep: only names still held AND still tagged Tactical —
-  //    a plan left behind on a sold or re-tagged name never alerts. ──
-  const tacticalWatch: TacticalWatchRow[] = [];
-  for (const [rawTk, t] of Object.entries(posTheses)) {
-    if (!t?.tacticalPlan) continue;
-    const tk = rawTk.toUpperCase();
-    const st = stockByTicker.get(tk);
-    if (!st || st.bucket !== "Portfolio" || !sleevesOf(st).tactical) continue;
-    let setupGrade: string | null = null;
-    try {
-      // The stored record IS a full Stock; StoredStock is just the slice this file types.
-      setupGrade = computeSetup(st as unknown as Stock).grade ?? null;
-    } catch {
-      setupGrade = null;
-    }
-    const flags = checkTacticalPlan(t.tacticalPlan, {
-      price: typeof st.price === "number" ? st.price : st.healthData?.currentPrice ?? null,
-      setupGrade,
-      earningsDate: context[tk]?.earningsDate ?? null,
-    }).filter((f) => f.severity !== "info");
-    tacticalWatch.push({ ticker: tk, flags, reviewBy: t.tacticalPlan.reviewBy });
-  }
-  tacticalWatch.sort((a, b) => a.ticker.localeCompare(b.ticker));
-
   // ── Thesis verdicts: the cached review (pm:thesis-review:{TICKER}) of every
-  //    underwritten Thesis-sleeve holding. Read-only; zero model spend. ──
+  //    HELD, underwritten name — stocks and any fund with a written thesis.
+  //    (Was Thesis-tagged names only; this is a superset.) Read-only. ──
   const thesisVerdicts: ThesisVerdictRow[] = [];
   const verdictTickers = killWatch
     .map((k) => k.ticker)
     .filter((tk) => {
       const st = stockByTicker.get(tk);
-      return st?.bucket === "Portfolio" && sleevesOf(st).thesis;
+      return st?.bucket === "Portfolio";
     });
   const reviewRaws = await Promise.all(
     verdictTickers.map((tk) => redis.get(`pm:thesis-review:${tk}`).catch(() => null)),
@@ -285,5 +255,5 @@ export async function loadAlertInputs(): Promise<AlertInputs> {
     thesisVerdicts.push({ ticker: tk, verdict, pillars: r.pillars ?? [], summary: r.summary ?? "", generatedAt: r.generatedAt ?? "" });
   });
 
-  return { thesis, transition, risk, context, watchlist, killWatch, tacticalWatch, thesisVerdicts };
+  return { thesis, transition, risk, context, watchlist, killWatch, thesisVerdicts };
 }

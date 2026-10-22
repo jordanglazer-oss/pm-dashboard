@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { yahooClassShare } from "@/app/lib/yahoo-symbol";
 
 /** Convert local ticker format to Yahoo Finance symbol */
 function toYahoo(ticker: string): string {
@@ -59,7 +60,7 @@ const EMPTY_RESULT: PriceResult = { price: null, previousClose: null, name: null
 async function fetchYahooChart(yahooSymbol: string): Promise<PriceResult> {
   try {
     const res = await fetch(
-      `https://query2.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(yahooSymbol)}?range=1d&interval=1d`,
+      `https://query2.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(yahooClassShare(yahooSymbol))}?range=1d&interval=1d`,
       {
         headers: {
           "User-Agent":

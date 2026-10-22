@@ -21,7 +21,7 @@ export type PimProfileWeights = {
   alternatives: number;
 };
 
-export type PimProfileType = "conservative" | "balanced" | "growth" | "allEquity" | "alpha" | "core";
+export type PimProfileType = "conservative" | "balanced" | "growth" | "allEquity" | "alpha" | "core" | "thematic";
 export type AppendixProfileType = PimProfileType;
 
 // ── Appendix: Immutable Daily Value Ledger ──
@@ -74,6 +74,22 @@ export type PimModelData = {
   /** Server-stamped on every write of pm:pim-models. A PUT carrying a stale
    *  revision is refused (409) so an old tab cannot overwrite a newer model. */
   revision?: number;
+  /** Three-bucket equity model (Core / Thematic / Alpha), set by a Stage
+   *  changes apply and adjustable the same way. Shares of the PIM equity
+   *  class. While present, ongoing trades re-split the Alpha bucket: every
+   *  unpinned stock = (alpha − pinned stocks) / count of PIM's unpinned stocks,
+   *  in every model; Thematic funds hold; Core absorbs the rest
+   *  (app/lib/sleeve-targets.ts). Absent → the old fixed 1.82% per-stock rule. */
+  sleeveTargets?: SleeveTargets;
+};
+
+export type EquityBucket = "core" | "thematic" | "alpha";
+export type SleeveTargets = {
+  core: number;
+  thematic: number;
+  alpha: number;
+  /** ISO time the targets took effect (the apply). */
+  since: string;
 };
 
 // ── Performance Tracking ──

@@ -20,7 +20,6 @@ import type { ThesisReview, ReviewChange } from "@/app/lib/thesis-review";
 import { AppIcon } from "@/app/components/AppIcon";
 import { usePersistedOpen } from "@/app/lib/useCollapsed";
 import { useStocks } from "@/app/lib/StockContext";
-import { sleevesOf } from "@/app/lib/sleeves";
 
 /**
  * Thesis tile (stock page) — the pre-registration surface of the
@@ -118,11 +117,12 @@ export default function ThesisTile({
   earningsDate?: string | null;
   className?: string;
 }) {
-  // Thesis-sleeve names are sold on a broken thesis, not on trend: the 200-day
-  // breaker still shows, but reads "informational" and never counts as a trip.
+  // Held names are sold on a broken thesis, not on trend: the 200-day breaker
+  // still shows, but reads "informational" and never counts as a trip (same
+  // rule as the fleet sweep in alert-inputs).
   const { getStock } = useStocks();
   const held = getStock(ticker);
-  const ma200Informational = held?.bucket === "Portfolio" && sleevesOf(held).thesis;
+  const ma200Informational = held?.bucket === "Portfolio";
   const [entry, setEntry] = useState<ThesisEntry | null>(null);
   const [loaded, setLoaded] = useState(false);
   const [editing, setEditing] = useState(false);

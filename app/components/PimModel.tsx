@@ -4,6 +4,8 @@ import React, { useState, useMemo, useRef, useEffect, useCallback } from "react"
 import { ZERO_SCORES as ALL_ZERO_SCORES } from "@/app/lib/types";
 import Link from "next/link";
 import { useSearchParams, useRouter, usePathname } from "next/navigation";
+import type { EquityBucket } from "@/app/lib/pim-types";
+import { bucketOf } from "@/app/lib/sleeve-targets";
 import type { PimHolding, PimModelGroup, PimProfileType, PimComputedHolding, PimAssetClass, PimPerformanceData } from "@/app/lib/pim-types";
 import type { Stock, InstrumentType, ScoreKey } from "@/app/lib/types";
 import { displayTicker } from "@/app/lib/ticker";
@@ -46,6 +48,7 @@ type Props = {
   /** Opens the Models page's Scenarios subwindow. The launcher lives in this
    *  component's toolbar so the page's first row is one toolbar, not two. */
   onOpenScenarios?: () => void;
+  onOpenStaging?: () => void;
 };
 
 /** Locked specialty symbols — weights set by the per-group Balanced % input,
@@ -54,11 +57,15 @@ const WEIGHT_MATH_LOCKED = new Set(["FID5982", "FID5982-T", "GRNJ"]);
 const REF_PER_STOCK = 0.018182;
 
 /** How a holding's weight is derived — the "weight math" column. */
-function weightMathLabel(h: { symbol: string; assetClass: string; weightInClass: number; pinned?: { month: string } }): { text: string; cls: string; locked?: boolean } {
+function weightMathLabel(h: { symbol: string; assetClass: string; weightInClass: number; pinned?: { month: string } }, bucket?: EquityBucket): { text: string; cls: string; locked?: boolean } {
   if (h.assetClass !== "equity") {
     return { text: h.assetClass === "fixedIncome" ? "FI sleeve" : "Alt sleeve", cls: "text-ink-3" };
   }
   if (h.pinned) return { text: `Pinned · ${h.pinned.month}`, cls: "text-accent", locked: true };
+  // Three-bucket model (sleeve targets set): the bucket says how it is sized.
+  if (bucket === "alpha") return { text: "Alpha · equal split", cls: "text-ink-2" };
+  if (bucket === "thematic") return { text: "Thematic · set weight", cls: "text-warn", locked: true };
+  if (bucket === "core") return { text: "Core · residual", cls: "text-accent-ink" };
   if (WEIGHT_MATH_LOCKED.has(h.symbol)) return { text: "Balanced %", cls: "text-warn", locked: true };
   if (Math.abs(h.weightInClass - REF_PER_STOCK) < 0.0005) return { text: "Stock · 1.82%", cls: "text-ink-2" };
   return { text: "ETF · residual", cls: "text-accent-ink" };
@@ -71,6 +78,7 @@ const PROFILE_LABELS: Record<PimProfileType, string> = {
   allEquity: "All-Equity",
   alpha: "Alpha",
   core: "Core",
+  thematic: "Thematic",
 };
 
 const ASSET_CLASS_LABELS: Record<PimAssetClass, string> = {
@@ -97,8 +105,8 @@ const BTN_SECONDARY = "inline-flex h-7 items-center gap-1.5 rounded-control bord
 const BTN_ICON = "grid h-7 w-7 place-items-center rounded-control border border-line bg-surface text-ink-2 hover:bg-surface-hover disabled:opacity-50";
 const INPUT = "h-7 rounded-control border border-line bg-surface px-2.5 text-[12.5px] text-ink outline-none placeholder:text-ink-3 focus:border-accent-border";
 
-export function PimModel({ groups, onOpenScenarios }: Props) {
-  const { getGroupState, uiPrefs, setUiPref, addStock, stocks, pimPortfolioState } = useStocks();
+export function PimModel({ groups, onOpenScenarios, onOpenStaging }: Props) {
+  const { getGroupState, uiPrefs, setUiPref, addStock, stocks, pimPortfolioState, pimModels } = useStocks();
   // "Weight math" column — hidden by default, toggled per user via pm:ui-prefs.
   const showWeightMath = uiPrefs["models.showWeightMath"] === "1";
   const [selectedGroupId, setSelectedGroupId] = useState(groups[0]?.id || "");
@@ -339,6 +347,13 @@ export function PimModel({ groups, onOpenScenarios }: Props) {
     }
     return set;
   }, [stocks]);
+  // Thematic funds (three-bucket model) — their own standalone view, and
+  // excluded from the Alpha view, mirroring the daily series.
+  const thematicSymbols = useMemo(() => {
+    const set = new Set<string>();
+    for (const s of stocks) if (s.designation === "thematic") set.add(s.ticker);
+    return set;
+  }, [stocks]);
 
   const availableProfiles = useMemo<PimProfileType[]>(() => {
     if (!selectedGroup) return [];
@@ -353,10 +368,11 @@ export function PimModel({ groups, onOpenScenarios }: Props) {
       if (hasEquity) {
         base.push("alpha");
         base.push("core");
+        if (thematicSymbols.size > 0) base.push("thematic");
       }
     }
     return base;
-  }, [selectedGroup]);
+  }, [selectedGroup, thematicSymbols]);
 
   const activeProfile = availableProfiles.includes(selectedProfile)
     ? selectedProfile
@@ -409,7 +425,7 @@ export function PimModel({ groups, onOpenScenarios }: Props) {
   // from designation:"alpha" / designation:"core" stocks respectively.
   const ALPHA_WEIGHTS = { cash: 0, fixedIncome: 0, equity: 1, alternatives: 0 };
   const CORE_WEIGHTS = { cash: 0, fixedIncome: 0, equity: 1, alternatives: 0 };
-  const profileWeights = activeProfile === "alpha"
+  const profileWeights = activeProfile === "alpha" || activeProfile === "thematic"
     ? ALPHA_WEIGHTS
     : activeProfile === "core"
     ? CORE_WEIGHTS
@@ -424,13 +440,22 @@ export function PimModel({ groups, onOpenScenarios }: Props) {
     // Alpha: equity-only, exclude core ETFs, re-normalize proportionally
     if (activeProfile === "alpha") {
       const alphaHoldings = selectedGroup.holdings.filter(
-        (h) => h.assetClass === "equity" && !coreSymbols.has(symbolToTicker(h.symbol))
+        (h) => h.assetClass === "equity" && !coreSymbols.has(symbolToTicker(h.symbol)) && !thematicSymbols.has(symbolToTicker(h.symbol))
       );
       const totalWeight = alphaHoldings.reduce((s, h) => s + h.weightInClass, 0);
       const normalized = totalWeight > 0
         ? alphaHoldings.map((h) => ({ ...h, weightInClass: h.weightInClass / totalWeight }))
         : alphaHoldings;
       return { ...selectedGroup, holdings: normalized };
+    }
+
+    // Thematic: equity-only, ONLY thematic-designated funds, renormalized.
+    if (activeProfile === "thematic") {
+      const th = selectedGroup.holdings.filter(
+        (h) => h.assetClass === "equity" && thematicSymbols.has(symbolToTicker(h.symbol))
+      );
+      const totalWeight = th.reduce((s, h) => s + h.weightInClass, 0);
+      return { ...selectedGroup, holdings: totalWeight > 0 ? th.map((h) => ({ ...h, weightInClass: h.weightInClass / totalWeight })) : th };
     }
 
     // Core: equity-only, ONLY core-designated ETFs/funds, weighted
@@ -478,7 +503,7 @@ export function PimModel({ groups, onOpenScenarios }: Props) {
     }
 
     return selectedGroup;
-  }, [selectedGroup, activeProfile, coreSymbols, pimGroup]);
+  }, [selectedGroup, activeProfile, coreSymbols, thematicSymbols, pimGroup]);
 
   // Fetch live prices for all holdings
   const fetchPrices = useCallback(async () => {
@@ -586,7 +611,7 @@ export function PimModel({ groups, onOpenScenarios }: Props) {
     // and have no Core ETF to absorb a residual). Alpha/Core virtual
     // profiles also keep actual-share (their views drop the Core sleeve).
     // DISPLAY-ONLY — none of this feeds weightInClass or rebalance math.
-    const isVirtualProfile = activeProfile === "alpha" || activeProfile === "core";
+    const isVirtualProfile = activeProfile === "alpha" || activeProfile === "core" || activeProfile === "thematic";
     const isCoreHolding = (h: PimHolding) => coreSymbols.has(symbolToTicker(h.symbol));
     // Per-currency equity construction, decided by whether the sleeve has
     // Core ETFs to absorb a residual:
@@ -695,7 +720,7 @@ export function PimModel({ groups, onOpenScenarios }: Props) {
     // Both Alpha and Core are firm-wide standalone models — same single
     // pair of return numbers powers Dynamic Wt across every group.
     // Skip on Alpha / Core profiles themselves (no sleeves to drift).
-    const skipDrift = activeProfile === "alpha" || activeProfile === "core";
+    const skipDrift = activeProfile === "alpha" || activeProfile === "core" || activeProfile === "thematic";
     const alphaReturn = skipDrift
       ? null
       : returnSinceRebalance("pim", "alpha", firmRebalanceDate, alphaLiveToday);
@@ -967,6 +992,7 @@ export function PimModel({ groups, onOpenScenarios }: Props) {
   const dynamicWeightDiagnostic = useMemo<string | null>(() => {
     if (activeProfile === "alpha") return "alpha profile shows no drift";
     if (activeProfile === "core") return "core profile shows no drift";
+    if (activeProfile === "thematic") return "thematic profile shows no drift";
     if (perfBackfilling) return null;
     if (!perfData) return "perf data not loaded yet";
     const pimRebal = getGroupState("pim").lastRebalance?.date;
@@ -1163,6 +1189,16 @@ export function PimModel({ groups, onOpenScenarios }: Props) {
             title="Opens a subwindow — previews changes, never writes the live model"
           >
             Model Scenarios…
+          </button>
+        )}
+
+        {onOpenStaging && (
+          <button
+            onClick={onOpenStaging}
+            className={BTN_SECONDARY}
+            title="Upload a target-model screenshot and review the changes to every model before applying them"
+          >
+            Stage changes…
           </button>
         )}
 
@@ -1494,7 +1530,7 @@ export function PimModel({ groups, onOpenScenarios }: Props) {
                       {showWeightMath && (
                         <td>
                           {(() => {
-                            const wm = weightMathLabel(h);
+                            const wm = weightMathLabel(h, pimModels.sleeveTargets ? bucketOf(h.symbol, stocks) : undefined);
                             return (
                               <span className={`inline-flex items-center gap-1 ${wm.cls}`}>
                                 {wm.locked && <AppIcon name="lock" size={11} />}

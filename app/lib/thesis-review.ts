@@ -11,7 +11,6 @@ import { parseModelJson } from "./json-repair";
 import { canonicalTicker } from "./ticker";
 import type { SynthesisScreenCache, SynthesisEntry } from "./synthesis-screen-display";
 import { thesisVerdictOf, VERDICT_LOG_KEY, VERDICT_LOG_MAX_PER_TICKER, type VerdictLog } from "./thesis-verdict";
-import { sleevesOf } from "./sleeves";
 import { SONNET_MODEL, THINKING_OFF } from "@/app/lib/claude-model";
 
 /**
@@ -338,16 +337,16 @@ export async function runThesisReviews(opts: { deadlineAt?: number } = {}): Prom
   const reviewed: string[] = [];
   let skipped = 0;
   let errors = 0;
-  // Thesis-sleeve names go first: the nightly cap is small, and they are the
-  // holdings whose only exit trigger IS this read.
-  const thesisSleeve = new Set<string>();
+  // HELD names go first: the nightly cap is small, and a held name's exit
+  // trigger IS this read. (Was Thesis-tagged names first, before the tags retired.)
+  const heldFirst = new Set<string>();
   try {
     const parsed = stocksRaw ? JSON.parse(stocksRaw) : [];
     for (const s of Array.isArray(parsed) ? parsed : []) {
-      if (s?.bucket === "Portfolio" && typeof s.ticker === "string" && sleevesOf(s).thesis) thesisSleeve.add(s.ticker.toUpperCase());
+      if (s?.bucket === "Portfolio" && typeof s.ticker === "string") heldFirst.add(s.ticker.toUpperCase());
     }
   } catch { /* ordering only — fall back to store order */ }
-  const ordered = Object.keys(theses).sort((a, b) => Number(thesisSleeve.has(b.toUpperCase())) - Number(thesisSleeve.has(a.toUpperCase())));
+  const ordered = Object.keys(theses).sort((a, b) => Number(heldFirst.has(b.toUpperCase())) - Number(heldFirst.has(a.toUpperCase())));
   for (const rawTk of ordered) {
     const tk = rawTk.toUpperCase();
     const t = theses[rawTk];

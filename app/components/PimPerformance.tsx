@@ -16,6 +16,7 @@ const PROFILE_LABELS: Record<PimProfileType, string> = {
   allEquity: "All-Equity",
   alpha: "Alpha",
   core: "Core",
+  thematic: "Thematic",
 };
 
 // Per-profile inception overrides for the "tracking since" label. Balanced /
@@ -90,7 +91,7 @@ export function PimPerformance({ groupId, groupName, selectedProfile, onPerfData
   // profile where SLR isn't surfaced, fall back to "All" so we don't
   // render an empty chart from a hidden filter.
   useEffect(() => {
-    if (period === "SLR" && selectedProfile !== "alpha" && selectedProfile !== "core") {
+    if (period === "SLR" && selectedProfile !== "alpha" && selectedProfile !== "core" && selectedProfile !== "thematic") {
       setPeriod("All");
     }
   }, [period, selectedProfile]);
@@ -551,7 +552,9 @@ export function PimPerformance({ groupId, groupName, selectedProfile, onPerfData
 
   // Prefer the per-profile launch date (Alpha / Conservative); otherwise use
   // the group's trackingStart (Jan 2, 2018 for the legacy profiles).
+  // Thematic started on the three-bucket apply date — read it off the series.
   const trackingStartDate =
+    (selectedProfile === "thematic" ? effectiveHistory[0]?.date : undefined) ??
     PROFILE_INCEPTION_OVERRIDE[selectedProfile] ??
     (trackingStart as { date: string } | undefined)?.date;
   const trackingStartLabel = trackingStartDate
@@ -622,7 +625,7 @@ export function PimPerformance({ groupId, groupName, selectedProfile, onPerfData
               the Sleeve drift panel anchors to. */}
           <div className="seg max-w-full overflow-x-auto">
             {PERIOD_OPTIONS.filter((p) =>
-              p.label !== "SLR" || selectedProfile === "alpha" || selectedProfile === "core"
+              p.label !== "SLR" || selectedProfile === "alpha" || selectedProfile === "core" || selectedProfile === "thematic"
             ).map((p) => (
               <button
                 key={p.label}

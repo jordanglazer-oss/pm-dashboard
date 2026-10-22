@@ -1,7 +1,6 @@
 "use client";
 
 import { THESIS_VERDICT_LABEL } from "@/app/lib/thesis-verdict";
-import { TacticalPlansSection } from "@/app/components/TacticalPlansSection";
 import React, { useEffect, useMemo, useState } from "react";
 import { useStocks } from "@/app/lib/StockContext";
 import Link from "next/link";
@@ -43,9 +42,8 @@ type CoverageRow = { ticker: string; name?: string; sector?: string; hasProse: b
 type Payload = {
   holdings: Row[];
   coverage?: { portfolioCount: number; underwritten: number; missing: CoverageRow[] };
-  /** Thesis-sleeve holdings: roll-up of the latest pillar review (additive). */
+  /** Held, underwritten names: roll-up of the latest pillar review (additive). */
   verdicts?: Record<string, { verdict: "intact" | "challenged" | "broken"; generatedAt: string }>;
-  sleeves?: Record<string, { thesis: boolean; tactical: boolean } | null>;
 };
 
 /** Status = dot + word (no pill): colour carries the meaning, the word names it. */
@@ -54,7 +52,7 @@ const STATUS_STYLE: Record<KillStatus, { dot: string; label: string }> = {
   tripped: { dot: "bg-neg", label: "Tripped" },
   unknown: { dot: "bg-ink-faint", label: "No data" },
   manual: { dot: "bg-ink-faint", label: "Manual" },
-  // 200-day breaker on a Thesis-sleeve name: shown, never counted as a trip.
+  // 200-day breaker on a held name: shown, never counted as a trip.
   info: { dot: "bg-ink-faint", label: "Informational" },
 };
 
@@ -660,14 +658,10 @@ export default function ThesisDeskPage() {
                     </span>
                   )}
                   {(() => {
-                    // Sleeve + the thesis-level verdict (Thesis names only).
-                    const sl = data?.sleeves?.[r.ticker];
+                    // The thesis-level verdict (every held, underwritten name).
                     const v = data?.verdicts?.[r.ticker];
                     return (
                       <>
-                        {sl && (sl.thesis || sl.tactical) && (
-                          <span className="text-[11.5px] text-ink-3">{sl.thesis && sl.tactical ? "Thesis + Tactical" : sl.thesis ? "Thesis" : "Tactical"}</span>
-                        )}
                         {v && (
                           <span
                             className={`inline-flex items-center gap-1.5 text-[12px] ${v.verdict === "broken" ? "text-neg" : v.verdict === "challenged" ? "text-warn" : "text-ink-2"}`}
@@ -775,9 +769,6 @@ export default function ThesisDeskPage() {
           })}
         </div>
       )}
-
-      {/* Tactical half of the desk — every held Tactical name against its plan. */}
-      {!loading && <TacticalPlansSection />}
 
       {/* Coverage gap — the actionable part: what you own but haven't underwritten */}
       {!loading && cov && cov.missing.length > 0 && (

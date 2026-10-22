@@ -14,6 +14,7 @@ import { defaultMarketData } from "./defaults";
 // resilient to a missing Redis key without making the seed the source of
 // truth for the rebalance math.
 import { pimModelSeed as pimModelSeedFallback } from "./pim-seed";
+import { enforceSleeveTargets } from "./sleeve-targets";
 import type { AnalystSnapshots, TickerSnapshot, AnalystReports, TickerReports, AnalystEntry, ExtractedReport } from "./analyst-snapshots";
 import { setSnapshotForTicker, getSnapshotForTicker, setReportsForTicker, getReportsForTicker, reportIdFor, computeAnalystConsensus, buildConsensusExplanation } from "./analyst-snapshots";
 import { mapBoostedAiToAiRating, mapSmaxToRelativeStrength, type BoostedAiConsensus } from "./external-scoring";
@@ -125,7 +126,9 @@ type StockContextType = {
   portfolioStocks: ScoredStock[];
   watchlistStocks: ScoredStock[];
   pimModels: PimModelData;
-  updatePimModels: (data: PimModelData) => void;
+  /** `extraStocks`: records not yet in `stocks` state (a name bought moments
+   *  ago) so the three-bucket rule classifies them correctly. */
+  updatePimModels: (data: PimModelData, extraStocks?: Stock[]) => void;
   rebalanceStockWeights: (holdings: PimHolding[], extraStock?: Stock, groupId?: string) => PimHolding[];
   reloadPimModels: () => Promise<void>;
   toggleModelEligibility: (ticker: string, groupId: string, eligible: boolean) => void;
@@ -329,6 +332,18 @@ export function StockProvider({ children }: { children: React.ReactNode }) {
   const [chartAnalyses, setChartAnalysesState] = useState<Record<string, ChartAnalysisEntry>>({});
   const [scannerData, setScannerDataState] = useState<ScannerData | null>(null);
   const [pimModels, setPimModelsState] = useState<PimModelData>({ groups: pimModelSeedFallback });
+  // Three-bucket model (app/lib/sleeve-targets.ts). Refs so the setState
+  // updaters below read the latest values. `withSleeves` is an identity until
+  // a Stage changes apply writes `sleeveTargets`; after that every client
+  // write of the models re-splits the Alpha bucket and lets Core absorb.
+  const stocksRef = useRef<Stock[]>([]);
+  useEffect(() => { stocksRef.current = stocks; }, [stocks]);
+  const sleeveTargetsRef = useRef<PimModelData["sleeveTargets"]>(undefined);
+  useEffect(() => { sleeveTargetsRef.current = pimModels.sleeveTargets; }, [pimModels.sleeveTargets]);
+  const withSleeves = useCallback((data: PimModelData, extra?: Stock[]): PimModelData => {
+    if (!data.sleeveTargets) return data;
+    return enforceSleeveTargets(data, extra && extra.length ? [...extra, ...stocksRef.current] : stocksRef.current);
+  }, []);
   // Authoritative model baseline (per-group profile %s, cad/usd splits, intended
   // holdings + weightInClass). Hydrated from pm:pim-model-baseline on mount;
   // the seed import is only the synchronous initial value for the first render.
@@ -816,9 +831,13 @@ export function StockProvider({ children }: { children: React.ReactNode }) {
     const etfTotal = Math.max(0, 1.0 - stockTotal - lockedTotal);
     const seedEtfTotal = [...seedEtfWeights.values()].reduce((s, v) => s + v, 0);
 
+    // Three-bucket model: Core keeps its OWN current mix. The seed ratios
+    // describe the pre-restructure Core (no QQC.F / QQQX.U), and mixing seed
+    // ratios with current ones would not sum to etfTotal.
+    const useSeedRatios = !sleeveTargetsRef.current;
     const rebalancedEtfs = etfHoldings.map((h) => {
       // Use seed ratio if available, otherwise preserve current ratio
-      const seedWeight = seedEtfWeights.get(h.symbol);
+      const seedWeight = useSeedRatios ? seedEtfWeights.get(h.symbol) : undefined;
       const ratio = seedWeight != null && seedEtfTotal > 0
         ? seedWeight / seedEtfTotal
         : (etfHoldings.length > 0 ? h.weightInClass / (etfHoldings.reduce((s, e) => s + e.weightInClass, 0) || 1) : 0);
@@ -898,11 +917,11 @@ export function StockProvider({ children }: { children: React.ReactNode }) {
         }
       });
 
-      const updated = { ...prev, groups: updatedGroups, lastUpdated: new Date().toISOString() };
+      const updated = withSleeves({ ...prev, groups: updatedGroups, lastUpdated: new Date().toISOString() }, [stock]);
       persistPim(updated);
       return updated;
     });
-  }, [persistPim, detectAssetClass, isStock, tickerMatch, tickerCurrency, rebalanceStockWeights, getBalancedAlloc]);
+  }, [persistPim, detectAssetClass, isStock, tickerMatch, tickerCurrency, rebalanceStockWeights, getBalancedAlloc, withSleeves]);
 
   /* ─── Auto-remove from PIM models when stock is removed ─── */
   const removeFromPimModels = useCallback((ticker: string) => {
@@ -916,11 +935,11 @@ export function StockProvider({ children }: { children: React.ReactNode }) {
         return { ...group, holdings: rebalanceStockWeights(remainingHoldings, undefined, group.id) };
       });
 
-      const updated = { ...prev, groups: updatedGroups, lastUpdated: new Date().toISOString() };
+      const updated = withSleeves({ ...prev, groups: updatedGroups, lastUpdated: new Date().toISOString() });
       persistPim(updated);
       return updated;
     });
-  }, [persistPim, tickerMatch, rebalanceStockWeights]);
+  }, [persistPim, tickerMatch, rebalanceStockWeights, withSleeves]);
 
   /* ─── Stock mutations (optimistic + persist) ─── */
   /**
@@ -1449,12 +1468,12 @@ export function StockProvider({ children }: { children: React.ReactNode }) {
           return { ...group, holdings: rebalanceStockWeights(updatedHoldings, undefined, group.id) };
         });
 
-        const updated = { ...prev, groups: updatedGroups, lastUpdated: new Date().toISOString() };
+        const updated = withSleeves({ ...prev, groups: updatedGroups, lastUpdated: new Date().toISOString() });
         persistPim(updated);
         return updated;
       });
     }, 0);
-  }, [persistStocks, stocks, isStock, detectAssetClass, tickerMatch, getBalancedAlloc, rebalanceStockWeights, persistPim]);
+  }, [persistStocks, stocks, isStock, detectAssetClass, tickerMatch, getBalancedAlloc, rebalanceStockWeights, persistPim, withSleeves]);
 
   /* ─── Per-model weight for ETFs/MFs ─── */
   const updateModelWeight = useCallback((ticker: string, groupId: string, weight: number) => {
@@ -1495,12 +1514,12 @@ export function StockProvider({ children }: { children: React.ReactNode }) {
           return { ...group, holdings: rebalanceStockWeights(updatedHoldings, undefined, groupId) };
         });
 
-        const updated = { ...prev, groups: updatedGroups, lastUpdated: new Date().toISOString() };
+        const updated = withSleeves({ ...prev, groups: updatedGroups, lastUpdated: new Date().toISOString() });
         persistPim(updated);
         return updated;
       });
     }, 0);
-  }, [persistStocks, stocks, isStock, detectAssetClass, tickerMatch, getBalancedAlloc, rebalanceStockWeights, persistPim]);
+  }, [persistStocks, stocks, isStock, detectAssetClass, tickerMatch, getBalancedAlloc, rebalanceStockWeights, persistPim, withSleeves]);
 
   const updateFundData = useCallback((ticker: string, fundData: FundData) => {
     setStocks((prev) => {
@@ -1567,10 +1586,11 @@ export function StockProvider({ children }: { children: React.ReactNode }) {
   }, [persistScanner]);
 
   /* ─── PIM Models ─── */
-  const updatePimModels = useCallback((data: PimModelData) => {
-    setPimModelsState(data);
-    persistPim(data);
-  }, [persistPim]);
+  const updatePimModels = useCallback((data: PimModelData, extraStocks?: Stock[]) => {
+    const next = withSleeves(data, extraStocks);
+    setPimModelsState(next);
+    persistPim(next);
+  }, [persistPim, withSleeves]);
 
   /* ─── PIM Portfolio State ─── */
   const updatePimPortfolioState = useCallback((data: PimPortfolioState) => {
@@ -1944,7 +1964,7 @@ export function StockProvider({ children }: { children: React.ReactNode }) {
             return { ...group, holdings: rebalanceStockWeights(newHoldings, undefined, group.id) };
           }
         });
-        const data = { ...prev, groups: updatedGroups, lastUpdated: new Date().toISOString() };
+        const data = withSleeves({ ...prev, groups: updatedGroups, lastUpdated: new Date().toISOString() }, [stock]);
         persistPim(data);
         return data;
       });
@@ -1960,12 +1980,12 @@ export function StockProvider({ children }: { children: React.ReactNode }) {
           // Rebalance individual stocks to redistribute freed weight
           return { ...group, holdings: rebalanceStockWeights(remaining, undefined, group.id) };
         });
-        const data = { ...prev, groups: updatedGroups, lastUpdated: new Date().toISOString() };
+        const data = withSleeves({ ...prev, groups: updatedGroups, lastUpdated: new Date().toISOString() });
         persistPim(data);
         return data;
       });
     }
-  }, [stocks, persistStocks, persistPim, detectAssetClass, isStock, tickerMatch, tickerCurrency, rebalanceStockWeights, getBalancedAlloc]);
+  }, [stocks, persistStocks, persistPim, detectAssetClass, isStock, tickerMatch, tickerCurrency, rebalanceStockWeights, getBalancedAlloc, withSleeves]);
 
   const getStock = useCallback(
     (ticker: string) => scoredStocks.find((s) => tickerMatch(s.ticker, ticker)),

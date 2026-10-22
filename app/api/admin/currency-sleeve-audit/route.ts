@@ -40,7 +40,7 @@ type PimModelData = { groups?: Group[] };
 
 type Stock = {
   ticker: string; bucket?: string;
-  designation?: "core" | "alpha"; instrumentType?: string;
+  designation?: "core" | "alpha" | "thematic"; instrumentType?: string;
 };
 
 const LEGACY_LOCKED = new Set(["FID5982", "FID5982-T", "GRNJ"]);

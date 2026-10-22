@@ -57,7 +57,7 @@ type Positions = { portfolios?: Portfolio[] };
 
 type Stock = {
   ticker: string; name?: string; bucket?: string;
-  designation?: "core" | "alpha"; instrumentType?: string;
+  designation?: "core" | "alpha" | "thematic"; instrumentType?: string;
   modelEligibility?: Record<string, boolean>; [k: string]: unknown;
 };
 

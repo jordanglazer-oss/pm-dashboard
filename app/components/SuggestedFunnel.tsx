@@ -143,7 +143,7 @@ export function SuggestedFunnel({ onCountChange }: { onCountChange?: (n: number)
   const [showPassed, setShowPassed] = useState(false);
   const [ccy, setCcy] = useState<"All" | "CAD" | "USD">("All");
   const [synthesis, setSynthesis] = useState<Map<string, SynthesisMeta>>(new Map());
-  // Thesis / Tactical lane per name, read-only from the cached entry scan.
+  // Ready / Wait / Watch lane per name, read-only from the cached entry scan.
   const [lanes, setLanes] = useState<Map<string, LaneRead>>(new Map());
   useEffect(() => {
     let alive = true;
@@ -355,7 +355,7 @@ export function SuggestedFunnel({ onCountChange }: { onCountChange?: (n: number)
                 <th className="n" title="Conviction composite, scored on demand — nothing is scored automatically">Score</th>
                 <th title="Analyst reports (RBC / JPM / Morningstar) and FactSet alert emails on file — the evidence a synthesis and a thesis are built from">Reports &amp; FactSet</th>
                 <th title="Latest synthesis: Bull / Neutral / Bear, when it was generated, and whether a newer report has made it stale">Synthesis</th>
-                <th title="Thesis or Tactical readiness — hover for the checklist">Lane</th>
+                <th title="Ready / Wait / Watch — hover for the case and tape checklist">Lane</th>
                 <th className="!text-right">Action</th>
               </tr>
             </thead>

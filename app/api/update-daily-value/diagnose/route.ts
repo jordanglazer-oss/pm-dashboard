@@ -1,4 +1,5 @@
 import { NextResponse, NextRequest } from "next/server";
+import { yahooClassShare } from "@/app/lib/yahoo-symbol";
 import { getRedis } from "@/app/lib/redis";
 import { getTodayET, isMarketOpenOrAfterET } from "@/app/lib/market-hours";
 import type {
@@ -37,7 +38,7 @@ async function fetchAdjustedCloses(symbol: string, range: string = "5d"): Promis
   if (/^[A-Z]{2,4}\d{2,5}$/i.test(symbol)) return { history: [], chartPreviousClose: null };
 
   try {
-    const url = `https://query2.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(yahooSymbol)}?range=${range}&interval=1d`;
+    const url = `https://query2.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(yahooClassShare(yahooSymbol))}?range=${range}&interval=1d`;
     const res = await fetch(url, { cache: "no-store", headers: { "User-Agent": UA } });
     if (!res.ok) return { history: [], chartPreviousClose: null };
     const data = await res.json();

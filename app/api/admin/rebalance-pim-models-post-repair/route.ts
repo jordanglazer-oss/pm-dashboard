@@ -93,7 +93,7 @@ const tickerEq = (a: string | undefined, b: string): boolean => {
 type StockLike = {
   ticker?: string;
   instrumentType?: string;
-  designation?: "core" | "alpha";
+  designation?: "core" | "alpha" | "thematic";
   bucket?: string;
 };
 
@@ -209,7 +209,7 @@ export async function POST(req: NextRequest) {
     // to Alpha (locked) — matches the UI default in PortfolioOverview where
     // `(s.designation || "alpha") === "core"` controls the Role badge, and
     // types.ts documents the field as "default alpha".
-    type DesigInfo = { hasEntry: true; designation: "core" | "alpha" | undefined };
+    type DesigInfo = { hasEntry: true; designation: "core" | "alpha" | "thematic" | undefined };
     const designationByNormTicker = new Map<string, DesigInfo>();
     for (const s of stocks) {
       if (!s.ticker) continue;

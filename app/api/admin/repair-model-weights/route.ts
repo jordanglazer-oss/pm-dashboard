@@ -43,7 +43,7 @@ type Group = {
   profiles?: Record<string, { equity?: number } | undefined>; [k: string]: unknown;
 };
 type PimModelData = { groups?: Group[]; [k: string]: unknown };
-type Stock = { ticker: string; bucket?: string; designation?: "core" | "alpha"; instrumentType?: string };
+type Stock = { ticker: string; bucket?: string; designation?: "core" | "alpha" | "thematic"; instrumentType?: string };
 
 const norm = (s: string) => (s || "").toUpperCase().replace(/-T$/, ".TO");
 const r4 = (n: number) => parseFloat((n * 100).toFixed(4));

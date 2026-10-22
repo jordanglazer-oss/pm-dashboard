@@ -98,12 +98,13 @@ async function computeFor(
 
   const isAlpha = profile === "alpha";
   const isCore = profile === "core";
+  const isThematic = profile === "thematic";
   // Alpha + Core are both equity-only standalone models. Alpha
   // EXCLUDES core ETFs (everything-except-core); Core ONLY contains
   // core ETFs (inverse filter).
   const ALPHA_WEIGHTS = { cash: 0, fixedIncome: 0, equity: 1, alternatives: 0 };
   const CORE_WEIGHTS = { cash: 0, fixedIncome: 0, equity: 1, alternatives: 0 };
-  const profileWeights = isAlpha
+  const profileWeights = isAlpha || isThematic
     ? ALPHA_WEIGHTS
     : isCore
     ? CORE_WEIGHTS
@@ -115,6 +116,9 @@ async function computeFor(
   for (const s of stocks) {
     if (s.designation === "core") coreSymbols.add(s.ticker);
   }
+  // Thematic funds: their own sleeve, out of Alpha (mirrors update-daily-value).
+  const thematicSymbols = new Set<string>();
+  for (const s of stocks) if (s.designation === "thematic") thematicSymbols.add(s.ticker);
 
   entry.inFlight = true;
   try {
@@ -141,12 +145,13 @@ async function computeFor(
     //   core  → equity, ONLY core symbols
     //   other → filter by >0% asset-class allocation
     let activeHoldings;
-    if (isAlpha || isCore) {
+    if (isAlpha || isCore || isThematic) {
       activeHoldings = group.holdings.filter((h) => {
         if (h.assetClass !== "equity") return false;
         const tk = h.symbol.endsWith("-T") ? h.symbol.replace(/-T$/, ".TO") : h.symbol;
         const isCoreSym = coreSymbols.has(tk);
-        return isAlpha ? !isCoreSym : isCoreSym;
+        if (isThematic) return thematicSymbols.has(tk);
+        return isAlpha ? !isCoreSym && !thematicSymbols.has(tk) : isCoreSym;
       });
     } else {
       activeHoldings = group.holdings.filter((h) => {

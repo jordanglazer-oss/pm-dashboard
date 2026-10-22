@@ -264,7 +264,7 @@ export async function POST(req: NextRequest) {
       if (c?.why) watchingWhy = `${c.why}${c.addedAt ? ` (captured ${c.addedAt.slice(0, 10)})` : ""}`;
     } catch { /* none */ }
 
-    // Thesis-sleeve FUND: the case is a mandate, not a company. Give the model
+    // FUND with a thesis: the case is a mandate, not a company. Give the model
     // what the fund actually holds and tell it to write conditions it can
     // verify — relative performance, the exposure the fund exists for — and
     // never "metric" (no earnings recap) or company-specific customs.
