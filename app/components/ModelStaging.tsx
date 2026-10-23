@@ -982,12 +982,17 @@ function BucketInputs({ alpha0, thematic0, onResize }: { alpha0: number; themati
 
 /* ── Apply + record the rebalance the desk traded on the previous day ── */
 
-const prevWeekdayET = () => {
+/** The last 5 trading days (weekdays) before today ET, newest first — the
+ *  dates the route accepts (MAX_BACKDATE_SESSIONS). */
+const recentTradeDatesET = () => {
   const today = new Intl.DateTimeFormat("en-CA", { timeZone: "America/New_York", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
   const d = new Date(`${today}T12:00:00Z`);
-  do d.setUTCDate(d.getUTCDate() - 1);
-  while (d.getUTCDay() === 0 || d.getUTCDay() === 6);
-  return d.toISOString().slice(0, 10);
+  const out: string[] = [];
+  while (out.length < 5) {
+    d.setUTCDate(d.getUTCDate() - 1);
+    if (d.getUTCDay() !== 0 && d.getUTCDay() !== 6) out.push(d.toISOString().slice(0, 10));
+  }
+  return out;
 };
 
 type PlanSymbol = { symbol: string; name: string; isMF: boolean; traded: boolean; sizingClose: { price: number; date: string } | null; asOfClose: number | null; netUnits: number; needsPrice: boolean };
@@ -1004,7 +1009,9 @@ function StagedRebalancePanel({
   onBeforeRun: () => Promise<boolean>;
   onDone: (j: RebalanceDone) => Promise<void>;
 }) {
-  const asOf = prevWeekdayET();
+  const dates = recentTradeDatesET();
+  // No default on purpose: the PM picks the day the desk actually traded.
+  const [asOf, setAsOf] = useState("");
   const [plan, setPlan] = useState<PlanResponse | null>(null);
   const [busy, setBusy] = useState<"" | "plan" | "commit">("");
   const [err, setErr] = useState("");
@@ -1017,7 +1024,8 @@ function StagedRebalancePanel({
     setErr("");
     try {
       if (!(await onBeforeRun())) { setErr("Could not save the draft first — nothing built."); return; }
-      const r = await fetch("/api/model-staging/rebalance", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ mode: "plan", draftId: draft.id, asOf }) });
+      const mfOverrides = Object.fromEntries(Object.entries(px).filter(([sym, v]) => plan?.symbols.find((x) => x.symbol === sym)?.isMF && parseFloat(v) > 0).map(([sym, v]) => [sym, parseFloat(v)]));
+      const r = await fetch("/api/model-staging/rebalance", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ mode: "plan", draftId: draft.id, asOf, execPrices: mfOverrides }) });
       const j = await r.json();
       if (!r.ok) { setErr(j.error ?? "Could not build the trade list."); return; }
       setPlan(j);
@@ -1033,7 +1041,9 @@ function StagedRebalancePanel({
     setErr("");
     try {
       if (!(await onBeforeRun())) { setErr("Could not save the draft first — nothing written."); return; }
-      const execPrices = Object.fromEntries(need.map((s) => [s.symbol, parseFloat(px[s.symbol])]));
+      const execPrices: Record<string, number> = Object.fromEntries(need.map((s) => [s.symbol, parseFloat(px[s.symbol])]));
+      // Optional NAV overrides for mutual funds (blank = the fetched NAV).
+      for (const s of plan.symbols) if (s.isMF && parseFloat(px[s.symbol] ?? "") > 0) execPrices[s.symbol] = parseFloat(px[s.symbol]);
       const r = await fetch("/api/model-staging/rebalance", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -1051,15 +1061,27 @@ function StagedRebalancePanel({
   return (
     <section className="panel px-3.5 py-3 text-[12.5px]">
       <div className="flex flex-wrap items-center gap-2.5">
-        <span className="font-semibold text-ink">Apply + record the rebalance traded on {asOf}</span>
-        <span className="text-ink-3">Writes the models AND every PIM positions book as of {asOf}&apos;s close.</span>
+        <span className="font-semibold text-ink">Apply + record a rebalance the desk already traded</span>
+        <label className="flex items-center gap-1.5 text-ink-2">
+          Trade date
+          <select
+            value={asOf}
+            onChange={(e) => { setAsOf(e.target.value); setPlan(null); setConfirm(""); }}
+            className={INPUT}
+            aria-label="Trade date"
+          >
+            <option value="">Pick the day…</option>
+            {dates.map((d) => <option key={d} value={d}>{new Date(`${d}T12:00:00Z`).toLocaleDateString("en-CA", { weekday: "short", month: "short", day: "numeric", timeZone: "UTC" })} ({d})</option>)}
+          </select>
+        </label>
+        {asOf && <span className="text-ink-3">Writes the models AND every PIM positions book as of {asOf}&apos;s close.</span>}
       </div>
       <p className="mt-1 text-[11.5px] text-ink-3">
-        Performance: {asOf}&apos;s return stays on the old holdings (locked first); from the next day it uses the new models and positions. Units are sized off the prior close like the desk; you enter the average fill for stocks / ETFs (cost basis); mutual funds fill at the {asOf} NAV automatically. The Alpha book becomes stocks-only. Names leaving every model move to the Watchlist. Each store is copied aside first, and the models are snapshotted.
+        Performance: the trade day&apos;s return stays on the old holdings (locked first); every day after it is recomputed on the new models and positions (the Appendix follows). It is refused if any trade was recorded after the trade date. Units are sized off the prior close like the desk; you enter the average fill for stocks / ETFs (cost basis); mutual funds fill at that day&apos;s NAV automatically (type a NAV to override). The Alpha book becomes stocks-only. Names leaving every model move to the Watchlist. Each store is copied aside first, and the models are snapshotted.
       </p>
       {err && <div className="mt-2 rounded-control bg-neg-soft px-2.5 py-1.5 text-[12px] text-neg">{err}</div>}
       <div className="mt-2 flex flex-wrap items-center gap-2">
-        <button className={BTN} disabled={!!busy || blocked} onClick={build}>
+        <button className={BTN} disabled={!!busy || blocked || !asOf} onClick={build}>
           <AppIcon name="refresh" size={13} />{busy === "plan" ? "Building trade list…" : plan ? "Rebuild trade list" : "Build trade list"}
         </button>
         {blocked && <span className="text-[11.5px] text-neg">Fix the model errors above first.</span>}
@@ -1092,7 +1114,18 @@ function StagedRebalancePanel({
                     <td className={`text-right tabular-nums ${s.netUnits > 0 ? "text-pos" : s.netUnits < 0 ? "text-neg" : "text-ink-3"}`}>{s.netUnits > 0 ? "+" : ""}{fmt(s.netUnits, 4)}</td>
                     <td className="text-right">
                       {s.isMF ? (
-                        <span className="text-[11.5px] text-ink-3">NAV {fmt(s.asOfClose, 4)} · auto</span>
+                        <span className="inline-flex items-center gap-1.5">
+                          <span className="text-[11.5px] text-ink-3">{s.asOfClose != null ? "NAV auto" : "no NAV found"}</span>
+                          <input
+                            value={px[s.symbol] ?? ""}
+                            onChange={(e) => setPx((p) => ({ ...p, [s.symbol]: e.target.value }))}
+                            placeholder={s.asOfClose != null ? s.asOfClose.toFixed(4) : "NAV"}
+                            inputMode="decimal"
+                            title="Optional — type the NAV to override the fetched one, then Rebuild so the units use it"
+                            className={`${INPUT} h-6 w-[90px] text-right tabular-nums ${s.asOfClose == null && !(parseFloat(px[s.symbol] ?? "") > 0) ? "border-warn-border" : ""}`}
+                            aria-label={`${s.symbol} NAV override`}
+                          />
+                        </span>
                       ) : (
                         <input
                           value={px[s.symbol] ?? ""}
