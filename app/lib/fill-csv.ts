@@ -3,7 +3,8 @@
  * For the staged rebalance's "Average fill price" column. Tolerant of what a
  * desk export looks like: comma / semicolon / tab, quoted cells, "$" and
  * thousands separators, a header row or none. Symbols match across listing
- * forms (CNR-T = CNR.TO = "CNR CN", QQC.F-T = QQC-F.TO, QQQX.U = QQQX-U.TO).
+ * forms (CNR = CNR-T = CNR.TO = "CNR CN", QQC.F-T = QQC-F.TO = QQC'F,
+ * QQQX.U = QQQX-U.TO = QQQX'U).
  * Pure; nothing is written anywhere. */
 
 export type FillCsvResult = {
@@ -13,7 +14,9 @@ export type FillCsvResult = {
 };
 
 export function symbolKey(raw: string): string {
-  let s = raw.toUpperCase().replace(/\s+(CN|CT|US|UN|UW|UQ|EQUITY)\b.*$/, "").trim();
+  // Some desk exports write the class / currency separator as an apostrophe
+  // (QQC'F, XUS'U) — treat it like the dot.
+  let s = raw.toUpperCase().replace(/['’`]/g, ".").replace(/\s+(CN|CT|US|UN|UW|UQ|EQUITY)\b.*$/, "").trim();
   s = s.replace(/\s+/g, "");
   s = s.replace(/(\.TO|-T|\.TSX|:CA)$/, "").replace(/^TSX:/, "");
   return s.replace(/-/g, ".");
