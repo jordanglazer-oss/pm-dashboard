@@ -40,12 +40,20 @@ const num = (v: string) => {
 export function parseFillCsv(text: string, planSymbols: string[]): FillCsvResult {
   const lines = text.replace(/^﻿/, "").split(/\r?\n/).filter((l) => l.trim());
   if (!lines.length) return { prices: {}, unmatched: [], ambiguous: [] };
-  const delim = [",", ";", "\t"].map((d) => [d, lines[0].split(d).length] as const).sort((a, b) => b[1] - a[1])[0][0];
-  const rows = lines.map((l) => splitRow(l, delim));
+  // Delimiter: the one that splits the most lines into 2+ cells.
+  const delim = [",", ";", "\t"]
+    .map((d) => [d, lines.filter((l) => l.split(d).length > 1).length] as const)
+    .sort((a, b) => b[1] - a[1])[0][0];
+  const allRows = lines.map((l) => splitRow(l, delim));
 
-  // Header? → pick the symbol + price columns by name.
+  // Header: the first row (within the first 15 — brokerage exports often open
+  // with a title / account / date preamble) naming a symbol column. Rows above
+  // it are dropped.
+  const isHeader = (r: string[]) => r.some((h) => /symbol|ticker|security|code/i.test(h)) && r.every((c) => isNaN(num(c)) || c === "");
+  const headerAt = allRows.slice(0, 15).findIndex(isHeader);
+  const rows = headerAt > 0 ? allRows.slice(headerAt) : allRows;
   const head = rows[0].map((h) => h.toLowerCase());
-  const hasHeader = head.some((h) => /symbol|ticker|security|code/.test(h)) && rows[0].every((c) => isNaN(num(c)) || c === "");
+  const hasHeader = headerAt >= 0;
   let symCol = 0, pxCol = -1;
   if (hasHeader) {
     symCol = Math.max(0, head.findIndex((h) => /symbol|ticker/.test(h)));
@@ -56,7 +64,7 @@ export function parseFillCsv(text: string, planSymbols: string[]): FillCsvResult
   const body = hasHeader ? rows.slice(1) : rows;
   if (pxCol < 0) {
     // No usable header: the first numeric column after the symbol.
-    const sample = body[0] ?? [];
+    const sample = body.find((r) => r.some((c, j) => j !== symCol && num(c) > 0)) ?? [];
     pxCol = sample.findIndex((c, j) => j !== symCol && num(c) > 0);
   }
 
