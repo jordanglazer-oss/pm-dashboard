@@ -27,6 +27,7 @@ import type { EquityBucket, PimAssetClass, PimHolding, PimModelGroup, PimProfile
 import { BUCKET_LABELS, bucketOf } from "@/app/lib/sleeve-targets";
 import { apportionColumn } from "@/app/lib/display-weights";
 import { usePersistedOpen } from "@/app/lib/useCollapsed";
+import { parseFillCsv } from "@/app/lib/fill-csv";
 import type { BookPlan } from "@/app/lib/staged-rebalance";
 import { ZERO_SCORES, type InstrumentType, type Stock } from "@/app/lib/types";
 
@@ -1017,6 +1018,8 @@ function StagedRebalancePanel({
   const [err, setErr] = useState("");
   const [px, setPx] = useState<Record<string, string>>({});
   const [confirm, setConfirm] = useState("");
+  const [csvNote, setCsvNote] = useState("");
+  const csvInput = useRef<HTMLInputElement>(null);
   const [detailOpen, toggleDetail] = usePersistedOpen("staging.rebalance.detail", false);
 
   const build = async () => {
@@ -1034,6 +1037,24 @@ function StagedRebalancePanel({
     }
   };
   const need = (plan?.symbols ?? []).filter((s) => s.needsPrice);
+  // Fill prices from a CSV (stocks / ETFs only — funds keep the fetched NAV).
+  const importCsv = async (file: File) => {
+    if (!plan) return;
+    const traded = plan.symbols.filter((s) => s.traded);
+    const { prices, unmatched, ambiguous } = parseFillCsv(await file.text(), traded.map((s) => s.symbol));
+    const isMF = new Set(traded.filter((s) => s.isMF).map((s) => s.symbol));
+    const filled = Object.entries(prices).filter(([sym]) => !isMF.has(sym));
+    const mfSkipped = Object.keys(prices).filter((sym) => isMF.has(sym));
+    setPx((p) => ({ ...p, ...Object.fromEntries(filled.map(([sym, v]) => [sym, String(v)])) }));
+    const stillMissing = need.filter((s) => !prices[s.symbol] && !(parseFloat(px[s.symbol] ?? "") > 0)).map((s) => s.symbol);
+    setCsvNote([
+      `${file.name}: filled ${filled.length} price${filled.length === 1 ? "" : "s"}`,
+      stillMissing.length ? `still missing: ${stillMissing.join(", ")}` : "every stock / ETF has a price",
+      unmatched.length ? `not in this rebalance (ignored): ${unmatched.join(", ")}` : "",
+      ambiguous.length ? `ambiguous (type by hand): ${ambiguous.join(", ")}` : "",
+      mfSkipped.length ? `funds skipped, NAV is automatic: ${mfSkipped.join(", ")}` : "",
+    ].filter(Boolean).join(" · "));
+  };
   const missing = need.filter((s) => !(parseFloat(px[s.symbol] ?? "") > 0));
   const commit = async () => {
     if (!plan) return;
@@ -1102,6 +1123,20 @@ function StagedRebalancePanel({
           <div className="text-[11.5px] text-ink-3">
             Sizing close {plan.sizingDate} · USD/CAD {fmt(plan.fx.sizing, 4)} (sizing) / {fmt(plan.fx.asOf, 4)} ({plan.asOf}, cost basis of USD buys) · {plan.books.length} books: {plan.books.map((b) => b.profile).join(", ")}
           </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <button className={BTN} disabled={!!busy} onClick={() => csvInput.current?.click()}>
+              <AppIcon name="upload" size={13} />Import fill prices (CSV)
+            </button>
+            <input
+              ref={csvInput}
+              type="file"
+              accept=".csv,.txt,text/csv"
+              className="hidden"
+              onChange={(e) => { const f = e.target.files?.[0]; if (f) void importCsv(f); e.target.value = ""; }}
+            />
+            <span className="text-[11.5px] text-ink-3">A symbol column and a price column (header like Symbol / Avg Price, or none). Check the filled prices before committing.</span>
+          </div>
+          {csvNote && <div className="rounded-control bg-surface-2 px-2.5 py-1.5 text-[12px] text-ink-2">{csvNote}</div>}
           <div className="tbl-wrap overflow-x-auto">
             <table className="data-table">
               <thead>
