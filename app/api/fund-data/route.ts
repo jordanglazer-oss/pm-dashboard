@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { yahooClassShare } from "@/app/lib/yahoo-symbol";
 import * as cheerio from "cheerio";
 import type { FundData, FundHolding, FundSectorWeight, FundPerformance, FundRiskStats } from "@/app/lib/types";
 import { getRedis } from "@/app/lib/redis";
@@ -1343,9 +1344,10 @@ export async function GET(request: NextRequest) {
 
   try {
     // Convert .U tickers to Yahoo format (XUU.U → XUU-U.TO)
+    // Class shares go to Yahoo with a dash (QQC.F.TO → QQC-F.TO).
     const yahooTicker = ticker.endsWith(".U")
       ? ticker.replace(/\.U$/, "-U.TO")
-      : ticker;
+      : yahooClassShare(ticker);
     const isCanadianETF = yahooTicker.endsWith(".TO");
 
     // Fetch Yahoo + performance source in parallel
