@@ -12,8 +12,9 @@ import type { PimModelData, PimModelGroup, PimPerformanceData, PimPortfolioState
 
 /**
  * POST /api/model-staging/rebalance — apply the active Stage-changes draft AND
- * record the rebalance the desk already traded on `asOf` (the previous trading
- * day). Rules: app/lib/staged-rebalance.ts.
+ * record the rebalance the desk already traded on `asOf` (one of the last
+ * MAX_BACKDATE_SESSIONS trading days; refused if trades were recorded after
+ * it). Rules: app/lib/staged-rebalance.ts.
  *
  *   { mode: "plan", draftId, asOf }
  *     → dry run, NO writes: prices (prior close for sizing, asOf close / NAV),
@@ -53,10 +54,24 @@ type Body = {
   groupIds?: string[];
 };
 
+/** How far back a rebalance may be recorded. The cut-over drops every
+ *  performance entry after asOf and the daily job recomputes them on the new
+ *  positions from its price history (Yahoo 15d / Barchart 15 NAVs), and the
+ *  Appendix replaces those days by date — both hold comfortably for 5 sessions. */
+const MAX_BACKDATE_SESSIONS = 5;
+
+/** The trade dates that can be recorded today, newest first. */
+function allowedAsOf(today: string): string[] {
+  const out: string[] = [];
+  let d = today;
+  for (let i = 0; i < MAX_BACKDATE_SESSIONS; i++) { d = prevWeekday(d); out.push(d); }
+  return out;
+}
+
 function validAsOf(asOf: string | undefined): string | null {
   if (!asOf || !/^\d{4}-\d{2}-\d{2}$/.test(asOf)) return "asOf (YYYY-MM-DD) required";
-  const today = getTodayET();
-  if (asOf !== prevWeekday(today)) return `the rebalance date must be the previous trading day (${prevWeekday(today)}) — performance can only be cut over within its 2-day recalc window`;
+  const ok = allowedAsOf(getTodayET());
+  if (!ok.includes(asOf)) return `the rebalance date must be one of the last ${MAX_BACKDATE_SESSIONS} trading days (${ok[ok.length - 1]} – ${ok[0]})`;
   return null;
 }
 
@@ -68,7 +83,7 @@ async function buildPlan(body: Body) {
   if (!pimStaged) return { error: "the draft has no PIM model", status: 400 } as const;
 
   const redis = await getRedis();
-  const [pimRaw, posRaw, stocksRaw] = await Promise.all([redis.get("pm:pim-models"), redis.get("pm:pim-positions"), redis.get("pm:stocks")]);
+  const [pimRaw, posRaw, stocksRaw, stateRaw] = await Promise.all([redis.get("pm:pim-models"), redis.get("pm:pim-positions"), redis.get("pm:stocks"), redis.get("pm:pim-portfolio-state")]);
   const models = pimRaw ? (JSON.parse(pimRaw) as PimModelData) : null;
   const livePim = models?.groups.find((g) => g.id === GROUP);
   if (!models || !livePim) return { error: "no live PIM model", status: 500 } as const;
@@ -90,9 +105,22 @@ async function buildPlan(body: Body) {
   for (const [s, c] of fetched) {
     prices.sizing[s] = closeBefore(c, asOf);
     prices.asOf[s] = closeOn(c, asOf);
+    // A mutual-fund NAV the PM typed in wins over the fetched one — the
+    // units are then sized on it too, so plan and commit agree.
+    const o = Number(body.execPrices?.[s]);
+    if (isFundservSymbol(s) && Number.isFinite(o) && o > 0) prices.asOf[s] = o;
   }
 
   const plans: BookPlan[] = books.map((b) => planBook(b, newPim, bucket, prices));
+  // Trades already recorded AFTER asOf would be silently re-based by a
+  // back-dated rebalance (positions are traded from today's units) — refuse.
+  let laterTrades: string[] = [];
+  try {
+    const st = stateRaw ? (JSON.parse(stateRaw) as PimPortfolioState) : null;
+    laterTrades = (st?.groupStates.find((g) => g.groupId === GROUP)?.transactions ?? [])
+      .filter((t) => (t.date || "").slice(0, 10) > asOf)
+      .map((t) => `${t.date.slice(0, 10)} ${t.direction} ${t.symbol}${t.profile ? ` (${t.profile})` : ""}`);
+  } catch { laterTrades = []; }
   // One row per traded symbol across books — the price the PM enters once.
   const symbols = [...syms].map((s) => {
     const traded = plans.some((p) => p.rows.some((r) => r.symbol === s && r.action !== "HOLD"));
@@ -108,7 +136,7 @@ async function buildPlan(body: Body) {
       needsPrice: traded && !mf,
     };
   });
-  return { draft, models, newPim, books, plans, prices, symbols, positions, redis } as const;
+  return { draft, models, newPim, books, plans, prices, symbols, positions, laterTrades, redis } as const;
 }
 
 export async function POST(req: NextRequest) {
@@ -120,6 +148,7 @@ export async function POST(req: NextRequest) {
     if ("error" in plan) return NextResponse.json({ error: plan.error }, { status: plan.status });
     const problems = plan.plans.flatMap((p) => p.problems.map((x) => `${p.profile}: ${x}`));
     if (!plan.prices.fxSizing || !plan.prices.fxAsOf) problems.push("no USD/CAD close for the sizing day or the trade day");
+    if (plan.laterTrades.length) problems.push(`trades were recorded after ${body.asOf} (${plan.laterTrades.slice(0, 6).join("; ")}${plan.laterTrades.length > 6 ? "; …" : ""}) — a back-dated rebalance would re-base them; pick a later date`);
 
     if (body.mode !== "commit") {
       return NextResponse.json({
@@ -130,6 +159,7 @@ export async function POST(req: NextRequest) {
         books: plan.plans,
         problems,
         revision: plan.models.revision ?? 0,
+        allowedDates: allowedAsOf(getTodayET()),
       });
     }
 
@@ -141,7 +171,14 @@ export async function POST(req: NextRequest) {
     const missing: string[] = [];
     for (const s of plan.symbols) {
       if (!s.traded) continue;
-      if (s.isMF) { if (s.asOfClose) exec[s.symbol] = s.asOfClose; else missing.push(`${s.symbol} (no NAV for ${asOf})`); continue; }
+      if (s.isMF) {
+        // The fetched NAV for asOf, unless the PM typed one in.
+        const o = Number(body.execPrices?.[s.symbol]);
+        if (Number.isFinite(o) && o > 0) exec[s.symbol] = o;
+        else if (s.asOfClose) exec[s.symbol] = s.asOfClose;
+        else missing.push(`${s.symbol} (no NAV for ${asOf} — type it in)`);
+        continue;
+      }
       const p = Number(body.execPrices?.[s.symbol]);
       if (Number.isFinite(p) && p > 0) exec[s.symbol] = p;
       else missing.push(s.symbol);

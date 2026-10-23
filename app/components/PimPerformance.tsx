@@ -554,7 +554,9 @@ export function PimPerformance({ groupId, groupName, selectedProfile, onPerfData
   // the group's trackingStart (Jan 2, 2018 for the legacy profiles).
   // Thematic started on the three-bucket apply date — read it off the series.
   const trackingStartDate =
-    (selectedProfile === "thematic" ? effectiveHistory[0]?.date : undefined) ??
+    // (its inception is the anchored base entry — the rebalance day's close —
+    // not the zero-return point stored the day before it).
+    (selectedProfile === "thematic" ? (effectiveHistory.find((h) => (h as { anchored?: boolean }).anchored)?.date ?? effectiveHistory[0]?.date) : undefined) ??
     PROFILE_INCEPTION_OVERRIDE[selectedProfile] ??
     (trackingStart as { date: string } | undefined)?.date;
   const trackingStartLabel = trackingStartDate
