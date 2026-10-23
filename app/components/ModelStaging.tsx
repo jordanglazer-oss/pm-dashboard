@@ -1049,9 +1049,18 @@ function StagedRebalancePanel({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ mode: "commit", draftId: draft.id, asOf, expectedRevision: revision, execPrices, confirm: confirm.trim(), groupIds }),
       });
-      const j = await r.json();
-      if (!r.ok) { setErr([j.error, ...(j.problems ?? []), ...(j.missing ?? []), j.note].filter(Boolean).join(" · ")); return; }
-      await onDone(j);
+      // A timeout / platform error returns HTML, not JSON — never swallow it.
+      const text = await r.text();
+      let j: { error?: string; problems?: string[]; missing?: string[]; note?: string; trace?: string[] } | null = null;
+      try { j = JSON.parse(text); } catch { /* non-JSON */ }
+      if (!r.ok || !j) {
+        const steps = j?.trace?.length ? ` · completed: ${j.trace.join(" → ")}` : "";
+        setErr(j ? [j.error, ...(j.problems ?? []), ...(j.missing ?? []), j.note].filter(Boolean).join(" · ") + steps : `The server didn't finish (HTTP ${r.status}${text ? `: ${text.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim().slice(0, 160)}` : ""}). Some steps may have run — reload the page, then check Models and Positioning before re-running.`);
+        return;
+      }
+      await onDone(j as RebalanceDone);
+    } catch (e) {
+      setErr(`The request failed before the server answered (${e instanceof Error ? e.message : String(e)}). Reload, then check Models and Positioning before re-running.`);
     } finally {
       setBusy("");
     }
@@ -1176,6 +1185,7 @@ function StagedRebalancePanel({
             >
               {busy === "commit" ? "Applying + recording…" : `Apply models + record rebalance (${asOf})`}
             </button>
+            {busy === "commit" && <span className="text-[11.5px] text-ink-3">This can take up to a minute — keep this window open; the page reloads when it&apos;s done.</span>}
           </div>
         </div>
       )}

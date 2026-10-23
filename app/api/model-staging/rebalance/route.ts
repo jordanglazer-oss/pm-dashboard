@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from "next/server";
+import { after, NextRequest, NextResponse } from "next/server";
 import { getRedis } from "@/app/lib/redis";
 import { createLogger } from "@/app/lib/logger";
 import { getTodayET } from "@/app/lib/market-hours";
@@ -41,6 +41,13 @@ import type { PimModelData, PimModelGroup, PimPerformanceData, PimPortfolioState
  */
 
 const log = createLogger("Staged-rebalance");
+
+// The commit fetches ~40 price histories, may refresh performance and writes
+// five stores — far beyond the platform's default function limit. Without
+// this a commit could be cut off after the performance cut-over but before the
+// models / positions were written (2026-10-23).
+export const maxDuration = 300;
+export const dynamic = "force-dynamic";
 const GROUP = "pim";
 
 type Body = {
@@ -190,18 +197,30 @@ export async function POST(req: NextRequest) {
     const { redis } = plan;
     const stamp = Date.now();
 
-    // 1. Record asOf on the OLD holdings, and require it.
-    try { await updateDailyValue(); } catch (e) { log.warn("pre-commit performance refresh failed:", e); }
-    const perfRaw = await redis.get("pm:pim-performance");
-    if (!perfRaw) return NextResponse.json({ error: "no performance data on file — nothing written" }, { status: 409 });
-    const perf = JSON.parse(perfRaw) as PimPerformanceData;
+    const trace: string[] = [`plan built: ${plan.books.length} books`];
+    // 1. asOf must be recorded on the OLD holdings. Only refresh performance
+    //    when it isn't yet (a back-dated asOf normally is) — the refresh is the
+    //    slowest step.
     const bookProfiles = new Set(plan.books.map((b) => b.profile));
-    const unrecorded = perf.models
-      .filter((m) => m.groupId === GROUP && bookProfiles.has(m.profile))
-      .filter((m) => !m.history.some((h) => h.date === asOf))
-      .map((m) => m.profile);
+    const unrecordedIn = (raw: string | null) => {
+      if (!raw) return null;
+      const p = JSON.parse(raw) as PimPerformanceData;
+      return p.models
+        .filter((m) => m.groupId === GROUP && bookProfiles.has(m.profile))
+        .filter((m) => !m.history.some((h) => h.date === asOf))
+        .map((m) => m.profile);
+    };
+    let perfRaw = await redis.get("pm:pim-performance");
+    if ((unrecordedIn(perfRaw) ?? []).length) {
+      trace.push(`${asOf} not yet recorded — refreshing performance first`);
+      try { await updateDailyValue(); } catch (e) { log.warn("pre-commit performance refresh failed:", e); }
+      perfRaw = await redis.get("pm:pim-performance");
+    }
+    if (!perfRaw) return NextResponse.json({ error: "no performance data on file — nothing written", trace }, { status: 409 });
+    const perf = JSON.parse(perfRaw) as PimPerformanceData;
+    const unrecorded = unrecordedIn(perfRaw) ?? [];
     if (unrecorded.length) {
-      return NextResponse.json({ error: `performance for ${asOf} isn't recorded yet for: ${unrecorded.join(", ")} — open Performance and Refresh, then try again. Nothing written.` }, { status: 409 });
+      return NextResponse.json({ error: `performance for ${asOf} isn't recorded yet for: ${unrecorded.join(", ")} — open Performance and Refresh, then try again. Nothing written.`, trace }, { status: 409 });
     }
 
     // 2. Cut performance over at asOf's close.
@@ -216,6 +235,7 @@ export async function POST(req: NextRequest) {
       if (last && !last.anchored) { last.anchored = true; anchored++; }
     }
     await redis.set("pm:pim-performance", JSON.stringify({ ...perf, lastUpdated: new Date().toISOString() }));
+    trace.push(`performance cut over at ${asOf}: ${anchored} anchored, ${dropped} later entries dropped`);
     // The cut-over history, kept to re-assert in step 5: the Brief / Daily
     // Summary can trigger a performance refresh at any moment, and one that
     // lands mid-commit could rewrite asOf on the new positions or drop the anchor.
@@ -224,7 +244,8 @@ export async function POST(req: NextRequest) {
     // 3. Models.
     const groupIds = Array.isArray(body.groupIds) ? [...new Set([...body.groupIds, GROUP])] : undefined;
     const applied = await applyDraft({ draft: plan.draft, expectedRevision: body.expectedRevision, groupIds, effectiveDate: asOf, note: `before staged rebalance "${plan.draft.name}" as of ${asOf}` });
-    if (!applied.ok) return NextResponse.json({ ...applied.body, note: `performance was cut over at ${asOf} (pre-image pm:pim-performance.pre-staged-rebalance-${stamp}); models and positions untouched` }, { status: applied.status });
+    if (!applied.ok) return NextResponse.json({ ...applied.body, trace, note: `performance was cut over at ${asOf} (pre-image pm:pim-performance.pre-staged-rebalance-${stamp}); models and positions untouched — safe to re-run` }, { status: applied.status });
+    trace.push(`models applied: revision ${applied.after.revision}, snapshot ${applied.versionId}`);
 
     // 4. Positions + state (fresh reads; read-merge-write).
     const [posRaw2, stateRaw] = await Promise.all([redis.get("pm:pim-positions"), redis.get("pm:pim-portfolio-state")]);
@@ -290,6 +311,7 @@ export async function POST(req: NextRequest) {
       portfolios: positions.portfolios.map((p) => (p.groupId === GROUP && nextBooks.has(p.profile) ? nextBooks.get(p.profile)! : p)),
     };
     await redis.set("pm:pim-positions", JSON.stringify(nextPositions));
+    trace.push(`positions written: ${nextBooks.size} books`);
 
     const state = (stateRaw ? JSON.parse(stateRaw) : { groupStates: [], lastUpdated: "" }) as PimPortfolioState;
     const gs = state.groupStates.find((g) => g.groupId === GROUP) ?? { groupId: GROUP, lastRebalance: null, trackingStart: null, transactions: [] };
@@ -307,6 +329,7 @@ export async function POST(req: NextRequest) {
       lastUpdated: new Date().toISOString(),
     };
     await redis.set("pm:pim-portfolio-state", JSON.stringify(nextState));
+    trace.push(`state written: ${transactions.length} transactions, last rebalance ${at}`);
 
     // 5. Re-assert the cut-over (history up to asOf exactly as anchored in step 2,
     //    nothing after it — whatever a concurrent refresh did), then compute
@@ -330,7 +353,12 @@ export async function POST(req: NextRequest) {
     } catch (e) {
       log.warn("cut-over re-assert failed:", e);
     }
-    try { await updateDailyValue(); } catch (e) { log.warn("post-commit performance refresh failed:", e); }
+    // Recompute the days after asOf on the new holdings AFTER responding, so
+    // the PM gets the result without waiting on ~40 price histories; the next
+    // performance refresh (Brief, Performance tab, nightly cron) does the same.
+    after(async () => {
+      try { await updateDailyValue(); } catch (e) { log.warn("post-commit performance refresh failed:", e); }
+    });
 
     log.info(`staged rebalance as of ${asOf}: ${transactions.length} trades across ${nextBooks.size} books, models v${applied.after.revision}, perf anchored ${anchored} / dropped ${dropped}`);
     return NextResponse.json({
@@ -344,6 +372,7 @@ export async function POST(req: NextRequest) {
       trades: transactions.length,
       books: [...nextBooks.keys()],
       performance: { anchored, dropped },
+      trace,
       stashes: [`pm:pim-performance.pre-staged-rebalance-${stamp}`, `pm:pim-positions.pre-staged-rebalance-${stamp}`, `pm:pim-portfolio-state.pre-staged-rebalance-${stamp}`],
     });
   } catch (e) {
