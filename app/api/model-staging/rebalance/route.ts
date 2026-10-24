@@ -27,7 +27,8 @@ import type { PimModelData, PimModelGroup, PimPerformanceData, PimPortfolioState
  *     2. stash pm:pim-performance, then ANCHOR each series' last entry on or
  *        before `asOf` and drop entries after it (they were computed on the
  *        old holdings) — the cutover is `asOf`'s close;
- *     3. applyDraft (revision guard, validation, model snapshot, bucket
+ *     3. applyDraft (revision guard against the revision read at the start
+ *        of THIS request — the plan is rebuilt here, validation, model snapshot, bucket
  *        targets, Thematic series based at `asOf`);
  *     4. stash pm:pim-positions + pm:pim-portfolio-state, then write every PIM
  *        book's units / cost basis (read-merge-write; other groups and fields
@@ -191,8 +192,16 @@ export async function POST(req: NextRequest) {
       else missing.push(s.symbol);
     }
     if (missing.length) return NextResponse.json({ error: "average prices missing — nothing written", missing }, { status: 400 });
-    if (plan.models.revision !== body.expectedRevision) {
-      return NextResponse.json({ error: "the live models changed since you reviewed this — rebuild the trade list", revision: plan.models.revision ?? 0 }, { status: 409 });
+    // The trade list is REBUILT here from the live models + positions, so a
+    // model save between "Build trade list" and this click can't make the
+    // commit write stale data — it is logged, not refused (refusing made the
+    // commit unreachable whenever the page saved the models in between). The
+    // guard that matters — nothing writes the models DURING this request — is
+    // applyDraft's check against the revision read just now. A trade recorded
+    // after asOf is still refused by the later-trades check above.
+    const liveRevision = plan.models.revision ?? 0;
+    if (liveRevision !== body.expectedRevision) {
+      log.info(`models moved from revision ${body.expectedRevision} (trade list built) to ${liveRevision} before commit — re-planned on the live models`);
     }
     const { redis } = plan;
     const stamp = Date.now();
@@ -243,7 +252,7 @@ export async function POST(req: NextRequest) {
 
     // 3. Models.
     const groupIds = Array.isArray(body.groupIds) ? [...new Set([...body.groupIds, GROUP])] : undefined;
-    const applied = await applyDraft({ draft: plan.draft, expectedRevision: body.expectedRevision, groupIds, effectiveDate: asOf, note: `before staged rebalance "${plan.draft.name}" as of ${asOf}` });
+    const applied = await applyDraft({ draft: plan.draft, expectedRevision: liveRevision, groupIds, effectiveDate: asOf, note: `before staged rebalance "${plan.draft.name}" as of ${asOf}` });
     if (!applied.ok) return NextResponse.json({ ...applied.body, trace, note: `performance was cut over at ${asOf} (pre-image pm:pim-performance.pre-staged-rebalance-${stamp}); models and positions untouched — safe to re-run` }, { status: applied.status });
     trace.push(`models applied: revision ${applied.after.revision}, snapshot ${applied.versionId}`);
 
