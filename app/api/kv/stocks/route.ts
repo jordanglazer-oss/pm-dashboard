@@ -1,7 +1,14 @@
 import { getRedis } from "@/app/lib/redis";
 import { NextRequest, NextResponse } from "next/server";
+import { createHash } from "node:crypto";
 
 const KEY = "pm:stocks";
+
+/** Fingerprint of the stored blob. The stale-tab guard: a PUT must name the
+ *  fingerprint of the copy it was built on (`baseHash`). Any writer — another
+ *  tab, an email ingest, a rescore, a restore — changes the stored blob and so
+ *  the fingerprint, with no writer having to remember to bump anything. */
+const fingerprint = (raw: string | null) => (raw ? createHash("sha1").update(raw).digest("hex") : "empty");
 
 export async function GET() {
   try {
@@ -9,9 +16,9 @@ export async function GET() {
     const raw = await redis.get(KEY);
     if (!raw) {
       // No data yet — return empty array, never seed
-      return NextResponse.json({ stocks: [] });
+      return NextResponse.json({ stocks: [], hash: fingerprint(null) });
     }
-    return NextResponse.json({ stocks: JSON.parse(raw) });
+    return NextResponse.json({ stocks: JSON.parse(raw), hash: fingerprint(raw) });
   } catch (e) {
     console.error("Redis read error (stocks):", e);
     // On error, return empty — never seed data that could overwrite real data
@@ -36,6 +43,21 @@ export async function PUT(req: NextRequest) {
       );
     }
     const redis = await getRedis();
+
+    // ── Stale-tab guard ──
+    // Refuse a save built on an older copy than the one stored, and hand the
+    // current copy back: the client re-applies only its own edits onto it
+    // (app/lib/stocks-merge.ts) and retries. A body without a baseHash comes
+    // from a tab still running pre-guard code — refused too, so an old tab can
+    // no longer overwrite newer data (it stops saving until it is reloaded).
+    const currentRaw = await redis.get(KEY);
+    const currentHash = fingerprint(currentRaw);
+    if (body?.baseHash !== currentHash) {
+      return NextResponse.json(
+        { error: "stale", stocks: currentRaw ? JSON.parse(currentRaw) : [], hash: currentHash },
+        { status: 409 },
+      );
+    }
 
     // ── Write tracer (diagnostic for the AVGO/ORCL bucket drift) ──
     // Persist a rolling tail of the last 10 writes to pm:stocks so we can
@@ -68,8 +90,9 @@ export async function PUT(req: NextRequest) {
       console.error("[pm:stocks PUT] write-trace failed (non-blocking):", traceErr);
     }
 
-    await redis.set(KEY, JSON.stringify(stocks));
-    return NextResponse.json({ ok: true });
+    const nextRaw = JSON.stringify(stocks);
+    await redis.set(KEY, nextRaw);
+    return NextResponse.json({ ok: true, hash: fingerprint(nextRaw) });
   } catch (e) {
     console.error("Redis write error (stocks):", e);
     return NextResponse.json({ error: "Failed to save" }, { status: 500 });
