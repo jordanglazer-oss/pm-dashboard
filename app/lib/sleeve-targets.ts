@@ -40,6 +40,41 @@ export function bucketOf(symbol: string, stocks: BucketStock[]): EquityBucket {
   return LEGACY_LOCKED.has(symbol.toUpperCase()) ? "thematic" : "core";
 }
 
+/** A holding's bucket: what the model records on it first, else bucketOf. */
+export function holdingBucket(h: { symbol: string; bucket?: EquityBucket }, stocks: BucketStock[]): EquityBucket {
+  return h.bucket ?? bucketOf(h.symbol, stocks);
+}
+
+type ModelsLike = { groups: { id: string; holdings: { symbol: string; bucket?: EquityBucket; assetClass?: string }[] }[] } | null | undefined;
+
+/** The bucket the MODELS record for `symbol` (PIM first, then any group),
+ *  undefined when no holding carries one. Symbol forms are matched loosely
+ *  (CNR-T = CNR.TO, FID5982 = FID5982-T). */
+export function modelBucketLookup(models: ModelsLike): (symbol: string) => EquityBucket | undefined {
+  const entries: { symbol: string; bucket: EquityBucket }[] = [];
+  const groups = [...(models?.groups ?? [])].sort((a, b) => Number(b.id === "pim") - Number(a.id === "pim"));
+  for (const g of groups) for (const h of g.holdings) if (h.bucket) entries.push({ symbol: h.symbol, bucket: h.bucket });
+  const cache = new Map<string, EquityBucket | undefined>();
+  return (symbol: string) => {
+    if (cache.has(symbol)) return cache.get(symbol);
+    const b = entries.find((e) => sameSymbol(e.symbol, symbol))?.bucket;
+    cache.set(symbol, b);
+    return b;
+  };
+}
+
+/** Core / Thematic tests for the series + Positioning splits: the model's
+ *  recorded bucket first, else the pm:stocks designation (the pre-existing
+ *  rule — a holding with neither is treated as neither, i.e. Alpha). */
+export function bucketTests(stocks: BucketStock[], models: ModelsLike) {
+  const modelB = modelBucketLookup(models);
+  const desig = (symbol: string) => stocks.find((s) => sameSymbol(s.ticker, symbol))?.designation;
+  return {
+    isCore: (symbol: string) => { const b = modelB(symbol); return b ? b === "core" : desig(symbol) === "core"; },
+    isThematic: (symbol: string) => { const b = modelB(symbol); return b ? b === "thematic" : desig(symbol) === "thematic"; },
+  };
+}
+
 export const BUCKET_LABELS: Record<EquityBucket, string> = { core: "Core", thematic: "Thematic", alpha: "Alpha" };
 
 /** Bucket totals of one group's equity class. */
@@ -55,7 +90,7 @@ const isPinned = (h: PimHolding) => h.pinned != null && Number.isFinite(h.pinned
  *  no unpinned stock to size. */
 export function perStockFromPim(pim: PimModelGroup | undefined, targets: SleeveTargets, stocks: BucketStock[]): number | null {
   if (!pim) return null;
-  const eqStocks = pim.holdings.filter((h) => h.assetClass === "equity" && bucketOf(h.symbol, stocks) === "alpha");
+  const eqStocks = pim.holdings.filter((h) => h.assetClass === "equity" && holdingBucket(h, stocks) === "alpha");
   const pinned = eqStocks.filter(isPinned).reduce((a, h) => a + h.pinned!.weightInClass, 0);
   const free = eqStocks.filter((h) => !isPinned(h)).length;
   if (free === 0) return null;
@@ -67,7 +102,7 @@ export function perStockFromPim(pim: PimModelGroup | undefined, targets: SleeveT
 export function enforceGroup(group: PimModelGroup, perStock: number, stocks: BucketStock[]): PimHolding[] {
   const eq = group.holdings.filter((h) => h.assetClass === "equity");
   if (eq.length === 0) return group.holdings;
-  const b = (h: PimHolding) => bucketOf(h.symbol, stocks);
+  const b = (h: PimHolding) => holdingBucket(h, stocks);
   const sized = new Map<PimHolding, number>();
   let nonCore = 0;
   for (const h of eq) {

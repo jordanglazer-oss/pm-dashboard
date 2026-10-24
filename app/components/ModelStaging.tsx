@@ -24,7 +24,7 @@ import {
   type StagedModel,
 } from "@/app/lib/model-staging";
 import type { EquityBucket, PimAssetClass, PimHolding, PimModelGroup, PimProfileType } from "@/app/lib/pim-types";
-import { BUCKET_LABELS, bucketOf } from "@/app/lib/sleeve-targets";
+import { BUCKET_LABELS, bucketOf, holdingBucket } from "@/app/lib/sleeve-targets";
 import { apportionColumn } from "@/app/lib/display-weights";
 import { usePersistedOpen } from "@/app/lib/useCollapsed";
 import { parseFillCsv } from "@/app/lib/fill-csv";
@@ -184,7 +184,7 @@ export function ModelStaging() {
     if (!pim) return;
     const now = new Date().toISOString();
     const parsed: ParsedRow[] = pim.holdings.filter((h) => h.assetClass === "equity").map((h) => {
-      const b = bucketOf(h.symbol, stocks);
+      const b = holdingBucket(h, stocks);
       return { name: h.name, symbol: h.symbol, currency: h.currency, assetClass: "equity", kind: b === "alpha" ? "stock" : "etf", classPct: h.weightInClass * 100, portfolioPct: null, bucket: b };
     });
     const models: Record<string, StagedModel> = {};

@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useMemo, useEffect, useCallback } from "react";
+import { modelBucketLookup } from "@/app/lib/sleeve-targets";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useStocks } from "@/app/lib/StockContext";
@@ -127,7 +128,7 @@ const yahooSymbol = (s: string) =>
   s.endsWith("-T") ? s.replace("-T", ".TO") : s.endsWith(".U") ? s.replace(".U", "-U.TO") : s;
 
 export function ModelScenarios({ groups, alwaysOpen = false }: Props) {
-  const { stocks } = useStocks();
+  const { stocks, pimModels } = useStocks();
   const searchParams = useSearchParams();
 
   // Follow the shared header selectors (?model=&version=) the same way
@@ -299,11 +300,14 @@ export function ModelScenarios({ groups, alwaysOpen = false }: Props) {
   // (designation lives on pm:stocks; default-undefined means alpha).
   const isCore = useCallback(
     (symbol: string) => {
+      // The bucket recorded on the model holding wins over the stock tag.
+      const mb = modelBucketLookup(pimModels)(symbol);
+      if (mb) return mb === "core";
       const t = symbol.replace(/\.TO$/, "-T").toUpperCase();
       const s = stocks.find((x) => x.ticker.replace(/\.TO$/, "-T").toUpperCase() === t);
       return s?.designation === "core";
     },
-    [stocks],
+    [stocks, pimModels],
   );
 
   // ── Draft scenario ───────────────────────────────────────────────────────

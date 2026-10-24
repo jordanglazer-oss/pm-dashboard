@@ -12,6 +12,10 @@ export type PimHolding = {
    *  it keeps weightInClass instead of being re-pinned to the per-stock
    *  constant — until the pin is released. Funds never need one. */
   pinned?: { weightInClass: number; month: string; at: string };
+  /** Equity bucket recorded ON the model (Stage changes apply / the re-tag
+   *  tool). Read before the pm:stocks designation everywhere, so a holding's
+   *  bucket can't drift with the stock list (a stale tab, a missing record). */
+  bucket?: EquityBucket;
 };
 
 export type PimProfileWeights = {

@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { yahooClassShare } from "@/app/lib/yahoo-symbol";
+import { bucketTests } from "@/app/lib/sleeve-targets";
 import { getRedis } from "@/app/lib/redis";
 import { getTodayET, isMarketOpenOrAfterET } from "@/app/lib/market-hours";
 import { fetchLivePriceSnapshot, type LivePriceSnapshot } from "@/app/lib/live-prices";
@@ -230,30 +231,14 @@ export async function POST() {
       ? JSON.parse(positionsRaw)
       : { portfolios: [] };
 
-    // Build core symbols set for alpha filtering
+    // Series split (Oct 2026): Core = Core ETFs; Alpha = everything outside
+    // Core (stocks + Thematic funds); Thematic = the Thematic funds alone.
+    // The bucket recorded ON the model holding wins over the pm:stocks tag, so
+    // a holding with no stock record still lands in the right series.
+    // Append-only — past entries are never recomputed by a split change.
     type StockEntry = { ticker: string; designation?: "core" | "alpha" | "thematic" };
     const stocksList: StockEntry[] = stocksRaw ? JSON.parse(stocksRaw) : [];
-    const coreSymbols = new Set<string>();
-    // Three-bucket model (Oct 2026): Thematic funds are their own sleeve, so
-    // they leave the Alpha series (stocks + untagged funds) from the day they
-    // are tagged. Append-only, so past Alpha history is never recomputed.
-    const thematicSymbols = new Set<string>();
-    // -T / .TO tolerant, and FUNDSERV codes compared bare (the book may hold
-    // "FID5982" while the model holds "FID5982-T").
-    const thematicKey = (t: string) => {
-      const u = (t || "").toUpperCase().replace(/-T$/, ".TO");
-      return /^[A-Z]{2,4}\d{2,5}\.TO$/.test(u) ? u.slice(0, -3) : u;
-    };
-    for (const s of stocksList) {
-      if (s.designation === "core") coreSymbols.add(s.ticker);
-      else if (s.designation === "thematic") thematicSymbols.add(thematicKey(s.ticker));
-    }
-
-    // Helper to convert PIM symbol to ticker for designation lookup
-    function pimSymbolToTicker(symbol: string): string {
-      if (symbol.endsWith("-T")) return symbol.replace(/-T$/, ".TO");
-      return symbol;
-    }
+    const buckets = bucketTests(stocksList, pimData);
 
     const today = getTodayET();
     // Pre-market data is unreliable: Yahoo's regularMarketPrice still reports
@@ -379,10 +364,13 @@ export async function POST() {
         ? (() => {
             const filtered = group.holdings.filter((h) => {
               if (h.assetClass !== "equity") return false;
-              const isCoreSym = coreSymbols.has(pimSymbolToTicker(h.symbol));
-              const isThematicSym = thematicSymbols.has(thematicKey(h.symbol));
+              const isCoreSym = buckets.isCore(h.symbol);
+              const isThematicSym = buckets.isThematic(h.symbol);
               if (isThematic) return isThematicSym;
-              return isAlpha ? !isCoreSym && !isThematicSym : isCoreSym;
+              // Alpha = everything outside Core: the stocks AND the Thematic
+              // funds (Oct 2026, PM's call). The Thematic series still tracks
+              // the funds on their own.
+              return isAlpha ? !isCoreSym : isCoreSym;
             });
             const total = filtered.reduce((s, h) => s + h.weightInClass, 0);
             return total > 0 ? filtered.map((h) => ({ ...h, weightInClass: h.weightInClass / total })) : filtered;

@@ -83,7 +83,13 @@ export async function applyDraft(opts: {
     const m = draft.models[g.id];
     if (!m || (wanted && !wanted.has(g.id))) return g;
     exits[g.id] = g.holdings.filter((h) => !m.holdings.some((s) => sameSymbol(s.symbol, h.symbol))).map((h) => h.symbol);
-    return { ...g, holdings: withPins(m.holdings, stocks, month, at, draft.parsed) };
+    const pinned = withPins(m.holdings, stocks, month, at, draft.parsed);
+    // Record each equity holding's bucket ON the model (three-bucket drafts),
+    // so readers never depend on the pm:stocks tag for it.
+    const holdings = draftHasBuckets(draft.parsed)
+      ? pinned.map((h) => (h.assetClass === "equity" ? { ...h, bucket: stagedBucket(h.symbol, stocks, draft.parsed) } : h))
+      : pinned;
+    return { ...g, holdings };
   });
   // Three-bucket drafts: the source model's bucket shares become the targets.
   let sleeveTargets: PimModelData["sleeveTargets"] = models.sleeveTargets;

@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { modelBucketLookup } from "@/app/lib/sleeve-targets";
 import { yahooClassShare } from "@/app/lib/yahoo-symbol";
 import { getRedis } from "@/app/lib/redis";
 import type {
@@ -265,16 +266,21 @@ export async function POST() {
 
     // Build a set of alpha-designated symbols (for alpha-only performance)
     const stocks: Stock[] = stocksRaw ? JSON.parse(stocksRaw) : [];
-    const alphaSymbols = new Set<string>();
-    const coreSymbols = new Set<string>();
+    const alphaSet = new Set<string>();
+    const coreSet = new Set<string>();
     for (const s of stocks) {
       // Default designation is "alpha" if not set; only exclude explicit "core"
       if (s.designation !== "core") {
-        alphaSymbols.add(s.ticker);
+        alphaSet.add(s.ticker);
       } else {
-        coreSymbols.add(s.ticker);
+        coreSet.add(s.ticker);
       }
     }
+    // The bucket recorded ON the model holding wins (Core vs everything
+    // else = Alpha); the pm:stocks designation is the fallback.
+    const modelBucket = modelBucketLookup(pimData);
+    const alphaSymbols = { has: (t: string) => { const b = modelBucket(t); return b ? b !== "core" : alphaSet.has(t); } };
+    const coreSymbols = { has: (t: string) => { const b = modelBucket(t); return b ? b === "core" : coreSet.has(t); } };
     // Legacy fallback set, mirrors LEGACY_LOCKED_EQUITY_SYMBOLS in
     // app/lib/StockContext.tsx — duplicated (not imported) to keep the route
     // free of client-only deps. The PRIMARY lock mechanism is now the

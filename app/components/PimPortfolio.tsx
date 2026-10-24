@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useMemo, useCallback, useRef } from "react";
+import { bucketTests } from "@/app/lib/sleeve-targets";
 import { ZERO_SCORES as ALL_ZERO_SCORES } from "@/app/lib/types";
 import { useSearchParams } from "next/navigation";
 import Link from "next/link";
@@ -728,22 +729,16 @@ export function PimPortfolio({ groups }: Props) {
     [groups, selectedGroupId]
   );
 
-  // Build set of core-designated symbols (alpha model excludes these)
+  // Core test (the Alpha model excludes Core): the bucket recorded on the
+  // model holding first, else the pm:stocks designation. Set-like so every
+  // existing `coreSymbols.has(ticker)` call keeps working.
   const coreSymbols = useMemo(() => {
-    const set = new Set<string>();
-    for (const s of stocks) {
-      if (s.designation === "core") set.add(s.ticker);
-    }
-    return set;
-  }, [stocks]);
-  // Thematic funds (three-bucket model): their own bucket, so the Alpha book
-  // is stocks only — same rule as the Alpha performance series.
-  const thematicSymbols = useMemo(() => {
-    const set = new Set<string>();
-    for (const s of stocks) if (s.designation === "thematic") set.add(s.ticker);
-    return set;
-  }, [stocks]);
-  const notAlpha = useCallback((symbol: string) => coreSymbols.has(symbolToTicker(symbol)) || thematicSymbols.has(symbolToTicker(symbol)), [coreSymbols, thematicSymbols]);
+    const t = bucketTests(stocks, pimModels);
+    return { has: (ticker: string) => t.isCore(ticker) };
+  }, [stocks, pimModels]);
+  // Alpha = everything outside Core: the stocks AND the Thematic funds (Oct
+  // 2026, PM's call) — same rule as the Alpha performance series.
+  const notAlpha = useCallback((symbol: string) => coreSymbols.has(symbolToTicker(symbol)), [coreSymbols]);
 
   const availableProfiles = useMemo<PimProfileType[]>(() => {
     if (!selectedGroup) return [];
@@ -832,8 +827,12 @@ export function PimPortfolio({ groups }: Props) {
       return { ...selectedGroup, holdings: normalized };
     }
 
-    // Non-PIM groups: keep individual stock weights from PIM, excess to core ETFs by currency
-    if (selectedGroup.id !== "pim" && pimGroup) {
+    // Non-PIM groups: keep individual stock weights from PIM, excess to core ETFs by currency.
+    // Legacy only: since the three-bucket model (sleeveTargets) every model's
+    // own weights are set by Stage changes (currency splits, substitutes, the
+    // CGF equity cap) and are authoritative — overriding them with PIM's would
+    // show the wrong targets.
+    if (selectedGroup.id !== "pim" && pimGroup && !pimModels.sleeveTargets) {
       const pimWeightMap = new Map<string, number>();
       for (const h of pimGroup.holdings) {
         if (h.assetClass === "equity") pimWeightMap.set(h.symbol, h.weightInClass);
@@ -881,7 +880,7 @@ export function PimPortfolio({ groups }: Props) {
     }
 
     return selectedGroup;
-  }, [selectedGroup, activeProfile, coreSymbols, notAlpha, pimGroup]);
+  }, [selectedGroup, activeProfile, coreSymbols, notAlpha, pimGroup, pimModels.sleeveTargets]);
 
   // Load positions from KV
   useEffect(() => {
