@@ -1068,12 +1068,22 @@ function StagedRebalancePanel({
       const r = await fetch("/api/model-staging/rebalance", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ mode: "commit", draftId: draft.id, asOf, expectedRevision: revision, execPrices, confirm: confirm.trim(), groupIds }),
+        // The revision the trade list was built against (read from Redis by
+        // the plan) — the client copy can lag the server after a save.
+        body: JSON.stringify({ mode: "commit", draftId: draft.id, asOf, expectedRevision: plan.revision ?? revision, execPrices, confirm: confirm.trim(), groupIds }),
       });
       // A timeout / platform error returns HTML, not JSON — never swallow it.
       const text = await r.text();
       let j: { error?: string; problems?: string[]; missing?: string[]; note?: string; trace?: string[] } | null = null;
       try { j = JSON.parse(text); } catch { /* non-JSON */ }
+      if (r.status === 409 && typeof (j as { revision?: unknown } | null)?.revision === "number") {
+        // The models really changed after the trade list was built — make the
+        // PM rebuild it (the typed prices stay).
+        setPlan(null);
+        setConfirm("");
+        setErr("The live models changed after this trade list was built (a trade, a save or another tab). Nothing was written — click Build trade list again, then commit.");
+        return;
+      }
       if (!r.ok || !j) {
         const steps = j?.trace?.length ? ` · completed: ${j.trace.join(" → ")}` : "";
         setErr(j ? [j.error, ...(j.problems ?? []), ...(j.missing ?? []), j.note].filter(Boolean).join(" · ") + steps : `The server didn't finish (HTTP ${r.status}${text ? `: ${text.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim().slice(0, 160)}` : ""}). Some steps may have run — reload the page, then check Models and Positioning before re-running.`);
