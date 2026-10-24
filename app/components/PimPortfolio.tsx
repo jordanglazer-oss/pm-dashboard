@@ -897,6 +897,18 @@ export function PimPortfolio({ groups }: Props) {
     load();
   }, []);
 
+  // Every symbol Positioning prices for this group: the model's holdings plus
+  // anything a book of the group still holds.
+  const priceSymbols = useMemo(() => {
+    const out = new Set((selectedGroup?.holdings ?? []).map((h) => h.symbol));
+    for (const pp of positions) {
+      if (pp.groupId !== selectedGroupId) continue;
+      for (const p of pp.positions) if (p.units > 0) out.add(p.symbol);
+    }
+    return [...out].sort();
+  }, [selectedGroup, positions, selectedGroupId]);
+  const priceSymbolsKey = priceSymbols.join("|");
+
   // Fetch live prices: use StockContext prices first (from Scoring page), then fetch remaining
   const fetchPrices = useCallback(async () => {
     if (!selectedGroup) return;
@@ -918,8 +930,10 @@ export function PimPortfolio({ groups }: Props) {
       }
     }
 
-    // Fetch all holdings from /api/prices (for previousClose data + missing prices)
-    const allSymbols = selectedGroup.holdings.map((h) => h.symbol);
+    // Fetch every model holding AND every symbol a book of this group still
+    // holds (a position the model no longer carries still needs a price, or
+    // its value reads as "—" / −100%).
+    const allSymbols = priceSymbols;
     const prevCloseMapped: Record<string, number> = {};
     try {
       const tickers = allSymbols.map((s) => {
@@ -970,12 +984,16 @@ export function PimPortfolio({ groups }: Props) {
     } catch { /* ignore */ }
 
     setPricesLoading(false);
-  }, [selectedGroup, stocks]);
+  }, [selectedGroup, stocks, priceSymbols]);
 
   // fetchPrices flips a loading flag synchronously then resolves async — the
   // standard "refetch when the group changes" pattern, not a cascading-render
   // bug. Disable both exhaustive-deps and set-state-in-effect here.
-  useEffect(() => { fetchPrices(); }, [selectedGroupId]); // eslint-disable-line react-hooks/exhaustive-deps, react-hooks/set-state-in-effect
+  // Also refetch when the SET of symbols changes: on a hard reload the first
+  // run sees the seed fallback model (StockContext hydrates pm:pim-models a
+  // moment later) and no positions yet, so names only in the live model / the
+  // books never got a price until the tab was re-opened.
+  useEffect(() => { fetchPrices(); }, [selectedGroupId, priceSymbolsKey]); // eslint-disable-line react-hooks/exhaustive-deps, react-hooks/set-state-in-effect
 
   // Get positions for current group + profile
   const currentPositions = useMemo(() => {
