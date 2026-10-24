@@ -247,14 +247,16 @@ function useDebouncedPersist(url: string, bodyKey: string, delay = 500): [
       timer.current = null;
       const body = JSON.stringify({ [bodyKey]: latestData.current });
       latestData.current = null;
-      // fetch with keepalive works during unload and handles large payloads
-      // better than sendBeacon (which has a ~64KB limit — the stocks blob
-      // with explanations can be 500KB+).
+      // keepalive lets a small flush survive page unload, but browsers cap a
+      // keepalive body at 64KB and REJECT anything larger ("Failed to fetch")
+      // — the stocks blob is far bigger, so an awaited flush (e.g. before the
+      // staged rebalance reloads the page) silently lost its changes. Large
+      // bodies go as a normal request; awaiting callers get a real write.
       return fetch(url, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body,
-        keepalive: true,
+        keepalive: body.length < 60_000,
       }).then(() => {}).catch((e) => console.error(`Failed to flush ${bodyKey}:`, e));
     }
     return Promise.resolve();
@@ -399,7 +401,15 @@ export function StockProvider({ children }: { children: React.ReactNode }) {
           return;
         }
         const j = await res.json().catch(() => ({}));
-        if (typeof j?.revision === "number") pimRevisionRef.current = j.revision;
+        if (typeof j?.revision === "number") {
+          pimRevisionRef.current = j.revision;
+          // Keep the state's revision in step with the server too: readers
+          // that send it as an expectedRevision (Stage changes Apply, the
+          // staged rebalance) were otherwise one behind after ANY save — the
+          // boot-time fix-up save included — and always got a 409.
+          const rev = j.revision as number;
+          setPimModelsState((prev) => (prev.revision === rev ? prev : { ...prev, revision: rev }));
+        }
       } catch (e) {
         console.error("Failed to persist pim-models:", e);
       }
