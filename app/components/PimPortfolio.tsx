@@ -3152,6 +3152,9 @@ export function PimPortfolio({ groups }: Props) {
   // ── Render-side view state (UI only; persisted through pm:ui-prefs) ──
   const [rebalanceDetail, toggleRebalanceDetail] = usePersistedOpen("positioning.rebalance.detail", false);
   const [settleOpen, toggleSettleOpen] = usePersistedOpen("positioning.settleFold", true);
+  // Off by default: Positioning is weights-only. On, it shows the stored
+  // notional units / C$ value / ACB / gain C$ read-only (the data never left).
+  const [showUnits, toggleShowUnits] = usePersistedOpen("positioning.showUnits", false);
   // Overflow menu (Refresh prices · Client report) — transient, exempt from
   // the persistence rule like every other menu.
   const [moreOpen, setMoreOpen] = useState(false);
@@ -3211,14 +3214,15 @@ export function PimPortfolio({ groups }: Props) {
   // Column plan for the positions table. Weights-only (Oct 2026): no units /
   // dollar columns — Price, Gain %, Model, Live, Drift. Edit mode adds the
   // live-weight and average-cost inputs.
-  const showAcb = editMode;
+  const showUnitsCols = showUnits && !editMode;
+  const showAcb = editMode || showUnitsCols;
   const showGain = hasPositions;
   // Drift bar column removed 2026-09-23 (the drift figure stays).
   const showBar = false as boolean;
   // The positions table now owns the FULL content width in every view, so there
   // is no narrow/wide variant to switch on — Drift is reachable without any
   // sideways scrolling regardless of which money columns are showing.
-  const posColCount = 2 + (editMode ? 1 : 0) + (showAcb ? 1 : 0) + (showGain ? 1 : 0) + 1 + (hasPositions ? (showBar ? 3 : 2) : 0);
+  const posColCount = 2 + (editMode ? 1 : 0) + (showUnitsCols ? 3 : 0) + (showAcb ? 1 : 0) + (showGain ? 1 : 0) + 1 + (hasPositions ? (showBar ? 3 : 2) : 0);
   // Drift bar scale: the largest live drift fills half the bar, floor 1pp so a
   // tidy book reads as tidy rather than every 0.05pp filling the track.
   const driftScalePp = Math.max(1, ...holdingRows.filter((r) => r.units > 0).map((r) => Math.abs(r.driftPct * 100)));
@@ -3494,6 +3498,16 @@ export function PimPortfolio({ groups }: Props) {
                   prices {formatRelTimeShort(pricesFetchedAt)}
                 </span>
               )}
+              {hasPositions && !editMode && (
+                <button
+                  onClick={toggleShowUnits}
+                  className={`${BTN_SECONDARY} ${showUnits ? "bg-surface-hover text-ink" : ""}`}
+                  title="Show the stored units, C$ value, ACB and gain C$ (read-only). Positioning is weights-only by default."
+                  aria-pressed={showUnits}
+                >
+                  {showUnits ? "Hide units" : "Show units"}
+                </button>
+              )}
             </div>
           </div>
           {loading && holdingRows.length === 0 ? (
@@ -3505,8 +3519,13 @@ export function PimPortfolio({ groups }: Props) {
                   <tr>
                     {sortTh("symbol", "Symbol", false, "pl-3.5")}
                     {editMode && <th className="n" title="Each name's live weight, % of the book. Whatever is left unallocated is cash.">Live % (set)</th>}
+                    {showUnitsCols && sortTh("units", "Units")}
                     {sortTh("price", "Price")}
-                    {showAcb && <th className="n" title="Average cost per unit, in C$ (USD names include the FX at purchase). Drives Gain %.">Avg cost C$</th>}
+                    {showUnitsCols && sortTh("value", "Value C$")}
+                    {showAcb && (editMode
+                      ? <th className="n" title="Average cost per unit, in C$ (USD names include the FX at purchase). Drives Gain %.">Avg cost C$</th>
+                      : sortTh("acb", "ACB C$"))}
+                    {showUnitsCols && <th className="n">Gain C$</th>}
                     {showGain && sortTh("gainLoss", "Gain")}
                     {sortTh("modelPct", "Model")}
                     {hasPositions && (
@@ -3541,6 +3560,7 @@ export function PimPortfolio({ groups }: Props) {
                             <span className="flex flex-wrap items-baseline gap-x-3 gap-y-0.5">
                               <span className="text-[12px] font-semibold">{POS_CLASS_LABELS[ac]}</span>
                               <span>{classRows.length} holding{classRows.length === 1 ? "" : "s"}</span>
+                              {showUnitsCols && <span className="font-mono">C${fmtN0(classValue)}</span>}
                               {hasPositions && (
                                 <span><span className="font-mono">{fmtPct2(classPct)}</span> vs <span className="font-mono">{fmtPct2(classTarget)}</span> target</span>
                               )}
@@ -3594,7 +3614,13 @@ export function PimPortfolio({ groups }: Props) {
                                   />
                                 </td>
                               )}
+                              {showUnitsCols && (
+                                <td className="n text-ink-3">{row.units > 0 ? row.units.toLocaleString("en-CA", { maximumFractionDigits: 4 }) : <span className="text-ink-faint">—</span>}</td>
+                              )}
                               <td className="n">{row.price > 0 ? row.price.toFixed(2) : <span className="text-ink-faint">—</span>}</td>
+                              {showUnitsCols && (
+                                <td className="n">{row.valueCad > 0 ? fmtN0(row.valueCad) : <span className="text-ink-faint">—</span>}</td>
+                              )}
                               {showAcb && (
                                 <td className="n text-ink-2">
                                   {editMode ? (
@@ -3618,6 +3644,14 @@ export function PimPortfolio({ groups }: Props) {
                                   )}
                                 </td>
                               )}
+                              {showUnitsCols && (() => {
+                                const gainCad = row.valueCad - row.costValueCad;
+                                return (
+                                  <td className={`n ${row.units > 0 ? (gainCad >= 0 ? "text-pos" : "text-neg") : ""}`}>
+                                    {row.units > 0 ? `${gainCad >= 0 ? "+" : "−"}${fmtN0(Math.abs(gainCad))}` : <span className="text-ink-faint">—</span>}
+                                  </td>
+                                );
+                              })()}
                               {showGain && (
                                 <td className={`n ${row.units > 0 ? (row.gainLoss >= 0 ? "text-pos" : "text-neg") : ""}`}>
                                   {row.units > 0 ? fmtGainLoss(row.gainLoss) : <span className="text-ink-faint">—</span>}
@@ -3663,8 +3697,11 @@ export function PimPortfolio({ groups }: Props) {
                           })()}
                         </td>
                       )}
+                      {showUnitsCols && <td className="n" />}
                       <td className="n" />
+                      {showUnitsCols && <td className="n">{fmtN0(currentPositions?.cashBalance || 0)}</td>}
                       {showAcb && <td className="n" />}
+                      {showUnitsCols && <td className="n" />}
                       {showGain && <td className="n" />}
                       <td className="n text-ink-3">{fmtPct2(cashTargetPct)}</td>
                       <td className="n">{fmtPct2(cashPct)}</td>
