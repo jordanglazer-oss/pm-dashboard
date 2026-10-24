@@ -32,6 +32,7 @@
  * close — same as the Appendix ledger.
  */
 
+import { modelBucketLookup } from "./sleeve-targets";
 import { useCallback, useEffect, useState } from "react";
 import { useStocks } from "./StockContext";
 import { countryFor, CORE_ETF_FAMILIES, coreFamilyFor, isCoreEtf, type Country } from "./geography";
@@ -472,6 +473,8 @@ export function useReportData(
       // Returns the Stock metadata for a PIM holding symbol, trying both
       // .TO and -T variants since PIM models and the Dashboard disagree on
       // Canadian suffix conventions.
+      // The bucket recorded on the model holding wins over the stock tag.
+      const modelBucket = modelBucketLookup(pimModels);
       const lookupStock = (sym: string): Stock | undefined => {
         return (
           stockBySymbol.get(sym) ??
@@ -482,7 +485,8 @@ export function useReportData(
       for (const row of holdingRows) {
         if (row.bucket !== "Equity") continue;
         const s = lookupStock(row.id);
-        if (s?.designation === "core") row.bucket = "Core";
+        const mb = modelBucket(row.id);
+        if (mb ? mb === "core" : s?.designation === "core") row.bucket = "Core";
         else row.bucket = "Alpha";
       }
 
@@ -525,9 +529,10 @@ export function useReportData(
         // counts as Core even if it's not in the built-in list.
         const stockMeta = lookupStock(h.symbol);
         const designation = stockMeta?.designation;
-        const treatAsCore =
-          designation === "core" ||
-          (designation !== "alpha" && isCoreEtf(h.symbol));
+        const mb = modelBucket(h.symbol);
+        const treatAsCore = mb
+          ? mb === "core"
+          : designation === "core" || (designation !== "alpha" && isCoreEtf(h.symbol));
         if (h.assetClass === "fixedIncome") {
           sliceTotals.fixedIncome += wPct;
           recordHolding("fixedIncome", h, wPct);

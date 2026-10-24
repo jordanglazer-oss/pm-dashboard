@@ -5,7 +5,7 @@ import { ZERO_SCORES as ALL_ZERO_SCORES } from "@/app/lib/types";
 import Link from "next/link";
 import { useSearchParams, useRouter, usePathname } from "next/navigation";
 import type { EquityBucket } from "@/app/lib/pim-types";
-import { bucketOf } from "@/app/lib/sleeve-targets";
+import { bucketTests, holdingBucket } from "@/app/lib/sleeve-targets";
 import type { PimHolding, PimModelGroup, PimProfileType, PimComputedHolding, PimAssetClass, PimPerformanceData } from "@/app/lib/pim-types";
 import type { Stock, InstrumentType, ScoreKey } from "@/app/lib/types";
 import { displayTicker } from "@/app/lib/ticker";
@@ -339,21 +339,25 @@ export function PimModel({ groups, onOpenScenarios, onOpenStaging }: Props) {
   const isLatestBuy = (symbol: string): boolean =>
     latestBuyTickers.has(normalizeTicker(symbol));
 
-  // Build set of core-designated symbols (alpha model excludes these)
+  // Core / Thematic tests: the bucket recorded on the model holding first,
+  // else the pm:stocks designation (mirrors the daily series). Set-like
+  // (has / size) so the existing call sites keep working; size counts PIM's
+  // equity holdings in the bucket.
+  const bucketSet = useCallback((test: (sym: string) => boolean) => {
+    const pim = pimModels.groups.find((g) => g.id === "pim");
+    const size = (pim?.holdings ?? []).filter((h) => h.assetClass === "equity" && test(h.symbol)).length;
+    return { has: test, size };
+  }, [pimModels]);
   const coreSymbols = useMemo(() => {
-    const set = new Set<string>();
-    for (const s of stocks) {
-      if (s.designation === "core") set.add(s.ticker);
-    }
-    return set;
-  }, [stocks]);
-  // Thematic funds (three-bucket model) — their own standalone view, and
-  // excluded from the Alpha view, mirroring the daily series.
+    const t = bucketTests(stocks, pimModels);
+    return bucketSet((sym) => t.isCore(sym));
+  }, [stocks, pimModels, bucketSet]);
+  // Thematic funds — their own standalone view; ALSO part of the Alpha view
+  // (Alpha = everything outside Core, Oct 2026).
   const thematicSymbols = useMemo(() => {
-    const set = new Set<string>();
-    for (const s of stocks) if (s.designation === "thematic") set.add(s.ticker);
-    return set;
-  }, [stocks]);
+    const t = bucketTests(stocks, pimModels);
+    return bucketSet((sym) => t.isThematic(sym));
+  }, [stocks, pimModels, bucketSet]);
 
   const availableProfiles = useMemo<PimProfileType[]>(() => {
     if (!selectedGroup) return [];
@@ -437,10 +441,11 @@ export function PimModel({ groups, onOpenScenarios, onOpenStaging }: Props) {
   const effectiveGroup = useMemo(() => {
     if (!selectedGroup) return selectedGroup;
 
-    // Alpha: equity-only, exclude core ETFs, re-normalize proportionally
+    // Alpha: equity-only, everything outside Core (stocks + Thematic funds),
+    // re-normalized proportionally
     if (activeProfile === "alpha") {
       const alphaHoldings = selectedGroup.holdings.filter(
-        (h) => h.assetClass === "equity" && !coreSymbols.has(symbolToTicker(h.symbol)) && !thematicSymbols.has(symbolToTicker(h.symbol))
+        (h) => h.assetClass === "equity" && !coreSymbols.has(symbolToTicker(h.symbol))
       );
       const totalWeight = alphaHoldings.reduce((s, h) => s + h.weightInClass, 0);
       const normalized = totalWeight > 0
@@ -1003,7 +1008,7 @@ export function PimModel({ groups, onOpenScenarios, onOpenStaging }: Props) {
     // Firm-wide Core model: same series for every group.
     const coreSeries = perfData.models.find((m) => m.groupId === "pim" && m.profile === "core");
     if (!coreSeries || coreSeries.history.length === 0) {
-      const coreCount = Array.from(coreSymbols).length;
+      const coreCount = coreSymbols.size;
       return coreCount === 0
         ? "no stocks tagged designation:'core' — visit the Stocks tab and tag your core ETFs (XSP, XUH, XUU, etc.)"
         : "no \"core\" series under groupId=pim — recompute may have failed";
@@ -1530,7 +1535,7 @@ export function PimModel({ groups, onOpenScenarios, onOpenStaging }: Props) {
                       {showWeightMath && (
                         <td>
                           {(() => {
-                            const wm = weightMathLabel(h, pimModels.sleeveTargets ? bucketOf(h.symbol, stocks) : undefined);
+                            const wm = weightMathLabel(h, pimModels.sleeveTargets ? holdingBucket(h, stocks) : undefined);
                             return (
                               <span className={`inline-flex items-center gap-1 ${wm.cls}`}>
                                 {wm.locked && <AppIcon name="lock" size={11} />}

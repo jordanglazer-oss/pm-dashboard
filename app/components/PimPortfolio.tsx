@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useMemo, useCallback, useRef } from "react";
+import { bucketTests } from "@/app/lib/sleeve-targets";
 import { ZERO_SCORES as ALL_ZERO_SCORES } from "@/app/lib/types";
 import { useSearchParams } from "next/navigation";
 import Link from "next/link";
@@ -311,14 +312,6 @@ const BTN_ICON = "grid h-7 w-7 place-items-center rounded-control border border-
 const INPUT = "h-7 rounded-control border border-line bg-surface px-2.5 text-[12.5px] text-ink outline-none focus:border-accent-border";
 const MENU_ITEM = "flex w-full items-center gap-2 px-3 py-1.5 text-left text-[12.5px] text-ink-2 hover:bg-surface-hover hover:text-ink disabled:opacity-50";
 
-/** Positions table views (persisted in pm:ui-prefs as `positioning.view`). */
-type PosView = "drift" | "value" | "gain";
-const POS_VIEWS: { id: PosView; label: string }[] = [
-  { id: "drift", label: "Drift" },
-  { id: "value", label: "Value" },
-  { id: "gain", label: "Gain" },
-];
-
 /** Display threshold for "outside tolerance" (0.5pp of portfolio weight):
  *  colours the drift bar/figure warn and feeds the footer count. Render-only —
  *  no rebalance or trade path reads it. */
@@ -342,9 +335,6 @@ type RebalanceRow = {
 };
 
 /** "C$1,284,410" — whole dollars for meta text. */
-function fmtCad0(v: number): string {
-  return `${v < 0 ? "−" : ""}C$${Math.abs(Math.round(v)).toLocaleString("en-CA")}`;
-}
 /** "1,284,410" — whole dollars for table cells (currency lives in the header). */
 function fmtN0(v: number): string {
   return Math.round(v).toLocaleString("en-CA");
@@ -565,10 +555,6 @@ function fmtCurrency(v: number): string {
   return v.toLocaleString("en-CA", { style: "currency", currency: "CAD", minimumFractionDigits: 2 });
 }
 
-function fmtUnits(v: number): string {
-  if (Number.isInteger(v)) return v.toLocaleString();
-  return v.toLocaleString("en-CA", { minimumFractionDigits: 2, maximumFractionDigits: 4 });
-}
 
 function fmtGainLoss(v: number): string {
   return `${v >= 0 ? "+" : ""}${v.toFixed(2)}%`;
@@ -667,7 +653,11 @@ export function PimPortfolio({ groups }: Props) {
   const [pricesLoading, setPricesLoading] = useState(false);
   const [editMode, setEditMode] = useState(false);
   const [editPositions, setEditPositions] = useState<PimPosition[]>([]);
-  const [editCash, setEditCash] = useState(0);
+  // Weights-only Positioning: edit mode takes each name's LIVE weight (% of
+  // the book) — the engine's notional units are derived on save.
+  const [editWeights, setEditWeights] = useState<Record<string, string>>({});
+  const editWeightsStart = useRef<Record<string, string>>({});
+  const [editError, setEditError] = useState("");
   const [saving, setSaving] = useState(false);
 
   // Rebalance & Buy/Sell state
@@ -728,22 +718,16 @@ export function PimPortfolio({ groups }: Props) {
     [groups, selectedGroupId]
   );
 
-  // Build set of core-designated symbols (alpha model excludes these)
+  // Core test (the Alpha model excludes Core): the bucket recorded on the
+  // model holding first, else the pm:stocks designation. Set-like so every
+  // existing `coreSymbols.has(ticker)` call keeps working.
   const coreSymbols = useMemo(() => {
-    const set = new Set<string>();
-    for (const s of stocks) {
-      if (s.designation === "core") set.add(s.ticker);
-    }
-    return set;
-  }, [stocks]);
-  // Thematic funds (three-bucket model): their own bucket, so the Alpha book
-  // is stocks only — same rule as the Alpha performance series.
-  const thematicSymbols = useMemo(() => {
-    const set = new Set<string>();
-    for (const s of stocks) if (s.designation === "thematic") set.add(s.ticker);
-    return set;
-  }, [stocks]);
-  const notAlpha = useCallback((symbol: string) => coreSymbols.has(symbolToTicker(symbol)) || thematicSymbols.has(symbolToTicker(symbol)), [coreSymbols, thematicSymbols]);
+    const t = bucketTests(stocks, pimModels);
+    return { has: (ticker: string) => t.isCore(ticker) };
+  }, [stocks, pimModels]);
+  // Alpha = everything outside Core: the stocks AND the Thematic funds (Oct
+  // 2026, PM's call) — same rule as the Alpha performance series.
+  const notAlpha = useCallback((symbol: string) => coreSymbols.has(symbolToTicker(symbol)), [coreSymbols]);
 
   const availableProfiles = useMemo<PimProfileType[]>(() => {
     if (!selectedGroup) return [];
@@ -832,8 +816,12 @@ export function PimPortfolio({ groups }: Props) {
       return { ...selectedGroup, holdings: normalized };
     }
 
-    // Non-PIM groups: keep individual stock weights from PIM, excess to core ETFs by currency
-    if (selectedGroup.id !== "pim" && pimGroup) {
+    // Non-PIM groups: keep individual stock weights from PIM, excess to core ETFs by currency.
+    // Legacy only: since the three-bucket model (sleeveTargets) every model's
+    // own weights are set by Stage changes (currency splits, substitutes, the
+    // CGF equity cap) and are authoritative — overriding them with PIM's would
+    // show the wrong targets.
+    if (selectedGroup.id !== "pim" && pimGroup && !pimModels.sleeveTargets) {
       const pimWeightMap = new Map<string, number>();
       for (const h of pimGroup.holdings) {
         if (h.assetClass === "equity") pimWeightMap.set(h.symbol, h.weightInClass);
@@ -881,7 +869,7 @@ export function PimPortfolio({ groups }: Props) {
     }
 
     return selectedGroup;
-  }, [selectedGroup, activeProfile, coreSymbols, notAlpha, pimGroup]);
+  }, [selectedGroup, activeProfile, coreSymbols, notAlpha, pimGroup, pimModels.sleeveTargets]);
 
   // Load positions from KV
   useEffect(() => {
@@ -936,11 +924,15 @@ export function PimPortfolio({ groups }: Props) {
     const allSymbols = priceSymbols;
     const prevCloseMapped: Record<string, number> = {};
     try {
-      const tickers = allSymbols.map((s) => {
+      // FUNDSERV codes (FID5982-T) go to /api/prices BARE so it routes them
+      // to the NAV source — "FID5982.TO" is not a Yahoo listing.
+      const toPriceTicker = (s: string) => {
+        if (/^[A-Z]{2,4}\d{2,5}(-T)?$/i.test(s)) return s.replace(/-T$/i, "");
         if (s.endsWith("-T")) return s.replace("-T", ".TO");
         if (s.endsWith(".U")) return s.replace(".U", "-U.TO");
         return s;
-      });
+      };
+      const tickers = allSymbols.map(toPriceTicker);
       const res = await fetch("/api/prices", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -949,9 +941,7 @@ export function PimPortfolio({ groups }: Props) {
       if (res.ok) {
         const data = await res.json();
         for (const h of allSymbols) {
-          let yahoo = h;
-          if (h.endsWith("-T")) yahoo = h.replace("-T", ".TO");
-          else if (h.endsWith(".U")) yahoo = h.replace(".U", "-U.TO");
+          const yahoo = toPriceTicker(h);
           // Always use fresh prices from API (override StockContext cache)
           const freshPrice = data.prices?.[yahoo] ?? data.prices?.[h];
           if (freshPrice != null) mapped[h] = freshPrice;
@@ -1505,19 +1495,50 @@ export function PimPortfolio({ groups }: Props) {
       };
     });
     setEditPositions(editPos);
-    setEditCash(currentPositions?.cashBalance || 0);
+    const total = holdingRows.reduce((t, r) => t + r.valueCad, 0) + (currentPositions?.cashBalance || 0);
+    const startW = Object.fromEntries(holdingRows.filter((r) => r.valueCad > 0 && total > 0).map((r) => [r.symbol, ((r.valueCad / total) * 100).toFixed(2)]));
+    editWeightsStart.current = startW;
+    setEditWeights(startW);
+    setEditError("");
     setEditMode(true);
   };
 
   const savePositions = async () => {
+    // Weights → the engine's notional units. The book keeps its current
+    // value (a fresh book starts at a notional C$1,000,000 — only ratios
+    // matter for returns), each name gets weight × value ÷ live CAD price,
+    // and whatever the weights leave unallocated is cash. Returns are then
+    // exactly the weighted, price-drifted returns of these weights.
+    const weights = Object.entries(editWeights)
+      .map(([symbol, v]) => ({ symbol, w: parseFloat(v) / 100 }))
+      .filter((x) => Number.isFinite(x.w) && x.w > 0);
+    const sumW = weights.reduce((a, x) => a + x.w, 0);
+    if (sumW > 1.00005) { setEditError(`Weights add to ${(sumW * 100).toFixed(2)}% — they can't exceed 100%.`); return; }
+    const rowOf = (sym: string) => holdingRows.find((r) => r.symbol === sym);
+    const unpriced = weights.filter((x) => !((rowOf(x.symbol)?.priceCad ?? 0) > 0)).map((x) => displayTicker(x.symbol));
+    if (unpriced.length) { setEditError(`No live price for ${unpriced.join(", ")} — refresh prices and try again.`); return; }
+    setEditError("");
     setSaving(true);
+    const bookValue = totalValueCadSummary > 0 ? totalValueCadSummary : 1_000_000;
     const updated: PimPortfolioPositions = {
       groupId: selectedGroupId,
       profile: activeProfile,
-      positions: editPositions.filter((p) => p.units > 0),
-      cashBalance: editCash,
+      positions: editPositions
+        .map((p) => {
+          // A weight left as shown keeps its exact holding (no 2dp rounding drift).
+          if (editWeights[p.symbol] !== undefined && editWeights[p.symbol] === editWeightsStart.current[p.symbol]) return p;
+          const w = weights.find((x) => x.symbol === p.symbol)?.w ?? 0;
+          const priceCad = rowOf(p.symbol)?.priceCad ?? 0;
+          return { ...p, units: w > 0 && priceCad > 0 ? parseFloat(((w * bookValue) / priceCad).toFixed(6)) : 0 };
+        })
+        .filter((p) => p.units > 0),
+      cashBalance: 0,
       lastUpdated: new Date().toISOString(),
     };
+    // Cash = whatever the positions don't hold (exact, so untouched names and
+    // re-weighted ones add up to the book's value).
+    const invested = updated.positions.reduce((a, p) => a + p.units * (rowOf(p.symbol)?.priceCad ?? 0), 0);
+    updated.cashBalance = parseFloat(Math.max(0, bookValue - invested).toFixed(2));
 
     // Build costBasis map from saved positions (ACB is shared across profiles)
     const costBasisMap = new Map<string, number>();
@@ -3129,7 +3150,6 @@ export function PimPortfolio({ groups }: Props) {
   const sleeveDrift = holdingRows.reduce((sum, r) => sum + Math.max(0, r.driftPct), 0) * 100;
 
   // ── Render-side view state (UI only; persisted through pm:ui-prefs) ──
-  const posView: PosView = (uiPrefs["positioning.view"] as PosView) || "drift";
   const [rebalanceDetail, toggleRebalanceDetail] = usePersistedOpen("positioning.rebalance.detail", false);
   const [settleOpen, toggleSettleOpen] = usePersistedOpen("positioning.settleFold", true);
   // Overflow menu (Refresh prices · Client report) — transient, exempt from
@@ -3188,22 +3208,22 @@ export function PimPortfolio({ groups }: Props) {
   const rebalanceVisible = rebalanceDetail ? rebalanceRows : rebalanceTrades;
   const rebalanceHasMF = rebalanceRows.some((r) => r.isMF);
 
-  // Column plan for the positions table (which extra columns the view shows).
-  const showAcb = editMode || posView !== "drift";
-  const showGain = hasPositions && (editMode || posView !== "drift");
-  const showGainCad = hasPositions && posView === "gain";
+  // Column plan for the positions table. Weights-only (Oct 2026): no units /
+  // dollar columns — Price, Gain %, Model, Live, Drift. Edit mode adds the
+  // live-weight and average-cost inputs.
+  const showAcb = editMode;
+  const showGain = hasPositions;
   // Drift bar column removed 2026-09-23 (the drift figure stays).
   const showBar = false as boolean;
   // The positions table now owns the FULL content width in every view, so there
   // is no narrow/wide variant to switch on — Drift is reachable without any
   // sideways scrolling regardless of which money columns are showing.
-  const posColCount = 4 + (showAcb ? 1 : 0) + (showGain ? 1 : 0) + (showGainCad ? 1 : 0) + 1 + (hasPositions ? (showBar ? 3 : 2) : 0);
+  const posColCount = 2 + (editMode ? 1 : 0) + (showAcb ? 1 : 0) + (showGain ? 1 : 0) + 1 + (hasPositions ? (showBar ? 3 : 2) : 0);
   // Drift bar scale: the largest live drift fills half the bar, floor 1pp so a
   // tidy book reads as tidy rather than every 0.05pp filling the track.
   const driftScalePp = Math.max(1, ...holdingRows.filter((r) => r.units > 0).map((r) => Math.abs(r.driftPct * 100)));
   const heldCount = holdingRows.filter((r) => r.units > 0).length;
   const outsideTolerance = holdingRows.filter((r) => r.units > 0 && Math.abs(r.driftPct) >= DRIFT_TOLERANCE).length;
-  const cashBalanceCad = currentPositions?.cashBalance || 0;
   const cashTargetPct = profileWeights?.cash ?? 0;
   const cashDriftPct = hasPositions ? cashPct - cashTargetPct : null;
   const totalGainCad = totalValueCadSummary - totalCostCad;
@@ -3341,6 +3361,7 @@ export function PimPortfolio({ groups }: Props) {
         <div className="ml-auto flex flex-wrap items-center gap-2">
           {editMode ? (
             <>
+              {editError && <span className="text-[12px] text-neg">{editError}</span>}
               <button onClick={() => setEditMode(false)} className={BTN_SECONDARY}>Cancel</button>
               <button onClick={savePositions} disabled={saving} className={BTN_PRIMARY}>
                 {saving ? "Saving…" : "Save positions"}
@@ -3420,20 +3441,14 @@ export function PimPortfolio({ groups }: Props) {
           enough to truncate the Gain figure mid-number. The cash balance is
           still shown in full on its own row in the Positions table below. */}
       <StatStrip
-        cols={5}
+        cols={3}
         items={[
-          { label: "Total value", value: fmtCurrency(totalValueCadSummary) },
-          { label: "ACB", value: fmtCurrency(totalCostCad) },
           {
             label: "Gain",
-            value: (
-              // block + whitespace-normal defeats StatStrip's `truncate`, so a
-              // long gain wraps onto a second line instead of ellipsing.
-              <span className={`block whitespace-normal break-words ${totalGainCad >= 0 ? "text-pos" : "text-neg"}`}>
-                {totalGainCad >= 0 ? "+" : ""}{fmtCurrency(totalGainCad)}
-                {totalGainPct != null && <> · {fmtGainLoss(totalGainPct)}</>}
-              </span>
-            ),
+            title: "Unrealized gain of the book's positions against their average cost (weights-only: no dollar figures).",
+            value: totalGainPct != null
+              ? <span className={totalGainPct >= 0 ? "text-pos" : "text-neg"}>{fmtGainLoss(totalGainPct)}</span>
+              : <span className="text-ink-faint">—</span>,
           },
           {
             label: "Today",
@@ -3479,13 +3494,6 @@ export function PimPortfolio({ groups }: Props) {
                   prices {formatRelTimeShort(pricesFetchedAt)}
                 </span>
               )}
-              <div className="seg">
-                {POS_VIEWS.map((v) => (
-                  <button key={v.id} onClick={() => setUiPref("positioning.view", v.id)} className={posView === v.id ? "on" : ""}>
-                    {v.label}
-                  </button>
-                ))}
-              </div>
             </div>
           </div>
           {loading && holdingRows.length === 0 ? (
@@ -3496,11 +3504,9 @@ export function PimPortfolio({ groups }: Props) {
                 <thead>
                   <tr>
                     {sortTh("symbol", "Symbol", false, "pl-3.5")}
-                    {sortTh("units", "Units")}
+                    {editMode && <th className="n" title="Each name's live weight, % of the book. Whatever is left unallocated is cash.">Live % (set)</th>}
                     {sortTh("price", "Price")}
-                    {sortTh("value", "Value C$")}
-                    {showAcb && sortTh("acb", "ACB C$")}
-                    {showGainCad && <th className="n">Gain C$</th>}
+                    {showAcb && <th className="n" title="Average cost per unit, in C$ (USD names include the FX at purchase). Drives Gain %.">Avg cost C$</th>}
                     {showGain && sortTh("gainLoss", "Gain")}
                     {sortTh("modelPct", "Model")}
                     {hasPositions && (
@@ -3535,7 +3541,6 @@ export function PimPortfolio({ groups }: Props) {
                             <span className="flex flex-wrap items-baseline gap-x-3 gap-y-0.5">
                               <span className="text-[12px] font-semibold">{POS_CLASS_LABELS[ac]}</span>
                               <span>{classRows.length} holding{classRows.length === 1 ? "" : "s"}</span>
-                              <span className="font-mono">{fmtCad0(classValue)}</span>
                               {hasPositions && (
                                 <span><span className="font-mono">{fmtPct2(classPct)}</span> vs <span className="font-mono">{fmtPct2(classTarget)}</span> target</span>
                               )}
@@ -3553,7 +3558,6 @@ export function PimPortfolio({ groups }: Props) {
                           const flat = dDriftV == null || sameAtDisplay(dCurrentV, dTargetV);
                           const overTolerance = row.units > 0 && Math.abs(row.driftPct) >= DRIFT_TOLERANCE;
                           const editPos = editMode ? editPositions.find((p) => p.symbol === row.symbol) : undefined;
-                          const gainCad = row.valueCad - row.costValueCad;
                           return (
                             <tr key={row.symbol}>
                               <td className="pl-3.5">
@@ -3574,26 +3578,23 @@ export function PimPortfolio({ groups }: Props) {
                                   </span>
                                 )}
                               </td>
-                              <td className="n text-ink-3">
-                                {editMode ? (
+                              {editMode && (
+                                <td className="n">
                                   <input
                                     type="number"
-                                    value={editPos?.units || ""}
+                                    value={editWeights[row.symbol] ?? ""}
                                     onChange={(e) => {
-                                      const val = parseFloat(e.target.value) || 0;
-                                      setEditPositions((prev) =>
-                                        prev.map((p) => p.symbol === row.symbol ? { ...p, units: val } : p)
-                                      );
+                                      const v = e.target.value;
+                                      setEditWeights((prev) => ({ ...prev, [row.symbol]: v }));
                                     }}
-                                    className={`${INPUT} w-24 text-right font-mono`}
-                                    step="0.0001"
+                                    className={`${INPUT} w-20 text-right font-mono`}
+                                    step="0.01"
+                                    placeholder="%"
+                                    aria-label={`${displayTicker(row.symbol)} live weight %`}
                                   />
-                                ) : (
-                                  row.units > 0 ? fmtUnits(row.units) : <span className="text-ink-faint">—</span>
-                                )}
-                              </td>
+                                </td>
+                              )}
                               <td className="n">{row.price > 0 ? row.price.toFixed(2) : <span className="text-ink-faint">—</span>}</td>
-                              <td className="n">{row.valueCad > 0 ? fmtN0(row.valueCad) : <span className="text-ink-faint">—</span>}</td>
                               {showAcb && (
                                 <td className="n text-ink-2">
                                   {editMode ? (
@@ -3609,18 +3610,12 @@ export function PimPortfolio({ groups }: Props) {
                                         }}
                                         className={`${INPUT} w-24 text-right font-mono`}
                                         step="0.01"
-                                        placeholder={`Cost (${row.currency})`}
+                                        placeholder="C$ / unit"
                                       />
-                                      <span className="text-[11px] text-ink-3">{row.costValueCad > 0 ? fmtN0(row.costValueCad) : "—"}</span>
                                     </span>
                                   ) : (
                                     row.costValueCad > 0 ? fmtN0(row.costValueCad) : <span className="text-ink-faint">—</span>
                                   )}
-                                </td>
-                              )}
-                              {showGainCad && (
-                                <td className={`n ${row.units > 0 ? (gainCad >= 0 ? "text-pos" : "text-neg") : ""}`}>
-                                  {row.units > 0 ? `${gainCad >= 0 ? "+" : "−"}${fmtN0(Math.abs(gainCad))}` : <span className="text-ink-faint">—</span>}
                                 </td>
                               )}
                               {showGain && (
@@ -3658,11 +3653,18 @@ export function PimPortfolio({ groups }: Props) {
                         <span className="font-mono font-medium text-ink">Cash</span>
                         <span className="ml-2 text-[12px] text-ink-3">CAD</span>
                       </td>
+                      {editMode && (
+                        <td className="n font-mono text-ink-3" title="Cash = 100% minus the weights above">
+                          {(() => {
+                            // Live cash plus whatever the edits freed (or minus what they used).
+                            const moved = Object.keys({ ...editWeightsStart.current, ...editWeights }).reduce(
+                              (a, k) => a + (parseFloat(editWeightsStart.current[k] ?? "0") || 0) - (parseFloat(editWeights[k] ?? "0") || 0), 0);
+                            return `${Math.max(0, cashPct * 100 + moved).toFixed(2)}%`;
+                          })()}
+                        </td>
+                      )}
                       <td className="n" />
-                      <td className="n" />
-                      <td className="n">{fmtN0(cashBalanceCad)}</td>
                       {showAcb && <td className="n" />}
-                      {showGainCad && <td className="n" />}
                       {showGain && <td className="n" />}
                       <td className="n text-ink-3">{fmtPct2(cashTargetPct)}</td>
                       <td className="n">{fmtPct2(cashPct)}</td>
@@ -3709,7 +3711,7 @@ export function PimPortfolio({ groups }: Props) {
               <span className="t-mark bg-hub-portfolio" aria-hidden />
               <span className="t">Rebalance to {PROFILE_LABELS[activeProfile]}</span>
               <span className="m min-w-0 break-words">
-                {showRebalance ? "execute" : "summary"} · {rebalanceTrades.length} trade{rebalanceTrades.length === 1 ? "" : "s"} · {fmtCad0(rebalanceGross)} gross
+                {showRebalance ? "execute" : "summary"} · {rebalanceTrades.length} trade{rebalanceTrades.length === 1 ? "" : "s"} · {totalValueCadSummary > 0 ? fmtPct2(rebalanceGross / totalValueCadSummary) : "—"} turnover
               </span>
               <div className="ml-auto flex flex-wrap items-center gap-2">
                 {showRebalance && (
@@ -3736,7 +3738,7 @@ export function PimPortfolio({ groups }: Props) {
                   {[
                     { label: "Buys", value: `${rebalanceBuyCount}`, cls: "text-pos" },
                     { label: "Sells", value: `${rebalanceSellCount}`, cls: "text-neg" },
-                    { label: "Gross value", value: fmtCad0(rebalanceGross), cls: "text-ink" },
+                    { label: "Turnover", value: totalValueCadSummary > 0 ? fmtPct2(rebalanceGross / totalValueCadSummary) : "—", cls: "text-ink" },
                     { label: "On target", value: `${rebalanceRows.length - rebalanceTrades.length} of ${rebalanceRows.length}`, cls: "text-ink-2" },
                   ].map((d) => (
                     <span key={d.label} className="flex min-w-0 flex-col gap-0.5">
@@ -3769,9 +3771,8 @@ export function PimPortfolio({ groups }: Props) {
                     <tr>
                       <th className="pl-3.5">Symbol</th>
                       <th>Action</th>
-                      <th className="n">Δ Units</th>
+                      <th className="n" title="Weight change, percentage points of the book">Δ Weight</th>
                       <th className="n">Exec</th>
-                      <th className="n">Cost</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -3797,9 +3798,7 @@ export function PimPortfolio({ groups }: Props) {
                           {r.action === "SELL" ? "Sell" : r.action === "BUY" ? "Buy" : "—"}
                         </td>
                         <td className={`n ${r.action === "BUY" ? "text-pos" : r.action === "SELL" ? "text-neg" : "text-ink-3"}`}>
-                          {r.action === "HOLD" ? "—" : r.isMF ? (
-                            <span title="Dollar amount — units determined at settlement">${Math.abs(r.deltaValueCad).toFixed(0)}</span>
-                          ) : `${r.deltaUnits > 0 ? "+" : ""}${r.deltaUnits.toFixed(2)}`}
+                          {r.action === "HOLD" ? "—" : `${-r.pcDrift > 0 ? "+" : ""}${(-r.pcDrift * 100).toFixed(2)}pp`}
                         </td>
                         <td className="n text-ink-3">
                           {r.isMF ? (
@@ -3811,7 +3810,6 @@ export function PimPortfolio({ groups }: Props) {
                               className={`${INPUT} w-[72px] text-right font-mono`} />
                           ) : r.pcPrice > 0 ? r.pcPrice.toFixed(2) : "—"}
                         </td>
-                        <td className="n text-ink-2">{r.costCad > 0 ? fmtN0(r.costCad) : "—"}</td>
                       </tr>
                       {/* Detail view keeps every figure it always showed, but
                           as a labelled grid under the row instead of five more
@@ -3828,13 +3826,6 @@ export function PimPortfolio({ groups }: Props) {
                                   label: "Drift",
                                   value: `${r.pcDrift > 0 ? "+" : ""}${(r.pcDrift * 10000).toFixed(0)}bp`,
                                   cls: r.pcDrift > 0 ? "text-pos" : r.pcDrift < 0 ? "text-neg" : "text-ink-3",
-                                },
-                                { label: "Units", value: r.units > 0 ? r.units.toFixed(2) : "—", cls: "text-ink-2" },
-                                {
-                                  label: "Target units",
-                                  value: r.isMF ? "—" : r.targetUnits.toFixed(2),
-                                  cls: "text-ink-2",
-                                  title: r.isMF ? "Units calculated at settlement" : undefined,
                                 },
                                 { label: "Prev close", value: r.pcPrice > 0 ? r.pcPrice.toFixed(2) : "—", cls: "text-ink-2" },
                               ].map((d) => (
@@ -4257,7 +4248,7 @@ export function PimPortfolio({ groups }: Props) {
                     const active = plan.rows.filter((r) => r.heldUnits > 0 || r.unitsToBuy > 0);
                     return (
                       <div className="mt-3 overflow-hidden rounded-card border border-line-soft bg-surface">
-                        <div className="flex min-h-[30px] items-center px-3 text-[11px] text-ink-3">Units this trade will book</div>
+                        <div className="flex min-h-[30px] items-center px-3 text-[11px] text-ink-3">Weight this trade moves in each book</div>
                         {active.length === 0 ? (
                           <p className="border-t border-line-soft px-3 py-2 text-[11.5px] font-medium text-neg">
                             No units will be recorded anywhere — the model would change but the book
@@ -4269,9 +4260,8 @@ export function PimPortfolio({ groups }: Props) {
                               <thead>
                                 <tr>
                                   <th className="pl-3">Model · Profile</th>
-                                  <th className="n">Sell units</th>
-                                  <th className="n">Proceeds</th>
-                                  <th className="n">Buy units</th>
+                                  <th className="n">Sold</th>
+                                  <th className="n">Bought</th>
                                 </tr>
                               </thead>
                               <tbody>
@@ -4281,9 +4271,17 @@ export function PimPortfolio({ groups }: Props) {
                                       {r.groupName} · {r.profile}
                                       {r.note && <span className="ml-1.5 text-neg">{r.note}</span>}
                                     </td>
-                                    <td className="n text-ink-2">{r.unitsToSell > 0 ? fmtUnits(+r.unitsToSell.toFixed(4)) : "—"}</td>
-                                    <td className="n text-ink-2">{r.proceedsCad > 0 ? fmtCurrency(r.proceedsCad) : "—"}</td>
-                                    <td className="n font-medium text-ink">{r.unitsToBuy > 0 ? fmtUnits(+r.unitsToBuy.toFixed(4)) : "—"}</td>
+                                    {(() => {
+                                      // % of that book: proceeds ÷ the book's live value.
+                                      const bv = r.groupId === selectedGroupId ? profileMarketValue(r.profile as PimProfileType) : 0;
+                                      const w = bv > 0 && r.proceedsCad > 0 ? fmtPct2(r.proceedsCad / bv) : null;
+                                      return (
+                                        <>
+                                          <td className="n text-ink-2">{r.unitsToSell > 0 ? (w ?? "✓") : "—"}</td>
+                                          <td className="n font-medium text-ink">{r.unitsToBuy > 0 ? (w ?? "✓") : "—"}</td>
+                                        </>
+                                      );
+                                    })()}
                                   </tr>
                                 ))}
                               </tbody>
@@ -4391,7 +4389,7 @@ export function PimPortfolio({ groups }: Props) {
                     .filter((p) => p !== activeProfile && profileMarketValue(p) > 0)
                     .map((p) => (
                       <option key={p} value={p}>
-                        {PROFILE_LABELS[p]} — {fmtCurrency(profileMarketValue(p))}
+                        {PROFILE_LABELS[p]}
                       </option>
                     ))}
                 </select>
@@ -4411,28 +4409,22 @@ export function PimPortfolio({ groups }: Props) {
                     <tr>
                       <th className="pl-3.5">Holding</th>
                       <th className="n">Target wt</th>
-                      <th className="n">Value</th>
-                      <th className="n">Price</th>
-                      <th className="n">Units</th>
+                      <th className="n">Price C$</th>
                     </tr>
                   </thead>
                   <tbody>
                     {seedPlan.rows.map((r) => (
                       <tr key={r.symbol}>
                         <td className="pl-3.5 font-mono font-medium text-ink">{displayTicker(r.symbol)}</td>
-                        <td className="n text-ink-2">{fmtPct2(r.targetWeight)}</td>
-                        <td className="n text-ink-2">{fmtCurrency(r.targetValueCad)}</td>
+                        <td className="n font-medium text-ink">{fmtPct2(r.targetWeight)}</td>
                         <td className="n text-ink-2">{fmtCurrency(r.priceCad)}</td>
-                        <td className="n font-medium text-ink">{fmtUnits(+r.units.toFixed(4))}</td>
                       </tr>
                     ))}
                     <tr className="bg-surface-2">
-                      <td className="pl-3.5 text-[11.5px] text-ink-3" colSpan={2}>Total invested</td>
-                      <td className="n font-medium">
-                        {fmtCurrency(seedPlan.rows.reduce((t, r) => t + r.targetValueCad, 0))}
-                      </td>
-                      <td colSpan={2} className="n font-sans text-[11.5px] text-ink-3">
-                        + {fmtCurrency(seedPlan.cash)} cash = {fmtCurrency(seedPlan.totalValue)}
+                      <td className="pl-3.5 text-[11.5px] text-ink-3">Invested</td>
+                      <td className="n font-medium">{fmtPct2(seedPlan.rows.reduce((t, r) => t + r.targetWeight, 0))}</td>
+                      <td className="n font-sans text-[11.5px] text-ink-3">
+                        + {fmtPct2(profileWeights?.cash ?? 0)} cash
                       </td>
                     </tr>
                   </tbody>

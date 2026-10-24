@@ -6,7 +6,7 @@ import { useStocks } from "@/app/lib/StockContext";
 import { useLiveModelWeights } from "@/app/lib/useLiveModelWeights";
 import { canonicalTicker, displayTicker } from "@/app/lib/ticker";
 import { isFund } from "@/app/lib/sleeves";
-import { BUCKET_LABELS, bucketOf, enforceSleeveTargets } from "@/app/lib/sleeve-targets";
+import { BUCKET_LABELS, holdingBucket, enforceSleeveTargets } from "@/app/lib/sleeve-targets";
 import { applyDecisions, inheritDecisions, MAX_STOCK_PORTFOLIO_WEIGHT, maxEquityAllocation, monthKey, reconcile, releaseWeight, WEIGHT_COMMIT_ENABLED, type DecisionAction, type DecisionBucket, type MonthReview, type WeightDecision, type WeightDecisionStore } from "@/app/lib/weight-decisions";
 import { ThesisVerdictChip, useThesisVerdicts } from "@/app/components/ThesisVerdictChip";
 import { CollapsibleSection } from "@/app/components/CollapsibleSection";
@@ -107,7 +107,7 @@ export default function ReviewPage() {
     const out: Row[] = [];
     for (const h of group.holdings) {
       if (h.assetClass !== "equity") continue;
-      const b = bucketOf(h.symbol, stocks);
+      const b = holdingBucket(h, stocks);
       if (b === "core") continue;
       const s = byTicker.get(canonicalTicker(h.symbol));
       const lv = live?.get(canonicalTicker(h.symbol));

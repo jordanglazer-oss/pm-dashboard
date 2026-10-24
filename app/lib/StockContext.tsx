@@ -14,6 +14,7 @@ import { defaultMarketData } from "./defaults";
 // resilient to a missing Redis key without making the seed the source of
 // truth for the rebalance math.
 import { pimModelSeed as pimModelSeedFallback } from "./pim-seed";
+import { mergeStocks } from "./stocks-merge";
 import { enforceSleeveTargets } from "./sleeve-targets";
 import type { AnalystSnapshots, TickerSnapshot, AnalystReports, TickerReports, AnalystEntry, ExtractedReport } from "./analyst-snapshots";
 import { setSnapshotForTicker, getSnapshotForTicker, setReportsForTicker, getReportsForTicker, reportIdFor, computeAnalystConsensus, buildConsensusExplanation } from "./analyst-snapshots";
@@ -297,6 +298,131 @@ function useDebouncedPersist(url: string, bodyKey: string, delay = 500): [
   return [debounced, flush, isPending];
 }
 
+/**
+ * pm:stocks persister with the stale-tab guard (see app/lib/stocks-merge.ts).
+ *
+ * Same contract as useDebouncedPersist — [persist, flush, isPending] — plus
+ * `synced(serverCopy, clientCopy, hash)`, which every load / refetch calls so
+ * the guard knows which server copy this tab's state was built on.
+ *
+ * Each save sends `merge(clientBase → data, onto serverCopy)` with the server
+ * copy's fingerprint, so changes the server got since (an ingest, a rescore,
+ * another tab) are carried along even when this tab's state never saw them.
+ * Saves run one at a time (an overlapping save would carry a fingerprint its
+ * predecessor just invalidated). On 409 the server's newer copy comes back:
+ * this tab's own edits are re-applied onto it, the result is retried, and the
+ * state absorbs the server's changes.
+ */
+function useStocksPersist(setStocks: React.Dispatch<React.SetStateAction<Stock[]>>, delay = 500): [
+  (data: Stock[]) => void,
+  () => Promise<void>,
+  () => boolean,
+  (serverCopy: Stock[], clientCopy: Stock[], hash: string | undefined) => void,
+] {
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const latest = useRef<Stock[] | null>(null);
+  const serverRef = useRef<Stock[]>([]);
+  const clientBaseRef = useRef<Stock[]>([]);
+  const hashRef = useRef<string | undefined>(undefined);
+  const chain = useRef<Promise<void>>(Promise.resolve());
+  const inFlight = useRef(0);
+
+  const synced = useCallback((serverCopy: Stock[], clientCopy: Stock[], hash: string | undefined) => {
+    serverRef.current = serverCopy;
+    clientBaseRef.current = clientCopy;
+    hashRef.current = hash;
+  }, []);
+
+  const send = useCallback((data: Stock[], unloading = false): Promise<void> => {
+    inFlight.current++;
+    const run = async (): Promise<void> => {
+      try {
+        // A tab that never got a fingerprint (load failed) must not write.
+        if (hashRef.current === undefined) { console.warn("[stocks] no server fingerprint yet — save skipped"); return; }
+        let payload = mergeStocks(clientBaseRef.current, data, serverRef.current);
+        for (let attempt = 0; attempt < 3; attempt++) {
+          const body: string = JSON.stringify({ stocks: payload, baseHash: hashRef.current });
+          const res: Response = await fetch("/api/kv/stocks", {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body,
+            keepalive: unloading && body.length < 60_000,
+          });
+          const j: { hash?: string; stocks?: unknown; error?: string } = await res.json().catch(() => ({}));
+          if (res.ok) {
+            serverRef.current = payload;
+            clientBaseRef.current = data;
+            if (typeof j?.hash === "string") hashRef.current = j.hash;
+            if (payload !== data && attempt > 0) {
+              // Show the server's changes this save picked up.
+              const sent = payload;
+              setStocks((prev) => mergeStocks(data, prev, sent));
+              clientBaseRef.current = sent;
+            }
+            return;
+          }
+          if (res.status === 409 && Array.isArray(j?.stocks)) {
+            // Someone else saved since: re-apply only this tab's edits.
+            serverRef.current = j.stocks as Stock[];
+            hashRef.current = j.hash;
+            payload = mergeStocks(clientBaseRef.current, data, serverRef.current);
+            continue;
+          }
+          console.error("Failed to persist stocks:", res.status, j?.error);
+          return;
+        }
+        console.error("Failed to persist stocks: still stale after 3 merges");
+      } catch (e) {
+        console.error("Failed to persist stocks:", e);
+      } finally {
+        inFlight.current--;
+      }
+    };
+    chain.current = chain.current.then(run);
+    return chain.current;
+  }, [setStocks]);
+
+  const flush = useCallback((): Promise<void> => {
+    if (timer.current && latest.current) {
+      clearTimeout(timer.current);
+      timer.current = null;
+      const data = latest.current;
+      latest.current = null;
+      return send(data);
+    }
+    return chain.current;
+  }, [send]);
+
+  useEffect(() => {
+    const syncFlush = () => {
+      if (timer.current && latest.current) {
+        clearTimeout(timer.current);
+        timer.current = null;
+        const data = latest.current;
+        latest.current = null;
+        void send(data, true);
+      }
+    };
+    pendingFlushes.add(syncFlush);
+    return () => { pendingFlushes.delete(syncFlush); };
+  }, [send]);
+
+  const persist = useCallback((data: Stock[]) => {
+    latest.current = data;
+    if (timer.current) clearTimeout(timer.current);
+    timer.current = setTimeout(() => {
+      timer.current = null;
+      const d = latest.current;
+      latest.current = null;
+      if (d) void send(d);
+    }, delay);
+  }, [send, delay]);
+
+  const isPending = useCallback(() => timer.current !== null || inFlight.current > 0, []);
+
+  return [persist, flush, isPending, synced];
+}
+
 export function StockProvider({ children }: { children: React.ReactNode }) {
   const [stocks, setStocks] = useState<Stock[]>([]);
   const [marketData, setMarketData] = useState<MarketData>(defaultMarketData);
@@ -362,7 +488,7 @@ export function StockProvider({ children }: { children: React.ReactNode }) {
   const [analystReports, setAnalystReportsState] = useState<AnalystReports>({});
   const [loading, setLoading] = useState(true);
 
-  const [persistStocks, flushStocks, isStocksPersistPending] = useDebouncedPersist("/api/kv/stocks", "stocks");
+  const [persistStocks, flushStocks, isStocksPersistPending, stocksSynced] = useStocksPersist(setStocks);
   // Market data persists immediately (not debounced) since updates are explicit save actions
   const persistMarket = useCallback((data: unknown) => {
     fetch("/api/kv/market", {
@@ -469,6 +595,9 @@ export function StockProvider({ children }: { children: React.ReactNode }) {
       setPimBaseline(baselineGroups);
       const rawLoadedStocks: Stock[] = stocksRes.stocks || [];
       const { migrated: loadedStocks, changed: scoresMigrated } = migrateStockScores(rawLoadedStocks);
+      // The server copy + this tab's starting point (the migration, if any, is
+      // then a local edit the first save carries).
+      stocksSynced(rawLoadedStocks, rawLoadedStocks, stocksRes.hash);
       setStocks(loadedStocks);
       if (scoresMigrated) persistStocks(loadedStocks);
       if (marketRes.market) setMarketData({ ...defaultMarketData, ...marketRes.market });
@@ -1391,6 +1520,7 @@ export function StockProvider({ children }: { children: React.ReactNode }) {
           const fetched: Stock[] = res?.stocks || [];
           if (fetched.length === 0) return; // never blank out on a bad read
           const { migrated } = migrateStockScores(fetched);
+          stocksSynced(fetched, migrated, res?.hash);
           setStocks((prev) =>
             JSON.stringify(prev) === JSON.stringify(migrated) ? prev : migrated,
           );

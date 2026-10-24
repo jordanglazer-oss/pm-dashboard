@@ -32,6 +32,7 @@
  * ET, which would label yesterday's return as today's).
  */
 
+import { bucketTests } from "./sleeve-targets";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { PimPortfolioPositions, PimProfileType, PimModelData } from "./pim-types";
 import type { Stock } from "./types";
@@ -111,14 +112,10 @@ async function computeFor(
     : group.profiles[profile];
   if (!profileWeights) return;
 
-  // Build the set of core-designated symbols for alpha/core filtering
-  const coreSymbols = new Set<string>();
-  for (const s of stocks) {
-    if (s.designation === "core") coreSymbols.add(s.ticker);
-  }
-  // Thematic funds: their own sleeve, out of Alpha (mirrors update-daily-value).
-  const thematicSymbols = new Set<string>();
-  for (const s of stocks) if (s.designation === "thematic") thematicSymbols.add(s.ticker);
+  // Core / Thematic: the bucket recorded on the model holding first, else the
+  // pm:stocks designation (mirrors update-daily-value). Alpha = everything
+  // outside Core (stocks + Thematic funds).
+  const buckets = bucketTests(stocks, { groups: [group] });
 
   entry.inFlight = true;
   try {
@@ -149,9 +146,9 @@ async function computeFor(
       activeHoldings = group.holdings.filter((h) => {
         if (h.assetClass !== "equity") return false;
         const tk = h.symbol.endsWith("-T") ? h.symbol.replace(/-T$/, ".TO") : h.symbol;
-        const isCoreSym = coreSymbols.has(tk);
-        if (isThematic) return thematicSymbols.has(tk);
-        return isAlpha ? !isCoreSym && !thematicSymbols.has(tk) : isCoreSym;
+        const isCoreSym = buckets.isCore(tk);
+        if (isThematic) return buckets.isThematic(tk);
+        return isAlpha ? !isCoreSym : isCoreSym;
       });
     } else {
       activeHoldings = group.holdings.filter((h) => {

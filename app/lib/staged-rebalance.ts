@@ -63,8 +63,9 @@ const EQUITY_ONLY = { cash: 0, fixedIncome: 0, equity: 1, alternatives: 0 };
 /** Target share of the book per holding, for one positions book. */
 export function bookTargets(pim: PimModelGroup, profile: string, bucket: (symbol: string) => EquityBucket): Array<{ h: PimHolding; pct: number }> {
   if (profile === "alpha" || profile === "core") {
-    const want: EquityBucket = profile === "alpha" ? "alpha" : "core";
-    const eq = pim.holdings.filter((h) => h.assetClass === "equity" && bucket(h.symbol) === want);
+    // Alpha book = everything outside Core (stocks + Thematic funds, Oct 2026);
+    // Core book = the Core ETFs.
+    const eq = pim.holdings.filter((h) => h.assetClass === "equity" && (profile === "core" ? bucket(h.symbol) === "core" : bucket(h.symbol) !== "core"));
     const tot = eq.reduce((a, h) => a + h.weightInClass, 0);
     return tot > 0 ? eq.map((h) => ({ h, pct: h.weightInClass / tot })) : [];
   }

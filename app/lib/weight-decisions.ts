@@ -29,7 +29,7 @@
 import type { PimModelGroup, PimProfileType, SleeveTargets } from "./pim-types";
 import { canonicalTicker } from "./ticker";
 import { isFund } from "./sleeves";
-import { bucketOf, perStockFromPim } from "./sleeve-targets";
+import { bucketOf, holdingBucket, perStockFromPim } from "./sleeve-targets";
 import { substituteSource } from "./model-staging";
 
 export const WEIGHT_DECISIONS_KEY = "pm:weight-decisions";
@@ -192,7 +192,7 @@ export function inheritDecisions(pim: PimModelGroup, other: PimModelGroup, stock
   const at = new Date().toISOString();
   const equity = other.holdings.filter((h) => h.assetClass === "equity");
   // Same bucket rule as the rebalance (sleeve-targets.bucketOf).
-  const core = equity.filter((h) => bucketOf(h.symbol, stocks) === "core");
+  const core = equity.filter((h) => holdingBucket(h, stocks) === "core");
   const coreSet = new Set(core.map((h) => h.symbol));
   let nonCore = 0;
   const next = other.holdings.map((h) => {
