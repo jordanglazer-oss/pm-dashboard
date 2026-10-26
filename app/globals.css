@@ -12,79 +12,88 @@
  * Values are the authoritative palette from the redesign handoff (§1).
  */
 @theme {
+  /* "Private Office" palette (redesign/private-office): warm ivory ground,
+     white cards, deep-blue brand + rail, brass as the one warm accent. */
+
   /* Surfaces */
-  --color-ground: #f5f6f8;        /* page background */
+  --color-ground: #f4f2ec;        /* page background (warm ivory) */
   --color-surface: #ffffff;       /* cards / panels */
-  --color-surface-2: #fafbfc;     /* subtle zebra / inset */
-  --color-surface-hover: #f3f5f9; /* row / control hover */
+  --color-surface-2: #faf8f3;     /* subtle zebra / inset / table head */
+  --color-surface-hover: #f5f2ea; /* row / control hover */
 
   /* Hairlines */
-  --color-line: #e4e7ec;          /* card + strong divider */
-  --color-line-soft: #eef0f4;     /* row divider */
+  --color-line: #e5dfd2;          /* card + strong divider */
+  --color-line-soft: #efebe1;     /* row divider */
 
   /* Ink (text) */
-  --color-ink: #111827;           /* primary */
-  --color-ink-2: #4b5563;         /* secondary */
-  --color-ink-3: #8a93a2;         /* tertiary / placeholder */
-  --color-ink-faint: #c4cad3;     /* faint */
+  --color-ink: #161b26;           /* primary */
+  --color-ink-2: #3f4652;         /* secondary */
+  --color-ink-3: #5d6573;         /* tertiary — still 4.5:1 on ivory */
+  --color-ink-faint: #c4bdae;     /* faint (rules, disabled) */
 
   /* Accent (brand) */
-  --color-accent: #2d5bd0;
-  --color-accent-ink: #2547b8;    /* accent text on tint */
-  --color-accent-soft: #eef3ff;   /* accent tint bg */
-  --color-accent-border: #cddcff;
+  --color-accent: #1d3f8a;
+  --color-accent-ink: #1d3f8a;    /* accent text on tint */
+  --color-accent-soft: #e8eefa;   /* accent tint bg */
+  --color-accent-border: #c5d3f0;
+
+  /* Brass — the warm counterpoint (Alpha bucket, highlights). */
+  --color-brass: #b8914a;
+  --color-brass-ink: #7a5c22;
+  --color-brass-soft: #f6eedc;
+
+  /* The navy rail */
+  --color-rail: #1d3f8a;
+  --color-rail-hover: #2a4fa0;
+  --color-rail-line: #2f5199;
+  --color-rail-ink: #dbe3f3;
+  --color-rail-ink-3: #a9b8da;
 
   /* Semantic status */
-  --color-pos: #12805c;
-  --color-pos-soft: #ecf7f1;
-  --color-pos-border: #bfe3d4;
-  --color-neg: #cc3f57;
-  --color-neg-soft: #fdf1f3;
-  --color-neg-border: #f2c9cf;
-  --color-warn: #b0741c;
-  --color-warn-soft: #fbf5e8;
-  --color-warn-border: #f2e2bf;
+  --color-pos: #1e6b4b;
+  --color-pos-soft: #e3efe8;
+  --color-pos-border: #bcdcca;
+  --color-neg: #9b2c2c;
+  --color-neg-soft: #fbeaea;
+  --color-neg-border: #efc6c6;
+  --color-warn: #8a6416;
+  --color-warn-soft: #f6eedc;
+  --color-warn-border: #ead8b2;
 
   /* Hub accents — one hue per section of the rail (Today / Portfolio / Ideas /
-     Research). Same chroma and lightness as the brand accent, hue varied, so
-     the four read as a family rather than a rainbow. Used ONLY for wayfinding
-     (rail active state, group labels, the crumb, a panel's title mark) — never
-     for data, which stays on the semantic pos/neg/warn set. */
-  --color-hub-today: #b3701f;
-  --color-hub-today-soft: #fbeed4;
-  --color-hub-portfolio: #2d5bd0;
-  --color-hub-portfolio-soft: #e6edfd;
-  --color-hub-ideas: #6f55c4;
-  --color-hub-ideas-soft: #ece6f9;
-  --color-hub-research: #0f7d84;
-  --color-hub-research-soft: #dcefef;
+     Research). Used ONLY for wayfinding (group labels, the crumb, a panel's
+     title mark) — never for data, which stays on the semantic pos/neg/warn set. */
+  --color-hub-today: #8a6416;
+  --color-hub-today-soft: #f6eedc;
+  --color-hub-portfolio: #1d3f8a;
+  --color-hub-portfolio-soft: #e8eefa;
+  --color-hub-ideas: #5b4ba8;
+  --color-hub-ideas-soft: #eeebf8;
+  --color-hub-research: #146b6f;
+  --color-hub-research-soft: #e0f0ef;
 
   /* Structural / alt accent */
-  --color-violet: #6f55c4;
-  --color-violet-soft: #f2effb;
-  --color-violet-border: #ddd3f2;
+  --color-violet: #5b4ba8;
+  --color-violet-soft: #f0edf9;
+  --color-violet-border: #d9d2f0;
 
-  /* Radius — the workspace redesign tightens cards + controls to 6px */
-  --radius-card: 6px;
-  --radius-control: 6px;
-  --radius-pill: 20px;
+  /* Radius — softer cards, pill buttons */
+  --radius-card: 12px;
+  --radius-control: 8px;
+  --radius-pill: 999px;
 
-  /* Elevation ladder — static cards use shadow-sm, sectioned containers use
-     shadow-card. Tinted (16 21 28) rather than pure black so shadows sit calmly
-     in the light system. (#09) */
-  /* Workspace redesign: panels are a hairline, not a shadow. Both tokens
-     resolve to "none" so every existing shadow-sm / shadow-card usage flattens
-     without a per-component edit; popovers/menus set their own shadow. */
-  --shadow-sm: 0 0 0 0 transparent;
-  --shadow-card: 0 0 0 0 transparent;
-  --shadow-pop: 0 1px 2px rgb(17 24 39 / 0.06), 0 8px 24px -8px rgb(17 24 39 / 0.18);
+  /* Elevation: cards lift softly off the ivory ground (tinted, never black). */
+  --shadow-sm: 0 1px 2px rgb(22 27 38 / 0.05);
+  --shadow-card: 0 1px 2px rgb(22 27 38 / 0.04), 0 8px 24px -14px rgb(22 27 38 / 0.14);
+  --shadow-pop: 0 1px 2px rgb(22 27 38 / 0.06), 0 12px 32px -10px rgb(22 27 38 / 0.24);
 
   /* Type — ONE family site-wide. `--font-mono` deliberately resolves to the
-     same Plex Sans stack: monospaced numbers read as "generated", so numeric
+     same Manrope stack: monospaced numbers read as "generated", so numeric
      alignment comes from tabular figures (see body) instead of a mono face.
      The ~640 `font-mono` utilities stay as semantic "this is a number" markers. */
-  --font-sans: var(--font-plex-sans), -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-  --font-mono: var(--font-plex-sans), -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  --font-sans: var(--font-body), -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  --font-mono: var(--font-body), -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  --font-display: var(--font-serif), "Iowan Old Style", Georgia, serif;
 }
 
 :root {
@@ -92,13 +101,14 @@
      immediately — Tailwind v4 tree-shakes an unreferenced @theme font var out
      of :root, which would leave var(--font-sans) empty until a font-* utility
      is used somewhere. Same values as the @theme entries above. */
-  --font-sans: var(--font-plex-sans), -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-  --font-mono: var(--font-plex-sans), -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  --font-sans: var(--font-body), -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  --font-mono: var(--font-body), -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
 
   /* Legacy aliases kept so any lingering var(--background)/var(--foreground)
      references resolve to the new palette during the migration. */
-  --background: #f5f6f8;
-  --foreground: #111827;
+  --background: #f4f2ec;
+  --foreground: #161b26;
+  --font-display: var(--font-serif), "Iowan Old Style", Georgia, serif;
 }
 
 * {
@@ -157,20 +167,20 @@ body {
   .seg {
     display: inline-flex;
     align-items: center;
-    height: 28px;
-    padding: 2px;
+    height: 30px;
+    padding: 3px;
     gap: 2px;
-    border: 1px solid var(--color-line);
-    border-radius: var(--radius-control);
-    background: var(--color-surface-2);
+    border: 0;
+    border-radius: var(--radius-pill);
+    background: #ebe6da;
   }
   .seg > * {
     display: inline-flex;
     align-items: center;
     gap: 6px;
-    height: 22px;
-    padding: 0 10px;
-    border-radius: 4px;
+    height: 24px;
+    padding: 0 11px;
+    border-radius: var(--radius-pill);
     font-size: 12.5px;
     color: var(--color-ink-2);
     white-space: nowrap;
@@ -181,8 +191,8 @@ body {
   .seg > .on {
     background: var(--color-surface);
     color: var(--color-ink);
-    font-weight: 500;
-    box-shadow: 0 1px 1px rgb(17 24 39 / 0.06);
+    font-weight: 600;
+    box-shadow: 0 1px 2px rgb(22 27 38 / 0.10);
   }
   .seg .c { font-family: var(--font-mono); font-size: 11px; color: var(--color-ink-3); }
 
@@ -193,8 +203,9 @@ body {
      page itself never scrolls sideways. */
   .panel {
     background: var(--color-surface);
-    border: 1px solid var(--color-line);
+    border: 1px solid var(--color-line-soft);
     border-radius: var(--radius-card);
+    box-shadow: var(--shadow-card);
     overflow: hidden;
   }
   .tbl-wrap { overflow-x: auto; overscroll-behavior-x: contain; }
@@ -225,12 +236,15 @@ body {
   /* The mark itself takes the hue, so `.t-mark` alone is enough on new panels. */
   .t-mark { background: var(--h, var(--color-ink-faint)); }
 
+  /* Private Office: headers stay white — the hue lives only in the title
+     mark, so a page of panels reads as calm cards, not coloured slabs. */
   .panel-h {
-    background: var(--h-soft, var(--color-surface-2));
-    /* fallthrough so a hue class on the header still tints it */
-    border-bottom-color: var(--h-line, var(--color-line-soft));
+    min-height: 44px;
+    padding: 0 16px;
+    background: var(--color-surface);
+    border-bottom-color: var(--color-line-soft);
   }
-  .panel-h .t { font-size: 13px; font-weight: 600; color: var(--h, var(--color-ink)); letter-spacing: -0.005em; }
+  .panel-h .t { font-size: 13.5px; font-weight: 700; color: var(--color-ink); letter-spacing: -0.005em; }
   .panel-h .m { font-size: 11.5px; color: var(--color-ink-3); }
   /* Inside a hued panel the table header picks the same tint up, so a table
      reads as part of its section rather than as a grey slab. */
@@ -255,12 +269,13 @@ body {
   .data-table th {
     height: 30px; padding: 0 10px; text-align: left; white-space: nowrap;
     font-size: 11px; font-weight: 600; letter-spacing: 0.01em;
-    color: var(--h, var(--color-ink-2));
-    background: color-mix(in srgb, var(--h-soft, var(--color-surface-2)) 55%, #fff);
-    border-bottom: 2px solid var(--h-line, var(--color-line));
+    font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.06em;
+    color: var(--color-ink-3);
+    background: var(--color-surface-2);
+    border-bottom: 1px solid var(--color-line);
   }
   .data-table td {
-    height: 34px; padding: 0 10px;
+    height: 38px; padding: 0 10px;
     font-size: 12.5px; color: var(--color-ink);
     border-bottom: 1px solid var(--color-line-soft);
   }
@@ -272,6 +287,18 @@ body {
   .data-table td.n { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
   .data-table tbody tr:hover td { background: var(--color-surface-hover); }
   .data-table tbody tr.sel td { background: var(--color-accent-soft); }
+
+  /* Page heading (Private Office): small eyebrow line, serif title, and an
+     optional plain-English summary sentence under it. */
+  .page-eyebrow { font-size: 12.5px; color: var(--color-ink-3); }
+  .page-title {
+    margin: 0; font-family: var(--font-display); font-weight: 400;
+    font-size: 40px; line-height: 1.05; letter-spacing: -0.01em; color: var(--color-ink);
+  }
+  @media (max-width: 767px) { .page-title { font-size: 32px; } }
+  .page-lede { margin: 0; max-width: 68ch; font-size: 14.5px; line-height: 1.55; color: var(--color-ink-2); }
+  /* Serif figures for headline numbers (KPI tiles). */
+  .figure { font-family: var(--font-display); font-weight: 400; font-variant-numeric: lining-nums tabular-nums; letter-spacing: -0.01em; }
 
   /* Styled hover tip (TooltipLayer) — replaces the browser's grey `title`
      tooltip. Dark chip so it reads as a layer above the light workspace. */

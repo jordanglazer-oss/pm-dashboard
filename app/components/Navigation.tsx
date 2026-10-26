@@ -130,9 +130,9 @@ function SystemHealthDot() {
         onClick={() => setOpen(!open)}
         aria-label="System health"
         title="System — backups, estimate refresh, Anthropic credits, methodology, appendix"
-        className={`flex h-7 w-full items-center gap-2.5 rounded-[5px] px-2.5 text-[13px] transition-colors hover:bg-surface-hover ${open ? "bg-surface-hover text-ink" : "text-ink-2"}`}
+        className={`flex h-8 w-full items-center gap-2.5 rounded-control px-2.5 text-[13px] transition-colors hover:bg-rail-hover hover:text-white ${open ? "bg-rail-hover text-white" : "text-rail-ink"}`}
       >
-        <AppIcon name="gear" size={15} className="text-ink-3" />
+        <AppIcon name="gear" size={15} className="text-rail-ink-3" />
         <span>System</span>
         <span className={`ml-auto inline-block h-[7px] w-[7px] rounded-full ${dotCls}`} />
       </button>
@@ -369,17 +369,15 @@ export function Navigation() {
 
   const rail = (onNavigate?: () => void) => (
     <>
-      <div className="flex h-12 shrink-0 items-center gap-2.5 border-b border-line-soft px-4">
-        <span className="grid h-[22px] w-[22px] place-items-center rounded-[5px] bg-ink text-[11px] font-bold text-white">P</span>
-        <span className="text-[13px] font-semibold tracking-tight text-ink">PIM Workspace</span>
+      <div className="flex h-16 shrink-0 flex-col justify-center gap-0.5 px-5">
+        <span className="font-display text-[23px] leading-none text-white">Di Iorio</span>
+        <span className="text-[9.5px] font-semibold tracking-[0.2em] text-rail-ink-3">PORTFOLIO OFFICE</span>
       </div>
-      <div className="flex grow flex-col gap-0.5 overflow-y-auto px-1.5 pb-2 pt-0.5">
+      <div className="flex grow flex-col gap-0.5 overflow-y-auto px-2.5 pb-2 pt-0.5">
         {NAV_GROUPS.map((g) => {
-          const hue = HUE[g.hue];
           return (
           <div key={g.label} className="flex flex-col gap-px">
-            <div className="flex items-center gap-1.5 px-2.5 pb-1 pt-3.5 text-[10.5px] font-semibold tracking-[0.04em] text-ink-3">
-              <span className={`h-[3px] w-[3px] rounded-full ${hue.mark}`} aria-hidden />
+            <div className="px-2.5 pb-1 pt-4 text-[10px] font-semibold uppercase tracking-[0.14em] text-rail-ink-3">
               {g.label}
             </div>
             {g.items.map((it) => {
@@ -390,9 +388,9 @@ export function Navigation() {
                   href={it.href}
                   onClick={onNavigate}
                   aria-current={on ? "page" : undefined}
-                  className={`rail-item flex h-7 items-center gap-2.5 rounded-[5px] px-2.5 text-[13px] ${on ? `${hue.bg} font-medium ${hue.text}` : "!text-ink-2 hover:bg-surface-hover hover:!text-ink"}`}
+                  className={`rail-item flex h-8 items-center gap-2.5 rounded-control px-2.5 text-[13px] ${on ? "bg-white font-semibold !text-rail shadow-[0_1px_2px_rgb(0_0_0/0.12)]" : "!text-rail-ink hover:bg-rail-hover hover:!text-white"}`}
                 >
-                  <AppIcon name={it.icon} size={15} className={on ? "" : "text-ink-3"} />
+                  <AppIcon name={it.icon} size={15} className={on ? "" : "text-rail-ink-3"} />
                   <span>{it.label}</span>
                 </Link>
               );
@@ -401,7 +399,7 @@ export function Navigation() {
           );
         })}
       </div>
-      <div className="flex flex-col gap-px border-t border-line-soft px-1.5 pb-2.5 pt-2">
+      <div className="flex flex-col gap-px border-t border-rail-line px-2.5 pb-3 pt-2.5">
         {NAV_UTILITIES.map((it) => {
           const on = it.key === activeKey;
           return (
@@ -409,9 +407,9 @@ export function Navigation() {
               key={it.key}
               href={it.href}
               onClick={onNavigate}
-              className={`rail-item flex h-7 items-center gap-2.5 rounded-[5px] px-2.5 text-[13px] ${on ? "bg-accent-soft font-medium !text-accent-ink" : "!text-ink-2 hover:bg-surface-hover hover:!text-ink"}`}
+              className={`rail-item flex h-8 items-center gap-2.5 rounded-control px-2.5 text-[13px] ${on ? "bg-white font-semibold !text-rail" : "!text-rail-ink hover:bg-rail-hover hover:!text-white"}`}
             >
-              <AppIcon name={it.icon} size={15} className={on ? "" : "text-ink-3"} />
+              <AppIcon name={it.icon} size={15} className={on ? "" : "text-rail-ink-3"} />
               <span>{it.label}</span>
             </Link>
           );
@@ -424,21 +422,21 @@ export function Navigation() {
   return (
     <>
     {/* Desktop rail */}
-    <aside className="fixed inset-y-0 left-0 z-40 hidden w-[200px] flex-col border-r border-line bg-surface md:flex print:hidden">
+    <aside className="fixed inset-y-0 left-0 z-40 hidden w-[200px] flex-col bg-rail md:flex print:hidden">
       {rail()}
     </aside>
 
     {/* Mobile drawer copy of the rail */}
     {drawerOpen && (
       <div className="md:hidden fixed inset-0 z-50 bg-ink/30 print:hidden" onClick={() => setDrawerOpen(false)}>
-        <aside className="absolute inset-y-0 left-0 flex w-[240px] flex-col bg-surface shadow-[var(--shadow-pop)]" onClick={(e) => e.stopPropagation()}>
+        <aside className="absolute inset-y-0 left-0 flex w-[240px] flex-col bg-rail shadow-[var(--shadow-pop)]" onClick={(e) => e.stopPropagation()}>
           {rail(() => setDrawerOpen(false))}
         </aside>
       </div>
     )}
 
     {/* Top bar */}
-    <header className="sticky top-0 z-30 border-b border-line bg-surface text-ink md:ml-[200px] print:hidden">
+    <header className="sticky top-0 z-30 border-b border-line-soft bg-ground/85 text-ink backdrop-blur-md md:ml-[200px] print:hidden">
       <div className="flex h-12 items-center gap-3 px-3 md:gap-4 md:px-5">
         <button
           onClick={() => setDrawerOpen(true)}
@@ -458,7 +456,7 @@ export function Navigation() {
           onClick={() => setPaletteOpen(true)}
           aria-label="Search"
           title="Search (⌘K)"
-          className="mx-auto flex h-[30px] w-full min-w-0 max-w-[360px] items-center gap-2 rounded-control border border-line bg-surface-2 px-2.5 text-[12.5px] text-ink-3 transition-colors hover:bg-surface-hover hover:text-ink"
+          className="mx-auto flex h-[34px] w-full min-w-0 max-w-[380px] items-center gap-2 rounded-pill border border-line bg-surface px-3.5 text-[12.5px] text-ink-3 shadow-sm transition-colors hover:border-accent-border hover:text-ink"
         >
           <AppIcon name="search" size={14} strokeWidth={2} />
           <span className="hidden grow truncate text-left sm:inline">Jump to a name, page or action</span>
@@ -489,7 +487,7 @@ export function Navigation() {
           <NotificationTray />
           <button
             onClick={() => setQuickAddOpen(true)}
-            className="flex h-7 items-center gap-1.5 rounded-control bg-ink px-2.5 pl-2 text-[12.5px] font-medium text-white transition-colors hover:bg-ink-2"
+            className="flex h-8 items-center gap-1.5 rounded-pill bg-accent px-3.5 pl-3 text-[12.5px] font-semibold text-white transition-colors hover:bg-rail-hover"
             title="Add a stock (Shift+A)"
           >
             <AppIcon name="plus" size={13} strokeWidth={2.25} />
