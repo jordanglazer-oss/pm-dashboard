@@ -1961,7 +1961,7 @@ function RankingTable({
               <button
                 onClick={() => setChipFilter(chipFilter === "flagged" ? "all" : "flagged")}
                 aria-pressed={chipFilter === "flagged"}
-                className={`inline-flex h-7 items-center gap-1.5 rounded-control border px-2.5 text-[12.5px] transition-colors ${chipFilter === "flagged" ? "border-warn-border bg-warn-soft text-warn" : flaggedN > 0 ? "border-warn-soft bg-warn-soft text-warn hover:border-warn-border" : "border-line bg-surface text-ink-2 hover:bg-surface-hover"}`}
+                className={`inline-flex h-8 items-center gap-1.5 rounded-pill border px-3 text-[12.5px] font-medium shadow-sm transition-[background-color,border-color,color] duration-150 focus-visible:ring-2 focus-visible:ring-accent/25 ${chipFilter === "flagged" ? "border-warn-border bg-warn-soft text-warn" : flaggedN > 0 ? "border-warn-soft bg-warn-soft text-warn hover:border-warn-border" : "border-line bg-surface text-ink-2 hover:border-accent-border hover:bg-accent-soft hover:text-accent"}`}
                 title="Only names with a risk flag, a value-trap haircut, or a tripped thesis"
               >
                 <span className={`dot ${flaggedN > 0 ? "bg-warn" : "bg-ink-faint"}`} />
@@ -1970,7 +1970,7 @@ function RankingTable({
               <button
                 onClick={() => setChipFilter(chipFilter === "stale" ? "all" : "stale")}
                 aria-pressed={chipFilter === "stale"}
-                className={`inline-flex h-7 items-center gap-1.5 rounded-control border px-2.5 text-[12.5px] transition-colors ${chipFilter === "stale" ? "border-warn-border bg-warn-soft text-warn" : "border-line bg-surface text-ink-2 hover:bg-surface-hover"}`}
+                className={`inline-flex h-8 items-center gap-1.5 rounded-pill border px-3 text-[12.5px] font-medium shadow-sm transition-[background-color,border-color,color] duration-150 focus-visible:ring-2 focus-visible:ring-accent/25 ${chipFilter === "stale" ? "border-warn-border bg-warn-soft text-warn" : "border-line bg-surface text-ink-2 hover:border-accent-border hover:bg-accent-soft hover:text-accent"}`}
                 title="Only names whose score is older than 30 days"
               >
                 Stale <span className="font-mono text-[11px] text-ink-3">{staleN}</span>
@@ -1985,14 +1985,14 @@ function RankingTable({
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             placeholder={`Filter ${stocks.length} holdings`}
-            className="h-7 w-44 rounded-control border border-line bg-surface pl-7 pr-2 text-[12.5px] outline-none placeholder:text-ink-3 focus:border-accent"
+            className="h-8 w-48 rounded-pill border border-line bg-surface pl-7 pr-3 text-[12.5px] text-ink shadow-sm outline-none transition-[border-color,box-shadow] duration-150 placeholder:text-ink-3 hover:border-accent-border focus:border-accent focus:ring-2 focus:ring-accent/20"
           />
         </div>
         {onScoreAll && (
           <button
             onClick={() => onScoreAll?.(selectedInView.length > 0 ? selectedInView : undefined)}
             disabled={scoreAllDisabled || scoreableCount === 0}
-            className="inline-flex h-7 items-center gap-1.5 rounded-control bg-ink px-2.5 text-[12.5px] font-medium text-white transition-colors hover:bg-ink-2 disabled:opacity-50"
+            className="inline-flex h-8 items-center gap-1.5 rounded-pill bg-accent px-3.5 text-[12.5px] font-semibold text-white shadow-sm transition-[background-color,box-shadow] duration-150 hover:bg-rail-hover hover:shadow-card focus-visible:ring-2 focus-visible:ring-accent/30 disabled:opacity-50"
             title={
               selectedInView.length > 0
                 ? `Full rescore of ONLY the ${selectedInView.length} checked name${selectedInView.length === 1 ? "" : "s"} (uncheck all to score the whole list)`
@@ -2015,7 +2015,7 @@ function RankingTable({
             <button
               aria-label="Table actions"
               title="More table actions"
-              className="grid h-7 w-7 place-items-center rounded-control border border-line bg-surface text-ink-2 hover:bg-surface-hover hover:text-ink transition-colors data-[state=open]:bg-surface-hover data-[state=open]:text-ink"
+              className="grid h-8 w-8 place-items-center rounded-pill border border-line bg-surface text-ink-2 shadow-sm transition-[background-color,border-color,color] duration-150 hover:border-accent-border hover:bg-accent-soft hover:text-accent data-[state=open]:border-accent-border data-[state=open]:bg-accent-soft data-[state=open]:text-accent"
             >
               <AppIcon name="more" size={14} strokeWidth={2} />
             </button>
@@ -2258,11 +2258,11 @@ function RankingTable({
               if (row.kind === "header") {
                 return (
                   <tr key={row.key} className="bg-surface-2">
-                    <td colSpan={40} className="!h-7 !p-0 sticky left-0 bg-surface-2 z-10">
+                    <td colSpan={40} className="!h-8 !p-0 sticky left-0 bg-surface-2 z-10">
                       <button
                         type="button"
                         onClick={() => collapseKey && setUiPref(`${collapseKey}.${row.currencyKey}`, row.collapsed ? "0" : "1")}
-                        className="flex h-7 w-full items-center gap-1.5 px-3.5 text-[11px] font-medium text-ink-3 hover:text-ink transition-colors text-left"
+                        className="flex h-8 w-full items-center gap-1.5 px-3.5 text-left text-[10.5px] font-semibold uppercase tracking-[0.06em] text-ink-3 transition-colors duration-150 hover:bg-surface-hover hover:text-accent"
                         aria-expanded={!row.collapsed}
                         title={row.collapsed ? "Expand" : "Collapse"}
                       >
@@ -2286,7 +2286,7 @@ function RankingTable({
                     Score column already convey best/worst). */}
                 <tr
                   ref={(el) => { const m = rowElRefs.current; if (el) m.set(s.ticker, el); else m.delete(s.ticker); }}
-                  className={`animate-row-in row-link group transition-colors ${selectedTicker && canonicalTicker(selectedTicker) === canonicalTicker(s.ticker) ? "sel" : ""}`}
+                  className={`animate-row-in row-link group transition-[background-color,box-shadow] duration-150 hover:shadow-[inset_3px_0_0_var(--color-accent)] ${selectedTicker && canonicalTicker(selectedTicker) === canonicalTicker(s.ticker) ? "sel" : ""}`}
                   style={{ animationDelay: `${Math.min(rowIdx, 12) * 28}ms` }}
                   aria-selected={selectedTicker != null && canonicalTicker(selectedTicker) === canonicalTicker(s.ticker)}
                   onClick={(e) => {
@@ -2309,8 +2309,8 @@ function RankingTable({
                         className="h-3.5 w-3.5 shrink-0 cursor-pointer accent-accent"
                         title={`Include ${displayTicker(s.ticker)} in a targeted rescore (scopes the Score all / Rescore fundamentals buttons)`}
                       />
-                      <Link href={`/stock/${s.ticker.toLowerCase()}`} className="block hover:underline" title="Open the stock page">
-                        <div className="flex items-center gap-1.5 whitespace-nowrap font-mono font-medium text-ink">
+                      <Link href={`/stock/${s.ticker.toLowerCase()}`} className="block transition-colors hover:!text-accent hover:underline" title="Open the stock page">
+                        <div className="flex items-center gap-1.5 whitespace-nowrap font-mono font-semibold tracking-tight">
                           {displayTicker(s.ticker)}
                           {(() => {
                             const risk = riskScanByTicker?.get(normalizeRiskTicker(s.ticker));
@@ -2324,7 +2324,7 @@ function RankingTable({
                                   : "bg-warn-soft text-warn border-warn-border";
                             return (
                               <span
-                                className={`inline-flex h-4 items-center rounded border px-1 text-[10px] font-medium ${tone}`}
+                                className={`inline-flex h-4 items-center rounded-pill border px-1.5 text-[10px] font-semibold ${tone}`}
                                 title={`Today's brief — ${risk.priority} risk. ${risk.summary} Action: ${risk.action}`}
                               >
                                 {risk.priority === "Medium-High" ? "MH" : risk.priority.slice(0, 3)}
@@ -2335,7 +2335,7 @@ function RankingTable({
                               is never applied silently. */}
                           {s.valueTrap && (
                             <span
-                              className="inline-flex h-4 items-center rounded border px-1 text-[10px] font-medium bg-warn-soft text-warn border-warn-border"
+                              className="inline-flex h-4 items-center rounded-pill border px-1.5 text-[10px] font-semibold bg-warn-soft text-warn border-warn-border"
                               title={`Value-trap haircut: FY+1 estimates being cut (net revisions ${s.valueTrap.net}) — valuation categories ×0.5 (${s.valueTrap.pointsRemoved} pts removed). Lifts automatically when revisions recover.`}
                             >
                               VT
@@ -2363,7 +2363,7 @@ function RankingTable({
                         <Link
                           href="/synthesis"
                           onClick={(e) => e.stopPropagation()}
-                          className={`inline-flex h-[18px] items-center gap-1 rounded px-1.5 text-[11px] font-medium whitespace-nowrap ${SKEW_TONE[word]}`}
+                          className={`inline-flex h-5 items-center gap-1 rounded-pill px-2 text-[11px] font-semibold whitespace-nowrap ${SKEW_TONE[word]}`}
                           title={`Latest synthesis reads ${word.toLowerCase()}${sv.stale ? " — stale, regenerate on the Synthesis screen" : ""}. Click to open Ideas › Synthesis.`}
                         >
                           {word}
@@ -2374,7 +2374,7 @@ function RankingTable({
                   </td>
                   {/* Score = adjusted composite (with regime delta) */}
                   <td className="n">
-                    <span className="font-medium text-ink">{Number(s.adjusted.toFixed(1))}</span>
+                    <span className="font-semibold text-ink">{Number(s.adjusted.toFixed(1))}</span>
                     <span className="text-[11px] text-ink-faint">/{MAX_SCORE}</span>
                     <span className={`ml-1 text-[11px] ${adj > 0 ? "text-pos" : adj < 0 ? "text-neg" : "text-ink-faint"}`} title="Regime adjustment vs the raw score">
                       {adj > 0 ? "+" : ""}{adj}
@@ -2413,7 +2413,7 @@ function RankingTable({
                     <button
                       type="button"
                       onClick={() => toggleRowExpanded(s.ticker)}
-                      className="grid h-6 w-6 place-items-center rounded text-ink-3 hover:bg-surface-hover hover:text-ink transition-colors"
+                      className="grid h-7 w-7 place-items-center rounded-pill text-ink-3 transition-colors duration-150 hover:bg-accent-soft hover:text-accent"
                       aria-expanded={expanded}
                       title={expanded ? "Hide detail" : "Show What They Do / Why Own It / category scores"}
                     >
@@ -2422,8 +2422,8 @@ function RankingTable({
                   </td>
                 </tr>
                 {expanded && (
-                  <tr className="bg-surface-2">
-                    <td colSpan={showWeight ? 7 : 6} className="!h-auto whitespace-normal !px-3.5 !py-3 align-top">
+                  <tr className="bg-surface-2 shadow-[inset_3px_0_0_var(--color-accent)]">
+                    <td colSpan={showWeight ? 7 : 6} className="!h-auto whitespace-normal !px-4 !py-3.5 align-top">
                       <div className="grid gap-x-6 gap-y-3 md:grid-cols-2">
                         <div className="min-w-0">
                           <div className="mb-1 text-[11px] text-ink-3">What they do</div>
@@ -2453,8 +2453,8 @@ function RankingTable({
           </tbody>
         </table>
       </div>
-      <div className="flex h-8 items-center justify-between border-t border-line-soft px-3.5 text-[11.5px] text-ink-3">
-        <span>{effSorted.length} of {stocks.length} · sorted by {String(sort.key)}</span>
+      <div className="flex min-h-9 items-center justify-between gap-3 border-t border-line-soft bg-surface-2 px-4 py-2 text-[11.5px] text-ink-3">
+        <span className="tabular-nums">{effSorted.length} of {stocks.length} · sorted by {String(sort.key)}</span>
         <span className="hidden sm:inline">{onSelectTicker ? "click a row to inspect it · ↗ ticker opens the page" : "click a row to open the stock page"}</span>
       </div>
       </>
