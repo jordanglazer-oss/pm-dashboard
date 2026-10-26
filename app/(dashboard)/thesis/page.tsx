@@ -4,7 +4,7 @@ import { THESIS_VERDICT_LABEL } from "@/app/lib/thesis-verdict";
 import React, { useEffect, useMemo, useState } from "react";
 import { useStocks } from "@/app/lib/StockContext";
 import Link from "next/link";
-import { displayTicker } from "@/app/lib/ticker";
+import { displayTicker, tickersEqual } from "@/app/lib/ticker";
 import { Skeleton } from "@/app/components/Skeleton";
 import { EmptyState } from "@/app/components/EmptyState";
 import { AppIcon } from "@/app/components/AppIcon";
@@ -135,7 +135,7 @@ export default function ThesisDeskPage() {
   // Open/closed state now persists in pm:ui-prefs (Redis-backed, synced
   // across devices + refreshes); the old localStorage blob remains only as a
   // one-time fallback default for names never toggled since the migration.
-  const { uiPrefs, setUiPref } = useStocks();
+  const { uiPrefs, setUiPref, stocks } = useStocks();
   const [overrides, setOverrides] = useState<Record<string, boolean>>(() => {
     if (typeof window === "undefined") return {};
     try {
@@ -462,6 +462,72 @@ export default function ThesisDeskPage() {
     if (mode === "selected") setSelected(new Set());
   };
 
+  /**
+   * Remove a thesis (a name that has been sold). Never a hard delete: the
+   * server copies it to pm:position-theses-archive first, and the "Removed"
+   * strip at the bottom can put it back.
+   */
+  const isHeld = (tk: string) => stocks.some((st) => st.bucket === "Portfolio" && tickersEqual(st.ticker, tk));
+  const soldRows = useMemo(() => rows.filter((r) => !isHeld(r.ticker)), [rows, stocks]); // eslint-disable-line react-hooks/exhaustive-deps
+  const [archived, setArchived] = useState<Record<string, { removedAt: string }[]>>({});
+  const [removing, setRemoving] = useState<string | null>(null);
+  const loadArchive = () =>
+    fetch("/api/kv/position-theses/archive", { cache: "no-store" })
+      .then((r) => r.json())
+      .then((d) => setArchived(d?.archive ?? {}))
+      .catch(() => {});
+  useEffect(() => {
+    loadArchive();
+  }, []);
+  const reload = async () => {
+    try {
+      const fresh = await fetch("/api/thesis-watch", { cache: "no-store" }).then((r) => r.json());
+      setData(fresh as Payload);
+    } catch {
+      /* a refresh picks it up */
+    }
+    await loadArchive();
+  };
+  const removeTheses = async (tickers: string[]) => {
+    if (tickers.length === 0 || removing) return;
+    const names = tickers.map(displayTicker).join(", ");
+    const held = tickers.filter(isHeld);
+    const ok = window.confirm(
+      `Remove the thesis for ${names}?\n\nIt disappears from this page, the kill-condition checks and the alerts.${held.length ? `\n\nNote: ${held.map(displayTicker).join(", ")} still shows as held in the portfolio.` : ""}\n\nNothing is lost — it is kept in "Removed theses" at the bottom of this page and can be restored.`,
+    );
+    if (!ok) return;
+    for (const tk of tickers) {
+      setRemoving(tk);
+      try {
+        await fetch(`/api/kv/position-theses?ticker=${encodeURIComponent(tk)}&confirm=YES`, { method: "DELETE" });
+      } catch {
+        /* the reload below shows what actually happened */
+      }
+    }
+    setRemoving(null);
+    setSelected(new Set());
+    await reload();
+  };
+  const restoreThesis = async (tk: string) => {
+    if (removing) return;
+    setRemoving(tk);
+    try {
+      const r = await fetch("/api/kv/position-theses/archive", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ticker: tk }),
+      });
+      if (!r.ok) {
+        const d = await r.json().catch(() => ({}));
+        window.alert(d?.error ?? "Restore failed");
+      }
+    } catch {
+      window.alert("Restore failed");
+    }
+    setRemoving(null);
+    await reload();
+  };
+
   const btnSecondary =
     "inline-flex h-7 items-center gap-1.5 rounded-control border border-line bg-surface px-2.5 text-[12.5px] text-ink-2 hover:bg-surface-hover disabled:opacity-50";
 
@@ -562,6 +628,23 @@ export default function ThesisDeskPage() {
                   </button>
                 )}
               </>
+            )}
+            {soldRows.length > 0 && !bulk && (
+              <button
+                onClick={() => removeTheses(soldRows.map((r) => r.ticker))}
+                disabled={!!removing}
+                title={`Removes the theses of the ${soldRows.length} name${soldRows.length === 1 ? "" : "s"} no longer held: ${soldRows.map((r) => displayTicker(r.ticker)).join(", ")}. Kept in "Removed theses" below and can be restored.`}
+                className={btnSecondary}
+              >
+                <AppIcon name="trash" size={13} />
+                Remove {soldRows.length} no longer held
+              </button>
+            )}
+            {selected.size > 0 && !bulk && (
+              <button onClick={() => removeTheses([...selected])} disabled={!!removing} className={btnSecondary} title="Removes the selected theses (kept in Removed theses below, restorable)">
+                <AppIcon name="trash" size={13} />
+                Remove {selected.size} selected
+              </button>
             )}
             {rows.length > 0 && !bulk && (
               <button
@@ -675,12 +758,27 @@ export default function ThesisDeskPage() {
                     );
                   })()}
                   {r.aiDrafted && <span className="text-[11.5px] text-ink-3">AI draft</span>}
+                  {!isHeld(r.ticker) && (
+                    <span className="rounded-pill bg-warn-soft px-2 py-0.5 text-[11px] font-medium text-warn" title="Not in the portfolio any more — remove the thesis if the position was sold">
+                      Not held
+                    </span>
+                  )}
                   <span
                     className={`ml-auto text-[11px] ${overdue ? "text-warn" : "text-ink-faint"}`}
                     title={`${r.underwrittenAt ? `Underwritten ${r.underwrittenAt}` : "Underwrite date unknown"}${r.reUnderwriteBy ? ` · re-underwrite ${overdue ? "overdue since" : "due"} ${r.reUnderwriteBy}` : ""}`}
                   >
                     {overdue ? "re-underwrite overdue" : r.reUnderwriteBy ? `review ${r.reUnderwriteBy.slice(5)}` : ""}
                   </span>
+                  <button
+                    type="button"
+                    onClick={() => removeTheses([r.ticker])}
+                    disabled={!!removing}
+                    title={`Remove ${displayTicker(r.ticker)}'s thesis (kept in Removed theses below, restorable)`}
+                    aria-label={`Remove ${displayTicker(r.ticker)}'s thesis`}
+                    className="grid h-6 w-6 shrink-0 place-items-center rounded-pill text-ink-faint transition-colors hover:bg-neg-soft hover:text-neg disabled:opacity-40"
+                  >
+                    <AppIcon name={removing === r.ticker ? "refresh" : "trash"} size={13} className={removing === r.ticker ? "animate-spin" : ""} />
+                  </button>
                 </div>
 
                 {open && r.why && (
@@ -807,6 +905,35 @@ export default function ThesisDeskPage() {
                 </Link>
               </div>
             ))}
+          </div>
+        </section>
+      )}
+
+      {!loading && Object.keys(archived).length > 0 && (
+        <section className="panel">
+          <div className="panel-h">
+            <span className="t">Removed theses</span>
+            <span className="m">kept so a removal can be undone · restore puts it back exactly as it was</span>
+          </div>
+          <div className="grid md:grid-cols-2 2xl:grid-cols-3">
+            {Object.entries(archived)
+              .sort(([a], [b]) => a.localeCompare(b))
+              .map(([tk, list]) => (
+                <div key={tk} className="flex h-[36px] items-center gap-3 border-b border-line-soft px-3.5">
+                  <span className="font-mono text-[12.5px] font-medium text-ink">{displayTicker(tk)}</span>
+                  <span className="min-w-0 flex-1 truncate text-[12px] text-ink-3">
+                    removed {list[list.length - 1]?.removedAt?.slice(0, 10) ?? ""}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => restoreThesis(tk)}
+                    disabled={!!removing}
+                    className="shrink-0 text-[11.5px] font-medium text-accent hover:underline disabled:opacity-50"
+                  >
+                    {removing === tk ? "Restoring…" : "Restore"}
+                  </button>
+                </div>
+              ))}
           </div>
         </section>
       )}

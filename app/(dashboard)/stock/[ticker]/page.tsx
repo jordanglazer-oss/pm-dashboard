@@ -1753,6 +1753,36 @@ export default function StockDetailPage() {
       {/* ── Summary card: sleeve · thesis/plan status · score · setup · synthesis · evidence, each with its source. ── */}
       <StockSummaryCard stock={stock} />
 
+      {/* Thesis & kill conditions — pre-registered exit criteria, checked
+          deterministically from data already on this page. Full width (was the
+          narrow right column) so a long thesis reads across the page instead
+          of stretching it downwards. */}
+      {(scoreable || (stock.bucket === "Portfolio" && stock.designation !== "core")) && (() => {
+        // Held non-Core FUNDS (Thematic) can be underwritten too (a fund held
+        // for the long run has a case that can break) — this is also how an
+        // existing fund thesis stays visible. Their composite / revisions are
+        // n/a, so those signals read "unknown" — never a fabricated OK.
+        const snap = getAnalystSnapshot(stock.ticker)?.factset;
+        const revUp = typeof snap?.revUp === "number" ? snap.revUp : null;
+        const revDown = typeof snap?.revDown === "number" ? snap.revDown : null;
+        return (
+          <ThesisTile
+            ticker={stock.ticker}
+            earningsDate={stock.healthData?.earningsDate ?? null}
+            signals={{
+              score: scoreable && typeof stock.adjusted === "number" ? stock.adjusted : null,
+              netRevisions: revUp != null || revDown != null ? (revUp ?? 0) - (revDown ?? 0) : null,
+              revUp,
+              revDown,
+              riskLevel: stock.riskAlert ? stock.riskAlert.level : stock.technicals ? null : undefined,
+              price: typeof stock.price === "number" ? stock.price : stock.healthData?.currentPrice ?? null,
+              ma200: stock.healthData?.twoHundredDayAvg ?? null,
+              technicals: stock.technicals ?? null,
+            }}
+          />
+        );
+      })()}
+
       {/* ── Two columns: the decision material left, the context right. ── */}
       <div className="grid grid-cols-1 items-start gap-3.5 lg:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)]">
         {/* LEFT */}
@@ -2538,33 +2568,6 @@ export default function StockDetailPage() {
           {scoreable && <StockSynthesisTile ticker={stock.ticker} />}
           {/* Unowned names: the Ready / Wait / Watch lane read and its checklist. */}
           {scoreable && stock.bucket !== "Portfolio" && <LaneTile ticker={stock.ticker} />}
-          {/* Thesis & kill conditions — pre-registered exit criteria, checked
-              deterministically from data already on this page. */}
-          {(scoreable || (stock.bucket === "Portfolio" && stock.designation !== "core")) && (() => {
-            // Held non-Core FUNDS (Thematic) can be underwritten too (a fund held
-            // for the long run has a case that can break) — this is also how an
-            // existing fund thesis stays visible. Their composite / revisions are
-            // n/a, so those signals read "unknown" — never a fabricated OK.
-            const snap = getAnalystSnapshot(stock.ticker)?.factset;
-            const revUp = typeof snap?.revUp === "number" ? snap.revUp : null;
-            const revDown = typeof snap?.revDown === "number" ? snap.revDown : null;
-            return (
-              <ThesisTile
-                ticker={stock.ticker}
-                earningsDate={stock.healthData?.earningsDate ?? null}
-                signals={{
-                  score: scoreable && typeof stock.adjusted === "number" ? stock.adjusted : null,
-                  netRevisions: revUp != null || revDown != null ? (revUp ?? 0) - (revDown ?? 0) : null,
-                  revUp,
-                  revDown,
-                  riskLevel: stock.riskAlert ? stock.riskAlert.level : stock.technicals ? null : undefined,
-                  price: typeof stock.price === "number" ? stock.price : stock.healthData?.currentPrice ?? null,
-                  ma200: stock.healthData?.twoHundredDayAvg ?? null,
-                  technicals: stock.technicals ?? null,
-                }}
-              />
-            );
-          })()}
           {/* Street takeaways — the post-earnings street read. */}
           {scoreable && <StreetTakeawaysTile ticker={stock.ticker} />}
 

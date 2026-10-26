@@ -1,21 +1,15 @@
 import type { Metadata } from "next";
-import { Manrope, Instrument_Serif } from "next/font/google";
+import { Manrope } from "next/font/google";
 import "./globals.css";
 
 // Manrope for text AND numbers (numbers use tabular figures, set in
 // globals.css) — exposed as --font-body, consumed by the Tailwind @theme
-// tokens (--font-sans, and --font-mono which aliases it). Instrument Serif is
-// the display face for page titles and headline figures (`font-display`).
+// tokens (--font-sans, --font-mono and --font-display all alias it): one
+// clean face site-wide, titles and headline figures included.
 const bodySans = Manrope({
   variable: "--font-body",
   subsets: ["latin"],
   weight: ["400", "500", "600", "700"],
-  display: "swap",
-});
-const displaySerif = Instrument_Serif({
-  variable: "--font-serif",
-  subsets: ["latin"],
-  weight: "400",
   display: "swap",
 });
 
@@ -30,7 +24,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" className={`${bodySans.variable} ${displaySerif.variable}`}>
+    <html lang="en" className={bodySans.variable}>
       <body className="antialiased overflow-x-hidden">
         {children}
       </body>

@@ -288,7 +288,7 @@ export function HoldingInspector({
       <div className="flex items-end gap-4 border-b border-line-soft px-4 pb-4 pt-4">
         <div className="min-w-0">
           <div className="flex items-baseline gap-2">
-            <span className="figure text-[34px] leading-none text-ink">{s.price != null ? s.price.toFixed(2) : "—"}</span>
+            <span className="figure text-[28px] leading-none text-ink">{s.price != null ? s.price.toFixed(2) : "—"}</span>
             {dayChange != null && (
               <span className={`rounded-pill px-1.5 py-0.5 font-mono text-[12px] font-semibold ${dayChange >= 0 ? "bg-pos-soft text-pos" : "bg-neg-soft text-neg"}`}>{dayChange >= 0 ? "+" : ""}{dayChange.toFixed(1)}%</span>
             )}
@@ -300,7 +300,7 @@ export function HoldingInspector({
         </div>
         <div className="ml-auto shrink-0 text-right">
           <div className="flex items-baseline justify-end gap-0.5">
-            <span className="figure text-[34px] leading-none text-ink">{Number(s.adjusted.toFixed(1))}</span>
+            <span className="figure text-[28px] leading-none text-ink">{Number(s.adjusted.toFixed(1))}</span>
             <span className="font-mono text-[12px] text-ink-3">/{MAX_SCORE}</span>
           </div>
           <div className="text-[11.5px] text-ink-3">{s.ratingLabel || s.rating}{lastScored ? ` · ${lastScored}` : ""}</div>

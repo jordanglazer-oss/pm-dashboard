@@ -658,7 +658,7 @@ export default function ThesisTile({
               }
               return (
                 <div className="min-w-0 px-3.5 py-2.5">
-                  <p className={`min-w-0 whitespace-pre-line break-words text-[12.5px] leading-[1.5] text-ink-2 ${longProse && !whyFull ? "line-clamp-6" : ""}`}>
+                  <p className={`min-w-0 max-w-[120ch] whitespace-pre-line break-words text-[12.5px] leading-[1.5] text-ink-2 ${longProse && !whyFull ? "line-clamp-4" : ""}`}>
                     {kept.join("\n").trimEnd()}
                   </p>
                   {foldable && (
@@ -683,7 +683,9 @@ export default function ThesisTile({
           )}
 
           {(checks.length > 0 || (entry?.pillars?.length ?? 0) > 0) && (
-            <div className="border-t border-line-soft pb-1.5">
+            // Pillar groups sit side by side on wide screens (the tile spans the
+            // page) so a 3-4 pillar thesis reads across rather than down.
+            <div className="grid grid-cols-1 border-t border-line-soft pb-1.5 xl:grid-cols-2 xl:gap-x-6">
               {(() => {
                 const pillars = entry?.pillars ?? [];
                 const byPillar = new Map<string, typeof checks>();
@@ -700,7 +702,7 @@ export default function ThesisTile({
                 return groups.map(({ pillar, rows }) => {
                   const rs = pillar && review ? review.pillars.find((x) => x.pillarId === pillar.id) : undefined;
                   return (
-                    <div key={pillar?.id ?? "loose"}>
+                    <div key={pillar?.id ?? "loose"} className="min-w-0">
                       {pillar ? (
                         <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5 bg-surface-2 px-3.5 py-1.5">
                           <span className="min-w-0 break-words text-[12px] font-medium text-ink">{pillar.title}</span>

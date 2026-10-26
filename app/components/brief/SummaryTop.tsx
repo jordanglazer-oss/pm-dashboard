@@ -71,7 +71,7 @@ function RegimeCell({ s, detailOpen, onToggleDetail }: { s: DailySummary; detail
   return (
     <Cell label="Regime">
       <div className="mb-3 mt-2 flex min-h-9 flex-wrap items-baseline gap-x-2 gap-y-1">
-        <span className="figure text-[34px] leading-none text-ink">{c.score100 ?? "—"}</span>
+        <span className="figure text-[26px] leading-none text-ink">{c.score100 ?? "—"}</span>
         <span className={`text-[14px] font-semibold ${toneText(tone)}`}>{c.label}</span>
         {c.pending ? (
           <span className="text-[11px] text-warn" title="The raw read has moved; the label follows after three consecutive sessions">
@@ -132,7 +132,7 @@ function CashCell({ s }: { s: DailySummary }) {
   return (
     <Cell label="Cash">
       <div className="mb-2 mt-2 flex min-h-9 flex-wrap items-baseline gap-x-2 gap-y-1">
-        <span className="font-display text-[28px] leading-none text-ink">{actionWord(call.action)}</span>
+        <span className="text-[20px] font-semibold leading-none tracking-tight text-ink">{actionWord(call.action)}</span>
         <span className="font-mono text-[12px] text-ink-3" title={[met.length ? `Met: ${met.join(" · ")}` : null, missing.length ? `Missing: ${missing.join(" · ")}` : null].filter(Boolean).join("\n")}>
           {total > 0 ? `${met.length} of ${total} triggers` : call.window}
           {typeof call.score === "number" && ` · score ${call.score}`}
@@ -171,7 +171,7 @@ function HedgeCell({ s }: { s: DailySummary }) {
   return (
     <Cell label="Hedging" href="/hedging">
       <div className="mb-2 mt-2 flex min-h-9 flex-wrap items-baseline gap-x-2 gap-y-1">
-        <span className="font-display text-[28px] leading-none text-ink">{call ? actionWord(call.action) : "—"}</span>
+        <span className="text-[20px] font-semibold leading-none tracking-tight text-ink">{call ? actionWord(call.action) : "—"}</span>
         <span className="font-mono text-[12px] text-ink-3">
           {active.length > 0 ? `${active.length} active${first ? ` · ${first.label}` : ""}` : "unhedged"}
         </span>
@@ -325,7 +325,7 @@ function AlphaCell({ s }: { s: DailySummary }) {
     <Cell label="Alpha vs core" href="/aa-performance" last>
       <div className="mb-2.5 mt-1 flex items-start gap-2">
         <div className="min-w-0">
-          <div className={`figure text-[34px] leading-none ${d1 == null ? "text-ink-3" : d1 > 0 ? "text-pos" : d1 < 0 ? "text-neg" : "text-ink"}`}>{fmtPct(d1)}</div>
+          <div className={`figure text-[26px] leading-none ${d1 == null ? "text-ink-3" : d1 > 0 ? "text-pos" : d1 < 0 ? "text-neg" : "text-ink"}`}>{fmtPct(d1)}</div>
           <div className="mt-1.5 break-words text-[11px] text-ink-3">spread today{mom ? ` · ${mom}` : ""}{p.lastUpdated ? ` · updated ${fmtEtClock(p.lastUpdated)}` : ""}</div>
         </div>
         {p.spark.length > 2 && <Spark points={p.spark.map((x) => x.value)} baseline={100} width={72} height={26} className="ml-auto shrink-0" />}
@@ -369,13 +369,13 @@ function BottomLine({ s }: { s: DailySummary }) {
   const stale = s.changed && !s.changed.briefIsToday;
   const parts = digestParts(s);
   return (
-    <div className="flex flex-col gap-5 rounded-[16px] bg-accent px-6 py-6 text-white shadow-[var(--shadow-card)] lg:flex-row lg:gap-8 lg:px-8 lg:py-7">
+    <div className="flex flex-col gap-5 rounded-[16px] bg-accent px-6 py-5 text-white shadow-[var(--shadow-card)] lg:flex-row lg:gap-8 lg:px-7">
       <div className="min-w-0 flex-1">
         <div className="mb-2 text-[10.5px] font-bold uppercase tracking-[0.16em] text-rail-ink-3">The bottom line</div>
-        <p className="m-0 font-display text-[26px] leading-[1.2] text-white lg:text-[30px]">
+        <p className="m-0 max-w-[80ch] text-[15px] font-medium leading-[1.55] text-white">
           {b?.bottomLine ? b.bottomLine : <span className="text-rail-ink">No brief generated yet — Regenerate writes one from today&apos;s inputs.</span>}
         </p>
-        {b?.regimeVerdict && <p className="m-0 mt-3 max-w-[80ch] text-[13px] leading-[1.55] text-rail-ink">{b.regimeVerdict}</p>}
+        {b?.regimeVerdict && <p className="m-0 mt-2 max-w-[80ch] text-[13px] leading-[1.55] text-rail-ink">{b.regimeVerdict}</p>}
         {(stale || b?.generatedAt) && (
           <span className="mt-3 flex flex-wrap items-center gap-2 text-[11.5px] text-rail-ink-3">
             {stale && <Status tone="warn">previous day&apos;s brief</Status>}

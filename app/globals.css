@@ -93,7 +93,7 @@
      The ~640 `font-mono` utilities stay as semantic "this is a number" markers. */
   --font-sans: var(--font-body), -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
   --font-mono: var(--font-body), -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-  --font-display: var(--font-serif), "Iowan Old Style", Georgia, serif;
+  --font-display: var(--font-body), -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
 }
 
 :root {
@@ -108,7 +108,7 @@
      references resolve to the new palette during the migration. */
   --background: #f4f2ec;
   --foreground: #161b26;
-  --font-display: var(--font-serif), "Iowan Old Style", Georgia, serif;
+  --font-display: var(--font-body), -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
 }
 
 * {
@@ -288,17 +288,18 @@ body {
   .data-table tbody tr:hover td { background: var(--color-surface-hover); }
   .data-table tbody tr.sel td { background: var(--color-accent-soft); }
 
-  /* Page heading (Private Office): small eyebrow line, serif title, and an
-     optional plain-English summary sentence under it. */
+  /* Page heading (Private Office): small eyebrow line, title, and an
+     optional plain-English summary sentence under it. One clean sans face
+     site-wide — no display serif (PM's call, Oct 2026). */
   .page-eyebrow { font-size: 12.5px; color: var(--color-ink-3); }
   .page-title {
-    margin: 0; font-family: var(--font-display); font-weight: 400;
-    font-size: 40px; line-height: 1.05; letter-spacing: -0.01em; color: var(--color-ink);
+    margin: 0; font-family: var(--font-display); font-weight: 700;
+    font-size: 28px; line-height: 1.15; letter-spacing: -0.02em; color: var(--color-ink);
   }
-  @media (max-width: 767px) { .page-title { font-size: 32px; } }
+  @media (max-width: 767px) { .page-title { font-size: 24px; } }
   .page-lede { margin: 0; max-width: 68ch; font-size: 14.5px; line-height: 1.55; color: var(--color-ink-2); }
-  /* Serif figures for headline numbers (KPI tiles). */
-  .figure { font-family: var(--font-display); font-weight: 400; font-variant-numeric: lining-nums tabular-nums; letter-spacing: -0.01em; }
+  /* Headline numbers (KPI tiles): same face as the text, tabular, semibold. */
+  .figure { font-family: var(--font-display); font-weight: 600; font-variant-numeric: lining-nums tabular-nums; letter-spacing: -0.02em; }
 
   /* Styled hover tip (TooltipLayer) — replaces the browser's grey `title`
      tooltip. Dark chip so it reads as a layer above the light workspace. */
