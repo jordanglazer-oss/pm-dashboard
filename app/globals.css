@@ -272,6 +272,63 @@ body {
   .data-table td.n { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
   .data-table tbody tr:hover td { background: var(--color-surface-hover); }
   .data-table tbody tr.sel td { background: var(--color-accent-soft); }
+
+  /* Styled hover tip (TooltipLayer) — replaces the browser's grey `title`
+     tooltip. Dark chip so it reads as a layer above the light workspace. */
+  .ui-tip {
+    position: fixed; left: 0; top: 0; z-index: 100;
+    max-width: 320px; padding: 6px 9px;
+    border-radius: 6px; background: #1b2230; color: #f3f5f9;
+    font-size: 12px; line-height: 1.45; white-space: pre-line;
+    box-shadow: var(--shadow-pop); pointer-events: none;
+    opacity: 0;
+  }
+  .ui-tip[data-ready="1"] { animation: ui-pop-in 0.12s ease-out forwards; }
+
+  /* Dropdown menu (Menu.tsx, Radix). */
+  .ui-menu {
+    z-index: 60; min-width: 220px; max-width: 26rem; padding: 4px;
+    border: 1px solid var(--color-line); border-radius: var(--radius-card);
+    background: var(--color-surface); box-shadow: var(--shadow-pop);
+    transform-origin: var(--radix-dropdown-menu-content-transform-origin);
+    animation: ui-pop-in 0.13s ease-out;
+  }
+  .ui-menu-item {
+    display: flex; align-items: center; gap: 8px;
+    min-height: 30px; padding: 5px 8px; border-radius: 4px;
+    font-size: 12.5px; color: var(--color-ink-2);
+    cursor: pointer; outline: none; user-select: none;
+  }
+  .ui-menu-item[data-highlighted] { background: var(--color-surface-hover); color: var(--color-ink); }
+  .ui-menu-item[data-disabled] { opacity: 0.45; cursor: default; }
+  .ui-menu-item-danger, .ui-menu-item-danger .ui-menu-icon { color: var(--color-neg); }
+  .ui-menu-item-danger[data-highlighted] { background: var(--color-neg-soft); color: var(--color-neg); }
+  .ui-menu-icon { display: inline-flex; width: 14px; color: var(--color-ink-3); }
+  .ui-menu-item[data-highlighted] .ui-menu-icon { color: var(--color-ink-2); }
+  .ui-menu-item-danger[data-highlighted] .ui-menu-icon { color: var(--color-neg); }
+  .ui-menu-label { padding: 6px 8px 4px; font-size: 11px; color: var(--color-ink-3); }
+  .ui-menu-sep { height: 1px; margin: 4px 2px; background: var(--color-line-soft); }
+
+  /* Market tile (Brief) — one benchmark / level per tile. */
+  .mkt-tile {
+    min-width: 0; padding: 8px 10px;
+    border: 1px solid var(--color-line-soft); border-radius: var(--radius-card);
+    background: var(--color-surface);
+  }
+  .mkt-chip {
+    display: inline-flex; align-items: center; gap: 3px;
+    height: 20px; padding: 0 6px; border-radius: 4px;
+    font-size: 12.5px; font-weight: 600; font-variant-numeric: tabular-nums;
+  }
+
+  /* Score meter (Holdings) — the composite as a thin bar under the number. */
+  .score-meter { display: block; height: 3px; margin-top: 3px; border-radius: 2px; background: var(--color-line-soft); overflow: hidden; }
+  .score-meter > span { display: block; height: 100%; border-radius: 2px; }
+}
+
+@keyframes ui-pop-in {
+  from { opacity: 0; transform: scale(0.97); }
+  to { opacity: 1; transform: scale(1); }
 }
 
 a {
@@ -509,4 +566,6 @@ button:not(:disabled):active,
   .animate-panel-in, .stagger > * { animation: none; }
   .data-table tbody tr.row-link > td:first-child::before { transition: none; }
   .seg > *, .rail-item { transition: none; }
+  .ui-tip[data-ready="1"] { animation: none; opacity: 1; }
+  .ui-menu { animation: none; }
 }
