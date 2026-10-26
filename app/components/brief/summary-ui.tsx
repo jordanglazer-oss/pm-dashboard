@@ -223,7 +223,7 @@ export function IconButton({ onClick, title, icon, active, className = "", disab
 
 /** 24px secondary button for row actions (Done / Snooze / Open). */
 export function RowButton({ onClick, href, disabled, title, children }: { onClick?: () => void; href?: string; disabled?: boolean; title?: string; children: React.ReactNode }) {
-  const cls = "inline-flex h-6 items-center rounded-control border border-line bg-surface px-2 text-[12px] text-ink-2 transition-colors hover:bg-surface-hover disabled:opacity-50";
+  const cls = "inline-flex h-7 items-center rounded-pill border border-line bg-surface px-3 text-[12px] font-medium text-ink-2 shadow-sm transition-[background-color,border-color,color] duration-150 hover:border-accent-border hover:bg-accent-soft hover:text-accent disabled:opacity-50";
   if (href) {
     return (
       <Link href={href} className={cls} title={title}>

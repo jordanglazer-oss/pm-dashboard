@@ -38,13 +38,13 @@ function Cell({ label, href, children, last = false }: { label: string; href?: s
     // Hairlines between cells at every breakpoint: stacked (1-col) → a rule
     // under each; 2-col at md → rules under the top pair and right of the odd
     // cells; 4-col at xl → rules to the right only.
-    <div className={`min-w-0 border-line-soft px-5 py-4 ${last ? "" : "border-b"} md:[&:nth-child(n+3)]:border-b-0 md:odd:border-r xl:border-b-0 xl:border-r xl:last:border-r-0`}>
+    <div className={`min-w-0 border-line-soft px-5 py-5 ${last ? "" : "border-b"} md:[&:nth-child(n+3)]:border-b-0 md:odd:border-r xl:border-b-0 xl:border-r xl:last:border-r-0`}>
       {href ? (
-        <Link href={href} className="text-[10.5px] font-bold uppercase tracking-[0.08em] text-ink-3 hover:text-accent">
+        <Link href={href} className="text-[10.5px] font-bold uppercase tracking-[0.1em] text-ink-3 hover:text-accent">
           {label}
         </Link>
       ) : (
-        <div className="text-[10.5px] font-bold uppercase tracking-[0.08em] text-ink-3">{label}</div>
+        <div className="text-[10.5px] font-bold uppercase tracking-[0.1em] text-ink-3">{label}</div>
       )}
       {children}
     </div>
@@ -70,7 +70,7 @@ function RegimeCell({ s, detailOpen, onToggleDetail }: { s: DailySummary; detail
   const settled = settledSessions(r.history, c.label);
   return (
     <Cell label="Regime">
-      <div className="mb-2 mt-1 flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
+      <div className="mb-3 mt-2 flex min-h-9 flex-wrap items-baseline gap-x-2 gap-y-1">
         <span className="figure text-[34px] leading-none text-ink">{c.score100 ?? "—"}</span>
         <span className={`text-[14px] font-semibold ${toneText(tone)}`}>{c.label}</span>
         {c.pending ? (
@@ -85,7 +85,7 @@ function RegimeCell({ s, detailOpen, onToggleDetail }: { s: DailySummary; detail
         )}
       </div>
       <RegimeTrack value={c.score100 ?? null} />
-      <div className="mt-2.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11.5px]">
+      <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11.5px] leading-5">
         {posture && (
           <span className="inline-flex items-center gap-1.5 text-ink-2">
             <span className="text-ink-3">Scoring posture</span>
@@ -131,7 +131,7 @@ function CashCell({ s }: { s: DailySummary }) {
   const delta = cash?.priorScore != null ? call.score - cash.priorScore : null;
   return (
     <Cell label="Cash">
-      <div className="mb-1 mt-1 flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
+      <div className="mb-2 mt-2 flex min-h-9 flex-wrap items-baseline gap-x-2 gap-y-1">
         <span className="font-display text-[28px] leading-none text-ink">{actionWord(call.action)}</span>
         <span className="font-mono text-[12px] text-ink-3" title={[met.length ? `Met: ${met.join(" · ")}` : null, missing.length ? `Missing: ${missing.join(" · ")}` : null].filter(Boolean).join("\n")}>
           {total > 0 ? `${met.length} of ${total} triggers` : call.window}
@@ -170,7 +170,7 @@ function HedgeCell({ s }: { s: DailySummary }) {
   const first = active[0];
   return (
     <Cell label="Hedging" href="/hedging">
-      <div className="mb-1 mt-1 flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
+      <div className="mb-2 mt-2 flex min-h-9 flex-wrap items-baseline gap-x-2 gap-y-1">
         <span className="font-display text-[28px] leading-none text-ink">{call ? actionWord(call.action) : "—"}</span>
         <span className="font-mono text-[12px] text-ink-3">
           {active.length > 0 ? `${active.length} active${first ? ` · ${first.label}` : ""}` : "unhedged"}

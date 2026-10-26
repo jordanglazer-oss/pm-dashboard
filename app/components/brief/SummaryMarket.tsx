@@ -93,7 +93,7 @@ export function MarketPanel({ s, onRefresh, refreshing }: { s: DailySummary; onR
       ) : (
         // The band owns the full page width now, so every benchmark and level
         // gets its own column instead of wrapping into a 4-wide block.
-        <div className="grid grid-cols-2 gap-2 px-3.5 pb-3 pt-2.5 text-[12px] sm:grid-cols-3 md:grid-cols-5 xl:grid-cols-9">
+        <div className="grid grid-cols-2 gap-2.5 px-4 pb-4 pt-3 text-[12px] sm:grid-cols-3 md:grid-cols-5 xl:grid-cols-9">
           {bench.map((b) => {
             // Each benchmark is a tile; its move sits in a tinted chip with a
             // direction arrow so up/down reads before the number does.
