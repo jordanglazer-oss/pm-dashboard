@@ -6,6 +6,7 @@ import { useStocks } from "@/app/lib/StockContext";
 import { PortfolioOverview } from "@/app/components/PortfolioOverview";
 import { HoldingInspector } from "@/app/components/HoldingInspector";
 import { AppIcon } from "@/app/components/AppIcon";
+import { TooltipLayer } from "@/app/components/ui/TooltipLayer";
 import { usePersistedOpen } from "@/app/lib/useCollapsed";
 import { CockpitBand } from "@/app/components/CockpitBand";
 import { ScoreCalibration } from "@/app/components/ScoreCalibration";
@@ -82,7 +83,7 @@ export default function DashboardPage() {
 
   return (
     <main className="min-h-screen bg-ground text-ink overflow-x-hidden">
-      <div className="flex flex-col gap-3.5">
+      <TooltipLayer className="flex flex-col gap-3.5">
 
         {/* Attention lives in ONE place — the Brief action queue (2026-09-23). */}
 
@@ -254,7 +255,7 @@ export default function DashboardPage() {
             Renders from the Reference row; computes on open (expensive Yahoo
             fetch, cached server-side in pm:score-calibration). */}
         {openRefs.has("calibration") && <ScoreCalibration />}
-      </div>
+      </TooltipLayer>
     </main>
   );
 }

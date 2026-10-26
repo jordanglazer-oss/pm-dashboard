@@ -15,6 +15,8 @@ import type { ScoredStock, ScoreKey, HealthData, FundHolding, FundSectorWeight }
 import type { TechnicalIndicators, RiskAlert } from "@/app/lib/technicals";
 import { groupTotal, isScoreable, normalizeSector, computeScores } from "@/app/lib/scoring";
 import { AppIcon } from "./AppIcon";
+import { Menu, MenuTrigger, MenuContent, MenuItem, MenuLabel, MenuSeparator } from "./ui/Menu";
+import { ratingToneFor } from "@/app/lib/rating-bands";
 import { displayTicker, canonicalTicker } from "@/app/lib/ticker";
 import { skewWord, SKEW_TONE, type SynthesisVerdict } from "@/app/lib/synthesis-screen-display";
 import { useSearchParams, useRouter, usePathname } from "next/navigation";
@@ -1686,16 +1688,6 @@ function RankingTable({
   // and the ⋯ menu holding the action cluster.
   const [chipFilter, setChipFilter] = useState<"all" | "stale" | "flagged">("all");
   const [query, setQuery] = useState("");
-  const [menuOpen, setMenuOpen] = useState(false);
-  const menuRef = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    if (!menuOpen) return;
-    const onDown = (e: MouseEvent) => {
-      if (menuRef.current && !menuRef.current.contains(e.target as Node)) setMenuOpen(false);
-    };
-    document.addEventListener("mousedown", onDown);
-    return () => document.removeEventListener("mousedown", onDown);
-  }, [menuOpen]);
   const staleDaysOf = (st: ScoredStock): number => {
     if (!st.lastScored) return Infinity;
     const t = Date.parse(st.lastScored);
@@ -2018,98 +2010,84 @@ function RankingTable({
         )}
         {/* Overflow menu — the rest of the action cluster (rescore
             fundamentals, exports, clear charting), unchanged, one click away. */}
-        <div ref={menuRef} className="relative">
-          <button
-            onClick={() => setMenuOpen(!menuOpen)}
-            aria-expanded={menuOpen}
-            aria-label="Table actions"
-            className="grid h-7 w-7 place-items-center rounded-control border border-line bg-surface text-ink-2 hover:bg-surface-hover hover:text-ink transition-colors"
-          >
-            <AppIcon name="more" size={14} strokeWidth={2} />
-          </button>
-          {menuOpen && (
-            <div className="absolute right-0 top-9 z-30 w-max max-w-[26rem] rounded-card border border-line bg-surface p-3 shadow-[var(--shadow-pop)]">
-        {onScoreAll && (
-          <div className="flex max-w-md flex-wrap items-center gap-2">
-            {lastScoredAt && !scoring && (
-              <span className="text-[11px] text-ink-3">
-                Last scored {formatRelTimestamp(lastScoredAt)}
-              </span>
+        <Menu>
+          <MenuTrigger asChild>
+            <button
+              aria-label="Table actions"
+              title="More table actions"
+              className="grid h-7 w-7 place-items-center rounded-control border border-line bg-surface text-ink-2 hover:bg-surface-hover hover:text-ink transition-colors data-[state=open]:bg-surface-hover data-[state=open]:text-ink"
+            >
+              <AppIcon name="more" size={14} strokeWidth={2} />
+            </button>
+          </MenuTrigger>
+          <MenuContent>
+            {onScoreAll && lastScoredAt && !scoring && (
+              <MenuLabel>Last scored {formatRelTimestamp(lastScoredAt)}</MenuLabel>
             )}
-            {onClearCharting && chartingNonZeroCount > 0 && (
-              <button
-                onClick={onClearCharting}
-                className="flex h-7 items-center gap-1.5 rounded-control border border-line bg-surface px-2.5 text-[12.5px] text-ink-2 transition-colors hover:bg-surface-hover hover:text-ink"
+            {onScoreAll && onScoreFundamentals && !scoring && (
+              <MenuItem
+                onSelect={() => onScoreFundamentals?.(selectedInView.length > 0 ? selectedInView : undefined)}
+                disabled={scoreAllDisabled || scoreableCount === 0}
+                icon={<AppIcon name="trend" size={14} strokeWidth={2} />}
+                title={`Re-score ONLY growth + relative/historical valuation${selectedInView.length > 0 ? ` for the ${selectedInView.length} checked name${selectedInView.length === 1 ? "" : "s"}` : ""}. Every other category, the thesis, and summaries carry forward unchanged — a fraction of the credits of a full Score All.`}
+              >
+                {selectedInView.length > 0 ? `Rescore fundamentals (${selectedInView.length})` : "Rescore fundamentals"}
+              </MenuItem>
+            )}
+            {onScoreAll && onClearCharting && chartingNonZeroCount > 0 && (
+              <MenuItem
+                onSelect={onClearCharting}
+                icon={<AppIcon name="refresh" size={14} strokeWidth={2} />}
                 title={`Reset charting score to 0 for ${chartingNonZeroCount} stock${chartingNonZeroCount > 1 ? "s" : ""}`}
               >
-                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0 3.181 3.183a8.25 8.25 0 0 0 13.803-3.7M4.031 9.865a8.25 8.25 0 0 1 13.803-3.7l3.181 3.182" /></svg>
                 Clear Charting ({chartingNonZeroCount})
-              </button>
+              </MenuItem>
             )}
-            {enableExternalExports && scoreableCount > 0 && (
+            {onScoreAll && enableExternalExports && scoreableCount > 0 && (
               <>
-                <button
-                  onClick={handleExportBoostedXlsx}
-                  className="flex h-7 items-center gap-1.5 rounded-control border border-line bg-surface px-2.5 text-[12.5px] text-ink-2 transition-colors hover:bg-surface-hover hover:text-ink"
+                <MenuSeparator />
+                <MenuLabel>Exports</MenuLabel>
+                <MenuItem
+                  keepOpen
+                  onSelect={handleExportBoostedXlsx}
+                  icon={<AppIcon name="download" size={14} strokeWidth={2} />}
                   title={`Download a BoostedAI-ready Excel file (SYMBOL,COUNTRY,CURRENCY) for the watchlist${suggestedExportNames.length > 0 ? ` + the ${suggestedExportNames.length} Suggested name${suggestedExportNames.length === 1 ? "" : "s"}` : ""}`}
                 >
-                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75V16.5M16.5 12 12 16.5m0 0L7.5 12m4.5 4.5V3" /></svg>
                   BoostedAI Excel
-                </button>
-                <button
-                  onClick={handleCopySia}
-                  className="flex h-7 items-center gap-1.5 rounded-control border border-line bg-surface px-2.5 text-[12.5px] text-ink-2 transition-colors hover:bg-surface-hover hover:text-ink"
+                </MenuItem>
+                <MenuItem
+                  keepOpen
+                  onSelect={handleCopySia}
+                  icon={<AppIcon name="copy" size={14} strokeWidth={2} />}
                   title={`Copy the watchlist symbols (SIA / SIACharts format) to paste into a matrix${suggestedExportNames.length > 0 ? `, including the ${suggestedExportNames.length} Suggested name${suggestedExportNames.length === 1 ? "" : "s"}` : ""}`}
                 >
-                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M15.666 3.888A2.25 2.25 0 0 0 13.5 2.25h-3c-1.03 0-1.9.693-2.166 1.638m7.332 0c.055.194.084.4.084.612v0a.75.75 0 0 1-.75.75H9a.75.75 0 0 1-.75-.75v0c0-.212.03-.418.084-.612m7.332 0c.646.049 1.288.11 1.927.184 1.1.128 1.907 1.077 1.907 2.185V19.5a2.25 2.25 0 0 1-2.25 2.25H6.75A2.25 2.25 0 0 1 4.5 19.5V6.257c0-1.108.806-2.057 1.907-2.185a48.208 48.208 0 0 1 1.927-.184" /></svg>
                   {siaCopied ? "Copied!" : "Copy SIA symbols"}
-                </button>
-                <button
-                  onClick={handleCopyMarketEdge}
+                </MenuItem>
+                <MenuItem
+                  keepOpen
+                  onSelect={handleCopyMarketEdge}
                   disabled={marketEdgeState === "loading"}
-                  className="flex h-7 items-center gap-1.5 rounded-control border border-line bg-surface px-2.5 text-[12.5px] text-ink-2 transition-colors hover:bg-surface-hover hover:text-ink disabled:opacity-60"
+                  icon={<AppIcon name={marketEdgeState === "loading" ? "refresh" : "copy"} size={14} strokeWidth={2} className={marketEdgeState === "loading" ? "animate-spin" : ""} />}
                   title={`Copy US symbols for MarketEdge — one per line, from the watchlist${suggestedExportNames.length > 0 ? ` + the ${suggestedExportNames.length} Suggested name${suggestedExportNames.length === 1 ? "" : "s"}` : ""}. US names + Canadian names FactSet confirms are interlisted (dual-listed in the US); Canadian-only names excluded.`}
                 >
-                  {marketEdgeState === "loading" ? (
-                    <svg className="w-3.5 h-3.5 animate-spin" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0 3.181 3.183a8.25 8.25 0 0 0 13.803-3.7M4.031 9.865a8.25 8.25 0 0 1 13.803-3.7l3.181 3.182" /></svg>
-                  ) : (
-                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M15.666 3.888A2.25 2.25 0 0 0 13.5 2.25h-3c-1.03 0-1.9.693-2.166 1.638m7.332 0c.055.194.084.4.084.612v0a.75.75 0 0 1-.75.75H9a.75.75 0 0 1-.75-.75v0c0-.212.03-.418.084-.612m7.332 0c.646.049 1.288.11 1.927.184 1.1.128 1.907 1.077 1.907 2.185V19.5a2.25 2.25 0 0 1-2.25 2.25H6.75A2.25 2.25 0 0 1 4.5 19.5V6.257c0-1.108.806-2.057 1.907-2.185a48.208 48.208 0 0 1 1.927-.184" /></svg>
-                  )}
                   {marketEdgeState === "loading"
                     ? "Verifying…"
                     : marketEdgeState === "done"
                     ? `Copied (${marketEdgeCount ?? 0})`
                     : "Copy MarketEdge"}
-                </button>
+                </MenuItem>
               </>
             )}
-            {/* Partial rescore — fundamentals only. The credit-saver after a
-                methodology change touching growth/valuation: ~3 categories of
-                output instead of 19, no web search, no narrative rewrite. */}
-            {onScoreFundamentals && !scoring && (
-              <button
-                onClick={() => onScoreFundamentals?.(selectedInView.length > 0 ? selectedInView : undefined)}
-                disabled={scoreAllDisabled || scoreableCount === 0}
-                className="flex h-7 items-center gap-1.5 rounded-control border border-line bg-surface px-2.5 text-[12.5px] text-ink-2 transition-colors hover:bg-surface-hover hover:text-ink disabled:opacity-50"
-                title={`Re-score ONLY growth + relative/historical valuation${selectedInView.length > 0 ? ` for the ${selectedInView.length} checked name${selectedInView.length === 1 ? "" : "s"}` : ""}. Every other category, the thesis, and summaries carry forward unchanged — a fraction of the credits of a full Score All.`}
-              >
-                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M3 13.125C3 12.504 3.504 12 4.125 12h2.25c.621 0 1.125.504 1.125 1.125v6.75C7.5 20.496 6.996 21 6.375 21h-2.25A1.125 1.125 0 0 1 3 19.875v-6.75ZM9.75 8.625c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125v11.25c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 0 1-1.125-1.125V8.625ZM16.5 4.125c0-.621.504-1.125 1.125-1.125h2.25C20.496 3 21 3.504 21 4.125v15.75c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 0 1-1.125-1.125V4.125Z" /></svg>
-                {selectedInView.length > 0 ? `Rescore fundamentals (${selectedInView.length})` : "Rescore fundamentals"}
-              </button>
-            )}
-          </div>
-        )}
-              {collapseKey && (
-                <button
-                  onClick={() => { toggleCollapsed(); setMenuOpen(false); }}
-                  className="mt-2 block w-full rounded-control border border-line px-3 py-1.5 text-left text-xs font-semibold text-ink-2 hover:bg-surface-2 transition-colors"
-                >
+            {collapseKey && (
+              <>
+                <MenuSeparator />
+                <MenuItem onSelect={toggleCollapsed} icon={<AppIcon name={collapsed ? "eye" : "eyeOff"} size={14} strokeWidth={2} />}>
                   {collapsed ? "Show the table" : "Hide the table"}
-                </button>
-              )}
-            </div>
-          )}
-        </div>
+                </MenuItem>
+              </>
+            )}
+          </MenuContent>
+        </Menu>
         {toolbarRight}
       </div>
       <div className={`panel ${collapsed ? "hidden" : ""}`}>
@@ -2364,7 +2342,7 @@ function RankingTable({
                             </span>
                           )}
                         </div>
-                        <div className="max-w-[200px] text-[12px] leading-[1.35] text-ink-3" title={s.name}>{s.name}</div>
+                        <div className="max-w-[200px] truncate text-[12px] leading-[1.35] text-ink-3" title={s.name}>{s.name}</div>
                       </Link>
                     </div>
                   </td>
@@ -2400,6 +2378,13 @@ function RankingTable({
                     <span className="text-[11px] text-ink-faint">/{MAX_SCORE}</span>
                     <span className={`ml-1 text-[11px] ${adj > 0 ? "text-pos" : adj < 0 ? "text-neg" : "text-ink-faint"}`} title="Regime adjustment vs the raw score">
                       {adj > 0 ? "+" : ""}{adj}
+                    </span>
+                    {/* Thin meter: the score as a share of the maximum, toned by its rating band. */}
+                    <span className="score-meter ml-auto w-[72px]" aria-hidden>
+                      <span
+                        className={{ pos: "bg-pos", warn: "bg-warn", neg: "bg-neg" }[ratingToneFor(s.adjusted)]}
+                        style={{ width: `${Math.max(0, Math.min(100, (s.adjusted / MAX_SCORE) * 100))}%` }}
+                      />
                     </span>
                   </td>
                   {/* Setup = the timing layer (rubric v3), never blended into Score */}

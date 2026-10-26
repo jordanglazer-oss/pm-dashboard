@@ -11,6 +11,7 @@ import { skewWord, SKEW_TONE, type SynthesisResult, type StaleReason } from "@/a
 import { ThesisVerdictChip, useThesisVerdicts } from "./ThesisVerdictChip";
 import { describeCondition, type KillCondition } from "@/app/lib/kill-conditions";
 import { AppIcon } from "./AppIcon";
+import { Menu, MenuTrigger, MenuContent, MenuItem, MenuSeparator } from "./ui/Menu";
 import { SetupChip } from "./SetupChip";
 
 /**
@@ -76,7 +77,6 @@ export function HoldingInspector({
   const [thesisBy, setThesis] = useState<{ t: string; v: ThesisEntry | null } | null>(null);
   const [checkBy, setCheck] = useState<{ t: string; v: ThesisCheck | null } | null>(null);
   const [alertsBy, setAlerts] = useState<{ t: string; v: Takeaway[] } | null>(null);
-  const [menuOpen, setMenuOpen] = useState(false);
   const synth = synthBy?.t === ticker ? synthBy.v : null;
   const thesis = thesisBy?.t === ticker ? thesisBy.v : null;
   const check = checkBy?.t === ticker ? checkBy.v : null;
@@ -273,7 +273,7 @@ export function HoldingInspector({
   );
 
   return (
-    <aside key={ticker} className="flex w-full shrink-0 flex-col rounded-card border border-line bg-surface lg:sticky lg:top-[60px] lg:w-[380px] lg:max-h-[calc(100vh-76px)]">
+    <aside key={ticker} className="animate-panel-in flex w-full shrink-0 flex-col rounded-card border border-line bg-surface lg:sticky lg:top-[60px] lg:w-[380px] lg:max-h-[calc(100vh-76px)]">
       <div className="flex h-11 items-center gap-2.5 border-b border-line-soft pl-4 pr-3">
         <span className="font-mono text-[15px] font-semibold text-ink">{displayTicker(ticker)}</span>
         <span className="min-w-0 truncate text-[12.5px] text-ink-2" title={s.name}>{s.name}</span>
@@ -330,39 +330,34 @@ export function HoldingInspector({
       <div className="flex items-center gap-2 border-t border-line-soft bg-surface-2 px-4 py-2.5">
         <Link href={`${stockHref}?action=rescore`} className="inline-flex h-7 items-center rounded-control bg-ink px-2.5 text-[12.5px] font-medium !text-white hover:bg-ink-2">Rescore</Link>
         <Link href={stockHref} className="inline-flex h-7 items-center rounded-control border border-line bg-surface px-2.5 text-[12.5px] !text-ink-2 hover:bg-surface-hover hover:!text-ink">Refresh data</Link>
-        <div className="relative ml-auto">
-          <button onClick={() => setMenuOpen((v) => !v)} aria-label="More actions" className="grid h-7 w-7 place-items-center rounded-control border border-line bg-surface text-ink-2 hover:bg-surface-hover hover:text-ink">
-            <AppIcon name="more" size={14} strokeWidth={2} />
-          </button>
-          {menuOpen && (
-            <div className="absolute bottom-9 right-0 z-30 w-52 rounded-card border border-line bg-surface p-1 shadow-[var(--shadow-pop)]">
-              <button
-                onClick={() => { moveBucket(ticker); setMenuOpen(false); }}
-                className="block w-full rounded-[5px] px-2.5 py-1.5 text-left text-[12.5px] text-ink-2 hover:bg-surface-hover hover:text-ink"
-              >
-                Move to {s.bucket === "Portfolio" ? "watchlist" : "portfolio"}
-              </button>
-              <button
-                onClick={() => { router.push(stockHref); setMenuOpen(false); }}
-                className="block w-full rounded-[5px] px-2.5 py-1.5 text-left text-[12.5px] text-ink-2 hover:bg-surface-hover hover:text-ink"
-              >
-                Open full page
-              </button>
-              <button
-                onClick={() => {
-                  if (window.confirm(`Remove ${displayTicker(ticker)} from the ${s.bucket}? This deletes its scores and history from pm:stocks.`)) {
-                    removeStock(ticker);
-                    onClose();
-                  }
-                  setMenuOpen(false);
-                }}
-                className="block w-full rounded-[5px] px-2.5 py-1.5 text-left text-[12.5px] text-neg hover:bg-neg-soft"
-              >
-                Delete
-              </button>
-            </div>
-          )}
-        </div>
+        <Menu>
+          <MenuTrigger asChild>
+            <button aria-label="More actions" className="ml-auto grid h-7 w-7 place-items-center rounded-control border border-line bg-surface text-ink-2 hover:bg-surface-hover hover:text-ink data-[state=open]:bg-surface-hover data-[state=open]:text-ink">
+              <AppIcon name="more" size={14} strokeWidth={2} />
+            </button>
+          </MenuTrigger>
+          <MenuContent>
+            <MenuItem onSelect={() => moveBucket(ticker)} icon={<AppIcon name="arrowR" size={14} strokeWidth={2} />}>
+              Move to {s.bucket === "Portfolio" ? "watchlist" : "portfolio"}
+            </MenuItem>
+            <MenuItem onSelect={() => router.push(stockHref)} icon={<AppIcon name="open" size={14} strokeWidth={2} />}>
+              Open full page
+            </MenuItem>
+            <MenuSeparator />
+            <MenuItem
+              danger
+              icon={<AppIcon name="trash" size={14} strokeWidth={2} />}
+              onSelect={() => {
+                if (window.confirm(`Remove ${displayTicker(ticker)} from the ${s.bucket}? This deletes its scores and history from pm:stocks.`)) {
+                  removeStock(ticker);
+                  onClose();
+                }
+              }}
+            >
+              Delete
+            </MenuItem>
+          </MenuContent>
+        </Menu>
       </div>
     </aside>
   );
