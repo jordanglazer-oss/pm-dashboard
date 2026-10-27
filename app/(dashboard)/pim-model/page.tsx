@@ -7,6 +7,7 @@ import { ModelScenarios } from "@/app/components/ModelScenarios";
 import { ModelStaging } from "@/app/components/ModelStaging";
 import { ModelEligibilityMatrix } from "@/app/components/ModelEligibilityMatrix";
 import { AppIcon } from "@/app/components/AppIcon";
+import { PageHeading } from "@/app/components/PageHeading";
 
 export default function PimModelPage() {
   const { pimModels } = useStocks();
@@ -44,7 +45,8 @@ export default function PimModelPage() {
 
   return (
     <main className="flex flex-col gap-3.5 text-ink">
-      {/* Page title lives in the top bar. The page's first row is the model
+      <PageHeading lede="The target holdings and weights for every model and risk profile, with staging, scenarios and where each name may be held." />
+      {/* The page's first row is the model
           toolbar, rendered by PimModel — the Scenarios launcher sits in it. */}
       <PimModel groups={pimModels.groups} onOpenScenarios={() => setScenariosOpen(true)} onOpenStaging={() => setStagingOpen(true)} />
 

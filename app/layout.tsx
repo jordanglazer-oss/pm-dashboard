@@ -1,12 +1,13 @@
 import type { Metadata } from "next";
-import { IBM_Plex_Sans } from "next/font/google";
+import { Manrope } from "next/font/google";
 import "./globals.css";
 
-// One type family site-wide: IBM Plex Sans for text AND numbers (numbers use
-// tabular figures, set in globals.css). Exposed as a CSS variable consumed by
-// the Tailwind @theme tokens (--font-sans, and --font-mono which aliases it).
-const plexSans = IBM_Plex_Sans({
-  variable: "--font-plex-sans",
+// Manrope for text AND numbers (numbers use tabular figures, set in
+// globals.css) — exposed as --font-body, consumed by the Tailwind @theme
+// tokens (--font-sans, --font-mono and --font-display all alias it): one
+// clean face site-wide, titles and headline figures included.
+const bodySans = Manrope({
+  variable: "--font-body",
   subsets: ["latin"],
   weight: ["400", "500", "600", "700"],
   display: "swap",
@@ -23,7 +24,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" className={plexSans.variable}>
+    <html lang="en" className={bodySans.variable}>
       <body className="antialiased overflow-x-hidden">
         {children}
       </body>

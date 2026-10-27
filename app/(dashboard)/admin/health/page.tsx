@@ -16,6 +16,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { AppIcon } from "@/app/components/AppIcon";
 import { StatStrip } from "@/app/components/StatStrip";
+import { PageHeading } from "@/app/components/PageHeading";
 
 type Status = "ok" | "warn" | "fail" | "skipped";
 type Category = "prices" | "sentiment" | "macro" | "ai" | "infra";
@@ -129,6 +130,7 @@ export default function AdminHealthPage() {
 
   return (
     <div className="flex flex-col gap-3.5">
+      <PageHeading title="System health" lede="Whether backups, data feeds and the AI service are running as they should." />
       {/* Toolbar */}
       <div className="flex flex-wrap items-center gap-3">
         <span className="text-[11.5px] text-ink-3">

@@ -59,8 +59,11 @@ export function BriefCommandBar({
 }) {
   const time = easternTime(generatedAt);
   return (
-    <div className="flex flex-wrap items-center gap-x-2.5 gap-y-2">
-      <span className="text-[12.5px] text-ink-2">
+    // Page heading (Private Office): eyebrow line with the date, serif title,
+    // the mode switch + Regenerate on the right. Same controls as before.
+    <div className="flex flex-wrap items-end gap-x-2.5 gap-y-3 px-1 pb-1 pt-2">
+      <div className="flex min-w-0 flex-col gap-1.5">
+      <span className="page-eyebrow">
         {longDate(date)}
         {time ? (
           <>
@@ -84,6 +87,8 @@ export function BriefCommandBar({
           entered
         </button>
       )}
+      <h1 className="page-title">Morning brief</h1>
+      </div>
       <div className="ml-auto flex items-center gap-2">
         <div className="seg">
           <button type="button" className={briefMode === "brief" ? "on" : ""} onClick={() => onModeChange("brief")}>
@@ -98,7 +103,7 @@ export function BriefCommandBar({
           onClick={onRegenerate}
           disabled={generating}
           title="Regenerate the brief from the current inputs"
-          className="inline-flex h-7 items-center gap-1.5 rounded-control border border-line bg-surface px-2.5 text-[12.5px] text-ink-2 transition-colors hover:bg-surface-hover disabled:opacity-50"
+          className="inline-flex h-9 items-center gap-1.5 rounded-pill bg-accent px-4 text-[12.5px] font-semibold text-white shadow-sm transition-colors hover:bg-rail-hover disabled:opacity-50"
         >
           <AppIcon name="refresh" size={13} className={generating ? "animate-spin" : ""} />
           {generating ? "Generating…" : "Regenerate"}

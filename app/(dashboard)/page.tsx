@@ -6,11 +6,13 @@ import { useStocks } from "@/app/lib/StockContext";
 import { PortfolioOverview } from "@/app/components/PortfolioOverview";
 import { HoldingInspector } from "@/app/components/HoldingInspector";
 import { AppIcon } from "@/app/components/AppIcon";
+import { TooltipLayer } from "@/app/components/ui/TooltipLayer";
 import { usePersistedOpen } from "@/app/lib/useCollapsed";
 import { CockpitBand } from "@/app/components/CockpitBand";
 import { ScoreCalibration } from "@/app/components/ScoreCalibration";
 import { ForwardScorePanel } from "@/app/components/ForwardScorePanel";
-import { regimeMultiplier, normalizeSector } from "@/app/lib/scoring";
+import { regimeMultiplier, normalizeSector, isScoreable } from "@/app/lib/scoring";
+import { MAX_SCORE } from "@/app/lib/types";
 import { displayTicker } from "@/app/lib/ticker";
 
 
@@ -23,7 +25,7 @@ export default function DashboardPage() {
       if (next.has(k)) next.delete(k); else next.add(k);
       return next;
     });
-  const { scoredStocks, marketData, updateMarketData, uiPrefs, setUiPref, livePreviousCloses } = useStocks();
+  const { scoredStocks, portfolioStocks, marketData, updateMarketData, uiPrefs, setUiPref, livePreviousCloses } = useStocks();
   // Docked inspector (canvas): the selected holding. Row selection is
   // transient by design (site rule exemption) — it is a working cursor.
   const [selectedTicker, setSelectedTicker] = useState<string | null>(null);
@@ -76,13 +78,49 @@ export default function DashboardPage() {
   // consolidated label above only when the PM has overridden the suggestion.
   const regime = marketData.riskRegime;
 
+  // Plain-English summary for the page heading — read-only, derived from the
+  // same scored book + thesis verdicts the table shows.
+  const heldScored = portfolioStocks.filter(isScoreable);
+  const avgConviction = heldScored.length ? heldScored.reduce((s, x) => s + x.adjusted, 0) / heldScored.length : null;
+  const flagged = heldScored
+    .map((s) => ({ t: displayTicker(s.ticker), v: thesisVerdicts[s.ticker.toUpperCase()] }))
+    .filter((x): x is { t: string; v: "eroding" | "broken" } => !!x.v);
+  const today = new Date().toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" });
+
   // Portfolio β is now rendered inside PortfolioOverview next to the
   // Sector Exposure header — kept alongside other portfolio-level risk
   // context rather than in the market regime card.
 
   return (
     <main className="min-h-screen bg-ground text-ink overflow-x-hidden">
-      <div className="flex flex-col gap-3.5">
+      <TooltipLayer className="flex flex-col gap-3.5">
+
+        {/* Page heading (Private Office): eyebrow, serif title, one plain-English
+            sentence summarising the book. Display only. */}
+        <header className="flex flex-col gap-1.5 px-1 pb-1 pt-2">
+          <div className="page-eyebrow">{today} · Portfolio</div>
+          <h1 className="page-title">Holdings</h1>
+          {heldScored.length > 0 && (
+            <p className="page-lede">
+              {heldScored.length} {heldScored.length === 1 ? "stock" : "stocks"} held
+              {avgConviction != null && <>, average conviction <span className="font-semibold text-ink">{avgConviction.toFixed(1)}</span> of {MAX_SCORE}</>}.
+              {" "}
+              {flagged.length === 0
+                ? "Every thesis reads intact."
+                : <>
+                    {flagged.length === 1 ? "One needs" : `${flagged.length} need`} a look:{" "}
+                    {flagged.map((f, i) => (
+                      <React.Fragment key={f.t}>
+                        {i > 0 && (i === flagged.length - 1 ? " and " : ", ")}
+                        <span className={`font-semibold ${f.v === "broken" ? "text-neg" : "text-warn"}`}>{f.t}</span>
+                        {f.v === "broken" ? "\u2019s thesis reads broken" : "\u2019s is eroding"}
+                      </React.Fragment>
+                    ))}
+                    .
+                  </>}
+            </p>
+          )}
+        </header>
 
         {/* Attention lives in ONE place — the Brief action queue (2026-09-23). */}
 
@@ -254,7 +292,7 @@ export default function DashboardPage() {
             Renders from the Reference row; computes on open (expensive Yahoo
             fetch, cached server-side in pm:score-calibration). */}
         {openRefs.has("calibration") && <ScoreCalibration />}
-      </div>
+      </TooltipLayer>
     </main>
   );
 }

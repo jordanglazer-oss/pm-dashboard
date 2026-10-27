@@ -11,6 +11,7 @@ import { CalendarPanel } from "./NextUp";
 import { MarketPanel } from "./SummaryMarket";
 import { RegimeDetail } from "./RegimeDetail";
 import { HedgeLedgerContext } from "./hedge-ledger";
+import { FundstratPanel } from "./FundstratPanel";
 
 /**
  * The Brief cockpit, to the canvas anatomy:
@@ -191,6 +192,9 @@ export function DailySummaryView({ onLoaded, refreshKey }: { onLoaded?: (s: Dail
           <RegimeDetail s={s} />
         </section>
       )}
+
+      {/* Newton + Lee, distilled — the two strategists the PM follows most. */}
+      <FundstratPanel refreshKey={refreshKey} />
 
       {/* Two-up: the brief's own recommendations beside what is scheduled and
           what the book is doing. Even shares now — the queue only carries the

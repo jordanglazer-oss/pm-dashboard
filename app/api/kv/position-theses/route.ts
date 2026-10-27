@@ -1,5 +1,6 @@
 import { getRedis } from "@/app/lib/redis";
 import { NextRequest, NextResponse } from "next/server";
+import { THESIS_ARCHIVE_KEY, MAX_ARCHIVED_PER_TICKER, type ArchivedThesis } from "@/app/lib/thesis-archive";
 
 /**
  * pm:position-theses — the HUMAN "why I own it" seed per holding (Phase 03).
@@ -143,5 +144,48 @@ export async function POST(req: NextRequest) {
   } catch (e) {
     console.error("Redis write error (position-theses):", e);
     return NextResponse.json({ error: "write failed" }, { status: 500 });
+  }
+}
+
+/**
+ * DELETE /api/kv/position-theses?ticker=TK&confirm=YES — remove ONE name's
+ * thesis (e.g. a stock that has been sold) so it leaves the Thesis desk, the
+ * kill-condition sweep and the alerts.
+ *
+ * Never a hard delete: the entry is first copied to
+ * `pm:position-theses-archive` (`{ [TICKER]: ArchivedThesis[] }`, newest
+ * last, capped) and only then removed from the live key — so
+ * `POST /api/kv/position-theses/archive` can put it back. Both writes are
+ * per-ticker read-modify-write; every other name is preserved.
+ */
+
+export async function DELETE(req: NextRequest) {
+  const ticker = (req.nextUrl.searchParams.get("ticker") ?? "").trim().toUpperCase();
+  if (!ticker) return NextResponse.json({ error: "ticker required" }, { status: 400 });
+  if (req.nextUrl.searchParams.get("confirm") !== "YES") {
+    return NextResponse.json({ error: "Confirmation required (append &confirm=YES)" }, { status: 400 });
+  }
+  try {
+    const redis = await getRedis();
+    const raw = await redis.get(KEY);
+    const current: PositionTheses = raw ? (JSON.parse(raw) as PositionTheses) : {};
+    const entry = current[ticker];
+    if (!entry) return NextResponse.json({ ok: true, ticker, removed: false });
+
+    // 1. Archive first — if this write fails, the live entry is untouched.
+    const rawArchive = await redis.get(THESIS_ARCHIVE_KEY);
+    const archive: Record<string, ArchivedThesis[]> = rawArchive ? JSON.parse(rawArchive) : {};
+    archive[ticker] = [...(archive[ticker] ?? []), { ...entry, removedAt: new Date().toISOString() }].slice(-MAX_ARCHIVED_PER_TICKER);
+    await redis.set(THESIS_ARCHIVE_KEY, JSON.stringify(archive));
+
+    // 2. Then drop it from the live key (re-read to narrow the race window).
+    const rawAgain = await redis.get(KEY);
+    const live: PositionTheses = rawAgain ? (JSON.parse(rawAgain) as PositionTheses) : {};
+    delete live[ticker];
+    await redis.set(KEY, JSON.stringify(live));
+    return NextResponse.json({ ok: true, ticker, removed: true, archived: true });
+  } catch (e) {
+    console.error("Redis write error (position-theses delete):", e);
+    return NextResponse.json({ error: "remove failed" }, { status: 500 });
   }
 }

@@ -93,17 +93,27 @@ export function MarketPanel({ s, onRefresh, refreshing }: { s: DailySummary; onR
       ) : (
         // The band owns the full page width now, so every benchmark and level
         // gets its own column instead of wrapping into a 4-wide block.
-        <div className="grid grid-cols-2 gap-x-4 gap-y-2 px-3.5 pb-2.5 pt-2 text-[12px] sm:grid-cols-3 md:grid-cols-5 xl:grid-cols-9">
-          {bench.map((b) => (
-            <div key={b.key} className="min-w-0">
-              <div className="truncate text-[11px] text-ink-3">{b.label}</div>
-              <Pct v={b.returns[win]} digits={1} className="text-[12.5px] font-medium" />
-            </div>
-          ))}
+        <div className="grid grid-cols-2 gap-2.5 px-4 pb-4 pt-3 text-[12px] sm:grid-cols-3 md:grid-cols-5 xl:grid-cols-9">
+          {bench.map((b) => {
+            // Each benchmark is a tile; its move sits in a tinted chip with a
+            // direction arrow so up/down reads before the number does.
+            const v = b.returns[win];
+            const up = v != null && v > 0;
+            const dn = v != null && v < 0;
+            return (
+              <div key={b.key} className="mkt-tile">
+                <div className="truncate text-[11px] text-ink-3">{b.label}</div>
+                <span className={`mkt-chip mt-1 ${up ? "bg-pos-soft text-pos" : dn ? "bg-neg-soft text-neg" : "bg-surface-2 text-ink-3"}`}>
+                  {(up || dn) && <span aria-hidden className="text-[8px] leading-none">{up ? "▲" : "▼"}</span>}
+                  <Pct v={v} digits={1} />
+                </span>
+              </div>
+            );
+          })}
           {levels.map((l) => (
-            <div key={l.label} className="min-w-0">
+            <div key={l.label} className="mkt-tile">
               <div className="truncate text-[11px] text-ink-3">{l.label}</div>
-              <div className="font-mono text-[12.5px] font-medium text-ink">{l.v!.toLocaleString("en-US", { minimumFractionDigits: l.dp, maximumFractionDigits: l.dp })}</div>
+              <div className="mt-1 flex h-5 items-center font-mono text-[14px] font-semibold text-ink">{l.v!.toLocaleString("en-US", { minimumFractionDigits: l.dp, maximumFractionDigits: l.dp })}</div>
             </div>
           ))}
         </div>

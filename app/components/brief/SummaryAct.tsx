@@ -88,16 +88,16 @@ function QueueRow({
   showSource: boolean;
 }) {
   return (
-    <li style={{ "--i": Math.min(i, 8) } as React.CSSProperties} className={`flex items-start gap-3 border-b border-line-soft px-3.5 py-2.5 last:border-b-0 ${it.state ? "opacity-55" : ""}`}>
-      <span className={`dot mt-[7px] ${priorityDot(it.priority)}`} />
+    <li style={{ "--i": Math.min(i, 8) } as React.CSSProperties} className={`flex items-start gap-3 border-b border-line-soft px-4 py-3 last:border-b-0 transition-colors duration-150 hover:bg-surface-hover ${it.state ? "opacity-55" : ""}`}>
+      <span className={`dot mt-[7px] h-2 w-2 ${priorityDot(it.priority)}`} />
       <div className="min-w-0 flex-1">
         <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
           {it.ticker && <TickerLink ticker={it.ticker} />}
-          <span className={`min-w-0 break-words text-[13px] font-medium text-ink ${it.state?.status === "done" ? "line-through" : ""}`}>{it.title}</span>
+          <span className={`min-w-0 break-words text-[13px] font-semibold leading-5 text-ink ${it.state?.status === "done" ? "line-through" : ""}`}>{it.title}</span>
           {it.at && <span className="text-[11px] text-ink-faint">{timeAgo(it.at)}</span>}
           {showSource && <span className="ml-auto text-[11px] text-ink-3">{SOURCE_LABEL[it.source]}</span>}
         </div>
-        {it.detail && <div className="mt-0.5 break-words text-[12.5px] leading-[1.45] text-ink-2">{it.detail}</div>}
+        {it.detail && <div className="mt-1 break-words text-[12.5px] leading-5 text-ink-2">{it.detail}</div>}
         {it.tags && it.tags.length > 0 && (
           <div className="mt-0.5 break-words font-mono text-[10.5px] text-ink-3">{it.tags.filter(Boolean).slice(0, 3).join(" · ")}</div>
         )}
@@ -184,12 +184,12 @@ export function ActionQueue({
       )}
 
       {groups.length > 0 && (
-        <div className="border-t border-line-soft bg-[var(--h-soft,var(--color-surface-2))] px-3.5 py-2.5">
+        <div className="border-t border-line-soft bg-surface-2 px-4 py-3">
           <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
-            <span className="text-[12px] font-semibold text-[var(--h,var(--color-ink))]">Elsewhere</span>
+            <span className="text-[10.5px] font-bold uppercase tracking-[0.1em] text-ink-3">Elsewhere</span>
             {groups.map((g) =>
               g.href ? (
-                <Link key={g.key} href={g.href} className="group inline-flex items-center gap-1.5 text-[12px] text-ink-2 transition-colors hover:text-accent" title={`${g.items.length} ${g.title.toLowerCase()} item${g.items.length === 1 ? "" : "s"} — open ${g.where}`}>
+                <Link key={g.key} href={g.href} className="group inline-flex min-h-7 items-center gap-1.5 rounded-pill px-2 text-[12px] text-ink-2 transition-colors hover:bg-surface hover:text-accent" title={`${g.items.length} ${g.title.toLowerCase()} item${g.items.length === 1 ? "" : "s"} — open ${g.where}`}>
                   <span className={`dot ${priorityDot(topPriority(g.items))}`} />
                   <span className="min-w-0 break-words">{g.title}</span>
                   <span className="font-mono text-ink">{g.items.length}</span>

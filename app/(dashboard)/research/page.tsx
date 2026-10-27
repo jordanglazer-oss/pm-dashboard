@@ -19,6 +19,7 @@ import TickerLink from "@/app/components/TickerLink";
 import { AppIcon } from "@/app/components/AppIcon";
 import { EmptyState } from "@/app/components/EmptyState";
 import type { Stock, ScoreKey } from "@/app/lib/types";
+import { PageHeading } from "@/app/components/PageHeading";
 
 /** A promoted name starts unscored — the scoring flow fills it in. */
 // Every category at 0 — one shared literal (types.ts) so a new category can't break this file.
@@ -269,6 +270,7 @@ export default function RankedResearchPage() {
 
   return (
     <main className="min-h-screen bg-ground text-ink overflow-x-hidden">
+      <PageHeading title="Ranked research" lede="Every name on the research lists you follow, ranked by how many lists carry it and how strongly." />
       <div className="flex flex-col gap-3.5">
         {/* Toolbar — filters first, funnel counts as meta, no title row. */}
         <div className="flex flex-wrap items-center gap-2">

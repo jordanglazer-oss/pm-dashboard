@@ -7,6 +7,7 @@ import { Skeleton, SkeletonTable } from "@/app/components/Skeleton";
 import { EmptyState } from "@/app/components/EmptyState";
 import { StatStrip } from "@/app/components/StatStrip";
 import { AppIcon } from "@/app/components/AppIcon";
+import { PageHeading } from "@/app/components/PageHeading";
 
 /**
  * /risk — the book-level risk lens (read-only). Renders /api/risk-analytics:
@@ -83,6 +84,7 @@ export default function RiskPage() {
 
   return (
     <main className="flex flex-col gap-3.5 text-ink">
+      <PageHeading lede="Which holdings drive the book's swings, which ones move together, how the sectors tilt once beta is counted, and what past shocks would do to today's weights." />
       {/* Toolbar: what this page is (meta), compute time, refresh. */}
       <div className="flex flex-wrap items-center gap-2.5">
         <span className="text-[12px] text-ink-3">

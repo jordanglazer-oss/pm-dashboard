@@ -11,6 +11,7 @@ import { skewWord, SKEW_TONE, type SynthesisResult, type StaleReason } from "@/a
 import { ThesisVerdictChip, useThesisVerdicts } from "./ThesisVerdictChip";
 import { describeCondition, type KillCondition } from "@/app/lib/kill-conditions";
 import { AppIcon } from "./AppIcon";
+import { Menu, MenuTrigger, MenuContent, MenuItem, MenuSeparator } from "./ui/Menu";
 import { SetupChip } from "./SetupChip";
 
 /**
@@ -76,7 +77,6 @@ export function HoldingInspector({
   const [thesisBy, setThesis] = useState<{ t: string; v: ThesisEntry | null } | null>(null);
   const [checkBy, setCheck] = useState<{ t: string; v: ThesisCheck | null } | null>(null);
   const [alertsBy, setAlerts] = useState<{ t: string; v: Takeaway[] } | null>(null);
-  const [menuOpen, setMenuOpen] = useState(false);
   const synth = synthBy?.t === ticker ? synthBy.v : null;
   const thesis = thesisBy?.t === ticker ? thesisBy.v : null;
   const check = checkBy?.t === ticker ? checkBy.v : null;
@@ -273,34 +273,34 @@ export function HoldingInspector({
   );
 
   return (
-    <aside key={ticker} className="flex w-full shrink-0 flex-col rounded-card border border-line bg-surface lg:sticky lg:top-[60px] lg:w-[380px] lg:max-h-[calc(100vh-76px)]">
-      <div className="flex h-11 items-center gap-2.5 border-b border-line-soft pl-4 pr-3">
-        <span className="font-mono text-[15px] font-semibold text-ink">{displayTicker(ticker)}</span>
+    <aside key={ticker} className="animate-panel-in flex w-full shrink-0 flex-col rounded-card border border-line-soft bg-surface shadow-card lg:sticky lg:top-[60px] lg:w-[380px] lg:max-h-[calc(100vh-76px)]">
+      <div className="flex h-12 items-center gap-2.5 border-b border-line-soft pl-4 pr-3">
+        <span className="font-mono text-[15px] font-bold tracking-tight text-ink">{displayTicker(ticker)}</span>
         <span className="min-w-0 truncate text-[12.5px] text-ink-2" title={s.name}>{s.name}</span>
         <Link href={stockHref} className="ml-auto inline-flex items-center gap-1.5 text-[12px] !text-accent-ink hover:!text-accent">
           <AppIcon name="open" size={13} strokeWidth={2} />Open
         </Link>
-        <button onClick={onClose} aria-label="Close inspector" className="grid h-7 w-7 place-items-center rounded-control text-ink-3 hover:bg-surface-hover hover:text-ink">
+        <button onClick={onClose} aria-label="Close inspector" className="grid h-8 w-8 place-items-center rounded-pill text-ink-3 transition-colors hover:bg-accent-soft hover:text-accent">
           <AppIcon name="x" size={15} strokeWidth={2} />
         </button>
       </div>
 
-      <div className="flex items-end gap-4 border-b border-line-soft px-4 pb-3 pt-3.5">
+      <div className="flex items-end gap-4 border-b border-line-soft px-4 pb-4 pt-4">
         <div className="min-w-0">
           <div className="flex items-baseline gap-2">
-            <span className="font-mono text-[22px] font-semibold tracking-tight text-ink">{s.price != null ? s.price.toFixed(2) : "—"}</span>
+            <span className="figure text-[28px] leading-none text-ink">{s.price != null ? s.price.toFixed(2) : "—"}</span>
             {dayChange != null && (
-              <span className={`font-mono text-[13px] ${dayChange >= 0 ? "text-pos" : "text-neg"}`}>{dayChange >= 0 ? "+" : ""}{dayChange.toFixed(1)}%</span>
+              <span className={`rounded-pill px-1.5 py-0.5 font-mono text-[12px] font-semibold ${dayChange >= 0 ? "bg-pos-soft text-pos" : "bg-neg-soft text-neg"}`}>{dayChange >= 0 ? "+" : ""}{dayChange.toFixed(1)}%</span>
             )}
             <span className="text-[11px] text-ink-3">{currency}</span>
           </div>
-          <div className="mt-0.5 truncate text-[11.5px] text-ink-3">
+          <div className="mt-1.5 truncate text-[11.5px] text-ink-3">
             {s.bucket}{s.sector ? ` · ${s.sector}` : ""}{s.beta != null ? ` · β ${s.beta.toFixed(2)}` : ""}{weight != null ? ` · wt ${weight.toFixed(1)}%` : ""}
           </div>
         </div>
         <div className="ml-auto shrink-0 text-right">
           <div className="flex items-baseline justify-end gap-0.5">
-            <span className="font-mono text-[22px] font-semibold text-ink">{Number(s.adjusted.toFixed(1))}</span>
+            <span className="figure text-[28px] leading-none text-ink">{Number(s.adjusted.toFixed(1))}</span>
             <span className="font-mono text-[12px] text-ink-3">/{MAX_SCORE}</span>
           </div>
           <div className="text-[11.5px] text-ink-3">{s.ratingLabel || s.rating}{lastScored ? ` · ${lastScored}` : ""}</div>
@@ -308,12 +308,12 @@ export function HoldingInspector({
         </div>
       </div>
 
-      <div className="flex gap-0.5 border-b border-line-soft px-3 py-2">
+      <div className="flex gap-1 border-b border-line-soft px-3 py-2.5">
         {TABS.map((t) => (
           <button
             key={t}
             onClick={() => setTab(t)}
-            className={`rounded px-2.5 py-1 text-[12px] transition-colors ${tab === t ? "bg-line-soft font-medium text-ink" : "text-ink-2 hover:text-ink"}`}
+            className={`rounded-pill px-3 py-1 text-[12px] transition-colors ${tab === t ? "bg-accent-soft font-semibold text-accent" : "text-ink-2 hover:bg-surface-hover hover:text-ink"}`}
           >
             {t}
           </button>
@@ -327,42 +327,37 @@ export function HoldingInspector({
         {tab === "Alerts" && streetBlock}
       </div>
 
-      <div className="flex items-center gap-2 border-t border-line-soft bg-surface-2 px-4 py-2.5">
-        <Link href={`${stockHref}?action=rescore`} className="inline-flex h-7 items-center rounded-control bg-ink px-2.5 text-[12.5px] font-medium !text-white hover:bg-ink-2">Rescore</Link>
-        <Link href={stockHref} className="inline-flex h-7 items-center rounded-control border border-line bg-surface px-2.5 text-[12.5px] !text-ink-2 hover:bg-surface-hover hover:!text-ink">Refresh data</Link>
-        <div className="relative ml-auto">
-          <button onClick={() => setMenuOpen((v) => !v)} aria-label="More actions" className="grid h-7 w-7 place-items-center rounded-control border border-line bg-surface text-ink-2 hover:bg-surface-hover hover:text-ink">
-            <AppIcon name="more" size={14} strokeWidth={2} />
-          </button>
-          {menuOpen && (
-            <div className="absolute bottom-9 right-0 z-30 w-52 rounded-card border border-line bg-surface p-1 shadow-[var(--shadow-pop)]">
-              <button
-                onClick={() => { moveBucket(ticker); setMenuOpen(false); }}
-                className="block w-full rounded-[5px] px-2.5 py-1.5 text-left text-[12.5px] text-ink-2 hover:bg-surface-hover hover:text-ink"
-              >
-                Move to {s.bucket === "Portfolio" ? "watchlist" : "portfolio"}
-              </button>
-              <button
-                onClick={() => { router.push(stockHref); setMenuOpen(false); }}
-                className="block w-full rounded-[5px] px-2.5 py-1.5 text-left text-[12.5px] text-ink-2 hover:bg-surface-hover hover:text-ink"
-              >
-                Open full page
-              </button>
-              <button
-                onClick={() => {
-                  if (window.confirm(`Remove ${displayTicker(ticker)} from the ${s.bucket}? This deletes its scores and history from pm:stocks.`)) {
-                    removeStock(ticker);
-                    onClose();
-                  }
-                  setMenuOpen(false);
-                }}
-                className="block w-full rounded-[5px] px-2.5 py-1.5 text-left text-[12.5px] text-neg hover:bg-neg-soft"
-              >
-                Delete
-              </button>
-            </div>
-          )}
-        </div>
+      <div className="flex items-center gap-2 border-t border-line-soft bg-surface-2 px-4 py-3">
+        <Link href={`${stockHref}?action=rescore`} className="inline-flex h-8 items-center rounded-pill bg-accent px-3.5 text-[12.5px] font-semibold !text-white shadow-sm transition-colors hover:bg-rail-hover">Rescore</Link>
+        <Link href={stockHref} className="inline-flex h-8 items-center rounded-pill border border-line bg-surface px-3.5 text-[12.5px] font-medium !text-ink-2 transition-colors hover:border-accent-border hover:!text-accent">Refresh data</Link>
+        <Menu>
+          <MenuTrigger asChild>
+            <button aria-label="More actions" className="ml-auto grid h-8 w-8 place-items-center rounded-pill border border-line bg-surface text-ink-2 transition-colors hover:border-accent-border hover:bg-accent-soft hover:text-accent data-[state=open]:bg-accent-soft data-[state=open]:text-accent">
+              <AppIcon name="more" size={14} strokeWidth={2} />
+            </button>
+          </MenuTrigger>
+          <MenuContent>
+            <MenuItem onSelect={() => moveBucket(ticker)} icon={<AppIcon name="arrowR" size={14} strokeWidth={2} />}>
+              Move to {s.bucket === "Portfolio" ? "watchlist" : "portfolio"}
+            </MenuItem>
+            <MenuItem onSelect={() => router.push(stockHref)} icon={<AppIcon name="open" size={14} strokeWidth={2} />}>
+              Open full page
+            </MenuItem>
+            <MenuSeparator />
+            <MenuItem
+              danger
+              icon={<AppIcon name="trash" size={14} strokeWidth={2} />}
+              onSelect={() => {
+                if (window.confirm(`Remove ${displayTicker(ticker)} from the ${s.bucket}? This deletes its scores and history from pm:stocks.`)) {
+                  removeStock(ticker);
+                  onClose();
+                }
+              }}
+            >
+              Delete
+            </MenuItem>
+          </MenuContent>
+        </Menu>
       </div>
     </aside>
   );
