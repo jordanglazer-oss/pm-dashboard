@@ -16,6 +16,7 @@ import { ModelVersions } from "@/app/components/ModelVersions";
 import { AppIcon } from "@/app/components/AppIcon";
 import { THESIS_VERDICT_LABEL, type ThesisVerdict } from "@/app/lib/thesis-verdict";
 import type { PimProfileType } from "@/app/lib/pim-types";
+import { PageHeading } from "@/app/components/PageHeading";
 
 /**
  * /review — the monthly meeting's one-pager and the daily portfolio hub.
@@ -243,9 +244,9 @@ export default function ReviewPage() {
 
   return (
     <main className="flex flex-col gap-3 text-ink">
+      <PageHeading title="Monthly review" lede="Each name's target weight against where it sits today and how it has done, so you can keep, adopt, set or release its weight for the month." />
       {/* Toolbar */}
       <div className="flex flex-wrap items-center gap-2">
-        <h1 className="text-[13px] font-semibold">Monthly review</h1>
         <select value={month} onChange={(e) => setMonth(e.target.value)} className="h-7 rounded-control border border-line bg-surface px-2 text-[12px] text-ink">
           {months.map((m) => <option key={m} value={m}>{m}{store?.months[m]?.status === "committed" ? " · committed" : store?.months[m] ? " · draft" : ""}</option>)}
         </select>
