@@ -20,6 +20,7 @@ import { useStocks } from "@/app/lib/StockContext";
 import type { Stock, ScoreKey } from "@/app/lib/types";
 import { MAX_SCORE, ZERO_SCORES as ALL_ZERO_SCORES } from "@/app/lib/types";
 import { RATING_BANDS } from "@/app/lib/rating-bands";
+import { PageHeading } from "@/app/components/PageHeading";
 
 /** Fire-and-forget: log tickers dropped from a research list to the
  *  append-only pm:research-removals store so the Dashboard Change Monitor
@@ -2488,6 +2489,7 @@ export default function ResearchPage() {
 
   return (
     <div className="flex flex-col gap-3.5">
+      <PageHeading title="Research sources" lede="Each research list on its own: what it holds, when it was last updated, and anything that needs fixing." />
       {/* Sits outside the source panes so the single-source view can never hide
           it — a ticker that needs fixing has to be visible from any pane. */}
       <TickerFixBanner
