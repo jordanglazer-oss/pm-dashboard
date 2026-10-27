@@ -15,6 +15,7 @@ import { usePersistedOpen } from "@/app/lib/useCollapsed";
 import { IDEA_STATUS_LABELS, type IdeaPipelineStore, type IdeaPipelineEntry, type IdeaStatus } from "@/app/lib/idea-pipeline";
 import type { ResearchState } from "@/app/lib/defaults";
 import type { Stock, ScoreKey } from "@/app/lib/types";
+import { PageHeading } from "@/app/components/PageHeading";
 
 // Every category at 0 — one shared literal (types.ts) so a new category can't break this file.
 const ZERO_SCORES = ALL_ZERO_SCORES;
@@ -348,6 +349,7 @@ export default function ConvictionPage() {
 
   return (
     <div className="flex flex-col gap-3.5">
+      <PageHeading title="Conviction board" lede="Every scored name ranked by conviction, with its setup and how it fits the current market." />
       {/* ── Toolbar ── */}
       <div className="flex flex-wrap items-center gap-2.5">
         <div className="seg" role="group" aria-label="Bucket">
