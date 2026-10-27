@@ -9,6 +9,7 @@ import { EmptyState } from "@/app/components/EmptyState";
 import { PipelineStages, buildStages, usePipelineData, type EntryRowLite } from "@/app/components/PipelineStages";
 import { VERDICT_LABEL } from "@/app/lib/synthesis-screen-display";
 import { usePersistedOpen } from "@/app/lib/useCollapsed";
+import { PageHeading } from "@/app/components/PageHeading";
 
 /**
  * Pipeline (/funnel) — the one page that shows the idea pipeline as a PIPELINE:
@@ -126,6 +127,7 @@ export default function FunnelPage() {
 
   return (
     <div className="flex flex-col gap-3.5">
+      <PageHeading lede="Ideas moving from the research lists toward the book, stage by stage, with each decision and when it expires." />
       <PipelineStages stages={stages} loading={loading} />
 
       {/* ── Toolbar ── */}
