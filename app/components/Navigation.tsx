@@ -371,7 +371,7 @@ export function Navigation() {
     <>
       <div className="flex h-16 shrink-0 flex-col justify-center gap-0.5 px-5">
         <span className="text-[18px] font-bold leading-none tracking-tight text-white">Di Iorio</span>
-        <span className="text-[9.5px] font-semibold tracking-[0.2em] text-rail-ink-3">PORTFOLIO OFFICE</span>
+        <span className="text-[9.5px] font-semibold tracking-[0.2em] text-rail-ink-3">FAMILY WEALTH</span>
       </div>
       <div className="flex grow flex-col gap-0.5 overflow-y-auto px-2.5 pb-2 pt-0.5">
         {NAV_GROUPS.map((g) => {
