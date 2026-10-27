@@ -7,6 +7,7 @@ import { Skeleton } from "@/app/components/Skeleton";
 import { EmptyState } from "@/app/components/EmptyState";
 import { StatStrip } from "@/app/components/StatStrip";
 import { AppIcon } from "@/app/components/AppIcon";
+import { PageHeading } from "@/app/components/PageHeading";
 
 /**
  * /journal — decision attribution (phase ③ of the thesis-discipline build,
@@ -89,6 +90,7 @@ export default function JournalPage() {
 
   return (
     <main className="flex flex-col gap-3.5 text-ink">
+      <PageHeading lede="Every buy and sell you logged, and how it has done against its sector since." />
       {/* Toolbar: meta on the left, recompute on the right. */}
       <div className="flex flex-wrap items-center gap-2.5">
         <span className="text-[12px] text-ink-3">
