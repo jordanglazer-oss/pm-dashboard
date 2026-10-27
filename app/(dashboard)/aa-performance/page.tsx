@@ -11,6 +11,7 @@ import { isScoreable } from "@/app/lib/scoring";
 import type { AppendixData, PimPerformanceData, PimProfileWeights } from "@/app/lib/pim-types";
 import { useLiveTodayReturn } from "@/app/lib/useLiveTodayReturn";
 import { getTodayET } from "@/app/lib/market-hours";
+import { PageHeading } from "@/app/components/PageHeading";
 
 /* ─── Types ─── */
 type AllocationRow = {
@@ -955,6 +956,7 @@ export default function AAPerformancePage() {
   if (loading) {
     return (
       <main className="flex flex-col gap-3.5 text-ink">
+        <PageHeading />
         <section className="panel">
           <div className="panel-h"><span className="t">Performance</span></div>
           <div className="p-3.5"><SkeletonTable rows={8} cols={11} /></div>
@@ -965,6 +967,7 @@ export default function AAPerformancePage() {
 
   return (
     <main className="flex flex-col gap-3.5 text-ink">
+      <PageHeading lede="How every model, risk profile and reference index has done, with asset allocation and what drove the returns." />
       {/* ── Performance — the table comes first: it is what the page is for ── */}
       <section className="panel">
         <div className="panel-h flex-wrap py-1.5">
