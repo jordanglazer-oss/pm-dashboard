@@ -884,7 +884,7 @@ export default function ThesisDeskPage() {
           </div>
           {/* Multi-column: at full width a single list of tickers is mostly dead
               space, and this is the checklist the PM works down. */}
-          <div className="grid md:grid-cols-2 2xl:grid-cols-3">
+          <div className="grid grid-cols-1 md:grid-cols-2 2xl:grid-cols-3">
             {cov.missing.map((m) => (
               <div key={m.ticker} className="flex h-[34px] items-center gap-3 border-b border-line-soft px-3.5">
                 <Link
@@ -917,7 +917,7 @@ export default function ThesisDeskPage() {
             <span className="t">Removed theses</span>
             <span className="m">kept so a removal can be undone · restore puts it back exactly as it was</span>
           </div>
-          <div className="grid md:grid-cols-2 2xl:grid-cols-3">
+          <div className="grid grid-cols-1 md:grid-cols-2 2xl:grid-cols-3">
             {Object.entries(archived)
               .sort(([a], [b]) => a.localeCompare(b))
               .map(([tk, list]) => (

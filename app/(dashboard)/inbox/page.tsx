@@ -1242,7 +1242,7 @@ export default function InboxPage() {
             body={coverageFilter === "missing" ? "Every scoreable stock has at least one source." : undefined}
           />
         ) : (
-          <div>
+          <div className="overflow-x-auto">
           <table className="data-table table-fixed">
             <thead>
               <tr>

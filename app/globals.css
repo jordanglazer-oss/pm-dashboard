@@ -195,6 +195,13 @@ body {
     box-shadow: 0 1px 2px rgb(22 27 38 / 0.10);
   }
   .seg .c { font-family: var(--font-mono); font-size: 11px; color: var(--color-ink-3); }
+  /* Phone: a segmented control wider than the screen scrolls sideways
+     inside itself instead of pushing past the edge of the page. */
+  @media (max-width: 767px) {
+    .seg { max-width: 100%; overflow-x: auto; scrollbar-width: none; }
+    .seg::-webkit-scrollbar { display: none; }
+    .seg > * { flex-shrink: 0; }
+  }
 
   /* Panel — a hairline card with a 38px header. `overflow: hidden` keeps the
      rounded corners, which means a table wider than the panel gets CLIPPED

@@ -1883,7 +1883,7 @@ export default function StockDetailPage() {
                 <thead>
                   <tr>
                     <th className="pl-3.5">Group</th>
-                    <th style={{ width: 132 }} />
+                    <th className="hidden sm:table-cell" style={{ width: 132 }} />
                     <th className="n">Pts</th>
                     <th>Notes</th>
                   </tr>
@@ -1943,10 +1943,10 @@ export default function StockDetailPage() {
                             <span className="inline-flex items-center gap-1.5">
                               <span className="text-ink-3"><AppIcon name={groupOpen ? "chevD" : "chevR"} size={13} /></span>
                               <span className={isSetup ? "font-medium text-ink-2" : "font-medium"}>{group.name}</span>
-                              {isSetup && <SetupChip stock={stock} showAction={false} size="sm" />}
+                              {isSetup && <span className="hidden sm:inline-flex"><SetupChip stock={stock} showAction={false} size="sm" /></span>}
                             </span>
                           </td>
-                          <td>
+                          <td className="hidden sm:table-cell">
                             <div className="h-1 w-[112px] overflow-hidden rounded-sm bg-line-soft">
                               <div className="h-full bg-ink-2" style={{ width: `${Math.max(0, Math.min(100, pct))}%` }} />
                             </div>
@@ -1955,7 +1955,7 @@ export default function StockDetailPage() {
                             {Number.isInteger(total) ? total : total.toFixed(1)}
                             <span className="text-ink-faint">/{group.maxTotal}</span>
                           </td>
-                          <td className="text-[12px] text-ink-2" style={{ whiteSpace: "normal" }}>
+                          <td className="w-full max-w-0 text-[12px] text-ink-2" style={{ whiteSpace: "normal" }}>
                             <span className="line-clamp-2" title={note || undefined}>{note || "—"}</span>
                           </td>
                         </tr>

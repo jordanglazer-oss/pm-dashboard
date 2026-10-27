@@ -103,7 +103,10 @@ export function CollapsibleSection({
         </div>
         {right && (
           <div
-            className="flex items-center gap-3 shrink-0"
+            // Phone: the right slot may not push the panel wider than the
+            // screen — it takes at most half the header and plain text in it
+            // truncates. Desktop is unchanged.
+            className="flex items-center gap-3 shrink-0 max-sm:max-w-[50%] max-sm:shrink max-sm:min-w-0 max-sm:overflow-hidden max-sm:[&>span]:truncate"
             onClick={(e) => e.stopPropagation()}
           >
             {right}
