@@ -5,6 +5,7 @@ import type { AppendixModelLedger, AppendixProfileType, PimTransaction, PimPortf
 import { AppIcon } from "@/app/components/AppIcon";
 import { StatStrip } from "@/app/components/StatStrip";
 import { EmptyState } from "@/app/components/EmptyState";
+import { PageHeading } from "@/app/components/PageHeading";
 
 type ViewMode = "daily" | "transactions" | "sia-import";
 
@@ -555,6 +556,7 @@ export default function AppendixPage() {
 
   return (
     <main className="text-ink">
+      <PageHeading lede="The daily values and every recorded transaction behind the performance numbers." />
       <div className="flex flex-col gap-3.5">
         {/* Toolbar: view switcher · description · right-aligned actions */}
         <div className="flex flex-wrap items-center gap-2">
