@@ -22,6 +22,7 @@ import {
   SKEW_TONE,
 } from "@/app/lib/synthesis-screen-display";
 import type { SectorLeadership, LeadershipRow } from "@/app/lib/sector-leadership";
+import { PageHeading } from "@/app/components/PageHeading";
 
 /**
  * Synthesis screen — per-name AI base/bull/bear evidence synthesis.
@@ -675,6 +676,7 @@ export default function SynthesisPage() {
 
   return (
     <div className="flex flex-col gap-3.5">
+      <PageHeading lede="An AI base, bull and bear case for each name on the research lists, as a first filter before a stock earns a closer look." />
       <PipelineStages stages={stages} activeKey="synthesis" loading={pipeline.loading && !data} />
 
       {/* The rail only sits beside the table at 2xl. Below that the table takes
