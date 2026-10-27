@@ -38,6 +38,7 @@ const FACTSET_COLS: { kind: string; head: string; title: string }[] = [
   { kind: "news", head: "News", title: "FactSet news flashes (Top News Summaries) and manually forwarded \"News: <TICKER> …\" items — developments between prints. Date of the newest one held." },
 ];
 import Link from "next/link";
+import { PageHeading } from "@/app/components/PageHeading";
 
 type Status = {
   events: InboxEvent[];
@@ -1123,6 +1124,7 @@ export default function InboxPage() {
 
   return (
     <div className="flex flex-col gap-3.5">
+      <PageHeading lede="Everything that arrived by email, what it was read as, and where the data went." />
       {/* Toolbar: the shell's top bar already names the page, so the first row
           is state + controls — webhook health, the last-100 tallies, the
           cached-events filter, and Refresh. */}
