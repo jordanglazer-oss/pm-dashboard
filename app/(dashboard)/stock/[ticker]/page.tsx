@@ -1753,10 +1753,33 @@ export default function StockDetailPage() {
       {/* ── Summary card: sleeve · thesis/plan status · score · setup · synthesis · evidence, each with its source. ── */}
       <StockSummaryCard stock={stock} />
 
+      {/* ── Top row: the price chart, with the synthesis read beside it. ── */}
+      {(stock.instrumentType !== "mutual-fund" || scoreable) && (
+        <div
+          className={`grid grid-cols-1 items-start gap-3.5 ${
+            stock.instrumentType !== "mutual-fund" && scoreable ? "lg:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)]" : ""
+          }`}
+        >
+          {/* Price (not available for mutual funds) */}
+          {stock.instrumentType !== "mutual-fund" && (
+            <div className="min-w-0">
+              <StockChart ticker={stock.ticker} technicals={stock.technicals} onDayChange={setDayChangePct} />
+            </div>
+          )}
+          {scoreable && (
+            <div className="flex min-w-0 flex-col gap-3.5">
+              <StockSynthesisTile ticker={stock.ticker} />
+              {/* Unowned names: the Ready / Wait / Watch lane read and its checklist. */}
+              {stock.bucket !== "Portfolio" && <LaneTile ticker={stock.ticker} />}
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Thesis & kill conditions — pre-registered exit criteria, checked
-          deterministically from data already on this page. Full width (was the
-          narrow right column) so a long thesis reads across the page instead
-          of stretching it downwards. */}
+          deterministically from data already on this page. Full width, below
+          the chart row, so a long thesis reads across the page instead of
+          stretching a narrow column downwards. */}
       {(scoreable || (stock.bucket === "Portfolio" && stock.designation !== "core")) && (() => {
         // Held non-Core FUNDS (Thematic) can be underwritten too (a fund held
         // for the long run has a case that can break) — this is also how an
@@ -1787,10 +1810,6 @@ export default function StockDetailPage() {
       <div className="grid grid-cols-1 items-start gap-3.5 lg:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)]">
         {/* LEFT */}
         <div className="flex min-w-0 flex-col gap-3.5">
-          {/* Price (not available for mutual funds) */}
-          {stock.instrumentType !== "mutual-fund" && (
-            <StockChart ticker={stock.ticker} technicals={stock.technicals} onDayChange={setDayChangePct} />
-          )}
 
           {/* ── Score: one row per group, each expanding to its categories ── */}
           {scoreable && (
@@ -1864,7 +1883,7 @@ export default function StockDetailPage() {
                 <thead>
                   <tr>
                     <th className="pl-3.5">Group</th>
-                    <th style={{ width: 200 }} />
+                    <th style={{ width: 132 }} />
                     <th className="n">Pts</th>
                     <th>Notes</th>
                   </tr>
@@ -1928,7 +1947,7 @@ export default function StockDetailPage() {
                             </span>
                           </td>
                           <td>
-                            <div className="h-1 w-[180px] overflow-hidden rounded-sm bg-line-soft">
+                            <div className="h-1 w-[112px] overflow-hidden rounded-sm bg-line-soft">
                               <div className="h-full bg-ink-2" style={{ width: `${Math.max(0, Math.min(100, pct))}%` }} />
                             </div>
                           </td>
@@ -1937,7 +1956,7 @@ export default function StockDetailPage() {
                             <span className="text-ink-faint">/{group.maxTotal}</span>
                           </td>
                           <td className="text-[12px] text-ink-2" style={{ whiteSpace: "normal" }}>
-                            <span className="line-clamp-1" title={note || undefined}>{note || "—"}</span>
+                            <span className="line-clamp-2" title={note || undefined}>{note || "—"}</span>
                           </td>
                         </tr>
                         {groupOpen && (
@@ -2565,9 +2584,6 @@ export default function StockDetailPage() {
 
         {/* RIGHT */}
         <div className="flex min-w-0 flex-col gap-3.5">
-          {scoreable && <StockSynthesisTile ticker={stock.ticker} />}
-          {/* Unowned names: the Ready / Wait / Watch lane read and its checklist. */}
-          {scoreable && stock.bucket !== "Portfolio" && <LaneTile ticker={stock.ticker} />}
           {/* Street takeaways — the post-earnings street read. */}
           {scoreable && <StreetTakeawaysTile ticker={stock.ticker} />}
 

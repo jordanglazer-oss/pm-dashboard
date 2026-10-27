@@ -150,6 +150,8 @@ export default function ThesisTile({
   // Persisted (pm:ui-prefs) fold for the signed thesis prose — site rule:
   // every collapse/expand survives a refresh.
   const [whyFull, toggleWhyFull] = usePersistedOpen("stock.thesis.full", false);
+  // The whole tile folds to its header line (status + actions stay visible).
+  const [tileOpen, toggleTileOpen] = usePersistedOpen("stock.thesis.open", true);
 
   // AI draft (Alfa-style generation). The route PROPOSES a thesis + conditions
   // from the rescore-generated investmentThesis/bearCase and live signals; it
@@ -621,6 +623,16 @@ export default function ThesisTile({
               <AppIcon name="edit" size={13} />
               {entry ? "Edit" : "Underwrite"}
             </button>
+            <button
+              type="button"
+              onClick={toggleTileOpen}
+              className="grid h-7 w-7 place-items-center rounded-pill border border-line bg-surface text-ink-2 hover:border-accent-border hover:bg-accent-soft hover:text-accent"
+              title={tileOpen ? "Collapse the thesis" : "Show the thesis"}
+              aria-label={tileOpen ? "Collapse the thesis" : "Show the thesis"}
+              aria-expanded={tileOpen}
+            >
+              <AppIcon name={tileOpen ? "chevU" : "chevD"} size={14} />
+            </button>
           </div>
         )}
       </div>
@@ -629,7 +641,7 @@ export default function ThesisTile({
         <p className="border-b border-line-soft px-3.5 py-1.5 text-[11.5px] text-neg">{draftErr}</p>
       )}
 
-      {!editing && (
+      {!editing && tileOpen && (
         <>
           {entry?.why ? (
             // The signed thesis is often a long bullet list, which made the
@@ -658,7 +670,7 @@ export default function ThesisTile({
               }
               return (
                 <div className="min-w-0 px-3.5 py-2.5">
-                  <p className={`min-w-0 max-w-[120ch] whitespace-pre-line break-words text-[12.5px] leading-[1.5] text-ink-2 ${longProse && !whyFull ? "line-clamp-4" : ""}`}>
+                  <p className={`min-w-0 whitespace-pre-line break-words text-[12.5px] leading-[1.5] text-ink-2 ${longProse && !whyFull ? "line-clamp-4" : ""}`}>
                     {kept.join("\n").trimEnd()}
                   </p>
                   {foldable && (
@@ -683,9 +695,9 @@ export default function ThesisTile({
           )}
 
           {(checks.length > 0 || (entry?.pillars?.length ?? 0) > 0) && (
-            // Pillar groups sit side by side on wide screens (the tile spans the
-            // page) so a 3-4 pillar thesis reads across rather than down.
-            <div className="grid grid-cols-1 border-t border-line-soft pb-1.5 xl:grid-cols-2 xl:gap-x-6">
+            // One full-width column: each condition's text runs across the
+            // page, and a long AI-checked reading drops to its own line.
+            <div className="border-t border-line-soft pb-1.5">
               {(() => {
                 const pillars = entry?.pillars ?? [];
                 const byPillar = new Map<string, typeof checks>();
@@ -719,6 +731,18 @@ export default function ThesisTile({
                       ) : null}
                       {rows.map((k) => {
                         const st = STATUS_STYLE[k.status];
+                        // Short readings ("now 24.8") sit right-aligned on the
+                        // row; long ones (AI-checked evidence) get a full-width
+                        // line underneath instead of a narrow right column.
+                        const longReading = k.reading.length > 60;
+                        const statusTag =
+                          k.status === "tripped" ? (
+                            <span className="shrink-0 text-[11.5px] font-medium text-neg">
+                              {k.condition.trippedAt ? `Tripped ${k.condition.trippedAt.slice(5)}` : "Tripped"}
+                            </span>
+                          ) : k.status !== "ok" ? (
+                            <span className="shrink-0 text-[11.5px] text-ink-3">{st.word}</span>
+                          ) : null;
                         return (
                           <div key={k.condition.id} className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5 px-3.5 py-1.5 text-[12.5px]">
                             <span className={`dot ${st.dot} shrink-0`} aria-hidden />
@@ -738,19 +762,17 @@ export default function ThesisTile({
                                 <span className="ml-2 text-[11.5px] text-neg">{verifyErr}</span>
                               )}
                             </span>
-                            {/* Reading + status: its own right-aligned column
-                                that wraps to a second line rather than
-                                squeezing (or overlapping) the condition text. */}
-                            <span className="ml-auto flex min-w-0 items-baseline justify-end gap-2 text-right">
-                              <span className="min-w-0 font-mono text-[11.5px] text-ink-3 [overflow-wrap:anywhere]">{k.reading}</span>
-                              {k.status === "tripped" ? (
-                                <span className="shrink-0 text-[11.5px] font-medium text-neg">
-                                  {k.condition.trippedAt ? `Tripped ${k.condition.trippedAt.slice(5)}` : "Tripped"}
-                                </span>
-                              ) : k.status !== "ok" ? (
-                                <span className="shrink-0 text-[11.5px] text-ink-3">{st.word}</span>
-                              ) : null}
-                            </span>
+                            {longReading ? (
+                              <>
+                                {statusTag && <span className="ml-auto">{statusTag}</span>}
+                                <span className="basis-full pl-[14px] text-[11.5px] leading-[1.5] text-ink-3 [overflow-wrap:anywhere]">{k.reading}</span>
+                              </>
+                            ) : (
+                              <span className="ml-auto flex min-w-0 items-baseline justify-end gap-2 text-right">
+                                <span className="min-w-0 font-mono text-[11.5px] text-ink-3 [overflow-wrap:anywhere]">{k.reading}</span>
+                                {statusTag}
+                              </span>
+                            )}
                           </div>
                         );
                       })}

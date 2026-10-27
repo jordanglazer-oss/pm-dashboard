@@ -2,6 +2,7 @@
 
 import React, { useCallback, useEffect, useState } from "react";
 import type { FundstratView, StrategistView } from "@/app/api/fundstrat-view/route";
+import { DROP_AFTER_DAYS, FADE_AFTER_DAYS, type ActiveLevel } from "@/app/lib/fundstrat-levels";
 import { useCollapsed } from "@/app/lib/useCollapsed";
 import { AppIcon } from "../AppIcon";
 import { Skeleton } from "../Skeleton";
@@ -26,7 +27,48 @@ const shortDate = (ymd: string) => {
   return y && m && d ? new Date(y, m - 1, d).toLocaleDateString("en-US", { month: "short", day: "numeric" }) : ymd;
 };
 
-function Column({ who, role, v }: { who: string; role: string; v: StrategistView | null }) {
+const KIND_WORD: Record<ActiveLevel["kind"], string> = { support: "support", resistance: "resistance", target: "target", other: "level" };
+const KIND_TONE: Record<ActiveLevel["kind"], string> = {
+  support: "border-pos-border bg-pos-soft text-pos",
+  resistance: "border-neg-border bg-neg-soft text-neg",
+  target: "border-accent-border bg-accent-soft text-accent",
+  other: "border-line bg-surface-2 text-ink-2",
+};
+const age = (d: number) => (d === 0 ? "today" : d < 7 ? `${d}d ago` : `${Math.floor(d / 7)}w ago`);
+
+/** Levels in force for one strategist, one row per instrument. A level stays
+ *  until a newer note names the same instrument + kind; old ones fade. */
+function Levels({ levels, who }: { levels: ActiveLevel[]; who: string }) {
+  if (!levels.length) return null;
+  const bySubject = new Map<string, ActiveLevel[]>();
+  for (const l of levels) bySubject.set(l.subject, [...(bySubject.get(l.subject) ?? []), l]);
+  return (
+    <div className="mt-3">
+      <div className="mb-1.5 text-[10.5px] font-bold uppercase tracking-[0.1em] text-ink-3">Levels in force</div>
+      <div className="flex flex-col gap-1.5">
+        {[...bySubject].map(([subject, ls]) => (
+          <div key={subject} className="flex flex-wrap items-center gap-1.5">
+            <span className="w-11 shrink-0 font-mono text-[11.5px] font-semibold text-ink">{subject}</span>
+            {ls.map((l, i) => (
+              <span
+                key={`${l.kind}-${l.value}-${i}`}
+                title={`${who}, note of ${shortDate(l.noteDate)}${l.note ? ` · ${l.note}` : ""}. Stays until a newer note names a ${KIND_WORD[l.kind]} for ${subject}.`}
+                className={`inline-flex items-center gap-1 rounded-pill border px-2.5 py-0.5 text-[11.5px] ${KIND_TONE[l.kind]} ${l.fading ? "opacity-55" : ""}`}
+              >
+                <span className="font-medium">{KIND_WORD[l.kind]}</span>
+                <span className="font-mono">{l.value}</span>
+                {l.note && <span className="opacity-75">· {l.note}</span>}
+                {l.ageDays > 0 && <span className="opacity-70">· {age(l.ageDays)}</span>}
+              </span>
+            ))}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function Column({ who, role, v, levels }: { who: string; role: string; v: StrategistView | null; levels: ActiveLevel[] }) {
   return (
     <div className="min-w-0 px-5 py-4">
       <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
@@ -54,7 +96,7 @@ function Column({ who, role, v }: { who: string; role: string; v: StrategistView
           </ul>
           {v.watch && v.watch.length > 0 && (
             <div className="mt-3 flex flex-wrap items-center gap-1.5">
-              <span className="mr-0.5 text-[10.5px] font-bold uppercase tracking-[0.1em] text-ink-3">Watch</span>
+              <span className="mr-0.5 text-[10.5px] font-bold uppercase tracking-[0.1em] text-ink-3">Favours</span>
               {v.watch.map((w) => (
                 <span key={w} className="rounded-pill border border-line bg-surface-2 px-2.5 py-0.5 text-[11.5px] text-ink-2">
                   {w}
@@ -62,6 +104,7 @@ function Column({ who, role, v }: { who: string; role: string; v: StrategistView
               ))}
             </div>
           )}
+          <Levels levels={levels} who={who} />
           {v.changeVsPrior && (
             <p className="m-0 mt-3 text-[12px] leading-[1.5] text-ink-3">
               <span className="font-semibold text-ink-2">Since the last note: </span>
@@ -74,13 +117,14 @@ function Column({ who, role, v }: { who: string; role: string; v: StrategistView
   );
 }
 
-type Payload = { result: FundstratView | null; empty?: boolean; error?: string };
+type Payload = { result: FundstratView | null; empty?: boolean; error?: string; levels?: ActiveLevel[] };
 const fetchView = (force: boolean): Promise<Payload> =>
   fetch(`/api/fundstrat-view${force ? "?refresh=1" : ""}`, { cache: "no-store" }).then((r) => r.json() as Promise<Payload>);
 
 export function FundstratPanel({ refreshKey }: { refreshKey?: string | null }) {
   const [collapsed, toggle] = useCollapsed("brief.fundstrat.collapsed");
   const [data, setData] = useState<FundstratView | null>(null);
+  const [levels, setLevels] = useState<ActiveLevel[]>([]);
   const [empty, setEmpty] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -88,6 +132,7 @@ export function FundstratPanel({ refreshKey }: { refreshKey?: string | null }) {
 
   const apply = useCallback((j: Payload) => {
     setData(j.result);
+    setLevels(Array.isArray(j.levels) ? j.levels : []);
     setEmpty(Boolean(j.empty));
     setError(j.error ?? null);
   }, []);
@@ -161,9 +206,14 @@ export function FundstratPanel({ refreshKey }: { refreshKey?: string | null }) {
         ) : (
           <>
             <div className="grid grid-cols-1 divide-y divide-line-soft lg:grid-cols-2 lg:divide-x lg:divide-y-0">
-              <Column who="Mark Newton" role="Technical strategy" v={data.newton} />
-              <Column who="Tom Lee" role="Head of research" v={data.lee} />
+              <Column who="Mark Newton" role="Technical strategy" v={data.newton} levels={levels.filter((l) => l.author === "newton")} />
+              <Column who="Tom Lee" role="Head of research" v={data.lee} levels={levels.filter((l) => l.author === "lee")} />
             </div>
+            {levels.length > 0 && (
+              <p className="m-0 border-t border-line-soft px-5 py-2 text-[11px] text-ink-3">
+                Levels stay until a newer note names a new one for the same instrument. Faded after {FADE_AFTER_DAYS / 7} weeks, dropped after {DROP_AFTER_DAYS / 7}.
+              </p>
+            )}
             {(data.together || error) && (
               <div className="border-t border-line-soft bg-surface-2 px-5 py-3 text-[12.5px] leading-[1.5] text-ink-2">
                 {data.together && (
