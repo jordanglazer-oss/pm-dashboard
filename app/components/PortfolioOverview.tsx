@@ -11,7 +11,9 @@ import { useNotifications } from "@/app/lib/NotificationsContext";
 import { SkeletonTable } from "@/app/components/Skeleton";
 import { SCORE_GROUPS, MAX_SCORE } from "@/app/lib/types";
 import { SetupChip } from "./SetupChip";
-import type { ScoredStock, ScoreKey, HealthData, FundHolding, FundSectorWeight } from "@/app/lib/types";
+import type { ScoredStock, ScoreKey, HealthData, FundHolding, FundSectorWeight, Stock, InstrumentType } from "@/app/lib/types";
+import { ZERO_SCORES } from "@/app/lib/types";
+import { sameSymbol } from "@/app/lib/model-staging";
 import type { TechnicalIndicators, RiskAlert } from "@/app/lib/technicals";
 import { groupTotal, isScoreable, normalizeSector, computeScores } from "@/app/lib/scoring";
 import { AppIcon } from "./AppIcon";
@@ -206,6 +208,10 @@ export function PortfolioOverview({
     livePreviousCloses,
     loading,
     clearManualScore,
+    stocks,
+    pimModels,
+    addStock,
+    moveBucket,
   } = useStocks();
 
   // Live CURRENT model weight per ticker, driven by the shared header Version
@@ -1150,6 +1156,38 @@ export function PortfolioOverview({
   const scoreableWatchlist = watchlistStocks.filter((s) => isScoreable(s));
   const allScoreable = [...scoreablePortfolio, ...scoreableWatchlist].sort((a, b) => b.adjusted - a.adjusted);
 
+  // PIM equity holdings with no Portfolio record in pm:stocks (see the notice).
+  const modelOnly = useMemo(() => {
+    const pim = pimModels.groups.find((g) => g.id === "pim");
+    if (!pim) return [];
+    const out: { symbol: string; stock: Stock; label: string; watchlistTicker?: string }[] = [];
+    for (const h of pim.holdings) {
+      if (h.assetClass !== "equity" || h.weightInClass <= 0) continue;
+      const recs = stocks.filter((s) => sameSymbol(s.ticker, h.symbol));
+      if (recs.some((s) => s.bucket === "Portfolio")) continue;
+      const watch = recs.find((s) => s.bucket === "Watchlist");
+      const isFund = h.bucket ? h.bucket !== "alpha" : /\b(ETF|FUND|INDEX|TRUST)\b/i.test(h.name);
+      const isFundserv = /^[A-Z]{2,4}\d{2,5}(-T)?$/.test(h.symbol);
+      const instrumentType: InstrumentType = !isFund ? "stock" : isFundserv ? "mutual-fund" : "etf";
+      const designation = !isFund ? undefined : h.bucket === "core" || (!h.bucket && /\bINDEX\b/i.test(h.name)) ? "core" as const : "thematic" as const;
+      const stock: Stock = {
+        ticker: isFundserv ? h.symbol : h.symbol.replace(/-T$/, ".TO"),
+        name: h.name || h.symbol,
+        instrumentType,
+        bucket: "Portfolio",
+        sector: "",
+        beta: 1.0,
+        weights: { portfolio: 0 },
+        scores: { ...ZERO_SCORES },
+        notes: "",
+        ...(designation ? { designation } : {}),
+      };
+      const label = !isFund ? "stock" : designation === "core" ? "Core ETF" : instrumentType === "mutual-fund" ? "Thematic fund" : "Thematic ETF";
+      out.push({ symbol: h.symbol, stock, label, ...(watch ? { watchlistTicker: watch.ticker } : {}) });
+    }
+    return out;
+  }, [pimModels, stocks]);
+
   // Funds/ETFs (non-scored) — the instrument filter applies HERE only.
   const allStocks = [...portfolioStocks, ...watchlistStocks];
   const allFunds = allStocks.filter((s) => !isScoreable(s));
@@ -1328,6 +1366,32 @@ export function PortfolioOverview({
           </section>
         </div>
       </div>
+
+      {/* In the PIM model but not in the book. Holdings lists pm:stocks, the
+          models live in pm:pim-models — a Stage changes apply without bucket
+          colours adds a name to the models only. These buttons write
+          pm:stocks ONLY (skipPimModels): the models are never touched. */}
+      {modelOnly.length > 0 && (
+        <section className="panel border-l-2 border-l-warn px-3.5 py-3 text-[12.5px]">
+          <div className="font-semibold text-ink">In the PIM model but not in your book</div>
+          <div className="mt-1 text-ink-3">These names are held in the model but have no Portfolio record, so they don&apos;t appear on this page. Adding them changes the book only — model weights are not touched.</div>
+          <div className="mt-2 flex flex-wrap gap-1.5">
+            {modelOnly.map((m) => (
+              <button
+                key={m.symbol}
+                className="inline-flex h-7 items-center gap-1.5 rounded-control border border-line bg-surface px-2.5 text-[12.5px] text-ink-2 hover:bg-surface-hover"
+                onClick={() => {
+                  if (m.watchlistTicker) moveBucket(m.watchlistTicker, { skipPimModels: true });
+                  else addStock(m.stock, { skipPimModels: true, assetClass: "equity" });
+                }}
+                title={m.watchlistTicker ? `Move ${m.watchlistTicker} from the Watchlist to the Portfolio` : `Add ${m.stock.name} to the book as ${m.label}`}
+              >
+                {displayTicker(m.watchlistTicker ?? m.stock.ticker)} · {m.watchlistTicker ? "Move to Portfolio" : `Add to book (${m.label})`}
+              </button>
+            ))}
+          </div>
+        </section>
+      )}
 
       {/* Fund & ETF Holdings — moved below Watchlist Rankings per Dashboard
           layout request. Collapsible via uiPrefs (cross-device via Redis). */}
