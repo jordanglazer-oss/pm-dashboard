@@ -9,6 +9,7 @@ import { Skeleton } from "@/app/components/Skeleton";
 import { EmptyState } from "@/app/components/EmptyState";
 import { AppIcon } from "@/app/components/AppIcon";
 import { describeCondition, type KillCheck, type KillStatus } from "@/app/lib/kill-conditions";
+import { PageHeading } from "@/app/components/PageHeading";
 
 /**
  * /thesis — the Thesis Desk: every underwritten position's thesis and its
@@ -533,6 +534,7 @@ export default function ThesisDeskPage() {
 
   return (
     <main className="flex flex-col gap-3.5 text-ink">
+      <PageHeading lede="Why you own each stock and the conditions that would prove you wrong, checked automatically against the latest data." />
       {/* Toolbar: summary as dot + word, bulk actions right-aligned. */}
       {!loading && (
         <div className="flex flex-wrap items-center gap-x-3.5 gap-y-2 text-[12.5px] text-ink-2">
