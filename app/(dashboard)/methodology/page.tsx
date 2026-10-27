@@ -31,9 +31,6 @@ export default function MethodologyPage() {
     <main className="text-ink">
       <PageHeading lede="How stocks are scored and how the portfolio is kept honest, in plain language." />
       <div className="flex flex-col gap-3.5">
-        <p className="text-[11.5px] text-ink-3">
-          The selection &amp; discipline stack, in plain language — for anyone reviewing how decisions get made here.
-        </p>
 
         <Sect title="The one-paragraph version">
           <p>
