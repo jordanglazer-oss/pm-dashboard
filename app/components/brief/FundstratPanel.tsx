@@ -39,13 +39,25 @@ const age = (d: number) => (d === 0 ? "today" : d < 7 ? `${d}d ago` : `${Math.fl
 /** Levels in force for one strategist, one row per instrument. A level stays
  *  until a newer note names the same instrument + kind; old ones fade. */
 function Levels({ levels, who }: { levels: ActiveLevel[]; who: string }) {
+  const [collapsed, toggle] = useCollapsed(`brief.fundstrat.levels.${who.split(" ").pop()?.toLowerCase()}.collapsed`);
   if (!levels.length) return null;
   const bySubject = new Map<string, ActiveLevel[]>();
   for (const l of levels) bySubject.set(l.subject, [...(bySubject.get(l.subject) ?? []), l]);
   return (
     <div className="mt-3">
-      <div className="mb-1.5 text-[10.5px] font-bold uppercase tracking-[0.1em] text-ink-3">Levels in force</div>
-      <div className="flex flex-col gap-1.5">
+      <button
+        type="button"
+        onClick={toggle}
+        aria-expanded={!collapsed}
+        className="mb-1.5 flex items-center gap-1.5 text-[10.5px] font-bold uppercase tracking-[0.1em] text-ink-3 hover:text-ink-2"
+      >
+        <AppIcon name={collapsed ? "chevD" : "chevU"} size={12} />
+        <span>Levels in force</span>
+        <span className="font-medium normal-case tracking-normal">
+          · {levels.length} across {bySubject.size} {bySubject.size === 1 ? "instrument" : "instruments"}
+        </span>
+      </button>
+      {!collapsed && <div className="flex flex-col gap-1.5">
         {[...bySubject].map(([subject, ls]) => (
           <div key={subject} className="flex flex-wrap items-center gap-1.5">
             <span className="w-11 shrink-0 font-mono text-[11.5px] font-semibold text-ink">{subject}</span>
@@ -63,7 +75,7 @@ function Levels({ levels, who }: { levels: ActiveLevel[]; who: string }) {
             ))}
           </div>
         ))}
-      </div>
+      </div>}
     </div>
   );
 }
