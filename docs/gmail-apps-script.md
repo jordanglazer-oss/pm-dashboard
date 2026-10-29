@@ -348,7 +348,7 @@ function processInbox() {
     // push "FYI: thanks" into the pipeline. Kept in sync with subjectTicker()
     // on the server.
     const SUBJECT_NOTE_RE = /^(?:(?:re|fwd?|fw):\s*)*(?:news|fyi|note)\s*:\s*[A-Z][A-Z0-9]{0,5}(?:[.\-][A-Z]{1,2}){0,2}(?:\s|$)/;
-    const BODY_TEXT_SUBJECT_RE = /^(?:(?:re|fwd?|fw):\s*)*(?:SA:\s*\S|(?:Street Takeaways|StreetAccount|Transcript Intelligence)|(?:Mark )?Newton\b|(?:Tom )?Lee\b)/i;
+    const BODY_TEXT_SUBJECT_RE = /^(?:(?:re|fwd?|fw):\s*)*(?:SA:\s*\S|(?:Street Takeaways|StreetAccount|Transcript Intelligence)|(?:Mark )?Newton\b|(?:Tom )?Lee\b|.*\breports\s+Q[1-4]\b.*\bvs\b)/i;
     // Strategist notes (Fundstrat dailies). Normally ATTACHMENT emails — the
     // dashboard reads the PDF's text layer and drops the 2 disclosure pages —
     // but pasted text must keep working, so these take the body path ONLY when
@@ -664,7 +664,7 @@ function fixLabels() {
   // getMessages(), which is the expensive call this pass exists to avoid. A
   // FactSet thread whose subject does not say so is left LABELED — the safe
   // direction, since unlabelling would re-send it.
-  var BODY_TEXT_SUBJECT_RE = /^(?:(?:re|fwd?|fw):\s*)*(?:SA:\s*\S|Street Takeaways|StreetAccount|Transcript Intelligence)/i;
+  var BODY_TEXT_SUBJECT_RE = /^(?:(?:re|fwd?|fw):\s*)*(?:SA:\s*\S|Street Takeaways|StreetAccount|Transcript Intelligence|.*\breports\s+Q[1-4]\b.*\bvs\b)/i;
   var SUBJECT_NOTE_RE = /^(?:(?:re|fwd?|fw):\s*)*(?:news|fyi|note)\s*:\s*[A-Z][A-Z0-9]{0,5}(?:[.\-][A-Z]{1,2}){0,2}(?:\s|$)/;
   // Matched the rules but was never actually ingested, so it must be released.
   var NEVER_INGESTED_RE = /equate/i;

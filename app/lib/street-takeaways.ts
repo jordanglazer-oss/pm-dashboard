@@ -45,7 +45,9 @@ export type TakeawayKind = "takeaways" | "metrics" | "transcript" | "news" | "ot
  * carries information the others don't. Each format now keeps its own rolling
  * window, so both are always held.
  */
-export const MAX_PER_KIND = 4;
+// 8, not 4: a quarter can now produce an EPS flash, a recap and a revised
+// recap per format, so 4 held barely a quarter of earnings history.
+export const MAX_PER_KIND = 8;
 /**
  * News flashes arrive on no schedule and several can land in a week, so the
  * 4-slot earnings window would throw away most of a busy month. They are also
@@ -257,21 +259,45 @@ function newsDedupeKey(e: Pick<StreetTakeaway, "headline" | "subject" | "event">
     .trim();
 }
 
+/** How much an earnings entry actually carries — used to decide whether a
+ *  same-quarter duplicate should REPLACE the stored one (a full Metrics Recap
+ *  arriving after the one-line "reports Q3 EPS … vs" flash). */
+function contentWeight(e: StreetTakeaway): number {
+  return (
+    (e.results?.length ?? 0) +
+    (e.guidanceLines?.length ?? 0) +
+    (e.firms?.length ?? 0) +
+    (e.overview ? 1 : 0) +
+    (e.guidance ? 1 : 0) +
+    (e.managementOutlook ? 1 : 0) +
+    (e.trackRecord ? 1 : 0)
+  );
+}
+
+/** FactSet re-sends a corrected alert as "Revised: SA: …". */
+function isRevised(e: Pick<StreetTakeaway, "subject">): boolean {
+  return /^(?:\s*(?:fw|fwd|re|tr)\s*:\s*)*revised\b/i.test(e.subject ?? "");
+}
+
 /**
- * Append one entry, newest-first, capped at MAX_PER_TICKER.
+ * Append one entry, newest-first, capped per kind.
  * Read-modify-write; never touches other tickers' lists.
  * Dedupes on (kind, date, event) so a re-forwarded email is a no-op — but
  * the Metrics Recap and the Street Takeaways for the SAME quarter are
  * different kinds and both get stored (they're complementary).
+ * An earnings-kind duplicate REPLACES the stored entry (rather than being
+ * dropped) when it is a "Revised:" alert or carries more content — otherwise
+ * whichever of the EPS flash / the full recap / the revised recap landed first
+ * would win for good.
  */
 export async function appendStreetTakeaway(
   entry: StreetTakeaway,
-): Promise<{ added: boolean; count: number }> {
+): Promise<{ added: boolean; replaced?: boolean; count: number }> {
   const redis = await getRedis();
   const store = parse(await redis.get(STREET_TAKEAWAYS_KEY));
   const key = entry.ticker.toUpperCase();
-  const list = store[key] ?? [];
-  const dupe = list.some(
+  let list = store[key] ?? [];
+  const dupeIndex = list.findIndex(
     (e) =>
       e.date === entry.date &&
       (e.kind ?? "takeaways") === entry.kind &&
@@ -283,7 +309,16 @@ export async function appendStreetTakeaway(
         ? newsDedupeKey(e) === newsDedupeKey(entry)
         : (e.event ?? "") === (entry.event ?? "")),
   );
-  if (dupe) return { added: false, count: list.length };
+  let replaced = false;
+  if (dupeIndex >= 0) {
+    const existing = list[dupeIndex];
+    const supersedes =
+      entry.kind !== "news" &&
+      (isRevised(entry) || contentWeight(entry) > contentWeight(existing));
+    if (!supersedes) return { added: false, count: list.length };
+    list = list.filter((_, i) => i !== dupeIndex);
+    replaced = true;
+  }
 
   // ── Cross-format de-duplication ────────────────────────────────────────
   // The formats overlap: a Metrics Recap and a Street Takeaways for the same
@@ -330,7 +365,7 @@ export async function appendStreetTakeaway(
   });
   store[key] = next;
   await redis.set(STREET_TAKEAWAYS_KEY, JSON.stringify(store));
-  return { added: true, count: next.length };
+  return { added: true, replaced, count: next.length };
 }
 
 /** Map FactSet's identifier convention (IBM-US, CNR-CA, TECK.B-CA) to a
@@ -407,7 +442,19 @@ function beatRollup(entries: StreetTakeaway[]): string | null {
   return parts.length ? `Beat record across stored alerts (${parts.join("; ")}).` : null;
 }
 
-export function formatStreetTakeawaysForPrompt(entries: StreetTakeaway[]): string {
+/** Earnings entries per kind that reach a prompt. Storage keeps MAX_PER_KIND;
+ *  prompts stay at the window they had before storage was deepened. */
+const PROMPT_PER_KIND = 4;
+
+export function formatStreetTakeawaysForPrompt(all: StreetTakeaway[]): string {
+  const seenPerKind = new Map<string, number>();
+  const entries = all.filter((e) => {
+    const k = e.kind ?? "takeaways";
+    if (k === "news") return true;
+    const n = (seenPerKind.get(k) ?? 0) + 1;
+    seenPerKind.set(k, n);
+    return n <= PROMPT_PER_KIND;
+  });
   if (!entries.length) return "";
   const lines: string[] = [];
   lines.push("=== STREET TAKEAWAYS / METRICS / NEWS (FactSet alerts from the PM's inbox) ===");
