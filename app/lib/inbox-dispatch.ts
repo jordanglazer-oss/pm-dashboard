@@ -613,14 +613,14 @@ async function handleStreetTakeaways(bodyText: string, subject: string): Promise
     ingestedAt: new Date().toISOString(),
     subject,
   };
-  const { added, count } = await appendStreetTakeaway(entry);
+  const { added, replaced, count } = await appendStreetTakeaway(entry);
   const label = factsetKindLabel(entry);
   return {
     ok: true,
     kind: "street-takeaways",
     status: 200,
     message: added
-      ? `${label} filed: ${describeTakeaway(entry)}`
+      ? `${label} ${replaced ? "replaced the earlier same-quarter entry" : "filed"}: ${describeTakeaway(entry)}`
       : `${label} for ${entry.ticker} (${entry.date}) already on file — skipped duplicate.`,
     detail: { ticker: entry.ticker, added, count, alertKind: entry.kind, firms: entry.firms.length },
   };
