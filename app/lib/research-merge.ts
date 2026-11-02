@@ -391,9 +391,12 @@ export function applyResearchEntries(
   state: ResearchState,
   source: SourceKey,
   entries: unknown[],
+  opts: { sameDayAccumulate?: boolean } = {},
 ): { nextState: ResearchState; summary: ResearchMergeSummary } {
   const today = new Date().toISOString().slice(0, 10); // UTC — consistent client + server
-  const forceAdditive = state.scanDates?.[source] === today;
+  // Callers that already hold the complete list (the manual Research-page scan
+  // reads the whole day's screenshot batch at once) pass false to always replace.
+  const forceAdditive = (opts.sameDayAccumulate ?? true) && state.scanDates?.[source] === today;
 
   let result: { nextState: ResearchState; summary: ResearchMergeSummary };
   switch (source) {
