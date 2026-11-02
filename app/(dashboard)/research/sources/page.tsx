@@ -55,6 +55,31 @@ function normalizeUptickTicker(t: string): string {
   return t.replace(/^\$+/, "").replace(/\//g, "-").split(/[.\s]/)[0].toUpperCase();
 }
 
+/**
+ * The screenshots a scan should read for one source: only those uploaded on
+ * the same (local) day as the newest one. Uploads stack per source, and the
+ * scan REPLACES the list — so reading last month's screenshot alongside
+ * today's would keep re-adding names the source has since dropped. Same-day
+ * screenshots stay together (a long list captured as several pages).
+ * Attachments without a parseable addedAt only count when nothing is dated.
+ */
+function latestScreenshotBatch(all: BriefAttachment[], section: string): { use: BriefAttachment[]; ignored: number } {
+  const forSection = all.filter((a) => a.section === section);
+  const dayOf = (a: BriefAttachment) => {
+    const ms = Date.parse(a.addedAt);
+    return Number.isFinite(ms) ? new Date(ms).toLocaleDateString("en-CA") : null;
+  };
+  const days = forSection.map(dayOf).filter((d): d is string => d !== null).sort();
+  if (days.length === 0) return { use: forSection, ignored: 0 };
+  const newest = days[days.length - 1];
+  const use = forSection.filter((a) => dayOf(a) === newest);
+  return { use, ignored: forSection.length - use.length };
+}
+
+function ignoredScreenshotsLabel(n: number): string {
+  return n > 0 ? ` · ${n} older screenshot${n === 1 ? "" : "s"} not read (delete to tidy up)` : "";
+}
+
 /* ─── Uptick Add Form ─── */
 function UptickAddForm({ onAdd }: { onAdd: (e: UptickEntry) => void }) {
   const [ticker, setTicker] = useState("");
@@ -1785,7 +1810,7 @@ export default function ResearchPage() {
   const [lastScrape, setLastScrape] = useState<Array<{ ticker: string; support?: string; resistance?: string; priceWhenAdded?: number; dateAdded?: string }>>([]);
 
   const scrapeUpticks = useCallback(async (force = false): Promise<{ merged: ResearchState; changed: boolean } | null> => {
-    const upticksAttachments = (state.attachments || []).filter((a) => a.section === "upticks");
+    const { use: upticksAttachments, ignored: ignoredOld } = latestScreenshotBatch(state.attachments || [], "upticks");
     if (upticksAttachments.length === 0) return null;
     setScrapeLoading(true);
     try {
@@ -1879,7 +1904,7 @@ export default function ResearchPage() {
       const removedLabel = removed > 0 ? ` · ${removed} removed` : "";
       const dismissedLabel = skippedDismissed > 0 ? ` · ${skippedDismissed} skipped (tombstoned)` : "";
       setScrapeStatus(
-        `${entries.length} rows in screenshot${cachedLabel} · ${matched} matched · ${added} added${removedLabel}${dismissedLabel}${modeLabel}`,
+        `${entries.length} rows in screenshot${cachedLabel} · ${matched} matched · ${added} added${removedLabel}${dismissedLabel}${modeLabel}${ignoredScreenshotsLabel(ignoredOld)}`,
       );
       if (!changed) return { merged: state, changed: false };
       const nextState: ResearchState = { ...state, newtonUpticks: Array.from(merged.values()) };
@@ -1917,7 +1942,7 @@ export default function ResearchPage() {
    * parse missed fields or returned [] on a complex screenshot).
    */
   const scrapeResearchSource = useCallback(async (source: SourceKey, force = false): Promise<boolean> => {
-    const sourceAttachments = (state.attachments || []).filter((a) => a.section === source);
+    const { use: sourceAttachments, ignored: ignoredOld } = latestScreenshotBatch(state.attachments || [], source);
     if (sourceAttachments.length === 0) {
       setScrapeStatusMap((m) => ({ ...m, [source]: "No screenshot uploaded for this source yet" }));
       return false;
@@ -1958,10 +1983,14 @@ export default function ResearchPage() {
       // manualSell-tagged alphaPicks survive. Safety check falls back to
       // additive merge when the new screenshot has < 30% of the existing
       // list's rows (partial / vision miss). See app/lib/research-merge.ts.
+      // A manual scan sends every screenshot of the day's batch at once, so it
+      // is the whole list — no same-day accumulation (that exists for emails,
+      // where each page of a list arrives as its own attachment).
       const { nextState, summary } = applyResearchEntries(
         state,
         source,
         entries as unknown[],
+        { sameDayAccumulate: false },
       );
       const cachedLabel = data.cached ? " (cached)" : "";
       const modeLabel = summary.mode === "additive"
@@ -1971,7 +2000,7 @@ export default function ResearchPage() {
       const reasonLabel = summary.fallbackReason ? ` — ${summary.fallbackReason}` : "";
       setScrapeStatusMap((m) => ({
         ...m,
-        [source]: `${entries.length} rows${cachedLabel}${modeLabel} · ${summary.matched} matched · ${summary.added} added${removedLabel}${reasonLabel}`,
+        [source]: `${entries.length} rows${cachedLabel}${modeLabel} · ${summary.matched} matched · ${summary.added} added${removedLabel}${reasonLabel}${ignoredScreenshotsLabel(ignoredOld)}`,
       }));
       save(nextState);
       postResearchRemovals(source, summary.removedTickers);
