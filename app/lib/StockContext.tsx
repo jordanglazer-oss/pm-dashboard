@@ -104,6 +104,9 @@ type StockContextType = {
   loading: boolean;
   addStock: (stock: Stock, opts?: { skipPimModels?: boolean; assetClass?: "fixedIncome" | "equity" | "alternative" }) => void;
   removeStock: (ticker: string) => void;
+  /** Batch-delete WATCHLIST names (Holdings › Watchlist checkboxes). Portfolio
+   *  records in the list are ignored, and pm:pim-models is never touched. */
+  removeWatchlistStocks: (tickers: string[]) => void;
   moveBucket: (ticker: string, opts?: { skipPimModels?: boolean; eligibility?: Record<string, boolean>; assetClass?: "fixedIncome" | "equity" | "alternative" }) => void;
   updateScore: (ticker: string, key: ScoreKey, value: number) => void;
   /** Un-score a MANUAL category: value back to 0 AND the manualScoredAt stamp
@@ -1125,6 +1128,21 @@ export function StockProvider({ children }: { children: React.ReactNode }) {
     removeFromPimModels(ticker);
   }, [persistStocks, removeFromPimModels]);
 
+  // One filtered write to pm:stocks for the whole batch. Watchlist-only, so a
+  // stray Portfolio ticker can never be deleted from here, and no model write
+  // (watchlist names are not model holdings — removeStock's per-name
+  // removeFromPimModels would otherwise re-persist pm:pim-models N times).
+  const removeWatchlistStocks = useCallback((tickers: string[]) => {
+    const drop = new Set(tickers);
+    if (drop.size === 0) return;
+    setStocks((prev) => {
+      const next = prev.filter((s) => !(s.bucket === "Watchlist" && drop.has(s.ticker)));
+      if (next.length === prev.length) return prev;
+      persistStocks(next);
+      return next;
+    });
+  }, [persistStocks]);
+
   /**
    * @param opts.skipPimModels  As addStock — let the caller own the model write.
    * @param opts.eligibility    Model eligibility to apply NOW rather than
@@ -2145,6 +2163,7 @@ export function StockProvider({ children }: { children: React.ReactNode }) {
         loading,
         addStock,
         removeStock,
+        removeWatchlistStocks,
         moveBucket,
         updateScore,
         clearManualScore,

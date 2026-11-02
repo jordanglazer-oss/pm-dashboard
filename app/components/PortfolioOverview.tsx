@@ -212,6 +212,7 @@ export function PortfolioOverview({
     pimModels,
     addStock,
     moveBucket,
+    removeWatchlistStocks,
   } = useStocks();
 
   // Live CURRENT model weight per ticker, driven by the shared header Version
@@ -1315,6 +1316,7 @@ export function PortfolioOverview({
         riskScanByTicker={riskScanByTicker}
         splitByCurrency
         enableExternalExports={rankBucket === "Watchlist"}
+        onDeleteSelected={rankBucket === "Watchlist" ? removeWatchlistStocks : undefined}
       />
       )}
         </div>
@@ -1634,7 +1636,10 @@ function RankingTable({
   loading,
   synthesisByTicker,
   thesisByTicker,
+  onDeleteSelected,
 }: {
+  /** Batch delete of the checked rows (Watchlist only). Absent = no button. */
+  onDeleteSelected?: (tickers: string[]) => void;
   /** Right-aligned toolbar extras (the Refresh-all-data button). */
   toolbarRight?: React.ReactNode;
   /** Docked-inspector selection + handler (canvas). */
@@ -2052,6 +2057,22 @@ function RankingTable({
             className="h-8 w-48 rounded-pill border border-line bg-surface pl-7 pr-3 text-[12.5px] text-ink shadow-sm outline-none transition-[border-color,box-shadow] duration-150 placeholder:text-ink-3 hover:border-accent-border focus:border-accent focus:ring-2 focus:ring-accent/20"
           />
         </div>
+        {onDeleteSelected && selectedInView.length > 0 && (
+          <button
+            onClick={() => {
+              const names = selectedInView.map((t) => displayTicker(t)).join(", ");
+              if (!window.confirm(`Delete ${selectedInView.length} name${selectedInView.length === 1 ? "" : "s"} from the Watchlist?\n\n${names}\n\nThis removes their scores and history from pm:stocks.`)) return;
+              onDeleteSelected(selectedInView);
+              setSelectedTickers(new Set());
+            }}
+            disabled={scoring}
+            className="inline-flex h-8 items-center gap-1.5 rounded-pill border border-neg-border bg-surface px-3.5 text-[12.5px] font-semibold text-neg shadow-sm transition-colors duration-150 hover:bg-neg-soft focus-visible:ring-2 focus-visible:ring-neg-border disabled:opacity-50"
+            title={`Delete the ${selectedInView.length} checked name${selectedInView.length === 1 ? "" : "s"} from the Watchlist`}
+          >
+            <AppIcon name="trash" size={13} strokeWidth={2} />
+            Delete selected <span className="font-mono opacity-70">{selectedInView.length}</span>
+          </button>
+        )}
         {onScoreAll && (
           <button
             onClick={() => onScoreAll?.(selectedInView.length > 0 ? selectedInView : undefined)}
