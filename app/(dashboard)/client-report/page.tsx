@@ -3201,9 +3201,6 @@ function SlideFrame({
           <span style={{ color: THEME.gold, margin: "0 10px" }}>|</span>
           RBC Dominion Securities
         </span>
-        <span style={{ fontSize: 10.5, color: "#3D6AA3" }}>
-          For client presentation purposes only. Past performance is not indicative of future results.
-        </span>
       </div>
     </div>
   );
@@ -3214,7 +3211,6 @@ type CardTone = "cream" | "sky" | "navy" | "gold";
 /** One "layer" from the investment-approach slide. */
 function SlideCard({
   tone,
-  num,
   eyebrow,
   right,
   children,
@@ -3222,6 +3218,7 @@ function SlideCard({
   style,
 }: {
   tone: CardTone;
+  /** Accepted for existing callers; no longer rendered (PM removed the card numbers). */
   num?: string;
   eyebrow: string;
   right?: React.ReactNode;
@@ -3253,18 +3250,6 @@ function SlideCard({
     >
       <div className="flex items-baseline justify-between gap-3" style={{ marginBottom: 10 }}>
         <div className="flex items-baseline gap-2.5 min-w-0">
-          {num && (
-            <span
-              style={{
-                fontFamily: SERIF,
-                fontSize: 22,
-                lineHeight: 1,
-                color: tone === "navy" ? THEME.goldBand : tone === "gold" ? THEME.navy : THEME.gold,
-              }}
-            >
-              {num}
-            </span>
-          )}
           <span
             className="uppercase truncate"
             style={{ fontSize: 11.5, letterSpacing: "0.2em", color: eyebrowColor, fontWeight: 600 }}
