@@ -23,71 +23,115 @@ const LOG_KEY = "pm:alert-log";
 
 type LoggedDigest = { generatedAt: string; counts: ReturnType<typeof alertCounts>; alerts: Alert[] };
 
-const CAT_LABEL: Record<string, string> = { thesis: "THESIS", regime: "REGIME", technical: "TECHNICAL", entry: "READY TO BUY" };
+type RecentRescore = { at: string; ticker: string; trigger: string; mode: "full" | "partial"; before: number | null; after: number | null };
+
+/** Most flags shown in full; the rest become a count. */
+const MAX_FULL_FLAGS = 7;
+/** Most "also watching" names listed on the one summary line. */
+const MAX_WATCH_LINE = 6;
+
+/** The terse form of an alert — its `short` when set, else derived from the
+ *  title / detail so a new alert type still renders sensibly. */
+function shortOf(a: Alert): { label: string; what: string; why?: string; next?: string } {
+  const label = a.ticker ?? (a.category === "regime" ? "MARKET" : a.category.toUpperCase());
+  if (a.short) return { label, ...a.short };
+  const what = a.ticker ? a.title.replace(new RegExp(`^${a.ticker}\\s*[—-]\\s*`), "") : a.title;
+  const why = a.detail ? a.detail.replace(/\s+/g, " ").trim() : undefined;
+  return { label, what, why: why && why.length > 140 ? `${why.slice(0, 139)}…` : why };
+}
+
+/** Email order: a broken thesis first, then pre-registered exits, the
+ *  market, eroding theses, technicals, overdue reviews. The in-app tile keeps
+ *  computeAlerts' own order; this only decides what leads the email. */
+const EMAIL_ORDER = ["verdict-", "kill-", "regime", "thesis-", "tech-", "reunderwrite-", "entry-"];
+function emailRank(a: Alert): number {
+  const i = EMAIL_ORDER.findIndex((pfx) => a.id.startsWith(pfx));
+  return i === -1 ? EMAIL_ORDER.length : i;
+}
+function byImportance(alerts: Alert[], priority: Alert["priority"]): Alert[] {
+  return alerts.filter((a) => a.priority === priority).sort((x, y) => emailRank(x) - emailRank(y));
+}
+
+/** "Nov 5" for a YYYY-MM-DD date. */
+function shortDate(date: string): string {
+  const d = new Date(`${date}T12:00:00Z`);
+  return isNaN(d.getTime()) ? date : d.toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" });
+}
+
+/** Problem lines only — a healthy feed set adds nothing to the email. */
+function problemLines(dataHealth?: DataHealthReport): string[] {
+  if (!dataHealth || dataHealth.problemCount === 0) return [];
+  return dataHealth.lines.filter((l) => l.startsWith("⚠")).map((l) => l.replace(/^⚠\s*/, ""));
+}
 
 /**
  * Plain-text digest — the Gmail outbox sends text bodies via GmailApp.sendEmail.
- * Each alert gets its headline, the specific signals that drove it, the
- * supporting numbers, and the concrete next step — so the email stands on its
- * own without opening the dashboard.
+ * Built to be read in under a minute: each high-priority flag is two or three
+ * lines (what happened, why it matters, the next step), medium items share a
+ * single "Also watching" line, and data health appears only when a feed is
+ * broken. The full detail stays on the dashboard's alert tile.
  */
-type RecentRescore = { at: string; ticker: string; trigger: string; mode: "full" | "partial"; before: number | null; after: number | null };
-
-function renderDigestText(
+export function renderDigestText(
   alerts: Alert[],
-  counts: ReturnType<typeof alertCounts>,
   date: string,
   dataHealth?: DataHealthReport,
   rescores: RecentRescore[] = []
 ): string {
-  const lines: string[] = [
-    `NEEDS YOUR ATTENTION — ${date}`,
-    `${counts.high} high · ${counts.medium} to watch`,
-    "",
-  ];
+  const high = byImportance(alerts, "high");
+  const medium = byImportance(alerts, "medium");
+  const lines: string[] = [];
 
-  const section = (label: string, rows: Alert[]) => {
-    if (!rows.length) return;
-    lines.push(`${label}`, "─".repeat(52));
-    for (const a of rows) {
-      const who = a.name && a.ticker ? `${a.title} — ${a.name}` : a.title;
-      lines.push(`[${CAT_LABEL[a.category] ?? a.category.toUpperCase()}] ${who}`);
-      if (a.detail) lines.push(`  Why: ${a.detail}`);
-      for (const m of a.metrics ?? []) lines.push(`  · ${m}`);
-      if (a.action) lines.push(`  → ${a.action}`);
-      lines.push("");
-    }
-  };
+  for (const a of high.slice(0, MAX_FULL_FLAGS)) {
+    const s = shortOf(a);
+    lines.push(`${s.label}  ${s.what}`);
+    if (s.why) lines.push(`  ${s.why}`);
+    if (s.next) lines.push(`  → ${s.next}`);
+    lines.push("");
+  }
 
-  section("HIGH PRIORITY", alerts.filter((a) => a.priority === "high"));
-  section("TO WATCH", alerts.filter((a) => a.priority === "medium"));
+  const watch = medium.map((a) => {
+    const s = shortOf(a);
+    return `${s.label} ${s.what.charAt(0).toLowerCase()}${s.what.slice(1)}`;
+  });
+  const extraHigh = Math.max(0, high.length - MAX_FULL_FLAGS);
+  if (watch.length > 0 || extraHigh > 0) {
+    const shown = watch.slice(0, MAX_WATCH_LINE);
+    const more = watch.length - shown.length + extraHigh;
+    const parts = [...shown, ...(more > 0 ? [`${more} more on the dashboard`] : [])];
+    lines.push(`Also watching: ${parts.join(" · ")}`);
+  }
 
-  // Overnight auto-rescores — every score the event engine moved since the
-  // last digest, with the trigger, so a changed ranking is never a mystery.
   if (rescores.length > 0) {
-    lines.push("OVERNIGHT RESCORES", "─".repeat(52));
-    for (const r of rescores) {
-      const delta =
-        r.before != null && r.after != null
-          ? ` ${r.before.toFixed(1)} → ${r.after.toFixed(1)}`
-          : "";
-      lines.push(`  ${r.ticker} (${r.mode}):${delta} — ${r.trigger}`);
-    }
-    lines.push("");
+    lines.push(
+      `Rescored: ${rescores
+        .map((r) => (r.before != null && r.after != null ? `${r.ticker} ${r.before.toFixed(1)} → ${r.after.toFixed(1)}` : r.ticker))
+        .join(" · ")}`
+    );
   }
 
-  // Data health — one line when everything is fresh, problems-first when not.
-  // This is what makes the numbers above trustworthy without checking them.
-  if (dataHealth) {
-    lines.push("DATA HEALTH", "─".repeat(52));
-    for (const l of dataHealth.lines) lines.push(`  ${l}`);
-    lines.push("");
-  }
+  for (const p of problemLines(dataHealth)) lines.push(`Data issue: ${p}`);
 
-  lines.push("─".repeat(52));
-  lines.push("Full detail (and the Opportunities half) in the dashboard:");
-  lines.push("https://pm-dashboard-7rr9.vercel.app/");
+  if (lines.length && lines[lines.length - 1] !== "") lines.push("");
+  lines.push(`pm-dashboard-7rr9.vercel.app · ${shortDate(date)}`);
   return lines.join("\n");
+}
+
+/** Subject = the headline: the flag count plus the most important one. */
+export function digestSubject(alerts: Alert[], date: string, dataHealth?: DataHealthReport, rescores: RecentRescore[] = []): string {
+  const high = byImportance(alerts, "high");
+  const when = shortDate(date);
+  if (high.length > 0) {
+    const top = shortOf(high[0]);
+    const headline = `${top.label} ${top.what}`;
+    const clipped = headline.length > 70 ? `${headline.slice(0, 69)}…` : headline;
+    return `PM — ${high.length} flag${high.length === 1 ? "" : "s"} · ${clipped} (${when})`;
+  }
+  const problems = problemLines(dataHealth);
+  if (problems.length > 0) {
+    const first = problems[0].length > 60 ? `${problems[0].slice(0, 59)}…` : problems[0];
+    return `PM — data issue: ${first}${problems.length > 1 ? ` (+${problems.length - 1})` : ""} (${when})`;
+  }
+  return `PM — ${rescores.length} rescore${rescores.length === 1 ? "" : "s"} overnight (${when})`;
 }
 
 export async function runAlertDigest(opts?: {
@@ -162,17 +206,11 @@ export async function runAlertDigest(opts?: {
     }
 
     if ((counts.high > 0 || healthProblems > 0 || rescores.length > 0) && alertTo) {
-      const subject =
-        counts.high > 0
-          ? `PM alerts — ${counts.high} need attention (${today})`
-          : rescores.length > 0
-          ? `PM digest — ${rescores.length} auto-rescore${rescores.length === 1 ? "" : "s"} overnight (${today})`
-          : `PM data health — ${healthProblems} feed issue${healthProblems === 1 ? "" : "s"} (${today})`;
       emailed = await enqueueMail({
         id: `digest-${today}`,
         to: alertTo,
-        subject,
-        text: renderDigestText(alerts, counts, today, opts?.dataHealth, rescores),
+        subject: digestSubject(alerts, today, opts?.dataHealth, rescores),
+        text: renderDigestText(alerts, today, opts?.dataHealth, rescores),
         queuedAt: new Date().toISOString(),
       });
     }

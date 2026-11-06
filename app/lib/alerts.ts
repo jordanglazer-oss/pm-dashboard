@@ -31,7 +31,21 @@ export type Alert = {
   metrics?: string[];
   /** The so-what: one concrete next step. */
   action?: string;
+  /** Email form (2–3 lines): what happened, why it matters, the next step.
+   *  The in-app tile keeps using title / detail / metrics / action; only the
+   *  outbound digest reads this, so it can stay terse. */
+  short?: { what: string; why?: string; next?: string };
 };
+
+/** Trim to `n` chars at a word boundary, with an ellipsis when cut. */
+function clip(s: string | undefined | null, n = 140): string | undefined {
+  const t = (s ?? "").replace(/\s+/g, " ").trim();
+  if (!t) return undefined;
+  if (t.length <= n) return t;
+  const cut = t.slice(0, n);
+  const sp = cut.lastIndexOf(" ");
+  return `${(sp > n * 0.6 ? cut.slice(0, sp) : cut).replace(/[\s,;:·—-]+$/, "")}…`;
+}
 
 /** Per-ticker supporting context used to enrich alerts (built by loadAlertInputs). */
 export type StockContext = {
@@ -168,6 +182,11 @@ export function computeAlerts(input: {
         tv.verdict === "broken"
           ? "A pillar of the long-run thesis reads broken against the latest evidence. Open the stock page, read the review, and decide: exit, or re-underwrite with a reason. This is the one trigger a held name is sold on."
           : "A pillar of the long-run thesis is contested by new evidence. Open the stock page and work through the review — accept or reject its proposed changes and re-sign.",
+      short: {
+        what: `Thesis ${tv.verdict}: ${hit.map((p) => p.title).join(", ") || "pillar read changed"}`,
+        why: clip(hit[0]?.reading || tv.summary),
+        next: tv.verdict === "broken" ? "Decide: exit, or re-underwrite with a reason." : "Review the pillar read and re-sign.",
+      },
     });
   }
 
@@ -195,6 +214,11 @@ export function computeAlerts(input: {
       ].filter((m): m is string => m != null),
       action:
         "This is a condition you pre-registered as 'I am wrong if…'. Open the stock page and respond — Acknowledge-hold or Flag trim/exit; either way it's logged to the journal.",
+      short: {
+        what: `${kw.tripped} of ${kw.auto} exit condition${kw.auto === 1 ? "" : "s"} tripped`,
+        why: clip(trippedChecks.slice(0, 2).map((c) => c.reading).join(" · ")),
+        next: "Acknowledge-hold or flag trim/exit on the stock page.",
+      },
     });
   }
 
@@ -228,6 +252,10 @@ export function computeAlerts(input: {
       ].filter((m): m is string => m != null),
       action:
         "Open the stock page and re-underwrite: redraft the thesis against today's facts and confirm the exit conditions still describe being wrong. Comparing it to what you signed a quarter ago is the point.",
+      short: {
+        what: `Thesis review ${daysOver === 0 ? "due today" : `${daysOver}d overdue`}`,
+        next: "Re-underwrite on the stock page.",
+      },
     });
   }
 
@@ -260,6 +288,11 @@ export function computeAlerts(input: {
         dte != null
           ? `Earnings in ${dte} day${dte === 1 ? "" : "s"} with a ${h.verdict} thesis — decide BEFORE the print (hold through, trim into it, or hedge), not after. ${baseAction}`
           : baseAction,
+      short: {
+        what: `Thesis ${h.verdict}${dte != null ? ` · reports in ${dte}d` : ""}`,
+        why: clip(negDrivers.length ? negDrivers.slice(0, 2).map((d) => d.detail).join(" · ") : h.summary),
+        next: dte != null ? "Decide before the print." : h.verdict === "broken" ? "Review the position." : undefined,
+      },
     });
   }
 
@@ -291,6 +324,11 @@ export function computeAlerts(input: {
         metrics: regimeMetrics,
         action:
           "Position AHEAD of the flip, not after it: take chips off high-beta winners, favour quality/defensives, and consider tail protection while it's still cheap.",
+        short: {
+          what: `Regime ${t.leaning} (${(t.likelihood ?? "").toLowerCase()} likelihood)`,
+          why: clip(tellStrs.slice(0, 2).join(" · ")),
+          next: "Check hedge coverage while protection is cheap.",
+        },
       });
     } else if (val === "cooling-soft") {
       alerts.push({
@@ -302,6 +340,10 @@ export function computeAlerts(input: {
         metrics: regimeMetrics,
         action:
           "A de-risk, not a defensive flip: stop adding beta, let winners run with tighter stops, and hold new deployments until the tells stabilise.",
+        short: {
+          what: `Regime cooling from ${t.basedOnRegime} toward Neutral`,
+          why: clip(tellStrs.slice(0, 2).join(" · ")),
+        },
       });
     }
   }
@@ -341,6 +383,10 @@ export function computeAlerts(input: {
         action:
           (dteT != null ? `Earnings in ${dteT} day${dteT === 1 ? "" : "s"} on a broken chart — size the event risk before the print. ` : "") +
           "This is a TECHNICAL break, not a thesis call — check the chart and your stop. If the fundamentals are still intact, decide whether you ride it out or reduce; if the thesis is also eroding, treat it as a sell signal.",
+        short: {
+          what: `Breaking down technically${dteT != null ? ` · reports in ${dteT}d` : ""}`,
+          why: clip(specifics.length ? specifics.join(", ") : r.riskSummary),
+        },
       });
     } else if (r.riskLevel === "warning") {
       alerts.push({
@@ -356,6 +402,10 @@ export function computeAlerts(input: {
           dteT != null
             ? `Earnings in ${dteT} day${dteT === 1 ? "" : "s"} on a weakening chart — decide your exposure to the print now (hold, trim, or hedge); the warning alone wouldn't be actionable, the date makes it so.`
             : "Early warning only — no action required yet. Monitor; it becomes actionable if it escalates to critical or the thesis turns.",
+        short: {
+          what: `Technical warning${dteT != null ? ` · reports in ${dteT}d` : ""}`,
+          why: clip(specifics.length ? specifics.join(", ") : r.riskSummary),
+        },
       });
     }
   }
@@ -480,6 +530,7 @@ export function entryAlerts(rows: EntryReadyRow[]): Alert[] {
     detail: `${r.met} of ${r.known} entry signals met (${r.bucket})${r.readySince ? ` · ready since ${r.readySince}` : ""}${r.why ? ` · watching because: ${r.why}` : ""}`,
     metrics: r.signals.filter((x) => x.status === "met").map((x) => `${x.label}: ${x.reading}`),
     action: r.bucket === "Watchlist" ? "Review on the Funnel page; if it still reads right, size it in Buy / Sell and underwrite the thesis." : "Advance it to the Watchlist from Synthesis, then review the setup on the Funnel page.",
+    short: { what: `Ready to buy: ${r.met} of ${r.known} entry signals met (${r.bucket})` },
   }));
 }
 

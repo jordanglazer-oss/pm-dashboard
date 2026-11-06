@@ -3,20 +3,28 @@ import { getRedis } from "@/app/lib/redis";
 import { createLogger } from "@/app/lib/logger";
 import { enqueueMail } from "@/app/lib/mail-outbox";
 import type { TechnicalIndicators } from "@/app/lib/types";
+import { isFundservCode } from "@/app/lib/factset-symbols";
+import { yahooClassShare } from "@/app/lib/yahoo-symbol";
 
 /**
  * Intraday monitor — the "between the morning emails" watchdog. Pinged hourly
  * during US market hours by the Gmail Apps Script (which already runs every
  * 5 minutes and holds the INBOX_SECRET), so it costs nothing extra to run.
  *
- * Checks (deliberately few, level-based, both directions):
- *   - A Portfolio stock BREAKING BELOW its 200-DMA intraday (was above at the
- *     last close; level from the nightly technicals refresh).
- *   - A Portfolio stock RECLAIMING its 200-DMA from below — the mirror, and
- *     the inverse of the ma200 kill condition, so it says a tripped thesis
- *     condition may have recovered.
- *   - A Portfolio stock down ≥ 4%, or up ≥ 5%, on the day.
+ * Checks (deliberately few, level-based, both directions), over EVERY
+ * Portfolio holding with an intraday price — stocks and ETFs; mutual funds
+ * (FUNDSERV codes, or instrumentType "mutual-fund") price once a day and are
+ * skipped:
+ *   - A holding BREAKING BELOW its 200-DMA intraday (was above at the last
+ *     close; level from the nightly technicals refresh, where one exists).
+ *   - A holding RECLAIMING its 200-DMA from below — the mirror.
+ *   - A holding down ≥ 4%, or up ≥ 5%, on the day.
  *   - VIX spiking ≥ 15% on the day, or crossing above 25 from below.
+ *
+ * The email is one line per trip under a single line of index context
+ * (S&P 500 and Nasdaq on the day). A move within 1.5 points of either index
+ * in the same direction is marked "in line with the market", so a market-wide
+ * day reads as one event rather than a dozen separate problems.
  *
  * The up/down thresholds are ASYMMETRIC on purpose: a drop is a risk event
  * wanting same-day attention, a rise is information. The higher bar on the
@@ -124,9 +132,15 @@ export async function GET(req: NextRequest) {
       }
     })();
 
-    // Portfolio equities only — the names where an intraday break costs money.
+    // Every Portfolio holding with an intraday price: stocks and ETFs. Mutual
+    // funds (FUNDSERV codes) strike one NAV a day, so an intraday read of
+    // them is meaningless.
     const holdings = stocks.filter(
-      (s) => s.bucket === "Portfolio" && s.ticker && (s.instrumentType == null || s.instrumentType === "stock")
+      (s) =>
+        s.bucket === "Portfolio" &&
+        s.ticker &&
+        s.instrumentType !== "mutual-fund" &&
+        !isFundservCode(s.ticker.trim())
     );
 
     // Dedupe marker: { date, fired: string[] } — resets naturally each day.
@@ -139,22 +153,32 @@ export async function GET(req: NextRequest) {
     }
     const fired = new Set<string>(marker.date === ny.date ? marker.fired ?? [] : []);
 
-    const trips: string[] = [];
-    const tripIds: string[] = [];
-    const consider = (id: string, line: string) => {
+    // Trips sort VIX first, then the largest moves; `rank` orders them.
+    const trips: Array<{ id: string; line: string; rank: number; head: string }> = [];
+    const consider = (id: string, line: string, rank: number, head: string) => {
       if (fired.has(id)) return;
-      tripIds.push(id);
-      trips.push(line);
+      trips.push({ id, line, rank, head });
     };
+    const pct = (x: number) => `${x >= 0 ? "+" : "−"}${Math.abs(x).toFixed(1)}%`;
+    const px = (x: number) => `$${x.toFixed(2)}`;
+
+    // ── Index context: S&P 500 and Nasdaq on the day ──
+    const [spx, ndx] = await Promise.all([fetchQuote("^GSPC"), fetchQuote("^IXIC")]);
+    const idxChg = (q: { price: number; prevClose: number } | null) =>
+      q ? ((q.price - q.prevClose) / q.prevClose) * 100 : null;
+    const spxChg = idxChg(spx);
+    const ndxChg = idxChg(ndx);
+    const withMarket = (chg: number) =>
+      [spxChg, ndxChg].some((m) => m != null && Math.sign(m) === Math.sign(chg) && Math.abs(chg - m) <= 1.5);
 
     // ── VIX ──
     const vix = await fetchQuote("^VIX");
     if (vix) {
       const chg = ((vix.price - vix.prevClose) / vix.prevClose) * 100;
       if (chg >= VIX_SPIKE_PCT) {
-        consider(`vix-spike`, `VIX spiking: ${vix.price.toFixed(1)} (+${chg.toFixed(0)}% today) — volatility event in progress; check hedges and hold off on adds.`);
+        consider(`vix-spike`, `VIX ${vix.price.toFixed(1)}, ${pct(chg)} today: check hedge coverage`, 1000, `VIX ${pct(chg)}`);
       } else if (vix.price >= VIX_LEVEL && vix.prevClose < VIX_LEVEL) {
-        consider(`vix-25`, `VIX crossed above ${VIX_LEVEL}: ${vix.price.toFixed(1)} (from ${vix.prevClose.toFixed(1)}) — stress threshold; regime signals may flip at tonight's refresh.`);
+        consider(`vix-25`, `VIX above ${VIX_LEVEL} (${vix.price.toFixed(1)}, from ${vix.prevClose.toFixed(1)}): check hedge coverage`, 1000, `VIX above ${VIX_LEVEL}`);
       }
     }
 
@@ -165,37 +189,27 @@ export async function GET(req: NextRequest) {
         const s = queue.shift();
         if (!s) return;
         const tk = (s.ticker as string).trim();
-        const q = await fetchQuote(toYahoo(tk));
+        const q = await fetchQuote(yahooClassShare(toYahoo(tk)));
         if (!q) continue;
         const chg = ((q.price - q.prevClose) / q.prevClose) * 100;
+        const mkt = withMarket(chg) ? ", in line with the market" : "";
         const sma200 = s.technicals?.sma200;
         if (typeof sma200 === "number" && sma200 > 0 && q.prevClose >= sma200 && q.price < sma200) {
-          consider(
-            `${tk}-200dma`,
-            `${tk}${s.name ? ` (${s.name})` : ""} broke BELOW its 200-DMA intraday: $${q.price.toFixed(2)} vs 200-DMA $${sma200.toFixed(2)} (${chg >= 0 ? "+" : ""}${chg.toFixed(1)}% today). Major trend level — check the chart before the close.`
-          );
+          consider(`${tk}-200dma`, `${tk} below its 200-day average (${px(q.price)} vs ${px(sma200)}, ${pct(chg)} today${mkt})`, 50, `${tk} below 200-day`);
         }
         if (typeof sma200 === "number" && sma200 > 0 && q.prevClose < sma200 && q.price >= sma200) {
-          consider(
-            `${tk}-200dma-reclaim`,
-            `${tk}${s.name ? ` (${s.name})` : ""} RECLAIMED its 200-DMA intraday: $${q.price.toFixed(2)} vs 200-DMA $${sma200.toFixed(2)} (${chg >= 0 ? "+" : ""}${chg.toFixed(1)}% today). If a 200DMA kill condition was tripped on this name, it may now clear.`
-          );
+          consider(`${tk}-200dma-reclaim`, `${tk} back above its 200-day average (${px(q.price)} vs ${px(sma200)}, ${pct(chg)} today${mkt})`, 10, `${tk} above 200-day`);
         }
         if (chg <= DROP_PCT) {
-          consider(
-            `${tk}-drop`,
-            `${tk}${s.name ? ` (${s.name})` : ""} down ${chg.toFixed(1)}% today ($${q.prevClose.toFixed(2)} → $${q.price.toFixed(2)}). Check for news/print before reacting.`
-          );
+          consider(`${tk}-drop`, `${tk} ${pct(chg)} (${px(q.prevClose)} → ${px(q.price)}${mkt})`, 100 + Math.abs(chg), `${tk} ${pct(chg)}`);
         }
         if (chg >= RISE_PCT) {
-          consider(
-            `${tk}-rise`,
-            `${tk}${s.name ? ` (${s.name})` : ""} UP ${chg.toFixed(1)}% today ($${q.prevClose.toFixed(2)} → $${q.price.toFixed(2)}). Check for the print/news — and whether the move takes it through a level you underwrote.`
-          );
+          consider(`${tk}-rise`, `${tk} ${pct(chg)} (${px(q.prevClose)} → ${px(q.price)}${mkt})`, 60 + chg, `${tk} ${pct(chg)}`);
         }
       }
     });
     await Promise.all(workers);
+    trips.sort((x, y) => y.rank - x.rank);
 
     // ── Email NEW trips (once each per day) ──
     let emailed = false;
@@ -207,23 +221,28 @@ export async function GET(req: NextRequest) {
         .join(",");
       if (alertTo) {
         const nowId = `intraday-${ny.date}-${ny.minutes}`;
+        const day = new Date(`${ny.date}T12:00:00Z`).toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" });
+        const context = [
+          spxChg != null ? `S&P 500 ${pct(spxChg)}` : null,
+          ndxChg != null ? `Nasdaq ${pct(ndxChg)}` : null,
+        ]
+          .filter(Boolean)
+          .join(" · ");
         emailed = await enqueueMail({
           id: nowId,
           to: alertTo,
-          subject: `Intraday: ${trips.length} new trip${trips.length === 1 ? "" : "s"} (${ny.date})`,
+          subject: `Intraday — ${trips[0].head}${trips.length > 1 ? ` +${trips.length - 1} more` : ""} (${day})`,
           text: [
-            `INTRADAY MONITOR — ${ny.date}`,
+            ...(context ? [context, ""] : []),
+            ...trips.map((t) => t.line),
             "",
-            ...trips.map((t) => `• ${t}`),
-            "",
-            "Each trip fires once per day. Levels come from last night's technicals refresh.",
-            "https://pm-dashboard-7rr9.vercel.app/",
+            "Each alert fires once per day · pm-dashboard-7rr9.vercel.app",
           ].join("\n"),
           queuedAt: new Date().toISOString(),
         });
       }
       // Mark fired regardless of email config so trips don't pile up unsent.
-      for (const id of tripIds) fired.add(id);
+      for (const t of trips) fired.add(t.id);
       await redis.set(MARKER_KEY, JSON.stringify({ date: ny.date, fired: [...fired] }));
     }
 
