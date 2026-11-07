@@ -44,6 +44,8 @@ const ELSEWHERE: Elsewhere[] = [
   { key: "prints", title: "Prints", sources: ["earnings"], href: "#s-calendar", where: "Calendar" },
   // Entry-ready names are worked in the Pipeline.
   { key: "entry", title: "Entry", sources: ["entry"], href: "/funnel", where: "Pipeline" },
+  // Watcher flags are acted on / dismissed on the Monitor page.
+  { key: "watchers", title: "Watchers", sources: ["agent"], href: "/monitor", where: "Monitor" },
 ];
 
 /** Every source claimed above (plus the brief's own) — anything else falls
@@ -70,6 +72,7 @@ const SOURCE_LABEL: Record<ActionItem["source"], string> = {
   change: "Change",
   earnings: "Print",
   ai: "Brief",
+  agent: "Watcher",
 };
 
 /** One queue row — used by the brief list and by the opened Elsewhere groups,

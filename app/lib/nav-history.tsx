@@ -44,6 +44,7 @@ export function pageLabel(path: string): string {
     "/journal": "Journal",
     "/brief": "Brief",
     "/hedging": "Hedging",
+    "/monitor": "Monitor",
     "/synthesis": "Synthesis",
     "/conviction": "Pipeline",
     "/screener": "Screener",

@@ -32,6 +32,7 @@ const ALIASES: Record<string, Hub> = {
   // Brief segments
   "/brief": "Brief",
   "/hedging": "Brief",
+  "/monitor": "Brief",
   // More
   "/chat": "More",
   "/appendix": "More",

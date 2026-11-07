@@ -11,6 +11,7 @@
  *   change    — change-monitor events with severity down / warn
  *   earnings  — Portfolio prints inside 3 sessions
  *   ai        — brief.topActionsToday (date-scoped ids)
+ *   agent     — OPEN watcher flags (pm:agent-flag:*); resolved on /monitor
  */
 
 import { getRedis } from "@/app/lib/redis";
@@ -22,8 +23,9 @@ import { loadChangeEvents } from "@/app/lib/change-monitor-load";
 import type { ChangeEvent } from "@/app/lib/change-monitor";
 import type { ActionState } from "@/app/api/kv/action-state/route";
 import type { MorningBrief } from "@/app/lib/types";
+import { listFlags, type AgentFlag } from "@/app/lib/agents/flags";
 
-export type ActionSource = "kill" | "alert" | "entry" | "coverage" | "change" | "earnings" | "ai";
+export type ActionSource = "kill" | "alert" | "entry" | "coverage" | "change" | "earnings" | "ai" | "agent";
 export type ActionPriority = "high" | "medium" | "low";
 
 export type ActionItem = {
@@ -95,7 +97,7 @@ async function readActionState(): Promise<ActionState> {
 
 export async function buildActionsSection(brief: MorningBrief | null): Promise<ActionsSection> {
   const today = easternToday();
-  const [inputs, scan, changes, state, thesesRaw] = await Promise.all([
+  const [inputs, scan, changes, state, thesesRaw, flags] = await Promise.all([
     loadAlertInputs(),
     getEntryScan().catch(() => null),
     loadChangeEvents(7).catch(() => [] as ChangeEvent[]),
@@ -108,6 +110,7 @@ export async function buildActionsSection(brief: MorningBrief | null): Promise<A
         return {};
       }
     })(),
+    listFlags().catch(() => [] as AgentFlag[]),
   ]);
 
   const items: ActionItem[] = [];
@@ -213,6 +216,23 @@ export async function buildActionsSection(brief: MorningBrief | null): Promise<A
       tags: a.tags,
     });
   });
+
+  // Open watcher flags. Their status lives on the flag itself (Act /
+  // Dismiss on /monitor), so a resolved flag simply stops appearing here.
+  for (const f of flags) {
+    if (f.status !== "open") continue;
+    items.push({
+      id: `agent:${f.id}`,
+      source: "agent",
+      priority: f.priority,
+      ticker: f.ticker,
+      title: f.title,
+      detail: f.suggestion ? `${f.detail} — ${f.suggestion}` : f.detail,
+      tags: ["watcher"],
+      href: "/monitor",
+      at: f.createdAt,
+    });
+  }
 
   // Apply done / snoozed marks (snoozes expire).
   const now = Date.now();
