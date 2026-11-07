@@ -6,7 +6,7 @@ import { usePathname, useRouter } from "next/navigation";
 
 /**
  * Ideas hub: Shift + ← / → still cycles every Ideas page, and the four
- * screening pages (Screener / Radar / Setups / Factor Lab) show a MODE switch
+ * screening pages (Screener / Setups) show a MODE switch
  * — they are one "Screen" entry in the rail. Synthesis and Pipeline
  * (Funnel → Conviction) are rail items with no segment row.
  */
@@ -15,16 +15,12 @@ const SEGMENTS: { label: string; href: string }[] = [
   { label: "Synthesis", href: "/synthesis" },
   { label: "Pipeline", href: "/conviction" },
   { label: "Screener", href: "/screener" },
-  { label: "Radar", href: "/radar" },
   { label: "Setups", href: "/setups" },
-  { label: "Factor Lab", href: "/factor-lab" },
 ];
 
 export const SCREEN_MODES: { label: string; href: string }[] = [
   { label: "Technical", href: "/screener" },
-  { label: "Radar", href: "/radar" },
   { label: "Setups", href: "/setups" },
-  { label: "Factor", href: "/factor-lab" },
 ];
 
 export function IdeasTabs() {
