@@ -2521,10 +2521,16 @@ export function MorningBrief({
                   <div className="mt-1.5 space-y-3 text-[11px] leading-4">
                     {/* 1 · Entry checklist */}
                     <div className="space-y-1">
-                      {(["risk-off", "cheap"] as const).map((path) => (
+                      {(["sentiment", "cheap", "risk-off"] as const)
+                        .filter((path) => brief.hedgeChecklist!.items.some((i) => i.path === path))
+                        .map((path) => (
                         <div key={path}>
                           <div className="font-semibold text-ink-2">
-                            {path === "risk-off" ? "Path 1 · Classic Risk-Off" : "Path 2 · Cheap insurance + late-cycle"}
+                            {path === "sentiment"
+                              ? `Sentiment window · ${(brief.hedgeChecklist!.sentimentGate?.window ?? "unknown").toUpperCase()} (any ✗ blocks an ADD)`
+                              : path === "cheap"
+                                ? "Cheap insurance + late-cycle"
+                                : "Classic Risk-Off (retired route — older brief)"}
                           </div>
                           {brief.hedgeChecklist!.items.filter((i) => i.path === path).map((i, idx) => (
                             <div key={idx} className="flex gap-1.5 text-ink-2">
@@ -2637,7 +2643,7 @@ export function MorningBrief({
 
                     {/* 5 · Method note — the rules the model operates under */}
                     <div className="border-t border-line-soft pt-1.5 text-[11px] leading-4 text-ink-3">
-                      Method: protective SPY puts only · strikes 5–10% OTM (ATM only for acute ≤30d tail risk) · tenor 2–9M mapped to whichever horizon is Risk-Off · ADD needs Path 1 (≥2/3) or Path 2 (premium ✓ + ≥2 of 3 late-cycle signs; long-horizon vol ✓ too while the ledger is under 250 sessions) · skip-first philosophy — the model may override any checklist line but must name it. Percentiles rank each tenor against its own trailing ledger.
+                      Method: protective SPY puts only · strikes 5–10% OTM (ATM only for acute ≤30d tail risk) · tenor 2–9M mapped to whichever horizon is Risk-Off · ADD needs the sentiment window open (enforced in code — never hedge into fear) plus premium ✓ and ≥2 of 3 late-cycle signs (long-horizon vol ✓ too while the ledger is under 250 sessions); a Risk-Off regime alone is not a reason to add · skip-first philosophy — the model may override any checklist line but must name it. Percentiles rank each tenor against its own trailing ledger.
                     </div>
                   </div>
                 </CollapsibleSection>

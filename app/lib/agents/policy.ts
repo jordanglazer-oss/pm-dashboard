@@ -81,8 +81,10 @@ export type HedgeSentimentResult = {
 /** Fewest tests that must have data before "open" can be returned. */
 const MIN_TESTS_WITH_DATA = 3;
 
+/** Finite number rounded to 2 decimals (readings like a VIX % change arrive
+ *  with long tails), else null. */
 const fin = (n: number | null | undefined): number | null =>
-  typeof n === "number" && Number.isFinite(n) ? n : null;
+  typeof n === "number" && Number.isFinite(n) ? Math.round(n * 100) / 100 : null;
 
 /**
  * The sentiment half of the hedge rule. Closed if ANY test fails. A missing
@@ -156,4 +158,22 @@ export function describeSentimentGate(r: HedgeSentimentResult): string {
   if (r.window === "unknown") return `Hedge window UNKNOWN — too little sentiment data (missing: ${r.missing.join(", ")}).`;
   const gap = r.missing.length ? ` (no data: ${r.missing.join(", ")})` : "";
   return `Sentiment does not block a hedge — every test passes${gap}.`;
+}
+
+/** A hedging call as the brief / refresh routes produce it. */
+export type HedgeCallLike = { action?: string; strike?: unknown; tenor?: unknown; reason?: string };
+
+/**
+ * Deterministic backstop for the policy: an ADD while the sentiment window is
+ * not OPEN becomes SKIP. The prompt states the rule; this catches the miss.
+ * Returns the call unchanged when nothing needs correcting.
+ */
+export function enforceHedgeSentiment<T extends HedgeCallLike>(call: T, gate: HedgeSentimentResult): { call: T; changed: boolean } {
+  if (call.action !== "ADD" || gate.window === "open") return { call, changed: false };
+  const why =
+    gate.window === "closed"
+      ? `Sentiment already fearful — policy says don't hedge into it (${gate.reasons.join("; ")}).`
+      : `Too little sentiment data to confirm the hedge window is open (missing: ${gate.missing.join(", ")}).`;
+  const orig = call.reason ? ` (was ADD: ${call.reason})` : "";
+  return { call: { ...call, action: "SKIP", strike: undefined, tenor: undefined, reason: `${why}${orig}` }, changed: true };
 }

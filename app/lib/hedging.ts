@@ -6,6 +6,7 @@
  * All data is pulled from CBOE delayed quotes (15-min delay, no auth).
  */
 
+import { hedgeSentimentGate, type HedgeSentimentInputs, type HedgeSentimentResult } from "@/app/lib/agents/policy";
 import { getRedis } from "@/app/lib/redis";
 
 export type CboeOption = {
@@ -619,11 +620,16 @@ export type HedgeChecklistInputs = {
   oscillator: number | null;
   vix: number | null;
   termStructure: string;
+  /** The policy's sentiment tests (app/lib/agents/policy.ts). The skew
+   *  percentile is filled from `ctx` when not given. */
+  sentiment?: Omit<HedgeSentimentInputs, "skewPercentile"> & { skewPercentile?: number | null };
 };
 
 /** One scored checklist condition. `ok: null` = data unavailable ("?"). */
 export type HedgeChecklistItem = {
-  path: "risk-off" | "cheap";
+  /** "risk-off" survives only on briefs stored before Nov 2026 — the
+   *  classic Risk-Off route was removed from the policy. */
+  path: "risk-off" | "cheap" | "sentiment";
   label: string;
   ok: boolean | null;
 };
@@ -682,6 +688,8 @@ export type HedgeChecklist = {
   midSkewPercentile: number | null;
   vvix: number | null;
   sessions: number | null; // ledger depth behind the percentiles
+  /** The policy's sentiment window. ADD requires "open". Absent on old briefs. */
+  sentimentGate?: HedgeSentimentResult;
   /** Echo of the scalar inputs the checklist was scored from — surfaced on
    *  the tile's data-basis panel so the regime/vol/sentiment side of the
    *  decision is as inspectable as the premium side. */
@@ -714,25 +722,22 @@ export function computeHedgeChecklist(p: HedgeChecklistInputs): HedgeChecklist {
   const midB = p.ctx?.buckets.find((b) => b.bucket === GATE) ?? p.ctx?.buckets[0] ?? null;
   const gateLabel = midB ? `${midB.bucket} (~${midB.daysToExpiry}d)` : GATE;
 
+  // Sentiment window — the policy's "never hedge into fear" rule. Any one
+  // failing test closes it; thin data leaves it "unknown" (also no ADD).
+  const sentimentGate = hedgeSentimentGate({
+    fearGreed: p.sentiment?.fearGreed ?? p.fearGreed,
+    vixDayChangePct: p.sentiment?.vixDayChangePct ?? null,
+    aaiiSpread: p.sentiment?.aaiiSpread ?? null,
+    putCall: p.sentiment?.putCall ?? null,
+    skewPercentile: p.sentiment?.skewPercentile ?? midB?.skewPercentile ?? null,
+  });
+
   const items: HedgeChecklistItem[] = [
-    {
-      path: "risk-off",
-      ok: p.consolidatedRegime === "Risk-Off",
-      label: `Consolidated regime is Risk-Off (currently: ${p.consolidatedRegime})`,
-    },
-    {
-      path: "risk-off",
-      ok:
-        p.transitionLeaning != null && p.transitionLikelihood != null
-          ? p.transitionLeaning === "toward Risk-Off" && (p.transitionLikelihood === "Elevated" || p.transitionLikelihood === "High")
-          : null,
-      label: `Transition gauge leaning Risk-Off at Elevated/High likelihood${p.transitionLeaning ? ` (currently: ${p.transitionLeaning}, ${p.transitionLikelihood})` : " (gauge unavailable)"}`,
-    },
-    {
-      path: "risk-off",
-      ok: p.riskOffSignalCount != null ? p.riskOffSignalCount >= 3 : null,
-      label: `≥3 composite signals Risk-Off${p.riskOffSignalCount != null ? ` (currently: ${p.riskOffSignalCount})` : " (composite unavailable)"}`,
-    },
+    ...sentimentGate.tests.map<HedgeChecklistItem>((t) => ({
+      path: "sentiment",
+      ok: t.pass,
+      label: `${t.label}${t.value != null ? ` (currently: ${t.value})` : " (unavailable)"} — ${t.limit}`,
+    })),
     {
       path: "cheap",
       ok: midB?.otm5Percentile != null ? midB.otm5Percentile <= 35 : null,
@@ -794,6 +799,7 @@ export function computeHedgeChecklist(p: HedgeChecklistInputs): HedgeChecklist {
     midSkewPercentile: midB?.skewPercentile ?? null,
     vvix: p.ctx?.vvix ?? null,
     sessions: p.ctx?.sessions ?? null,
+    sentimentGate,
     inputs: {
       consolidatedRegime: p.consolidatedRegime,
       transitionLeaning: p.transitionLeaning,
@@ -820,12 +826,12 @@ export function buildHedgeChecklistBlock(p: HedgeChecklistInputs): string {
   return [
     "",
     "",
-    "HEDGE-ENTRY CHECKLIST (computed from live data — evidence for hedgingAnalysis/hedgingCall, NOT the verdict; you may override any line with an explicitly stated reason):",
-    "Path 1 · Classic Risk-Off:",
-    ...cl.items.filter((i) => i.path === "risk-off").map(line),
-    "Path 2 · Cheap insurance (premium conditions) + late-cycle warning (need ≥2 of the 3 late-cycle signs):",
+    "HEDGE-ENTRY CHECKLIST (computed from live data — evidence for hedgingAnalysis/hedgingCall):",
+    `Sentiment window (POLICY — not overridable): ${cl.sentimentGate?.window.toUpperCase() ?? "UNKNOWN"}. Any one ✗ closes it; too little data leaves it unknown.`,
+    ...cl.items.filter((i) => i.path === "sentiment").map(line),
+    "Cheap insurance (premium conditions) + late-cycle warning (need ≥2 of the 3 late-cycle signs):",
     ...cl.items.filter((i) => i.path === "cheap").map(line),
-    `Reading it: Path 1 substantially met (≥2 of 3) OR Path 2 with at least one premium condition ✓, VVIX/skew not contradicting, and at least TWO of the three late-cycle signs ✓ → ADD is defensible.${youngLedger ? ` LEDGER GATE: the premium ledger holds only ${cl.sessions ?? 0} sessions (under ${LEDGER_MATURE_SESSIONS}), so its percentiles cannot see a vol spike yet — until it matures, Path 2 ALSO requires the "Long-horizon vol not elevated" line to be ✓.` : ""} Otherwise the default is SKIP (or HOLD if protection is already on). Cite the specific ✓/✗ lines that drove your call — especially the premium percentile — and name any line you're overriding and why.`,
+    `Reading it: ADD needs ALL of — (a) the sentiment window OPEN; (b) at least one premium condition ✓ with VVIX/skew not contradicting; (c) at least TWO of the three late-cycle signs ✓.${youngLedger ? ` LEDGER GATE: the premium ledger holds only ${cl.sessions ?? 0} sessions (under ${LEDGER_MATURE_SESSIONS}), so its percentiles cannot see a vol spike yet — until it matures, ADD ALSO requires the "Long-horizon vol not elevated" line to be ✓.` : ""} A Risk-Off regime on its own is NOT a reason to ADD — the policy hedges BEFORE fear, never reactively after a spike; the regime's horizons only choose the tenor. If the sentiment window is not OPEN the call is SKIP (or HOLD if protection is already on) — the server enforces this. Otherwise the default is SKIP. Cite the specific ✓/✗ lines that drove your call; you may override a premium or late-cycle line with a stated reason, never the sentiment window.`,
   ].join("\n");
 }
 

@@ -919,7 +919,11 @@ export type MorningBrief = {
    *  app/lib/hedging.ts). Rendered on the Hedging tile as the receipts behind
    *  ADD/HOLD/SKIP. Optional for backward compat with stored briefs. */
   hedgeChecklist?: {
-    items: { path: "risk-off" | "cheap"; label: string; ok: boolean | null }[];
+    /** "risk-off" only on briefs stored before the Nov 2026 policy change. */
+    items: { path: "risk-off" | "cheap" | "sentiment"; label: string; ok: boolean | null }[];
+    /** The policy's sentiment window (app/lib/agents/policy.ts); ADD needs
+     *  "open". Absent on older briefs. */
+    sentimentGate?: { window: "open" | "closed" | "unknown"; reasons: string[]; missing: string[] };
     midOtm5Percentile: number | null;
     midOtm10Percentile: number | null;
     midSkewPercentile: number | null;

@@ -3,6 +3,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import { parseModelJson } from "@/app/lib/json-repair";
 import { getRedis } from "@/app/lib/redis";
 import { buildHedgingCostsBlock, buildHedgeChecklistBlock, computeHedgeChecklist } from "@/app/lib/hedging";
+import { enforceHedgeSentiment } from "@/app/lib/agents/policy";
 import { computeRegimeTransition } from "@/app/lib/regime-transition";
 import type { MarketRegimeData } from "@/app/lib/market-regime";
 import { loadHedges, isActiveHedge, describeHedge } from "@/app/lib/hedges";
@@ -65,7 +66,7 @@ export async function POST() {
     }
 
     const marketRegime = parse<MarketRegimeData>(marketRegimeRaw);
-    const market = parse<{ fearGreed?: number; spOscillator?: number; termStructure?: string; riskRegime?: string }>(marketRaw) ?? {};
+    const market = parse<{ fearGreed?: number; aaiiBullBear?: number; putCall?: number; spOscillator?: number; termStructure?: string; riskRegime?: string }>(marketRaw) ?? {};
     const brief = parse<{
       marketRegime?: string;
       tacticalView?: string; cyclicalView?: string; structuralView?: string;
@@ -93,6 +94,12 @@ export async function POST() {
       oscillator: typeof market.spOscillator === "number" ? market.spOscillator : null,
       vix,
       termStructure: market.termStructure ?? "",
+      sentiment: {
+        fearGreed: typeof market.fearGreed === "number" ? market.fearGreed : null,
+        vixDayChangePct: marketRegime?.crossAsset?.vix?.change1dPct ?? null,
+        aaiiSpread: typeof market.aaiiBullBear === "number" ? market.aaiiBullBear : null,
+        putCall: typeof market.putCall === "number" ? market.putCall : null,
+      },
     };
     const checklist = buildHedgeChecklistBlock(checklistInputs);
     const hedgeChecklist = computeHedgeChecklist(checklistInputs);
@@ -133,6 +140,8 @@ export async function POST() {
       : "";
 
     const prompt = `You are the hedging analyst for a PM dashboard. Produce ONLY a refreshed hedging read from the live data below — the rest of the day's brief stays as-is.
+
+INVESTMENT POLICY: hedge BEFORE fear, only when protection is cheap AND sentiment is not already overly negative; NEVER reactively after a spike. A Risk-Off regime alone is NOT a reason to ADD — its horizons only choose the tenor. ADD requires the checklist's SENTIMENT WINDOW to be OPEN; the server converts an ADD to SKIP when it is not.
 
 HEDGING PHILOSOPHY: tail-risk INSURANCE, not a directional bet. Hedging is NOT a default — only when the cost is reasonable AND the broader picture warrants it. SKIP is a first-class recommendation. PROTECTIVE SPY PUTS ONLY; strikes 5–10% OTM (ATM only for acute ≤30d tail risk with an explicit trigger); tenor strictly 2–9 months (tactical Risk-Off → 2–3M; cyclical → 3–6M; structural → 6–9M; never LEAPS, never weeklies).
 
@@ -188,6 +197,12 @@ Return ONLY this JSON (no markdown fences):
         tenor: undefined,
         reason: `No hedge on the books to hold — staying unhedged this session.${orig}`,
       };
+    }
+
+    // Policy backstop (mirrors the morning brief): no ADD unless the
+    // sentiment window is OPEN.
+    if (hedgeChecklist.sentimentGate) {
+      parsed.hedgingCall = enforceHedgeSentiment(parsed.hedgingCall, hedgeChecklist.sentimentGate).call;
     }
 
     return NextResponse.json({
