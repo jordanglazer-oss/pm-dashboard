@@ -1,33 +1,23 @@
 "use client";
 
-import Link from "next/link";
 import { useEffect } from "react";
 import { usePathname, useRouter } from "next/navigation";
 
 /**
- * Ideas hub: Shift + ← / → still cycles every Ideas page, and the four
- * screening pages (Screener / Setups) show a MODE switch
- * — they are one "Screen" entry in the rail. Synthesis and Pipeline
- * (Funnel → Conviction) are rail items with no segment row.
+ * Ideas hub: Shift + ← / → cycles every Ideas page. Renders nothing — the
+ * Setups mode (and with it the Screener's mode switch) was removed Nov 2026.
  */
 const SEGMENTS: { label: string; href: string }[] = [
   { label: "Funnel", href: "/funnel" },
   { label: "Synthesis", href: "/synthesis" },
   { label: "Pipeline", href: "/conviction" },
   { label: "Screener", href: "/screener" },
-  { label: "Setups", href: "/setups" },
-];
-
-export const SCREEN_MODES: { label: string; href: string }[] = [
-  { label: "Technical", href: "/screener" },
-  { label: "Setups", href: "/setups" },
 ];
 
 export function IdeasTabs() {
   const pathname = usePathname();
   const router = useRouter();
   const isVisible = SEGMENTS.some((s) => s.href === pathname);
-  const isScreen = SCREEN_MODES.some((s) => s.href === pathname);
 
   useEffect(() => {
     if (!isVisible) return;
@@ -45,17 +35,5 @@ export function IdeasTabs() {
     return () => window.removeEventListener("keydown", onKey);
   }, [isVisible, pathname, router]);
 
-  if (!isScreen) return null;
-
-  return (
-    <div className="px-4 pt-4 md:px-5 print:hidden">
-      <div className="seg">
-        {SCREEN_MODES.map((m) => (
-          <Link key={m.href} href={m.href} aria-current={pathname === m.href ? "page" : undefined} className={pathname === m.href ? "on" : ""}>
-            {m.label}
-          </Link>
-        ))}
-      </div>
-    </div>
-  );
+  return null;
 }

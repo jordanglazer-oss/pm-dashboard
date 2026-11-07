@@ -66,7 +66,6 @@ const PAGE_ENTRIES: Omit<Entry, "id" | "searchTarget">[] = [
   { category: "page", label: "Synthesis",    subtitle: "AI base/bull/bear per name",        href: "/synthesis" },
   { category: "page", label: "Pipeline",     subtitle: "Conviction board",                  href: "/conviction" },
   { category: "page", label: "Screener",     subtitle: "Technical scans",                   href: "/screener" },
-  { category: "page", label: "Setups",       subtitle: "Technical setup scan",              href: "/setups" },
   { category: "page", label: "Research",     subtitle: "Upticks, Fundstrat, RBC, Alpha",    href: "/research" },
   { category: "page", label: "Inbox",        subtitle: "Coverage table & email ingest",     href: "/inbox" },
   { category: "page", label: "Hedging",      subtitle: "SPY put hedging window",            href: "/hedging" },

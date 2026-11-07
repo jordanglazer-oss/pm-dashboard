@@ -11,7 +11,6 @@ import { applyDecisions, inheritDecisions, MAX_STOCK_PORTFOLIO_WEIGHT, maxEquity
 import { ThesisVerdictChip, useThesisVerdicts } from "@/app/components/ThesisVerdictChip";
 import { CollapsibleSection } from "@/app/components/CollapsibleSection";
 import { Bench } from "@/app/components/Bench";
-import { ClusterConcentration } from "@/app/components/ClusterConcentration";
 import { ModelVersions } from "@/app/components/ModelVersions";
 import { AppIcon } from "@/app/components/AppIcon";
 import { THESIS_VERDICT_LABEL, type ThesisVerdict } from "@/app/lib/thesis-verdict";
@@ -433,8 +432,6 @@ export default function ReviewPage() {
       </CollapsibleSection>
 
       <ModelVersions onRestored={async () => { await reloadPimModels(); }} />
-
-      <ClusterConcentration />
 
       <Bench />
     </main>

@@ -304,8 +304,6 @@ export function PortfolioOverview({
     const b = searchParams.get("bucket");
     return b === "Watchlist" || b === "Suggested" || b === "Movers" ? b : "Portfolio";
   })();
-  // Radar + Setups moved out of the Rankings buckets to their own Ideas
-  // segments (/radar, /setups) in the streamline pass.
   const [rankBucket, setRankBucket] = useState<RankBucket>(urlBucket);
   // Live counts for the Suggested (research confluence) and Movers (Equate +
   // SIA) tab chips. Cheap reads; each panel fetches its full data when open.
