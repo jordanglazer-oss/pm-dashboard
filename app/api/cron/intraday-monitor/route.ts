@@ -5,6 +5,7 @@ import { enqueueMail } from "@/app/lib/mail-outbox";
 import type { TechnicalIndicators } from "@/app/lib/types";
 import { isFundservCode } from "@/app/lib/factset-symbols";
 import { yahooClassShare } from "@/app/lib/yahoo-symbol";
+import { loadHedges, isActiveHedge } from "@/app/lib/hedges";
 
 /**
  * Intraday monitor — the "between the morning emails" watchdog. Pinged hourly
@@ -172,13 +173,33 @@ export async function GET(req: NextRequest) {
       [spxChg, ndxChg].some((m) => m != null && Math.sign(m) === Math.sign(chg) && Math.abs(chg - m) <= 1.5);
 
     // ── VIX ──
+    // Information only. Policy: we hedge when protection is cheap and never
+    // in reaction to a spike that has already made it expensive, so the alert
+    // says where we stand rather than prompting a purchase.
     const vix = await fetchQuote("^VIX");
     if (vix) {
       const chg = ((vix.price - vix.prevClose) / vix.prevClose) * 100;
-      if (chg >= VIX_SPIKE_PCT) {
-        consider(`vix-spike`, `VIX ${vix.price.toFixed(1)}, ${pct(chg)} today: check hedge coverage`, 1000, `VIX ${pct(chg)}`);
-      } else if (vix.price >= VIX_LEVEL && vix.prevClose < VIX_LEVEL) {
-        consider(`vix-25`, `VIX above ${VIX_LEVEL} (${vix.price.toFixed(1)}, from ${vix.prevClose.toFixed(1)}): check hedge coverage`, 1000, `VIX above ${VIX_LEVEL}`);
+      const spiking = chg >= VIX_SPIKE_PCT;
+      const crossed = !spiking && vix.price >= VIX_LEVEL && vix.prevClose < VIX_LEVEL;
+      if (spiking || crossed) {
+        let hedgeNote = "";
+        try {
+          const active = (await loadHedges()).filter((h) => isActiveHedge(h));
+          hedgeNote = active.length === 0
+            ? " No hedges on."
+            : ` ${active.length} hedge${active.length === 1 ? "" : "s"} on${active[0].expiry ? ` (first expires ${active[0].expiry})` : ""}.`;
+        } catch {
+          hedgeNote = "";
+        }
+        const reading = spiking
+          ? `VIX ${vix.price.toFixed(1)}, ${pct(chg)} today`
+          : `VIX above ${VIX_LEVEL} (${vix.price.toFixed(1)}, from ${vix.prevClose.toFixed(1)})`;
+        consider(
+          spiking ? `vix-spike` : `vix-25`,
+          `${reading}: protection is now expensive, so no new hedges.${hedgeNote}`,
+          1000,
+          spiking ? `VIX ${pct(chg)}` : `VIX above ${VIX_LEVEL}`
+        );
       }
     }
 

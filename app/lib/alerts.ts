@@ -323,11 +323,11 @@ export function computeAlerts(input: {
         detail,
         metrics: regimeMetrics,
         action:
-          "Position AHEAD of the flip, not after it: take chips off high-beta winners, favour quality/defensives, and consider tail protection while it's still cheap.",
+          "Get ahead of the flip without selling Core: re-read the theses of the most market-sensitive names, and add protection only if the hedge window is open (premiums still cheap, sentiment not already fearful). Protection bought after a spike is expensive, so the time to act is before it.",
         short: {
           what: `Regime ${t.leaning} (${(t.likelihood ?? "").toLowerCase()} likelihood)`,
           why: clip(tellStrs.slice(0, 2).join(" · ")),
-          next: "Check hedge coverage while protection is cheap.",
+          next: "Add protection only if it is still cheap; otherwise review theses.",
         },
       });
     } else if (val === "cooling-soft") {
@@ -339,7 +339,7 @@ export function computeAlerts(input: {
         detail,
         metrics: regimeMetrics,
         action:
-          "A de-risk, not a defensive flip: stop adding beta, let winners run with tighter stops, and hold new deployments until the tells stabilise.",
+          "A de-risk, not a defensive flip: hold new deployments until the tells stabilise, and check whether the hedge window is open while protection is still cheap.",
         short: {
           what: `Regime cooling from ${t.basedOnRegime} toward Neutral`,
           why: clip(tellStrs.slice(0, 2).join(" · ")),
