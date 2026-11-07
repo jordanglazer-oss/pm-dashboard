@@ -116,7 +116,6 @@ function processAll() {
   try { processInbox(); } catch (e) { Logger.log("processInbox EX " + e); }
   try { processOutbox(); } catch (e) { Logger.log("processOutbox EX " + e); }
   try { pingIntradayMonitor(); } catch (e) { Logger.log("pingIntradayMonitor EX " + e); }
-  try { pingAutoRescore(); } catch (e) { Logger.log("pingAutoRescore EX " + e); }
   try { pingFactorUniverse(); } catch (e) { Logger.log("pingFactorUniverse EX " + e); }
   try { pingSetupScan(); } catch (e) { Logger.log("pingSetupScan EX " + e); }
 }
@@ -161,28 +160,6 @@ function pingFactorUniverse() {
     muteHttpExceptions: true,
   });
   Logger.log("factor-universe " + res.getResponseCode() + " " + res.getContentText().slice(0, 200));
-}
-
-/**
- * Event-driven auto-rescore pacer. Pings on EVERY 5-minute run — the endpoint
- * itself gates to the 19:00–23:00 ET window, processes at most ONE rescore per
- * ping, and enforces a 5/day cap. The only live trigger is analyst-reports
- * INGESTED → full rescore (the revision-swing partial trigger is currently
- * disabled dashboard-side). Also sends the earnings-day report-request email.
- * Outside the window or with nothing queued it returns instantly.
- */
-function pingAutoRescore() {
-  const props = PropertiesService.getScriptProperties();
-  const base = props.getProperty("WEBHOOK_URL"); // .../api/inbox/ingest
-  const secret = props.getProperty("INBOX_SECRET");
-  if (!base || !secret) return;
-  const url = base.replace(/\/api\/inbox\/ingest\/?$/, "/api/cron/auto-rescore");
-  const res = UrlFetchApp.fetch(url, {
-    method: "get",
-    headers: { Authorization: "Bearer " + secret },
-    muteHttpExceptions: true,
-  });
-  Logger.log("auto-rescore " + res.getResponseCode() + " " + res.getContentText().slice(0, 200));
 }
 
 /**

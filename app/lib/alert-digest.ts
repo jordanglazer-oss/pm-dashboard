@@ -23,8 +23,6 @@ const LOG_KEY = "pm:alert-log";
 
 type LoggedDigest = { generatedAt: string; counts: ReturnType<typeof alertCounts>; alerts: Alert[] };
 
-type RecentRescore = { at: string; ticker: string; trigger: string; mode: "full" | "partial"; before: number | null; after: number | null };
-
 /** Most flags shown in full; the rest become a count. */
 const MAX_FULL_FLAGS = 7;
 /** Most "also watching" names listed on the one summary line. */
@@ -74,8 +72,7 @@ function problemLines(dataHealth?: DataHealthReport): string[] {
 export function renderDigestText(
   alerts: Alert[],
   date: string,
-  dataHealth?: DataHealthReport,
-  rescores: RecentRescore[] = []
+  dataHealth?: DataHealthReport
 ): string {
   const high = byImportance(alerts, "high");
   const medium = byImportance(alerts, "medium");
@@ -101,14 +98,6 @@ export function renderDigestText(
     lines.push(`Also watching: ${parts.join(" · ")}`);
   }
 
-  if (rescores.length > 0) {
-    lines.push(
-      `Rescored: ${rescores
-        .map((r) => (r.before != null && r.after != null ? `${r.ticker} ${r.before.toFixed(1)} → ${r.after.toFixed(1)}` : r.ticker))
-        .join(" · ")}`
-    );
-  }
-
   for (const p of problemLines(dataHealth)) lines.push(`Data issue: ${p}`);
 
   if (lines.length && lines[lines.length - 1] !== "") lines.push("");
@@ -117,7 +106,7 @@ export function renderDigestText(
 }
 
 /** Subject = the headline: the flag count plus the most important one. */
-export function digestSubject(alerts: Alert[], date: string, dataHealth?: DataHealthReport, rescores: RecentRescore[] = []): string {
+export function digestSubject(alerts: Alert[], date: string, dataHealth?: DataHealthReport): string {
   const high = byImportance(alerts, "high");
   const when = shortDate(date);
   if (high.length > 0) {
@@ -127,11 +116,9 @@ export function digestSubject(alerts: Alert[], date: string, dataHealth?: DataHe
     return `PM — ${high.length} flag${high.length === 1 ? "" : "s"} · ${clipped} (${when})`;
   }
   const problems = problemLines(dataHealth);
-  if (problems.length > 0) {
-    const first = problems[0].length > 60 ? `${problems[0].slice(0, 59)}…` : problems[0];
-    return `PM — data issue: ${first}${problems.length > 1 ? ` (+${problems.length - 1})` : ""} (${when})`;
-  }
-  return `PM — ${rescores.length} rescore${rescores.length === 1 ? "" : "s"} overnight (${when})`;
+  const first = problems[0] ?? "feed check";
+  const clipped = first.length > 60 ? `${first.slice(0, 59)}…` : first;
+  return `PM — data issue: ${clipped}${problems.length > 1 ? ` (+${problems.length - 1})` : ""} (${when})`;
 }
 
 export async function runAlertDigest(opts?: {
@@ -185,17 +172,6 @@ export async function runAlertDigest(opts?: {
       .map((s) => s.trim())
       .filter(Boolean)
       .join(",");
-    // Overnight auto-rescores (last 36h) ride along in the email.
-    let rescores: RecentRescore[] = [];
-    try {
-      const rsRaw = await redis.get("pm:rescore-state");
-      const rs = rsRaw ? (JSON.parse(rsRaw) as { recent?: RecentRescore[] }) : null;
-      const cutoff = Date.now() - 36 * 3_600_000;
-      rescores = (rs?.recent ?? []).filter((r) => Date.parse(r.at) > cutoff);
-    } catch {
-      rescores = [];
-    }
-
     // Weekend suppression — the alert LOG above is always written (history
     // stays complete and the in-app tile is unaffected); only the email is
     // held. A Saturday send would carry Friday's close and Sunday's would
@@ -205,12 +181,12 @@ export async function runAlertDigest(opts?: {
       return { ran: true, total: counts.total, emailed: false, skipped: "weekend" };
     }
 
-    if ((counts.high > 0 || healthProblems > 0 || rescores.length > 0) && alertTo) {
+    if ((counts.high > 0 || healthProblems > 0) && alertTo) {
       emailed = await enqueueMail({
         id: `digest-${today}`,
         to: alertTo,
-        subject: digestSubject(alerts, today, opts?.dataHealth, rescores),
-        text: renderDigestText(alerts, today, opts?.dataHealth, rescores),
+        subject: digestSubject(alerts, today, opts?.dataHealth),
+        text: renderDigestText(alerts, today, opts?.dataHealth),
         queuedAt: new Date().toISOString(),
       });
     }
