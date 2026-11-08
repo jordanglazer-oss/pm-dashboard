@@ -61,6 +61,9 @@ import {
   type StreetTakeaway,
 } from "./street-takeaways";
 import { parseStreetTakeaway, extractPrimaryIdentifier } from "./street-takeaways-parse";
+import { isEarningsPreview, parseEarningsPreview, appendPreview, describePreview, type EarningsPreview } from "./earnings-previews";
+import { runEarningsCompare } from "./agents/earnings-compare";
+import { after } from "next/server";
 
 // ── Subject → kind ──────────────────────────────────────────────────
 
@@ -605,6 +608,27 @@ async function handleStreetTakeaways(bodyText: string, subject: string): Promise
     };
   }
 
+  // Earnings PREVIEWS (expectations, not results) go to their own store —
+  // read against the results schema they would be filed as actuals.
+  if (isEarningsPreview(subject, bodyText)) {
+    const p = await parseEarningsPreview(bodyText);
+    const preview: EarningsPreview = {
+      ...p,
+      id: `pv-${ticker.toUpperCase()}-${p.date}-${Date.now()}`,
+      ticker: ticker.toUpperCase(),
+      subject,
+      ingestedAt: new Date().toISOString(),
+    };
+    const { replaced, count } = await appendPreview(preview);
+    return {
+      ok: true,
+      kind: "street-takeaways",
+      status: 200,
+      message: `Earnings preview ${replaced ? "replaced the earlier copy" : "filed"}: ${describePreview(preview)}`,
+      detail: { ticker: preview.ticker, alertKind: "preview", count, lines: preview.lines.length },
+    };
+  }
+
   const parsed = await parseStreetTakeaway(bodyText, subject);
   const entry: StreetTakeaway = {
     ...parsed,
@@ -614,6 +638,13 @@ async function handleStreetTakeaways(bodyText: string, subject: string): Promise
     subject,
   };
   const { added, replaced, count } = await appendStreetTakeaway(entry);
+  // Earnings-comparison watcher: runs AFTER the response (agents key), so a
+  // watcher problem can never fail or slow the ingest. It never throws.
+  if (added && entry.kind === "metrics") {
+    after(async () => {
+      await runEarningsCompare(entry);
+    });
+  }
   const label = factsetKindLabel(entry);
   return {
     ok: true,

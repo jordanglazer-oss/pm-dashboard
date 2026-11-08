@@ -10,6 +10,7 @@ import { AppIcon } from "@/app/components/AppIcon";
 import { PageHeading } from "@/app/components/PageHeading";
 import { usePersistedOpen } from "@/app/lib/useCollapsed";
 import type { AgentFlag } from "@/app/lib/agents/flags";
+import type { CompareRun, CompareAnswer } from "@/app/lib/agents/earnings-compare";
 
 /**
  * /monitor — the watchers' desk. What they flagged (Act / Dismiss / note),
@@ -131,6 +132,133 @@ function FlagCard({ flag, labelOf, onUpdate }: { flag: AgentFlag; labelOf: (id: 
   );
 }
 
+type CompareData = { runs: CompareRun[]; previewTickers: { ticker: string; latest: string; event: string | null }[] };
+
+function Answer({ a }: { a?: CompareAnswer }) {
+  if (!a) return <span className="text-ink-faint">—</span>;
+  if (!a.result) return <span className="text-neg" title={a.error}>failed</span>;
+  const r = a.result;
+  return (
+    <span title={r.detail}>
+      {r.verdict} · guide {r.guidance} · thesis {r.thesisImpact}
+      {r.flag && <span className="ml-1 text-warn">· flag ({r.priority})</span>}
+    </span>
+  );
+}
+
+function agrees(run: CompareRun): string {
+  const a = run.primary.result, b = run.shadow?.result;
+  if (!a || !b) return "—";
+  const same = a.verdict === b.verdict && a.guidance === b.guidance && a.thesisImpact === b.thesisImpact && a.flag === b.flag;
+  return same ? "yes" : "no";
+}
+
+function EarningsCompareSection() {
+  const [data, setData] = useState<CompareData | null>(null);
+  const [open, toggle] = usePersistedOpen("monitor.compare.open", true);
+  const [ticker, setTicker] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState<string | null>(null);
+
+  const load = useCallback(async () => {
+    try {
+      setData((await fetch("/api/agents/earnings-compare").then((r) => r.json())) as CompareData);
+    } catch {
+      setData({ runs: [], previewTickers: [] });
+    }
+  }, []);
+  useEffect(() => {
+    void Promise.resolve().then(load);
+  }, [load]);
+
+  const compareNow = async () => {
+    const tk = ticker.trim().toUpperCase();
+    if (!tk) return;
+    setBusy(true);
+    setMsg(null);
+    try {
+      const d = await fetch("/api/agents/earnings-compare", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ticker: tk }) }).then((r) => r.json());
+      if (d?.ok) {
+        const r = d.run as CompareRun;
+        setMsg(`${displayTicker(r.ticker)}: ${r.primary.result ? `${r.primary.result.verdict}, guide ${r.primary.result.guidance}` : `failed (${r.primary.error ?? "no answer"})`}${r.flagId ? " — flagged above" : " — nothing flagged"}${r.previewId ? "" : " (no preview on file, judged against the recap's own consensus)"}.`);
+      } else setMsg(d?.skipped ?? d?.error ?? "Could not run.");
+      await load();
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const runs = data?.runs ?? [];
+  return (
+    <section className="panel">
+      <button className="panel-h w-full text-left" onClick={toggle}>
+        <span className="t">Earnings comparisons</span>
+        <span className="m">
+          {runs.length} runs · {data?.previewTickers.length ?? 0} previews on file · {open ? "hide" : "show"}
+        </span>
+      </button>
+      {open && (
+        <div className="flex flex-col gap-2.5 px-3.5 py-3">
+          <p className="text-[12.5px] leading-relaxed text-ink-3">
+            Runs by itself when a FactSet results recap arrives for a book name, comparing it with the preview that came before. During the comparison period both models read the same inputs; only Haiku&apos;s answer can raise a flag.
+          </p>
+          <div className="flex flex-wrap items-center gap-2">
+            <input
+              value={ticker}
+              onChange={(e) => setTicker(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && compareNow()}
+              placeholder="Ticker, e.g. CLS"
+              className="h-7 w-[140px] rounded-control border border-line bg-surface px-2.5 font-mono text-[12.5px] text-ink placeholder:text-ink-faint"
+            />
+            <button className={BTN} disabled={busy || !ticker.trim()} onClick={compareNow}>
+              {busy ? "Comparing…" : "Compare latest results now"}
+            </button>
+            {msg && <span className="text-[12.5px] text-ink-2">{msg}</span>}
+          </div>
+          {data?.previewTickers.length ? (
+            <div className="text-[12px] text-ink-3">
+              Previews on file:{" "}
+              {data.previewTickers.map((p) => `${displayTicker(p.ticker)} (${p.latest})`).join(", ")}
+            </div>
+          ) : null}
+        </div>
+      )}
+      {open && runs.length > 0 && (
+        <div className="tbl-wrap">
+          <table className="data-table">
+            <thead>
+              <tr>
+                <th className="pl-3.5">When</th>
+                <th>Ticker</th>
+                <th>Quarter</th>
+                <th>Preview</th>
+                <th>Haiku</th>
+                <th>Sonnet (shadow)</th>
+                <th>Agree</th>
+                <th className="n">Cost</th>
+              </tr>
+            </thead>
+            <tbody>
+              {runs.map((r) => (
+                <tr key={r.id}>
+                  <td className="pl-3.5 font-mono text-ink-3">{when(r.at)}</td>
+                  <td className="font-mono">{displayTicker(r.ticker)}</td>
+                  <td className="text-ink-2">{r.event ?? r.recapDate}</td>
+                  <td className="text-ink-3">{r.previewDate ?? "none"}</td>
+                  <td className="!whitespace-normal text-ink-2"><Answer a={r.primary} /></td>
+                  <td className="!whitespace-normal text-ink-2"><Answer a={r.shadow} /></td>
+                  <td>{agrees(r)}</td>
+                  <td className="n">${(r.primary.usd + (r.shadow?.usd ?? 0)).toFixed(4)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </section>
+  );
+}
+
 export default function MonitorPage() {
   const [status, setStatus] = useState<Status | null>(null);
   const [flags, setFlags] = useState<AgentFlag[] | null>(null);
@@ -241,6 +369,8 @@ export default function MonitorPage() {
           {resolvedOpen && resolved.map((f) => <FlagCard key={f.id} flag={f} labelOf={labelOf} onUpdate={updateFlag} />)}
         </section>
       )}
+
+      <EarningsCompareSection />
 
       {status && (
         <section className="panel">
