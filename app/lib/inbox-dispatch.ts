@@ -64,6 +64,7 @@ import { parseStreetTakeaway, extractPrimaryIdentifier } from "./street-takeaway
 import { isEarningsPreview, parseEarningsPreview, appendPreview, describePreview, type EarningsPreview } from "./earnings-previews";
 import { runEarningsCompare } from "./agents/earnings-compare";
 import { reviewThesis } from "./thesis-review";
+import { bellwetherTickers, appendThemeEvidence } from "./themes";
 import { after } from "next/server";
 
 // ── Subject → kind ──────────────────────────────────────────────────
@@ -600,6 +601,22 @@ async function handleStreetTakeaways(bodyText: string, subject: string): Promise
     .filter(Boolean);
   const ticker = factsetIdToTicker(identifier, bookTickers);
   if (!ticker) {
+    // Phase 2: a THEME BELLWETHER (not in the book) is kept as theme evidence
+    // in its own store — never in pm:street-takeaways. Previews are skipped.
+    const bellwethers = await bellwetherTickers().catch(() => [] as string[]);
+    const bw = bellwethers.length ? factsetIdToTicker(identifier, bellwethers) : null;
+    if (bw && !isEarningsPreview(subject, bodyText)) {
+      const parsedBw = await parseStreetTakeaway(bodyText, subject);
+      const ev = { ...parsedBw, id: `te-${bw.toUpperCase()}-${parsedBw.date}-${Date.now()}`, ticker: bw.toUpperCase(), ingestedAt: new Date().toISOString(), subject };
+      const { count } = await appendThemeEvidence(ev);
+      return {
+        ok: true,
+        kind: "street-takeaways",
+        status: 200,
+        message: `Theme bellwether ${bw.toUpperCase()}: ${factsetKindLabel(ev as StreetTakeaway)} filed as theme evidence (${count} on file).`,
+        detail: { ticker: bw.toUpperCase(), bellwether: true, count },
+      };
+    }
     return {
       ok: true,
       kind: "street-takeaways",

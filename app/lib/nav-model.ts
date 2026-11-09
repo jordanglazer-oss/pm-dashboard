@@ -45,6 +45,7 @@ export const NAV_GROUPS: NavGroup[] = [
       { key: "performance", label: "Performance", href: "/aa-performance", icon: "trend", match: (p) => p === "/attribution" },
       { key: "risk", label: "Risk", href: "/risk", icon: "shield" },
       { key: "thesis", label: "Thesis", href: "/thesis", icon: "filecheck" },
+      { key: "themes", label: "Themes", href: "/themes", icon: "star" },
       { key: "journal", label: "Journal", href: "/journal", icon: "book" },
     ],
   },

@@ -70,6 +70,7 @@ const PAGE_ENTRIES: Omit<Entry, "id" | "searchTarget">[] = [
   { category: "page", label: "Inbox",        subtitle: "Coverage table & email ingest",     href: "/inbox" },
   { category: "page", label: "Hedging",      subtitle: "SPY put hedging window",            href: "/hedging" },
   { category: "page", label: "Monitor",      subtitle: "Watcher flags, spend and models",   href: "/monitor" },
+  { category: "page", label: "Themes",       subtitle: "Themes, their pillars and bellwethers", href: "/themes" },
   { category: "page", label: "Chat",         subtitle: "Ask Claude anything",               href: "/chat" },
   { category: "page", label: "Appendix",     subtitle: "Daily ledger / historical",         href: "/appendix" },
   { category: "page", label: "Client Report", subtitle: "Client-facing PDF builder",        href: "/client-report" },

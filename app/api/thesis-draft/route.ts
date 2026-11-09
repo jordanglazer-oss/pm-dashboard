@@ -12,6 +12,8 @@ import { abbreviationRule } from "@/app/lib/prose-style";
 import type { SynthesisScreenCache, SynthesisEntry } from "@/app/lib/synthesis-screen-display";
 import { SONNET_MODEL, THINKING_OFF } from "@/app/lib/claude-model";
 import { POLICY_TEXT } from "@/app/lib/agents/policy";
+import { webResearch } from "@/app/lib/web-research";
+import { loadThemes } from "@/app/lib/themes";
 
 /**
  * POST /api/thesis-draft { ticker } — AI-drafted LONG-TERM thesis (Phase 2).
@@ -181,37 +183,6 @@ function sanitize(raw: unknown, lineLabels: { results: string[]; guidance: strin
   return { why, pillars, conditions, themes };
 }
 
-/** Run a server-tool (web search) conversation to its end: a long research
- *  turn can stop with `pause_turn`, which is resumed by sending the partial
- *  assistant turn back. Returns the final text and the cited URLs. */
-async function research(prompt: string, maxSearches: number): Promise<{ text: string; sources: Array<{ url: string; title?: string }> }> {
-  const messages: Anthropic.MessageParam[] = [{ role: "user", content: prompt }];
-  const sources = new Map<string, string | undefined>();
-  let text = "";
-  for (let turn = 0; turn < 4; turn++) {
-    const resp = await client.messages.create({
-      model: SONNET_MODEL,
-      thinking: THINKING_OFF,
-      max_tokens: 4000,
-      tools: [{ type: "web_search_20260209", name: "web_search", max_uses: maxSearches }],
-      messages,
-    });
-    for (const b of resp.content) {
-      if (b.type === "text") {
-        text += b.text;
-        for (const c of (b as Anthropic.TextBlock).citations ?? []) {
-          const cc = c as { url?: string; title?: string };
-          if (cc.url && !sources.has(cc.url)) sources.set(cc.url, cc.title);
-        }
-      }
-    }
-    if (resp.stop_reason !== "pause_turn") break;
-    messages.push({ role: "assistant", content: resp.content });
-    text = ""; // the JSON answer is written in the final turn
-  }
-  return { text, sources: [...sources.entries()].slice(0, 12).map(([url, title]) => ({ url, title })) };
-}
-
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
@@ -320,6 +291,8 @@ export async function POST(req: NextRequest) {
       stock?.bearCase ? `Generated bear case: ${stock.bearCase.slice(0, 800)}` : null,
     ].filter(Boolean).join("\n");
 
+    const themeStore = await loadThemes();
+    const knownThemes = Object.values(themeStore.themes).filter((t) => !t.archivedAt).map((t) => t.name);
     const today = new Date().toISOString().slice(0, 10);
     const prompt = `You are writing a portfolio manager's LONG-TERM investment thesis for ${tk} — ${ctx.name || ""}${ctx.sector ? ` (${ctx.sector})` : ""}. Today is ${today}. The PM will read it and sign it; you do the research and the writing.
 
@@ -341,7 +314,7 @@ ${transcriptBlock ? `\nLATEST EARNINGS-CALL TRANSCRIPT NOTES:\n${transcriptBlock
 When the research is done, answer with ONE JSON object and nothing else:
 {
   "why": "3-5 bullet lines separated by \\n, each starting with '• '. The long-term case in plain words, each with the figure it rests on and its source inline, e.g. '(FactSet Q2 recap)' / '(10-K 2025)'. Final bullet starts '• Wrong if: '.",
-  "themes": [ { "name": "short theme name, e.g. AI data-centre buildout", "role": "the company's place in it in one sentence", "exposure": "e.g. ~60% of revenue (10-K 2025)" } ],
+  "themes": [ { "name": "short theme name, e.g. AI data-centre buildout${knownThemes.length ? ` — REUSE one of the PM's themes when the company fits: ${knownThemes.join("; ")}` : ""}", "role": "the company's place in it in one sentence", "exposure": "e.g. ~60% of revenue (10-K 2025)" } ],
   "pillars": [
     {
       "title": "2-5 words",
@@ -365,7 +338,7 @@ Rules:
 - No invented figures, segments, customers or events. Every figure has a source.
 - ${abbreviationRule('the "why" bullets, the pillars and the breakers — each is displayed on its own')}`;
 
-    let { text, sources } = await research(prompt, 6);
+    let { text, sources } = await webResearch(prompt, { maxSearches: 6 });
     let parseResult = parseModelJson(text);
     if (!parseResult.ok) {
       console.warn(`[thesis-draft] ${tk} JSON parse failed, retrying once without search:`, parseResult.error, parseResult.excerpt ?? "");
