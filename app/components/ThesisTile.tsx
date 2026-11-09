@@ -15,7 +15,11 @@ import {
   type KillStatus,
   type TechnicalMetricId,
   type ThesisPillar,
+  type PillarStance,
+  type PillarMeasure,
+  PILLAR_STANCE_LABEL,
 } from "@/app/lib/kill-conditions";
+import type { PillarTrend } from "@/app/lib/metric-resolver";
 import type { ThesisReview, ReviewChange } from "@/app/lib/thesis-review";
 import { AppIcon } from "@/app/components/AppIcon";
 import { usePersistedOpen } from "@/app/lib/useCollapsed";
@@ -61,6 +65,24 @@ const PILLAR_STATUS: Record<string, { dot: string; text: string; word: string }>
   broken: { dot: "bg-neg", text: "text-neg", word: "Broken" },
   unknown: { dot: "bg-ink-faint", text: "text-ink-3", word: "Unknown" },
 };
+
+// PM-signed pillar status (Phase 2) — separate from the AI review's reading.
+const STANCE_STYLE: Record<PillarStance, { dot: string; text: string }> = {
+  intact: { dot: "bg-pos", text: "text-pos" },
+  watch: { dot: "bg-warn", text: "text-warn" },
+  broken: { dot: "bg-neg", text: "text-neg" },
+};
+
+/** How a measure reads its line, as one picker value. */
+type MeasureMode = "actual" | "yoy" | "guidance";
+const MEASURE_MODE_LABEL: Record<MeasureMode, string> = { actual: "reported", yoy: "YoY change", guidance: "company guide" };
+const modeOf = (m: PillarMeasure): MeasureMode => (m.source === "guidance" ? "guidance" : m.field === "yoy" ? "yoy" : "actual");
+const measureOf = (match: string, mode: MeasureMode): PillarMeasure => ({
+  label: mode === "yoy" ? `${match} YoY` : mode === "guidance" ? `${match} guide` : match,
+  source: mode === "guidance" ? "guidance" : "results",
+  match,
+  ...(mode === "yoy" ? { field: "yoy" as const } : {}),
+});
 
 const BTN = "inline-flex h-7 items-center gap-1.5 rounded-control border border-line bg-surface px-2.5 text-[12.5px] text-ink-2 hover:bg-surface-hover transition-colors disabled:opacity-50";
 const BTN_PRI = "inline-flex h-7 items-center gap-1.5 rounded-control bg-ink px-2.5 text-[12.5px] font-medium !text-white hover:bg-ink-2 transition-colors disabled:opacity-40";
@@ -135,6 +157,10 @@ export default function ThesisTile({
   // Server-resolved signals (metric readings off the ingested recap, SIA /
   // Equate / MarketEdge) — the half of KillSignals the page can't compute.
   const [extras, setExtras] = useState<Partial<KillSignals>>({});
+  // Phase 2: each pillar's evidence trend (its measures across every FactSet
+  // recap on file) + the recap line labels the pillar editor offers.
+  const [pillarTrends, setPillarTrends] = useState<Record<string, PillarTrend[]>>({});
+  const [recapLines, setRecapLines] = useState<{ results: string[]; guidance: string[] }>({ results: [], guidance: [] });
   // Post-earnings review (app/lib/thesis-review): pillar statuses + a diff.
   const [review, setReview] = useState<ThesisReview | null>(null);
   const [reviewing, setReviewing] = useState(false);
@@ -266,7 +292,12 @@ export default function ThesisTile({
     let alive = true;
     fetch(`/api/thesis-signals?ticker=${encodeURIComponent(ticker)}`)
       .then((r) => r.json())
-      .then((d) => alive && d?.extras && setExtras(d.extras))
+      .then((d) => {
+        if (!alive) return;
+        if (d?.extras) setExtras(d.extras);
+        setPillarTrends(d?.pillarTrends ?? {});
+        if (d?.recapLines) setRecapLines(d.recapLines);
+      })
       .catch(() => {});
     fetch(`/api/thesis-review?ticker=${encodeURIComponent(ticker)}`)
       .then((r) => r.json())
@@ -427,11 +458,23 @@ export default function ThesisTile({
       // entry with no prose and no conditions) — the baseline rides along
       // only on a thesis that actually says something.
       const signedConds = !draftWhy.trim() && draftConds.length === 0 ? [] : withBaselineConditions(draftConds);
+      // Mirror the server's status-date stamp locally so the tile shows the
+      // right "since" without a reload (the server stamp is authoritative).
+      const today = todayIso();
+      const stampedPillars = draftPillars.map((p) => {
+        if (!p.status) {
+          const { status: _s, statusSince: _d, ...rest } = p;
+          void _s; void _d;
+          return rest;
+        }
+        const before = (entry?.pillars ?? []).find((x) => x.id === p.id);
+        return { ...p, statusSince: before?.status === p.status && before.statusSince ? before.statusSince : today };
+      });
       const body: Record<string, unknown> = {
         ticker,
         why: draftWhy.trim(),
         killConditions: signedConds,
-        pillars: draftPillars,
+        pillars: stampedPillars,
         aiDrafted, // provenance: started from an AI draft (PM edited + signed)
         versionReason, // the server versions the PRIOR signed state under this reason
       };
@@ -465,7 +508,7 @@ export default function ThesisTile({
         why: draftWhy.trim(),
         updatedAt: new Date().toISOString(),
         killConditions: signedConds,
-        pillars: draftPillars,
+        pillars: stampedPillars,
         underwrittenAt: e?.underwrittenAt ?? (body.underwrittenAt as string | undefined),
         underwritePrice: e?.underwritePrice ?? (body.underwritePrice as number | undefined) ?? null,
         reUnderwriteBy: body.reUnderwriteBy as string | undefined,
@@ -719,12 +762,40 @@ export default function ThesisTile({
                         <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5 bg-surface-2 px-3.5 py-1.5">
                           <span className="min-w-0 break-words text-[12px] font-medium text-ink">{pillar.title}</span>
                           <span className="min-w-0 flex-1 basis-[15rem] break-words text-[12px] text-ink-2">{pillar.claim}</span>
+                          {pillar.status && STANCE_STYLE[pillar.status] && (
+                            <span
+                              className={`inline-flex items-center gap-1.5 text-[11px] font-medium ${STANCE_STYLE[pillar.status].text}`}
+                              title={`Your signed status${pillar.statusSince ? ` since ${pillar.statusSince}` : ""}${pillar.statusNote ? ` — ${pillar.statusNote}` : ""}`}
+                            >
+                              <span className={`dot ${STANCE_STYLE[pillar.status].dot}`} /> {PILLAR_STANCE_LABEL[pillar.status]}
+                              {pillar.statusSince && <span className="font-mono font-normal text-ink-3">{pillar.statusSince.slice(5)}</span>}
+                            </span>
+                          )}
                           {rs && (
-                            <span className={`inline-flex items-center gap-1.5 text-[11px] ${PILLAR_STATUS[rs.status]?.text ?? "text-ink-3"}`} title={rs.reading}>
-                              <span className={`dot ${PILLAR_STATUS[rs.status]?.dot ?? "bg-ink-faint"}`} /> {PILLAR_STATUS[rs.status]?.word ?? rs.status}
+                            <span className={`inline-flex items-center gap-1.5 text-[11px] ${PILLAR_STATUS[rs.status]?.text ?? "text-ink-3"}`} title={`AI review reading: ${rs.reading}`}>
+                              <span className={`dot ${PILLAR_STATUS[rs.status]?.dot ?? "bg-ink-faint"}`} /> AI: {PILLAR_STATUS[rs.status]?.word ?? rs.status}
                             </span>
                           )}
                           {rows.length === 0 && <span className="text-[11px] text-warn">no condition guards this pillar</span>}
+                          {pillar.statusNote && pillar.status && pillar.status !== "intact" && (
+                            <span className="basis-full break-words text-[11.5px] text-ink-3">{pillar.statusNote}</span>
+                          )}
+                          {(pillarTrends[pillar.id] ?? []).map((t) => (
+                            <span key={t.label} className="basis-full break-words text-[11.5px] text-ink-3 [overflow-wrap:anywhere]">
+                              <span className="text-ink-2">{t.label}:</span>{" "}
+                              {t.points.length === 0 ? (
+                                <span className="italic">not in the FactSet recaps on file</span>
+                              ) : (
+                                t.points.map((pt, i) => (
+                                  <span key={`${pt.date}-${i}`} title={`${pt.event ?? "recap"} · ${pt.date}`}>
+                                    {i > 0 && <span className="mx-1 text-ink-faint">←</span>}
+                                    <span className={`font-mono ${i === 0 ? "text-ink" : ""}`}>{pt.display}</span>
+                                    {pt.event && <span className="ml-1 text-ink-faint">{pt.event.replace(/\s*earnings$/i, "")}</span>}
+                                  </span>
+                                ))
+                              )}
+                            </span>
+                          ))}
                         </div>
                       ) : pillars.length > 0 ? (
                         <div className="bg-surface-2 px-3.5 py-1.5 text-[11px] text-ink-3">Position &amp; other</div>
@@ -915,7 +986,7 @@ export default function ThesisTile({
             placeholder={`Why do you own ${ticker}? State it falsifiably: "buying because X, expecting Y, wrong if K."`}
             className="w-full rounded-control border border-line bg-surface px-2.5 py-2 text-[12.5px] leading-[1.5] text-ink placeholder:text-ink-faint focus:border-accent-border focus:outline-none"
           />
-          {/* Pillars — the 2-4 things the case rests on. Conditions bind to one. */}
+          {/* Pillars — the 3-5 things the long-term case rests on. Conditions bind to one. */}
           <div className="space-y-1.5 rounded-control border border-line bg-surface-2 px-3 py-2">
             <div className="flex items-center justify-between">
               <span className="text-[11px] text-ink-3">Pillars</span>
@@ -927,10 +998,14 @@ export default function ThesisTile({
               </button>
             </div>
             {draftPillars.length === 0 && (
-              <p className="text-[11.5px] text-ink-3">No pillars yet — name the 2-4 things this case rests on, then guard each with a condition. Draft with AI proposes them from the synthesis.</p>
+              <p className="text-[11.5px] text-ink-3">No pillars yet — name the 3-5 things that must stay true for {ticker} to be worth owning for years. Draft with AI proposes them from the synthesis.</p>
+            )}
+            {draftPillars.length > 5 && (
+              <p className="text-[11.5px] text-warn">{draftPillars.length} pillars — a long-term case usually rests on 3-5. Consider merging.</p>
             )}
             {draftPillars.map((p) => (
-              <div key={p.id} className="flex flex-wrap items-center gap-2">
+              <div key={p.id} className="space-y-1.5 border-b border-line-soft pb-2 last:border-b-0 last:pb-0">
+              <div className="flex flex-wrap items-center gap-2">
                 <input
                   value={p.title}
                   onChange={(e) => setDraftPillars((ps) => ps.map((x) => (x.id === p.id ? { ...x, title: e.target.value } : x)))}
@@ -952,6 +1027,12 @@ export default function ThesisTile({
                 >
                   remove
                 </button>
+              </div>
+              <PillarExtrasEditor
+                pillar={p}
+                recapLines={recapLines}
+                onChange={(patch) => setDraftPillars((ps) => ps.map((x) => (x.id === p.id ? { ...x, ...patch } : x)))}
+              />
               </div>
             ))}
           </div>
@@ -1103,5 +1184,93 @@ export default function ThesisTile({
         </div>
       )}
     </section>
+  );
+}
+
+/** Phase 2 pillar fields: the PM's signed status (+ why) and the reported
+ *  lines read as the pillar's evidence trend. Pure editor — the parent owns
+ *  the draft and nothing saves until the thesis is signed. */
+function PillarExtrasEditor({
+  pillar,
+  recapLines,
+  onChange,
+}: {
+  pillar: ThesisPillar;
+  recapLines: { results: string[]; guidance: string[] };
+  onChange: (patch: Partial<ThesisPillar>) => void;
+}) {
+  const [match, setMatch] = useState("");
+  const [mode, setMode] = useState<MeasureMode>("yoy");
+  const measures = pillar.measures ?? [];
+  const listId = `recap-lines-${pillar.id}`;
+  const options = mode === "guidance" ? recapLines.guidance : recapLines.results;
+  const add = () => {
+    const m = match.trim();
+    if (!m) return;
+    const next = measureOf(m, mode);
+    if (measures.some((x) => x.match.toLowerCase() === m.toLowerCase() && modeOf(x) === mode)) return;
+    onChange({ measures: [...measures, next].slice(0, 3) });
+    setMatch("");
+  };
+  return (
+    <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 pl-1 text-[11.5px] text-ink-3">
+      <label className="inline-flex items-center gap-1.5">
+        Status
+        <select
+          value={pillar.status ?? ""}
+          onChange={(e) => onChange({ status: (e.target.value || undefined) as PillarStance | undefined })}
+          className={`${INPUT} w-28`}
+          title="Your signed read of this pillar. Change it only on sustained evidence or a structural event."
+        >
+          <option value="">Not set</option>
+          <option value="intact">Intact</option>
+          <option value="watch">Watch</option>
+          <option value="broken">Broken</option>
+        </select>
+      </label>
+      {pillar.status && pillar.status !== "intact" && (
+        <input
+          value={pillar.statusNote ?? ""}
+          onChange={(e) => onChange({ statusNote: e.target.value || undefined })}
+          placeholder="Why — the evidence behind this status"
+          className={`${INPUT} min-w-[14rem] flex-1`}
+        />
+      )}
+      <span className="basis-full" />
+      <span>Evidence to track</span>
+      {measures.map((m) => (
+        <span key={`${m.match}-${modeOf(m)}`} className="inline-flex items-center gap-1 rounded-control border border-line bg-surface px-1.5 py-0.5 text-ink-2">
+          {m.match} <span className="text-ink-3">· {MEASURE_MODE_LABEL[modeOf(m)]}</span>
+          <button
+            onClick={() => onChange({ measures: measures.filter((x) => x !== m) })}
+            className="ml-0.5 text-ink-3 hover:text-neg"
+            aria-label={`Remove ${m.match}`}
+          >
+            ×
+          </button>
+        </span>
+      ))}
+      {measures.length < 3 && (
+        <span className="inline-flex flex-wrap items-center gap-1.5">
+          <input
+            value={match}
+            onChange={(e) => setMatch(e.target.value)}
+            onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); add(); } }}
+            list={listId}
+            placeholder={options.length ? "Pick a reported line" : "Line name, e.g. Data Center revenue"}
+            className={`${INPUT} w-52`}
+          />
+          <datalist id={listId}>
+            {options.map((o) => <option key={o} value={o} />)}
+          </datalist>
+          <select value={mode} onChange={(e) => setMode(e.target.value as MeasureMode)} className={`${INPUT} w-32`}>
+            <option value="yoy">YoY change</option>
+            <option value="actual">reported</option>
+            <option value="guidance">company guide</option>
+          </select>
+          <button onClick={add} disabled={!match.trim()} className="text-accent hover:underline disabled:opacity-40">add</button>
+        </span>
+      )}
+    </div>
   );
 }

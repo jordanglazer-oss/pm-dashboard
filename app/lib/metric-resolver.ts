@@ -16,7 +16,7 @@
 
 import { getRedis } from "./redis";
 import { canonicalTicker, crossListingRoot } from "./ticker";
-import type { KillCondition, KillSignals, MetricReading, MetricSpec } from "./kill-conditions";
+import type { KillCondition, KillSignals, MetricReading, MetricSpec, ThesisPillar } from "./kill-conditions";
 import { loadStreetTakeaways, type StreetTakeaway, type StreetTakeawaysStore } from "./street-takeaways";
 import { readSiaHistory, type SiaHistoryStore } from "./sia-history";
 
@@ -97,6 +97,56 @@ function recapsFor(store: StreetTakeawaysStore, ticker: string): StreetTakeaway[
     }
   }
   return out.sort((a, b) => b.date.localeCompare(a.date));
+}
+
+export type PillarTrendPoint = { date: string; event?: string; display: string; value: number | null };
+export type PillarTrend = { label: string; points: PillarTrendPoint[] };
+
+/**
+ * Each pillar's evidence as a trend: for every `measures` entry, the matching
+ * printed line from EVERY Metrics Recap on file (newest first, one point per
+ * recap, up to `max`). Pure, read-only, zero tokens. Pillars without measures
+ * are left out.
+ */
+export function pillarTrends(
+  store: StreetTakeawaysStore,
+  ticker: string,
+  pillars: ThesisPillar[],
+  max = 8,
+): Record<string, PillarTrend[]> {
+  const recaps = recapsFor(store, ticker);
+  const out: Record<string, PillarTrend[]> = {};
+  for (const p of pillars) {
+    if (!p?.id || !Array.isArray(p.measures) || p.measures.length === 0) continue;
+    out[p.id] = p.measures.map((m) => {
+      const points: PillarTrendPoint[] = [];
+      for (const t of recaps) {
+        if (points.length >= max) break;
+        if (m.source === "guidance") {
+          const g = (t.guidanceLines ?? []).find((x) => labelMatches(x.metric, m.match));
+          if (g) points.push({ date: t.date, event: t.event, display: `${g.period} ${g.value}${g.direction ? ` (${g.direction})` : ""}`, value: parseFigure(g.value) });
+        } else {
+          const r = (t.results ?? []).find((x) => labelMatches(x.label, m.match));
+          const raw = m.field === "yoy" ? r?.yoy : r?.actual;
+          if (r && raw) points.push({ date: t.date, event: t.event, display: raw, value: parseFigure(raw) });
+        }
+      }
+      return { label: m.label || m.match, points };
+    });
+  }
+  return out;
+}
+
+/** Every distinct printed line label across all recaps on file — the
+ *  choices offered when the PM picks a pillar's measures. */
+export function recapLineLabels(store: StreetTakeawaysStore, ticker: string): { results: string[]; guidance: string[] } {
+  const results = new Set<string>();
+  const guidance = new Set<string>();
+  for (const t of recapsFor(store, ticker)) {
+    for (const r of t.results ?? []) if (r.label) results.add(r.label);
+    for (const g of t.guidanceLines ?? []) if (g.metric) guidance.add(g.metric);
+  }
+  return { results: [...results].slice(0, 60), guidance: [...guidance].slice(0, 30) };
 }
 
 /** The printed lines available to build `metric` conditions against — what the

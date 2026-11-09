@@ -74,7 +74,7 @@ export type CompareOutcome =
   | { ok: true; run: CompareRun }
   | { ok: false; skipped: string };
 
-type ThesisStore = Record<string, { why?: string; pillars?: { id?: string; title?: string; claim?: string }[]; underwrittenAt?: string }>;
+type ThesisStore = Record<string, { why?: string; pillars?: { id?: string; title?: string; claim?: string; status?: string; statusNote?: string }[]; underwrittenAt?: string }>;
 
 async function readContext(ticker: string): Promise<{ bucket: string; thesis: string }> {
   const redis = await getRedis();
@@ -89,7 +89,7 @@ async function readContext(ticker: string): Promise<{ bucket: string; thesis: st
     const theses = thesesRaw ? (JSON.parse(thesesRaw) as ThesisStore) : {};
     const t = theses[ticker] ?? theses[ticker.toUpperCase()];
     if (t) {
-      const pillars = (t.pillars ?? []).map((p, i) => `  ${i + 1}. ${p.title ?? ""}${p.claim ? ` — ${p.claim}` : ""}`).join("\n");
+      const pillars = (t.pillars ?? []).map((p, i) => `  ${i + 1}. ${p.title ?? ""}${p.claim ? ` — ${p.claim}` : ""}${p.status ? ` [PM status: ${p.status}${p.statusNote ? ` — ${p.statusNote}` : ""}]` : ""}`).join("\n");
       thesis = `${(t.why ?? "").slice(0, 1500)}${pillars ? `\nPillars:\n${pillars}` : ""}`.trim();
     }
   } catch { /* no thesis */ }

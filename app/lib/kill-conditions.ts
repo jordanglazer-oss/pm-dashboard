@@ -254,12 +254,46 @@ export const technicalDef = (id: TechnicalMetricId | undefined): TechnicalMetric
 
 /** A thesis pillar — one of the 2-4 things the case actually rests on. Every
  *  condition should guard exactly one pillar (`pillarId`). */
+/** PM-signed status of a long-term pillar (Phase 2 thesis structure). Changes
+ *  only on sustained evidence or a structural event, and only when the PM
+ *  saves it — never set by a model. Distinct from the AI review's per-review
+ *  reading (confirmed / contested / broken in app/lib/thesis-review). */
+export type PillarStance = "intact" | "watch" | "broken";
+
+export const PILLAR_STANCE_LABEL: Record<PillarStance, string> = {
+  intact: "Intact",
+  watch: "Watch",
+  broken: "Broken",
+};
+
+/** A company-reported line that evidences a pillar, read as a TREND across
+ *  every FactSet Metrics Recap on file (app/lib/metric-resolver pillarTrends).
+ *  Same label matching as a `metric` condition; no threshold — it is evidence
+ *  to read, not a trip wire. */
+export type PillarMeasure = {
+  /** Human label, e.g. "Data Center revenue growth". */
+  label: string;
+  source: "results" | "guidance";
+  /** Printed line label (results) or metric name (guidance), substring match. */
+  match: string;
+  /** results only: reported level or the YoY change. Default `actual`. */
+  field?: "actual" | "yoy";
+};
+
 export type ThesisPillar = {
   id: string;
   /** 2-5 words, e.g. "Data-center demand", "Margin structure". */
   title: string;
   /** One falsifiable sentence — the belief, with the figure it rests on. */
   claim: string;
+  /** Optional (Phase 2): the reported lines to read as this pillar's evidence. */
+  measures?: PillarMeasure[];
+  /** Optional (Phase 2): the PM's signed status. Unset = not yet assessed. */
+  status?: PillarStance;
+  /** YYYY-MM-DD the status last changed — stamped server-side on save. */
+  statusSince?: string;
+  /** Why the status is what it is (most useful on Watch / Broken). */
+  statusNote?: string;
 };
 
 export type KillCondition = {

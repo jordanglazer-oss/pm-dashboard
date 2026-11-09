@@ -62,6 +62,43 @@ type ThesisVersion = {
   underwrittenAt?: string;
 };
 const MAX_HISTORY = 12;
+
+const STANCES = new Set(["intact", "watch", "broken"]);
+type PillarLike = { id?: unknown; status?: unknown; statusSince?: unknown; [k: string]: unknown };
+
+/**
+ * Phase 2: a pillar's PM-signed status carries the date it last changed.
+ * Stamped HERE, against the stored pillar with the same id, so the date is
+ * the server's and can't drift with a stale tab: a changed (or first-set)
+ * status gets today; an unchanged one keeps its stored date; an unknown
+ * status value is dropped. Every other pillar field passes through untouched.
+ */
+function stampPillarStatus(incoming: unknown[], prevPillars: unknown[] | undefined): unknown[] {
+  const today = new Date().toISOString().slice(0, 10);
+  const prevById = new Map<string, PillarLike>();
+  for (const p of prevPillars ?? []) {
+    const pl = p as PillarLike;
+    if (pl && typeof pl.id === "string") prevById.set(pl.id, pl);
+  }
+  return incoming.map((p) => {
+    if (!p || typeof p !== "object") return p;
+    const pl = { ...(p as PillarLike) };
+    if (pl.status === undefined || pl.status === null || pl.status === "") {
+      delete pl.status;
+      delete pl.statusSince;
+      return pl;
+    }
+    if (typeof pl.status !== "string" || !STANCES.has(pl.status)) {
+      delete pl.status;
+      delete pl.statusSince;
+      return pl;
+    }
+    const before = typeof pl.id === "string" ? prevById.get(pl.id) : undefined;
+    if (before && before.status === pl.status && typeof before.statusSince === "string") pl.statusSince = before.statusSince;
+    else pl.statusSince = today;
+    return pl;
+  });
+}
 type PositionTheses = Record<string, PositionThesis>;
 
 export async function GET() {
@@ -99,7 +136,7 @@ export async function POST(req: NextRequest) {
       updatedAt: new Date().toISOString(),
     };
     if (hasConditions) next.killConditions = body.killConditions as unknown[];
-    if (Array.isArray(body?.pillars)) next.pillars = body.pillars as unknown[];
+    if (Array.isArray(body?.pillars)) next.pillars = stampPillarStatus(body.pillars as unknown[], prev?.pillars);
     // Version the PREVIOUS signed state when a substantive save says why
     // (underwrite / review applied / edit). Trip-stamp saves (conditions only,
     // no reason) never create versions.
@@ -107,7 +144,7 @@ export async function POST(req: NextRequest) {
       const changed =
         (body?.why !== undefined && why !== (prev.why ?? "")) ||
         (hasConditions && JSON.stringify(body.killConditions) !== JSON.stringify(prev.killConditions ?? [])) ||
-        (Array.isArray(body?.pillars) && JSON.stringify(body.pillars) !== JSON.stringify(prev.pillars ?? []));
+        (Array.isArray(body?.pillars) && JSON.stringify(next.pillars) !== JSON.stringify(prev.pillars ?? []));
       if (changed) {
         const version: ThesisVersion = {
           savedAt: prev.updatedAt,
