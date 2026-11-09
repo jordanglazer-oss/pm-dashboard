@@ -47,6 +47,7 @@ export function pageLabel(path: string): string {
     "/monitor": "Monitor",
     "/themes": "Themes",
     "/funds": "Funds",
+    "/pm-monthly": "PM Monthly",
     "/synthesis": "Synthesis",
     "/conviction": "Pipeline",
     "/screener": "Screener",

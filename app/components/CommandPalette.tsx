@@ -72,6 +72,7 @@ const PAGE_ENTRIES: Omit<Entry, "id" | "searchTarget">[] = [
   { category: "page", label: "Monitor",      subtitle: "Watcher flags, spend and models",   href: "/monitor" },
   { category: "page", label: "Themes",       subtitle: "Themes, their pillars and bellwethers", href: "/themes" },
   { category: "page", label: "Funds",        subtitle: "Why we own each fund — client one-pagers", href: "/funds" },
+  { category: "page", label: "PM Monthly",   subtitle: "Month facts and the client update draft", href: "/pm-monthly" },
   { category: "page", label: "Chat",         subtitle: "Ask Claude anything",               href: "/chat" },
   { category: "page", label: "Appendix",     subtitle: "Daily ledger / historical",         href: "/appendix" },
   { category: "page", label: "Client Report", subtitle: "Client-facing PDF builder",        href: "/client-report" },
