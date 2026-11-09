@@ -47,10 +47,12 @@ export type AgentFlag = {
   thread: FlagMessage[];
   /** Which model wrote it — for the comparison period. */
   model?: string;
+  /** The fact-checker's read of this finding against its sources (Phase 2). */
+  factCheck?: { verdict: "supported" | "partly" | "unsupported" | "skipped"; problems: string[]; model?: string; at: string; note?: string };
 };
 
 export type RaiseFlagInput = Pick<AgentFlag, "watcher" | "priority" | "title" | "detail"> &
-  Partial<Pick<AgentFlag, "ticker" | "suggestion" | "evidence" | "dedupeKey" | "model">>;
+  Partial<Pick<AgentFlag, "ticker" | "suggestion" | "evidence" | "dedupeKey" | "model" | "factCheck">>;
 
 const key = (id: string) => `${PREFIX}${id}`;
 const ID_RE = /^[a-z0-9-]{8,64}$/;
@@ -114,6 +116,7 @@ export async function raiseFlag(input: RaiseFlagInput): Promise<AgentFlag> {
         suggestion: input.suggestion ?? existing.suggestion,
         evidence: input.evidence ?? existing.evidence,
         model: input.model ?? existing.model,
+        ...(input.factCheck ? { factCheck: input.factCheck } : {}),
         updatedAt: now,
         thread: [...existing.thread, { at: now, from: "watcher", text: `Updated: ${input.detail}` }],
       };
@@ -135,6 +138,7 @@ export async function raiseFlag(input: RaiseFlagInput): Promise<AgentFlag> {
     ...(input.evidence?.length ? { evidence: input.evidence } : {}),
     ...(input.dedupeKey ? { dedupeKey: input.dedupeKey } : {}),
     ...(input.model ? { model: input.model } : {}),
+    ...(input.factCheck ? { factCheck: input.factCheck } : {}),
     status: "open",
     thread: [],
   };

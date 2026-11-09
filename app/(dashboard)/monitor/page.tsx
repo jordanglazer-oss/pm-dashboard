@@ -79,6 +79,15 @@ function FlagCard({ flag, labelOf, onUpdate }: { flag: AgentFlag; labelOf: (id: 
           {flag.suggestion}
         </p>
       )}
+      {flag.factCheck && (
+        <p className={`text-[12px] ${flag.factCheck.verdict === "supported" ? "text-pos" : flag.factCheck.verdict === "partly" ? "text-warn" : "text-ink-3"}`}>
+          {flag.factCheck.verdict === "supported"
+            ? "Fact-checked against the sources: every figure matches."
+            : flag.factCheck.verdict === "partly"
+              ? `Fact-check found problems: ${flag.factCheck.problems.join("; ")}`
+              : `Not fact-checked${flag.factCheck.note ? ` (${flag.factCheck.note})` : ""}.`}
+        </p>
+      )}
       {flag.evidence && flag.evidence.length > 0 && (
         <div className="flex flex-wrap gap-x-3 gap-y-1 text-[12px] text-ink-3">
           {flag.evidence.map((e, i) =>
@@ -180,7 +189,7 @@ function EarningsCompareSection() {
       const d = await fetch("/api/agents/earnings-compare", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ticker: tk }) }).then((r) => r.json());
       if (d?.ok) {
         const r = d.run as CompareRun;
-        setMsg(`${displayTicker(r.ticker)}: ${r.primary.result ? `${r.primary.result.verdict}, guide ${r.primary.result.guidance}` : `failed (${r.primary.error ?? "no answer"})`}${r.flagId ? " — flagged above" : " — nothing flagged"}${r.previewId ? "" : " (no preview on file, judged against the recap's own consensus)"}.`);
+        setMsg(`${displayTicker(r.ticker)}: ${r.primary.result ? `${r.primary.result.verdict}, guide ${r.primary.result.guidance}` : `failed (${r.primary.error ?? "no answer"})`}${r.flagId ? " — flagged above" : r.factCheck?.verdict === "unsupported" ? ` — NOT flagged: the fact-checker found ${r.factCheck.problems.join("; ") || "facts not in the sources"}` : " — nothing flagged"}${r.previewId ? "" : " (no preview on file, judged against the recap's own consensus)"}.`);
       } else setMsg(d?.skipped ?? d?.error ?? "Could not run.");
       await load();
     } finally {

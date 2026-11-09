@@ -9,6 +9,7 @@ import { POLICY_TEXT, POLICY_VERSION } from "./policy";
 import { raiseFlag, type FlagPriority } from "./flags";
 import { watcherDef, type AgentModelTier } from "./registry";
 import { readAgentSettings, modelFor } from "./settings";
+import { factCheck, type FactCheck } from "./fact-check";
 
 /**
  * Earnings-comparison watcher (Phase 1, Step 8).
@@ -67,6 +68,8 @@ export type CompareRun = {
   primary: CompareAnswer;
   shadow?: CompareAnswer;
   flagId?: string;
+  /** The fact-checker's read of the finding before it was flagged. */
+  factCheck?: FactCheck;
   policyVersion: string;
 };
 
@@ -231,8 +234,18 @@ export async function runEarningsCompare(recap: StreetTakeaway, opts: { force?: 
     ]);
 
     let flagId: string | undefined;
+    let fact: FactCheck | undefined;
     const res = primary.result;
     if (res?.flag) {
+      const lineText = res.lines.length
+        ? `\n\n${res.lines.map((l) => `${l.metric}: expected ${l.expected ?? "?"}, reported ${l.actual ?? "?"} (${l.call})`).join("\n")}`
+        : "";
+      const detail = `${res.detail}${res.thesisLink ? `\n\nThesis: ${res.thesisLink}` : ""}${lineText}`;
+      // Fact-check before the PM sees it (Phase 2). Unsupported → not flagged;
+      // the run keeps the finding and the problems for Monitor.
+      fact = await factCheck(`${res.title}\n${detail}${res.suggestion ? `\nSuggestion: ${res.suggestion}` : ""}`, prompt, `${ticker} earnings flag`);
+    }
+    if (res?.flag && fact?.verdict !== "unsupported") {
       // Code-side clamp: a watchlist name is never "high" (nothing is held).
       const priority: FlagPriority = bucket !== "Portfolio" && res.priority === "high" ? "medium" : res.priority;
       const lineText = res.lines.length
@@ -243,6 +256,7 @@ export async function runEarningsCompare(recap: StreetTakeaway, opts: { force?: 
         priority,
         ticker,
         title: res.title,
+        factCheck: fact ? { verdict: fact.verdict, problems: fact.problems, model: fact.model, at: fact.at, ...(fact.note ? { note: fact.note } : {}) } : undefined,
         detail: `${res.detail}${res.thesisLink ? `\n\nThesis: ${res.thesisLink}` : ""}${lineText}`,
         suggestion: res.suggestion,
         evidence: [
@@ -268,6 +282,7 @@ export async function runEarningsCompare(recap: StreetTakeaway, opts: { force?: 
       primary,
       ...(shadow ? { shadow } : {}),
       ...(flagId ? { flagId } : {}),
+      ...(fact ? { factCheck: fact } : {}),
       policyVersion: POLICY_VERSION,
     };
     await (await getRedis()).set(`${RUN_PREFIX}${run.id}`, JSON.stringify(run), { EX: RUN_TTL_SECONDS });
