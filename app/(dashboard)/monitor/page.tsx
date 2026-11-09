@@ -35,7 +35,7 @@ type Status = {
     byWatcher: { id: string; usd: number; calls: number }[];
     recent: { at: string; watcher: string; model: string; usd: number; inputTokens: number; outputTokens: number; searches: number; note?: string }[];
   };
-  watchers: { id: string; label: string; phase: number; what: string; model: "haiku" | "sonnet"; defaultModel: "haiku" | "sonnet"; shadow: string | null }[];
+  watchers: { id: string; label: string; phase: number; what: string; model: "haiku" | "sonnet"; defaultModel: "haiku" | "sonnet"; shadow: string | null; on: boolean }[];
 };
 
 const PRIORITY_DOT: Record<AgentFlag["priority"], string> = { high: "bg-neg", medium: "bg-warn", low: "bg-ink-faint" };
@@ -695,6 +695,11 @@ export default function MonitorPage() {
     load();
   };
 
+  const setOn = async (watcher: string, enabled: boolean) => {
+    await fetch("/api/agents/settings", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ watcher, enabled }) });
+    load();
+  };
+
   const togglePause = async () => {
     if (!status) return;
     await fetch("/api/agents/settings", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ paused: !status.paused }) });
@@ -788,7 +793,8 @@ export default function MonitorPage() {
             <table className="data-table">
               <thead>
                 <tr>
-                  <th className="pl-3.5">Watcher</th>
+                  <th className="pl-3.5">On</th>
+                  <th>Watcher</th>
                   <th>What it does</th>
                   <th>Phase</th>
                   <th>Model</th>
@@ -798,8 +804,11 @@ export default function MonitorPage() {
               </thead>
               <tbody>
                 {status.watchers.map((w) => (
-                  <tr key={w.id}>
-                    <td className="pl-3.5 font-medium">{w.label}</td>
+                  <tr key={w.id} className={w.on ? "" : "opacity-60"}>
+                    <td className="pl-3.5">
+                      <input type="checkbox" checked={w.on} onChange={(e) => setOn(w.id, e.target.checked)} aria-label={`${w.label} on`} title={w.on ? "Switch this watcher off" : "Switch this watcher on"} />
+                    </td>
+                    <td className="font-medium">{w.label}</td>
                     <td className="max-w-[380px] !whitespace-normal py-2 text-ink-2">
                       {w.what}
                       {w.shadow && <span className="ml-1 text-[11.5px] text-ink-3">(compared against {w.shadow === "sonnet" ? "Sonnet" : "Haiku"} for 2 weeks)</span>}

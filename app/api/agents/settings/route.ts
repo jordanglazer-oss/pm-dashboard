@@ -6,6 +6,7 @@ import { readAgentSettings, updateAgentSettings } from "@/app/lib/agents/setting
  * pm:agent-settings.
  * GET  → the stored settings ({} on miss — never seeds).
  * POST { watcher, model: "haiku" | "sonnet" | "default" } → one watcher's model
+ * POST { watcher, enabled: boolean }                      → one watcher on / off
  * POST { paused: boolean }                                → the kill switch
  * Read-merge-write; nothing else in the blob is touched.
  */
@@ -19,7 +20,7 @@ export async function GET() {
 
 export async function POST(req: NextRequest) {
   try {
-    const body = (await req.json()) as { watcher?: string; model?: "haiku" | "sonnet" | "default"; paused?: boolean };
+    const body = (await req.json()) as { watcher?: string; model?: "haiku" | "sonnet" | "default"; enabled?: boolean; paused?: boolean };
     if (!body.watcher && typeof body.paused !== "boolean") {
       return NextResponse.json({ error: "send { watcher, model } or { paused }" }, { status: 400 });
     }

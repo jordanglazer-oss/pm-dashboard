@@ -4,9 +4,12 @@ import { WATCHERS, watcherDef, type AgentModelTier } from "./registry";
 
 /**
  * pm:agent-settings — the PM's switches for the watchers:
- *   { models: { [watcherId]: "haiku" | "sonnet" }, paused?: boolean, updatedAt? }
+ *   { models: { [watcherId]: "haiku" | "sonnet" }, off?: { [watcherId]: true },
+ *     paused?: boolean, updatedAt? }
  * `models` only holds overrides; a watcher not listed runs its registry
- * default. `paused` stops every watcher at the gateway (the kill switch).
+ * default. `off` switches ONE watcher off (its model calls are refused at
+ * the gateway and its rule-only flags are not raised). `paused` stops every
+ * watcher at the gateway (the kill switch).
  * GET never seeds; writes are read-merge-write of one field.
  */
 
@@ -15,9 +18,15 @@ export const SETTINGS_KEY = "pm:agent-settings";
 
 export type AgentSettings = {
   models?: Record<string, AgentModelTier>;
+  /** Watchers the PM has switched off (absent = on). */
+  off?: Record<string, true>;
   paused?: boolean;
   updatedAt?: string;
 };
+
+export function isWatcherOn(watcherId: string, settings: AgentSettings): boolean {
+  return !settings.paused && !settings.off?.[watcherId];
+}
 
 export async function readAgentSettings(): Promise<AgentSettings> {
   try {
@@ -36,14 +45,17 @@ export function modelFor(watcherId: string, settings: AgentSettings): AgentModel
   return watcherDef(watcherId)?.defaultModel ?? "haiku";
 }
 
-export async function updateAgentSettings(patch: { watcher?: string; model?: AgentModelTier | "default"; paused?: boolean }): Promise<AgentSettings> {
+export async function updateAgentSettings(patch: { watcher?: string; model?: AgentModelTier | "default"; enabled?: boolean; paused?: boolean }): Promise<AgentSettings> {
   const redis = await getRedis();
   const raw = await redis.get(SETTINGS_KEY);
   const prev: AgentSettings = raw ? (JSON.parse(raw) as AgentSettings) : {};
-  const next: AgentSettings = { ...prev, models: { ...(prev.models ?? {}) } };
+  const next: AgentSettings = { ...prev, models: { ...(prev.models ?? {}) }, off: { ...(prev.off ?? {}) } };
   if (patch.watcher) {
     if (!WATCHERS.some((w) => w.id === patch.watcher)) throw new Error(`unknown watcher ${patch.watcher}`);
-    if (patch.model === "default") delete next.models![patch.watcher];
+    if (typeof patch.enabled === "boolean") {
+      if (patch.enabled) delete next.off![patch.watcher];
+      else next.off![patch.watcher] = true;
+    } else if (patch.model === "default") delete next.models![patch.watcher];
     else if (patch.model === "haiku" || patch.model === "sonnet") next.models![patch.watcher] = patch.model;
     else throw new Error("model must be haiku, sonnet or default");
   }

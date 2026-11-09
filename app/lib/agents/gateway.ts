@@ -89,6 +89,7 @@ export async function agentCall(watcher: string, params: AgentCallParams): Promi
   if (!watcherDef(watcher)) throw new AgentGatewayError("unknown-watcher", `Unknown watcher "${watcher}"`);
   const settings = await readAgentSettings();
   if (settings.paused) throw new AgentGatewayError("paused", "Watchers are paused");
+  if (settings.off?.[watcher]) throw new AgentGatewayError("paused", `${watcherDef(watcher)?.label ?? watcher} is switched off on Monitor`);
 
   const tier = params.tier ?? modelFor(watcher, settings);
   const model = AGENT_MODEL_IDS[tier];

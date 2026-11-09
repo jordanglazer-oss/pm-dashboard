@@ -29,6 +29,7 @@ export async function GET() {
         model: modelFor(w.id, settings),
         defaultModel: w.defaultModel,
         shadow: w.shadow ?? null,
+        on: !settings.off?.[w.id],
       })),
     });
   } catch (e) {

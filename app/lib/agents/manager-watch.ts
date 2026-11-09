@@ -8,6 +8,7 @@ import type { PimModelData } from "@/app/lib/pim-types";
 import { agentCall, AgentGatewayError } from "./gateway";
 import { POLICY_TEXT } from "./policy";
 import { raiseFlag } from "./flags";
+import { readAgentSettings, isWatcherOn } from "./settings";
 
 /**
  * Manager watch (Phase 4) — quarterly, each Thematic fund in the PIM model
@@ -162,6 +163,7 @@ export async function runManagerWatch(opts: { force?: boolean } = {}): Promise<M
   // snapshot from an earlier quarter (a forced same-quarter re-run keeps it).
   const baseline: Record<string, FundSnapshot> = prev?.quarter === quarter ? prev.baseline ?? {} : prev?.funds ?? {};
   const reviews: FundReview[] = [];
+  const on = isWatcherOn("manager-watch", await readAgentSettings());
   let usd = 0;
   let stopped = false;
   for (const h of thematic) {
@@ -179,7 +181,7 @@ export async function runManagerWatch(opts: { force?: boolean } = {}): Promise<M
       ...(fd?.lastUpdated ? { dataAsOf: fd.lastUpdated.slice(0, 10) } : {}),
     };
     const r = reviewFund(snap, baseline[h.symbol]);
-    if (r.severity !== "ok" && !stopped) {
+    if (r.severity !== "ok" && !stopped && on) {
       const block = [
         `${r.symbol}${r.name ? ` (${r.name})` : ""}, ${((r.weightInClass ?? 0) * 100).toFixed(1)}% of PIM equity`,
         `Category: ${r.category ?? "?"} · fee ${r.expenseRatio ?? "?"}% · ${r.starRating ?? "?"} stars · data as of ${r.dataAsOf ?? "unknown"}`,

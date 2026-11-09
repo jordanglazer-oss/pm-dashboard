@@ -10,6 +10,7 @@ import { agentCall } from "./gateway";
 import { parseModelJson } from "@/app/lib/json-repair";
 import { POLICY_TEXT } from "./policy";
 import { raiseFlag } from "./flags";
+import { readAgentSettings, isWatcherOn } from "./settings";
 
 /**
  * Stance watch + hedge window (Phase 4) — once a day after the close.
@@ -232,8 +233,9 @@ export async function runStanceWatch(opts: { force?: boolean } = {}): Promise<St
   const changes = Object.keys(signals).filter((k) => k !== "hedgeWindow" && prev.signals?.[k] !== undefined && prev.signals[k] !== signals[k]);
   state.changes = changes.map((k) => `${text[k]} (was: ${prev.signalText?.[k] ?? prev.signals[k]})`);
 
-  // Hedge window OPENED → its own flag, once.
-  if (hw.window === "open" && prev.signals?.hedgeWindow !== "open") {
+  const settings = await readAgentSettings();
+  // Hedge window OPENED → its own flag, once (unless switched off on Monitor).
+  if (hw.window === "open" && prev.signals?.hedgeWindow !== "open" && isWatcherOn("hedge-window", settings)) {
     const c = hw.contract;
     const contractLine = c ? `Contract priced: SPY ${c.expiryLabel} $${c.strike} put (~5% out of the money, ${c.daysToExpiry} days), about $${c.premium?.toFixed(2) ?? "?"} a share (${c.pctOfSpot?.toFixed(2) ?? "?"}% of SPY at $${c.spot.toFixed(2)}).` : "";
     const flag = await raiseFlag({
@@ -249,7 +251,7 @@ export async function runStanceWatch(opts: { force?: boolean } = {}): Promise<St
   }
 
   // Other changes → one read from the stance watcher.
-  if (changes.length) {
+  if (changes.length && isWatcherOn("stance-watch", settings)) {
     const readings = [
       `=== CHANGED TODAY ===`,
       ...state.changes!,
