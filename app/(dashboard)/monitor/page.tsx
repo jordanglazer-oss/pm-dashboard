@@ -14,6 +14,7 @@ import type { CompareRun, CompareAnswer } from "@/app/lib/agents/earnings-compar
 import type { HoldingsDay, HoldingsEvent } from "@/app/lib/agents/holdings-watch";
 import type { StanceState } from "@/app/lib/agents/stance-watch";
 import type { ManagerState } from "@/app/lib/agents/manager-watch";
+import type { Memo } from "@/app/lib/agents/sunday-memo";
 
 /**
  * /monitor — the watchers' desk. What they flagged (Act / Dismiss / note),
@@ -47,9 +48,23 @@ const when = (iso: string) =>
 const BTN =
   "inline-flex h-7 items-center gap-1.5 rounded-control border border-line bg-surface px-2.5 text-[12.5px] text-ink-2 hover:bg-surface-hover disabled:opacity-50";
 
-function FlagCard({ flag, labelOf, onUpdate }: { flag: AgentFlag; labelOf: (id: string) => string; onUpdate: (id: string, action: string, note?: string) => Promise<void> }) {
+function FlagCard({ flag, labelOf, onUpdate, onReplaced }: { flag: AgentFlag; labelOf: (id: string) => string; onUpdate: (id: string, action: string, note?: string) => Promise<void>; onReplaced: (f: AgentFlag) => void }) {
   const [note, setNote] = useState("");
   const [busy, setBusy] = useState(false);
+  const [replyErr, setReplyErr] = useState<string | null>(null);
+  const reply = async () => {
+    if (!note.trim()) return;
+    setBusy(true);
+    setReplyErr(null);
+    try {
+      const d = await fetch(`/api/agents/flags/${flag.id}/reply`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ note: note.trim() }) }).then((r) => r.json());
+      if (d?.flag) onReplaced(d.flag as AgentFlag);
+      if (d?.error) setReplyErr(d.error);
+      setNote("");
+    } finally {
+      setBusy(false);
+    }
+  };
   const run = async (action: string) => {
     setBusy(true);
     try {
@@ -119,7 +134,7 @@ function FlagCard({ flag, labelOf, onUpdate }: { flag: AgentFlag; labelOf: (id: 
         <input
           value={note}
           onChange={(e) => setNote(e.target.value)}
-          placeholder={open ? "Optional note — what you did or why not" : "Add a note"}
+          placeholder={flag.conversation ? "Reply to the watcher, or a note on your decision" : open ? "Optional note — what you did or why not" : "Add a note"}
           className="h-7 min-w-[220px] flex-1 rounded-control border border-line bg-surface px-2.5 text-[12.5px] text-ink placeholder:text-ink-faint"
         />
         {open ? (
@@ -136,10 +151,17 @@ function FlagCard({ flag, labelOf, onUpdate }: { flag: AgentFlag; labelOf: (id: 
             Reopen
           </button>
         )}
+        {flag.conversation && open && (
+          <button className={BTN} disabled={busy || !note.trim()} onClick={reply} title="Sends your reply; the watcher answers in the thread with the latest data.">
+            {busy ? "Thinking…" : "Reply"}
+          </button>
+        )}
         <button className={BTN} disabled={busy || !note.trim()} onClick={() => run("note")}>
           Add note
         </button>
       </div>
+      {replyErr && <p className="text-[12px] text-neg">{replyErr}</p>}
+      {flag.conversation && open && <p className="text-[11.5px] text-ink-faint">Act or Dismiss with a note records your decision in the decision journal; the next review of this theme starts from it.</p>}
     </div>
   );
 }
@@ -450,6 +472,80 @@ function ManagerSection() {
   );
 }
 
+function MemoSection() {
+  const [memos, setMemos] = useState<Memo[] | null>(null);
+  const [open, toggle] = usePersistedOpen("monitor.memo.open", true);
+  const [showAll, toggleAll] = usePersistedOpen("monitor.memo.all", false);
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState<string | null>(null);
+
+  const load = useCallback(async () => {
+    try {
+      setMemos(((await fetch("/api/agents/sunday-memo").then((r) => r.json())) as { memos: Memo[] }).memos ?? []);
+    } catch {
+      setMemos([]);
+    }
+  }, []);
+  useEffect(() => {
+    void Promise.resolve().then(load);
+  }, [load]);
+
+  const writeNow = async () => {
+    setBusy(true);
+    setMsg(null);
+    try {
+      const d = await fetch("/api/agents/sunday-memo", { method: "POST" }).then((r) => r.json());
+      setMsg(d?.ok ? null : d?.error ?? "Could not write the memo.");
+      await load();
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const list = memos ?? [];
+  const shown = showAll ? list : list.slice(0, 1);
+  return (
+    <section className="panel">
+      <button className="panel-h w-full text-left" onClick={toggle}>
+        <span className="t">Sunday memo</span>
+        <span className="m">{list[0] ? `latest ${list[0].date} · ${list.length} in the archive` : memos === null ? "…" : "none yet"} · {open ? "hide" : "show"}</span>
+      </button>
+      {open && (
+        <div className="flex flex-col gap-3 px-3.5 py-3">
+          <p className="text-[12.5px] leading-relaxed text-ink-3">Written every Sunday evening for the Monday meeting (and emailed), from what the dashboard already knows: the week, open flags, company moves, the stance, weak pillars and the coming week&apos;s earnings. No web search.</p>
+          <div className="flex flex-wrap items-center gap-2">
+            <button className={BTN} disabled={busy} onClick={writeNow}>
+              {busy ? "Writing… (~1 min)" : "Write this week's memo now"}
+            </button>
+            {list.length > 1 && (
+              <button className={BTN} onClick={toggleAll}>
+                {showAll ? "Latest only" : `Show all ${list.length}`}
+              </button>
+            )}
+            {msg && <span className="text-[12.5px] text-neg">{msg}</span>}
+          </div>
+          {shown.map((m) => (
+            <div key={m.date} className="flex flex-col gap-1.5 border-t border-line-soft pt-2.5">
+              <div className="text-[12px] text-ink-3">
+                {m.date}
+                {m.emailed ? " · emailed" : ""}
+              </div>
+              {m.headline && <p className="text-[13.5px] font-medium text-ink">{m.headline}</p>}
+              <ol className="flex list-decimal flex-col gap-1.5 pl-5 text-[13px] text-ink-2">
+                {m.items.map((i, n) => (
+                  <li key={n}>
+                    <span className="font-medium text-ink">{i.title}.</span> {i.detail}
+                  </li>
+                ))}
+              </ol>
+            </div>
+          ))}
+        </div>
+      )}
+    </section>
+  );
+}
+
 const signed = (n: number | null | undefined) => (n == null ? "?" : `${n > 0 ? "+" : ""}${n.toFixed(1)}%`);
 const CLASS_LABEL: Record<HoldingsEvent["class"], string> = { market: "Market", sector: "Sector", company: "Company", fund: "Fund" };
 
@@ -592,6 +688,8 @@ export default function MonitorPage() {
     if (d?.flag) setFlags((prev) => (prev ?? []).map((f) => (f.id === id ? (d.flag as AgentFlag) : f)));
   };
 
+  const replaceFlag = (flag: AgentFlag) => setFlags((prev) => (prev ?? []).map((f) => (f.id === flag.id ? flag : f)));
+
   const setModel = async (watcher: string, model: string) => {
     await fetch("/api/agents/settings", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ watcher, model }) });
     load();
@@ -660,7 +758,7 @@ export default function MonitorPage() {
         ) : openFlags.length === 0 ? (
           <EmptyState glyph={<AppIcon name="eye" size={18} />} title="Nothing flagged" body="When a watcher finds something worth your attention it appears here and in the Brief's action queue." />
         ) : (
-          openFlags.map((f) => <FlagCard key={f.id} flag={f} labelOf={labelOf} onUpdate={updateFlag} />)
+          openFlags.map((f) => <FlagCard key={f.id} flag={f} labelOf={labelOf} onUpdate={updateFlag} onReplaced={replaceFlag} />)
         )}
       </section>
 
@@ -670,13 +768,14 @@ export default function MonitorPage() {
             <span className="t">Resolved</span>
             <span className="m">{resolved.length} · {resolvedOpen ? "hide" : "show"}</span>
           </button>
-          {resolvedOpen && resolved.map((f) => <FlagCard key={f.id} flag={f} labelOf={labelOf} onUpdate={updateFlag} />)}
+          {resolvedOpen && resolved.map((f) => <FlagCard key={f.id} flag={f} labelOf={labelOf} onUpdate={updateFlag} onReplaced={replaceFlag} />)}
         </section>
       )}
 
       <StanceSection />
       <HoldingsWatchSection />
       <ManagerSection />
+      <MemoSection />
       <EarningsCompareSection />
 
       {status && (

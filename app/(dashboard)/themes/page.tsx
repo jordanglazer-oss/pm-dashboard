@@ -190,6 +190,18 @@ function ThemeCard({
 }) {
   const [open, toggle] = usePersistedOpen(`themes.card.${t.id}`, true);
   const held = t.members.filter((m) => m.bucket === "Portfolio");
+  const [reviewing, setReviewing] = useState(false);
+  const [reviewMsg, setReviewMsg] = useState<string | null>(null);
+  const reviewNow = async () => {
+    setReviewing(true);
+    setReviewMsg(null);
+    try {
+      const d = await fetch("/api/agents/theme-review", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ themeId: t.id }) }).then((r) => r.json());
+      setReviewMsg(d?.ok ? "Review ready on Monitor — reply there to talk it through." : d?.error ?? "Could not review.");
+    } finally {
+      setReviewing(false);
+    }
+  };
   return (
     <section className="panel">
       <div className="panel-h flex-wrap gap-y-1.5">
@@ -203,6 +215,9 @@ function ThemeCard({
           <button className={BTN} disabled={drafting} onClick={onRedraft} title="Researches the theme again and proposes updated pillars, statuses and bellwethers. Nothing is saved until you sign.">
             <AppIcon name="spark" size={13} />
             {drafting ? "Researching…" : "Redraft with AI"}
+          </button>
+          <button className={BTN} disabled={reviewing} onClick={reviewNow} title="The theme-review watcher reads today's moves, the bellwethers and the latest notes against the theme's pillars, and opens a conversation on Monitor.">
+            {reviewing ? "Reviewing… (~1 min)" : "Review now"}
           </button>
           <button className={BTN} onClick={onEdit}>
             <AppIcon name="edit" size={13} />
@@ -222,6 +237,11 @@ function ThemeCard({
           </button>
         </div>
       </div>
+      {reviewMsg && (
+        <p className="px-3.5 pt-2 text-[12.5px] text-ink-2">
+          {reviewMsg} {reviewMsg.startsWith("Review ready") && <Link href="/monitor" className="text-accent hover:underline">Open Monitor</Link>}
+        </p>
+      )}
       {open && (
         <>
           {t.summary && <p className="px-3.5 py-2.5 text-[12.5px] leading-[1.5] text-ink-2">{t.summary}</p>}

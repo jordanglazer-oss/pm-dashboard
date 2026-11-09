@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { runHoldingsWatch } from "@/app/lib/agents/holdings-watch";
+import { runThemeWatch } from "@/app/lib/agents/theme-review";
 
 /**
  * GET /api/cron/holdings-watch — weekday after-close holdings watch
@@ -7,8 +8,10 @@ import { runHoldingsWatch } from "@/app/lib/agents/holdings-watch";
  * market holiday (no session today). Same CRON_SECRET bearer as the other
  * crons; /api/cron/* is exempt from the cookie middleware.
  *
- * Redis: writes only pm:agent-run:holdings-watch:* / holdings-day:* and,
- * when a move touches a thesis, pm:agent-flag:* — never book data.
+ * Then the theme watch: on a big down day (or a theme falling well beyond
+ * the market) the affected themes get a theme-review conversation flag.
+ * Redis: writes only pm:agent-run:holdings-watch:* / holdings-day:* and
+ * pm:agent-flag:* — never book data.
  */
 
 export const dynamic = "force-dynamic";
@@ -20,5 +23,13 @@ export async function GET(req: NextRequest) {
   if (req.headers.get("authorization") !== `Bearer ${cronSecret}`) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   const out = await runHoldingsWatch();
   console.log(`[cron/holdings-watch] ${out.skipped ?? out.error ?? `${out.day?.company ?? 0} company moves, ${out.day?.flagged ?? 0} flagged`}`);
-  return NextResponse.json(out);
+  let themes: unknown = null;
+  if (!out.skipped) {
+    try {
+      themes = await runThemeWatch();
+    } catch (e) {
+      themes = { ok: false, error: e instanceof Error ? e.message : String(e) };
+    }
+  }
+  return NextResponse.json({ ...out, themes });
 }

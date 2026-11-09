@@ -49,10 +49,13 @@ export type AgentFlag = {
   model?: string;
   /** The fact-checker's read of this finding against its sources (Phase 2). */
   factCheck?: { verdict: "supported" | "partly" | "unsupported" | "skipped"; problems: string[]; model?: string; at: string; note?: string };
+  /** Phase 5: a flag the PM can talk through with its watcher (the thread is
+   *  the conversation; replies go through /api/agents/flags/<id>/reply). */
+  conversation?: { kind: "theme"; themeId: string; trigger: string };
 };
 
 export type RaiseFlagInput = Pick<AgentFlag, "watcher" | "priority" | "title" | "detail"> &
-  Partial<Pick<AgentFlag, "ticker" | "suggestion" | "evidence" | "dedupeKey" | "model" | "factCheck">>;
+  Partial<Pick<AgentFlag, "ticker" | "suggestion" | "evidence" | "dedupeKey" | "model" | "factCheck" | "conversation">>;
 
 const key = (id: string) => `${PREFIX}${id}`;
 const ID_RE = /^[a-z0-9-]{8,64}$/;
@@ -117,6 +120,7 @@ export async function raiseFlag(input: RaiseFlagInput): Promise<AgentFlag> {
         evidence: input.evidence ?? existing.evidence,
         model: input.model ?? existing.model,
         ...(input.factCheck ? { factCheck: input.factCheck } : {}),
+        ...(input.conversation ? { conversation: input.conversation } : {}),
         updatedAt: now,
         thread: [...existing.thread, { at: now, from: "watcher", text: `Updated: ${input.detail}` }],
       };
@@ -139,6 +143,7 @@ export async function raiseFlag(input: RaiseFlagInput): Promise<AgentFlag> {
     ...(input.dedupeKey ? { dedupeKey: input.dedupeKey } : {}),
     ...(input.model ? { model: input.model } : {}),
     ...(input.factCheck ? { factCheck: input.factCheck } : {}),
+    ...(input.conversation ? { conversation: input.conversation } : {}),
     status: "open",
     thread: [],
   };
