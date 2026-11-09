@@ -12,6 +12,7 @@ import { usePersistedOpen } from "@/app/lib/useCollapsed";
 import type { AgentFlag } from "@/app/lib/agents/flags";
 import type { CompareRun, CompareAnswer } from "@/app/lib/agents/earnings-compare";
 import type { HoldingsDay, HoldingsEvent } from "@/app/lib/agents/holdings-watch";
+import type { StanceState } from "@/app/lib/agents/stance-watch";
 
 /**
  * /monitor — the watchers' desk. What they flagged (Act / Dismiss / note),
@@ -269,6 +270,91 @@ function EarningsCompareSection() {
   );
 }
 
+function StanceSection() {
+  const [state, setState] = useState<StanceState | null | undefined>(undefined);
+  const [open, toggle] = usePersistedOpen("monitor.stance.open", true);
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState<string | null>(null);
+
+  const load = useCallback(async () => {
+    try {
+      setState(((await fetch("/api/agents/stance-watch").then((r) => r.json())) as { state: StanceState | null }).state);
+    } catch {
+      setState(null);
+    }
+  }, []);
+  useEffect(() => {
+    void Promise.resolve().then(load);
+  }, [load]);
+
+  const runNow = async () => {
+    setBusy(true);
+    setMsg(null);
+    try {
+      const d = await fetch("/api/agents/stance-watch", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ force: true }) }).then((r) => r.json());
+      setMsg(d?.ok ? `Done: ${d.state?.changes?.length ?? 0} changed since the last check.` : d?.error ?? "Could not run.");
+      await load();
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const hw = state?.hedgeWindow;
+  const windowText = hw ? (hw.window === "open" ? <span className="text-pos">open</span> : hw.window === "closed" ? <span>closed</span> : <span className="text-ink-3">unknown</span>) : null;
+  return (
+    <section className="panel">
+      <button className="panel-h w-full text-left" onClick={toggle}>
+        <span className="t">Stance &amp; hedge window</span>
+        <span className="m">
+          {state ? <>checked {state.date} · hedge window {windowText}</> : state === null ? "not run yet" : "…"} · {open ? "hide" : "show"}
+        </span>
+      </button>
+      {open && (
+        <div className="flex flex-col gap-2.5 px-3.5 py-3">
+          <p className="text-[12.5px] leading-relaxed text-ink-3">
+            Runs by itself after each close. Plain rules, no AI cost; the watcher writes a short read only when a reading changes. The hedge window opens only when all four tests pass, and it is flagged once when it opens.
+          </p>
+          <div className="flex flex-wrap items-center gap-2">
+            <button className={BTN} disabled={busy} onClick={runNow}>
+              {busy ? "Checking…" : "Check now"}
+            </button>
+            {msg && <span className="text-[12.5px] text-ink-2">{msg}</span>}
+          </div>
+          {state && (
+            <div className="grid gap-3 md:grid-cols-2">
+              <div>
+                <div className="mb-1 text-[11.5px] uppercase tracking-wide text-ink-3">Readings</div>
+                <ul className="flex flex-col gap-1 text-[12.5px] text-ink-2">
+                  {Object.entries(state.signalText).map(([k, v]) => (
+                    <li key={k} className={state.changes?.some((c) => c.startsWith(v)) ? "font-medium text-ink" : ""}>{v}</li>
+                  ))}
+                </ul>
+              </div>
+              {hw && (
+                <div>
+                  <div className="mb-1 text-[11.5px] uppercase tracking-wide text-ink-3">Hedge window: {windowText}</div>
+                  <ul className="flex flex-col gap-1 text-[12.5px] text-ink-2">
+                    {hw.tests.map((t) => (
+                      <li key={t.id}>
+                        <span className={t.pass === true ? "text-pos" : t.pass === false ? "text-neg" : "text-ink-3"}>{t.pass === true ? "✓" : t.pass === false ? "✗" : "?"}</span> {t.label} <span className="text-ink-3">— {t.detail}</span>
+                      </li>
+                    ))}
+                  </ul>
+                  {hw.contract && (
+                    <div className="mt-1.5 text-[12px] text-ink-3">
+                      Priced: SPY {hw.contract.expiryLabel} ${hw.contract.strike} put, ~${hw.contract.premium?.toFixed(2) ?? "?"} ({hw.contract.pctOfSpot?.toFixed(2) ?? "?"}% of spot)
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+    </section>
+  );
+}
+
 const signed = (n: number | null | undefined) => (n == null ? "?" : `${n > 0 ? "+" : ""}${n.toFixed(1)}%`);
 const CLASS_LABEL: Record<HoldingsEvent["class"], string> = { market: "Market", sector: "Sector", company: "Company", fund: "Fund" };
 
@@ -493,6 +579,7 @@ export default function MonitorPage() {
         </section>
       )}
 
+      <StanceSection />
       <HoldingsWatchSection />
       <EarningsCompareSection />
 
