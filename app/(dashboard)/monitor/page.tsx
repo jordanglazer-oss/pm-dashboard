@@ -13,6 +13,7 @@ import type { AgentFlag } from "@/app/lib/agents/flags";
 import type { CompareRun, CompareAnswer } from "@/app/lib/agents/earnings-compare";
 import type { HoldingsDay, HoldingsEvent } from "@/app/lib/agents/holdings-watch";
 import type { StanceState } from "@/app/lib/agents/stance-watch";
+import type { ManagerState } from "@/app/lib/agents/manager-watch";
 
 /**
  * /monitor — the watchers' desk. What they flagged (Act / Dismiss / note),
@@ -355,6 +356,100 @@ function StanceSection() {
   );
 }
 
+const SEVERITY_TEXT = { ok: <span className="text-pos">OK</span>, watch: <span className="text-warn">Watch</span>, concern: <span className="text-neg">Review</span> } as const;
+
+function ManagerSection() {
+  const [state, setState] = useState<ManagerState | null | undefined>(undefined);
+  const [open, toggle] = usePersistedOpen("monitor.manager.open", false);
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState<string | null>(null);
+
+  const load = useCallback(async () => {
+    try {
+      setState(((await fetch("/api/agents/manager-watch").then((r) => r.json())) as { state: ManagerState | null }).state);
+    } catch {
+      setState(null);
+    }
+  }, []);
+  useEffect(() => {
+    void Promise.resolve().then(load);
+  }, [load]);
+
+  const runNow = async () => {
+    setBusy(true);
+    setMsg(null);
+    try {
+      const d = await fetch("/api/agents/manager-watch", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ force: true }) }).then((r) => r.json());
+      setMsg(d?.skipped ? d.skipped : d?.ok ? `Done: ${d.state?.reviews?.length ?? 0} funds reviewed.` : d?.error ?? "Could not run.");
+      await load();
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const reviews = state?.reviews ?? [];
+  const tripped = reviews.filter((r) => r.severity !== "ok").length;
+  return (
+    <section className="panel">
+      <button className="panel-h w-full text-left" onClick={toggle}>
+        <span className="t">Manager watch</span>
+        <span className="m">
+          {state ? `${state.quarter} · ${reviews.length} Thematic funds · ${tripped} to look at` : state === null ? "not run yet" : "…"} · {open ? "hide" : "show"}
+        </span>
+      </button>
+      {open && (
+        <div className="flex flex-col gap-2.5 px-3.5 py-3">
+          <p className="text-[12.5px] leading-relaxed text-ink-3">
+            Once a quarter, each Thematic fund against its category over 1, 3 and 5 years, plus any fee, category or rating change since the last review. Uses the fund data on PIM Model; refresh it there first if it is old. One weak year is a watch, not a case.
+          </p>
+          <div className="flex flex-wrap items-center gap-2">
+            <button className={BTN} disabled={busy} onClick={runNow}>
+              {busy ? "Reviewing…" : "Review funds now"}
+            </button>
+            {msg && <span className="text-[12.5px] text-ink-2">{msg}</span>}
+          </div>
+        </div>
+      )}
+      {open && reviews.length > 0 && (
+        <div className="tbl-wrap">
+          <table className="data-table">
+            <thead>
+              <tr>
+                <th className="pl-3.5">Fund</th>
+                <th className="n">1y vs cat.</th>
+                <th className="n">3y vs cat.</th>
+                <th className="n">5y vs cat.</th>
+                <th className="n">Fee</th>
+                <th>Read</th>
+                <th>Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              {reviews.map((r) => (
+                <tr key={r.symbol}>
+                  <td className="pl-3.5">
+                    <span className="font-mono">{displayTicker(r.symbol)}</span>
+                    {r.name && <div className="text-[11.5px] text-ink-3">{r.name}</div>}
+                  </td>
+                  <td className="n">{r.gaps.oneYear == null ? "—" : `${r.gaps.oneYear > 0 ? "+" : ""}${r.gaps.oneYear}`}</td>
+                  <td className="n">{r.gaps.threeYear == null ? "—" : `${r.gaps.threeYear > 0 ? "+" : ""}${r.gaps.threeYear}`}</td>
+                  <td className="n">{r.gaps.fiveYear == null ? "—" : `${r.gaps.fiveYear > 0 ? "+" : ""}${r.gaps.fiveYear}`}</td>
+                  <td className="n">{r.expenseRatio != null ? `${r.expenseRatio}%` : "—"}</td>
+                  <td className="!whitespace-normal text-ink-2">
+                    {r.read ?? (r.findings.length ? r.findings.join("; ") : "No rule tripped")}
+                    {r.dataAsOf && <div className="text-[11.5px] text-ink-faint">Fund data as of {r.dataAsOf}</div>}
+                  </td>
+                  <td className="text-[12.5px]">{SEVERITY_TEXT[r.severity]}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </section>
+  );
+}
+
 const signed = (n: number | null | undefined) => (n == null ? "?" : `${n > 0 ? "+" : ""}${n.toFixed(1)}%`);
 const CLASS_LABEL: Record<HoldingsEvent["class"], string> = { market: "Market", sector: "Sector", company: "Company", fund: "Fund" };
 
@@ -581,6 +676,7 @@ export default function MonitorPage() {
 
       <StanceSection />
       <HoldingsWatchSection />
+      <ManagerSection />
       <EarningsCompareSection />
 
       {status && (
