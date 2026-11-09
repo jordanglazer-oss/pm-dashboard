@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { refreshDailyValues } from "@/app/lib/daily-value-refresh";
+import { updateSleevePerformance } from "@/app/lib/sleeve-performance";
 
 /**
  * GET /api/cron/daily-value — weekday after-close (21:30 UTC = 17:30 ET,
@@ -27,5 +28,13 @@ export async function GET(req: NextRequest) {
   const startedAt = new Date().toISOString();
   const result = await refreshDailyValues();
   console.log(`[cron/daily-value] ${result.error ? `failed: ${result.error}` : `${result.message ?? "ok"} (${result.updates ?? 0} models)`}`);
-  return NextResponse.json({ ok: !result.error, startedAt, finishedAt: new Date().toISOString(), ...result });
+  // Weights-based sleeve series (pm:sleeve-performance) — independent of the
+  // ledger above; a failure here never affects it.
+  let sleeves: unknown = null;
+  try {
+    sleeves = await updateSleevePerformance();
+  } catch (e) {
+    sleeves = { ok: false, error: e instanceof Error ? e.message : String(e) };
+  }
+  return NextResponse.json({ ok: !result.error, startedAt, finishedAt: new Date().toISOString(), ...result, sleeves });
 }

@@ -12,6 +12,7 @@ import type { AppendixData, PimPerformanceData, PimProfileWeights } from "@/app/
 import { useLiveTodayReturn } from "@/app/lib/useLiveTodayReturn";
 import { getTodayET } from "@/app/lib/market-hours";
 import { PageHeading } from "@/app/components/PageHeading";
+import { SleeveTracking } from "@/app/components/SleeveTracking";
 
 /* ─── Types ─── */
 type AllocationRow = {
@@ -1007,6 +1008,8 @@ export default function AAPerformancePage() {
           </table>
         </div>
       </section>
+
+      <SleeveTracking />
 
       {/* ── Asset allocation — ONE panel, the four profile editors side by side ── */}
       <section className="panel">
