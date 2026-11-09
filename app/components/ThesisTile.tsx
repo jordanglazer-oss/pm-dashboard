@@ -396,7 +396,10 @@ export default function ThesisTile({
       else if ((ch.type === "tighten" || ch.type === "loosen" || ch.type === "replace") && ch.conditionId && ch.after) {
         conds = conds.map((c) => (c.id === ch.conditionId ? conditionFromChange(ch.after!, c) : c));
       } else if (ch.type === "add" && ch.after) conds.push(conditionFromChange(ch.after));
-      else if (ch.type === "pillar" && ch.after?.title && ch.after.claim) {
+      else if (ch.type === "status" && ch.pillarId && ch.after?.status) {
+        // Accepting a proposed status marks it AI-proposed; signing the save is the PM's decision.
+        pillars = pillars.map((p) => (p.id === ch.pillarId ? { ...p, status: ch.after!.status, statusNote: ch.after!.statusNote ?? p.statusNote, statusBy: "ai" as const } : p));
+      } else if (ch.type === "pillar" && ch.after?.title && ch.after.claim) {
         if (ch.pillarId && pillars.some((p) => p.id === ch.pillarId)) {
           pillars = pillars.map((p) => (p.id === ch.pillarId ? { ...p, title: ch.after!.title!, claim: ch.after!.claim! } : p));
         } else {
@@ -627,7 +630,7 @@ export default function ThesisTile({
   const overdue = reDue ? reDue < todayIso() : false;
 
 
-  const CHANGE_LABEL: Record<ReviewChange["type"], string> = { tighten: "Tighten", loosen: "Loosen", replace: "Replace", add: "Add", drop: "Drop", pillar: "Pillar" };
+  const CHANGE_LABEL: Record<ReviewChange["type"], string> = { tighten: "Tighten", loosen: "Loosen", replace: "Replace", add: "Add", drop: "Drop", pillar: "Pillar", status: "Status" };
 
   return (
     <section id="thesis-tile" className={`panel animate-panel-in scroll-mt-24 ${className || ""}`}>
@@ -910,7 +913,9 @@ export default function ThesisTile({
                     {open.map((ch) => {
                       const on = accepted.has(ch.id);
                       const afterText = ch.after
-                        ? ch.type === "pillar"
+                        ? ch.type === "status"
+                          ? `${ch.after.status ? PILLAR_STANCE_LABEL[ch.after.status] : ""}${ch.after.statusNote ? ` — ${ch.after.statusNote}` : ""}`
+                          : ch.type === "pillar"
                           ? `${ch.after.title}: ${ch.after.claim}`
                           : describeCondition({ id: "x", kind: ch.after.kind ?? "custom", threshold: ch.after.threshold, note: ch.after.note, metric: ch.after.metric, addedAt: "" })
                         : null;

@@ -63,6 +63,7 @@ import {
 import { parseStreetTakeaway, extractPrimaryIdentifier } from "./street-takeaways-parse";
 import { isEarningsPreview, parseEarningsPreview, appendPreview, describePreview, type EarningsPreview } from "./earnings-previews";
 import { runEarningsCompare } from "./agents/earnings-compare";
+import { reviewThesis } from "./thesis-review";
 import { after } from "next/server";
 
 // ── Subject → kind ──────────────────────────────────────────────────
@@ -640,9 +641,19 @@ async function handleStreetTakeaways(bodyText: string, subject: string): Promise
   const { added, replaced, count } = await appendStreetTakeaway(entry);
   // Earnings-comparison watcher: runs AFTER the response (agents key), so a
   // watcher problem can never fail or slow the ingest. It never throws.
-  if (added && entry.kind === "metrics") {
+  if (added && (entry.kind === "metrics" || entry.kind === "news")) {
     after(async () => {
-      await runEarningsCompare(entry);
+      if (entry.kind === "metrics") await runEarningsCompare(entry);
+      // Phase 2: a results recap or a news item for a name with a thesis
+      // opens a thesis review now instead of waiting for the nightly sweep
+      // (main key, hash-gated — unchanged facts cost nothing; a name without
+      // a thesis returns before any model call). Proposes only; the PM signs.
+      try {
+        const r = await reviewThesis(entry.ticker);
+        if (r.error && r.error !== "no thesis on file") console.warn(`[Inbox] thesis review ${entry.ticker}: ${r.error}`);
+      } catch (e) {
+        console.warn(`[Inbox] thesis review ${entry.ticker} failed:`, e);
+      }
     });
   }
   const label = factsetKindLabel(entry);

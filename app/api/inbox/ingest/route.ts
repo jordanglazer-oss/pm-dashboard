@@ -19,6 +19,10 @@ import { blobConfigured, putDataUrl, getDataUrl, deleteBlob } from "@/app/lib/bl
 import { appendInboxEvent } from "@/app/lib/inbox-log";
 import { classifySubject, dispatchInbox, isFactsetAlertSender, isFactsetAlertBody } from "@/app/lib/inbox-dispatch";
 
+// Post-response work (earnings comparison + thesis review via after()) runs
+// inside this function's lifetime.
+export const maxDuration = 300;
+
 /**
  * Webhook target for the Gmail Apps Script. The script POSTs one PDF per
  * call, with the email subject + filename so we can route the PDF to the

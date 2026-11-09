@@ -5,8 +5,9 @@ import { createLogger } from "./logger";
 import { loadAlertInputs, type KillWatchRow } from "./alert-inputs";
 import { buildTickerEvidence, latestEvidenceAt } from "./thesis-evidence";
 import { loadStreetTakeaways } from "./street-takeaways";
-import { availableMetricLines, labelMatches } from "./metric-resolver";
-import { describeCondition, type KillCondition, type KillConditionKind, type MetricSpec, type ThesisPillar } from "./kill-conditions";
+import { availableMetricLines, labelMatches, pillarTrends } from "./metric-resolver";
+import { describeCondition, type KillCondition, type KillConditionKind, type MetricSpec, type PillarStance, type ThesisPillar, type ThesisTheme } from "./kill-conditions";
+import type { StreetTakeawaysStore } from "./street-takeaways";
 import { parseModelJson } from "./json-repair";
 import { canonicalTicker } from "./ticker";
 import type { SynthesisScreenCache, SynthesisEntry } from "./synthesis-screen-display";
@@ -43,7 +44,8 @@ export type PillarStatus = "confirmed" | "contested" | "broken" | "unknown";
 
 export type ReviewChange = {
   id: string;
-  type: "tighten" | "loosen" | "replace" | "add" | "drop" | "pillar";
+  /** "status" (Phase 2): propose a new signed status for a pillar. */
+  type: "tighten" | "loosen" | "replace" | "add" | "drop" | "pillar" | "status";
   /** Target condition (tighten/loosen/replace/drop) or pillar (pillar). */
   conditionId?: string;
   pillarId?: string;
@@ -58,6 +60,9 @@ export type ReviewChange = {
     pillarId?: string;
     title?: string;
     claim?: string;
+    /** "status" changes only. */
+    status?: PillarStance;
+    statusNote?: string;
   };
   reason: string;
 };
@@ -95,7 +100,7 @@ export async function updateThesisReview(tk: string, patch: Partial<ThesisReview
   return next;
 }
 
-type ThesisStore = Record<string, { why?: string; pillars?: ThesisPillar[]; killConditions?: KillCondition[]; underwrittenAt?: string }>;
+type ThesisStore = Record<string, { why?: string; pillars?: ThesisPillar[]; killConditions?: KillCondition[]; underwrittenAt?: string; themes?: ThesisTheme[] }>;
 
 async function loadContext(tk: string) {
   const redis = await getRedis();
@@ -123,7 +128,7 @@ function fingerprint(row: KillWatchRow | null, thesis: ThesisStore[string] | und
   return createHash("sha256")
     .update(JSON.stringify({
       why: thesis?.why ?? "",
-      pillars: (thesis?.pillars ?? []).map((p) => [p.id, p.title, p.claim]),
+      pillars: (thesis?.pillars ?? []).map((p) => [p.id, p.title, p.claim, p.status ?? null]),
       checks: (row?.checks ?? []).map((c) => [c.condition.id, c.status, c.reading]),
       synthesisAt: synth?.generatedAt ?? null,
       evidenceAt,
@@ -149,7 +154,17 @@ export async function reviewThesis(tk: string, opts: { force?: boolean } = {}): 
     const p = pillarTitle(c.condition.pillarId);
     return `- [${c.status.toUpperCase()}] (${c.condition.id})${p ? ` [pillar: ${p}]` : ""} ${describeCondition(c.condition)} — ${c.reading}`;
   }).join("\n");
-  const pillarLines = pillars.length ? pillars.map((p) => `- (${p.id}) ${p.title}: ${p.claim}`).join("\n") : "(no pillars registered — propose 2-4 from the thesis text via \"pillar\" changes with type \"add\")";
+  const trends = pillarTrends(takeaways as StreetTakeawaysStore, tk, pillars);
+  const pillarLines = pillars.length
+    ? pillars
+        .map((p) => {
+          const signed = p.status ? ` [SIGNED STATUS: ${p.status}${p.statusSince ? ` since ${p.statusSince}` : ""}${p.statusNote ? ` — ${p.statusNote}` : ""}]` : " [no signed status yet]";
+          const ev = (trends[p.id] ?? []).map((t) => `    evidence ${t.label}: ${t.points.length ? t.points.map((pt) => `${pt.display} (${pt.event ?? pt.date})`).join(" ← ") : "not in the recaps on file"}`).join("\n");
+          return `- (${p.id}) ${p.title}: ${p.claim}${signed}${ev ? `\n${ev}` : ""}`;
+        })
+        .join("\n")
+    : "(no pillars registered — propose 3-5 from the thesis text via \"pillar\" changes)";
+  const themeLines = (thesis.themes ?? []).map((t) => `- ${t.name}${t.exposure ? ` (${t.exposure})` : ""}: ${t.role}`).join("\n");
   const available = availableMetricLines(takeaways, tk);
   const linesBlock = available.results.length || available.guidance.length
     ? `REPORTED LINES IN THE LATEST METRICS RECAP (${available.event ?? "earnings"}, ${available.asOf}) — the only labels a "metric" condition may use:\n${[...available.results.map((l) => `  - ${l}`), ...available.guidance.map((l) => `  - [guidance] ${l}`)].join("\n")}`
@@ -164,9 +179,9 @@ TICKER: ${tk} — ${ctx?.name ?? ""}${ctx?.sector ? ` (${ctx.sector})` : ""}
 THESIS AS SIGNED${thesis.underwrittenAt ? ` (${thesis.underwrittenAt})` : ""}:
 ${thesis.why}
 
-PILLARS:
+PILLARS (with the PM's signed status and each pillar's multi-quarter evidence, newest first):
 ${pillarLines}
-
+${themeLines ? `\nTHEMES:\n${themeLines}\n` : ""}
 CONDITIONS (live readings):
 ${condLines || "(none)"}
 
@@ -182,7 +197,8 @@ Answer in JSON only:
   "changes": [
     { "type": "tighten" | "loosen" | "replace" | "drop", "conditionId": "<id from CONDITIONS>", "after": { "kind": "metric"|"custom"|"sia_floor"|"equate_rank"|"marketedge"|"ma200"|"revisions", "threshold": number, "note": "custom prose", "theme": "2-4 words", "metric": { "label": "...", "source": "results"|"guidance", "match": "<label verbatim from the recap lines>", "field": "actual"|"yoy", "comparator": ">="|"<=", "threshold": number, "unit": "%"|"$"|"" } }, "reason": "one line" },
     { "type": "add", "pillarId": "<id>", "after": { ...same shape... }, "reason": "one line" },
-    { "type": "pillar", "pillarId": "<id or omit for a new pillar>", "after": { "title": "...", "claim": "..." }, "reason": "one line" }
+    { "type": "pillar", "pillarId": "<id or omit for a new pillar>", "after": { "title": "...", "claim": "..." }, "reason": "one line" },
+    { "type": "status", "pillarId": "<id>", "after": { "status": "intact" | "watch" | "broken", "statusNote": "the evidence, with figures, dates and sources" }, "reason": "one line" }
   ]
 }
 
@@ -192,7 +208,8 @@ Rules:
 - Propose a change ONLY when the evidence warrants it: a threshold the latest print makes trivial (tighten), a threshold that trips on noise the thesis never cared about (loosen), a condition whose metric stopped being disclosed (replace with a line that IS in the recap), a condition the case no longer rests on (drop), a pillar the evidence shows is missing or misstated (pillar / add). Zero changes is a valid answer.
 - "metric" conditions must use a "match" verbatim from the recap lines; otherwise use "custom".
 - One test per condition, under 250 characters, reported every quarter, no judgment calls.
-- Do not propose score_floor or score_decay.`;
+- Conditions may only be "metric" (company-reported) or "custom" (long-horizon, AI-verified). Short-term signals (SIA, Equate, MarketEdge, scores, revisions, the 200-day line, technicals) are context only and never a condition — propose dropping any that remain.
+- "status" changes: the PM's signed status is a LONG-TERM judgement. Propose one only when it should differ from the signed status (or none is signed): "watch" on sustained erosion across quarters, "broken" only on a structural break or a reported fact that contradicts the claim, back to "intact" when the erosion has clearly reversed. One quarter's miss, a guidance trim inside the long-term range or a price fall is never enough. Under the policy "broken" is the sell trigger, so be sure.`;
 
   try {
     const ask = async (extra = "") => {
@@ -225,13 +242,15 @@ Rules:
       pillarOut.push({ pillarId: id, title: pillar.title, status, reading: String(pp.reading ?? "").trim().slice(0, 240) });
     }
 
-    const validKinds = new Set<KillConditionKind>(["metric", "custom", "sia_floor", "equate_rank", "marketedge", "ma200", "revisions", "risk_alert"]);
+    // Phase 2: only company-reported metric guards and custom breakers may be
+    // proposed — short-term kinds are context only (SHORT_TERM_KINDS).
+    const validKinds = new Set<KillConditionKind>(["metric", "custom"]);
     const pool = [...available.results, ...available.guidance].map((l) => l.split(":")[0] ?? l);
     const changes: ReviewChange[] = [];
     for (const c of Array.isArray(o.changes) ? o.changes : []) {
       const cc = c as Record<string, unknown>;
       const type = cc.type as ReviewChange["type"];
-      if (!["tighten", "loosen", "replace", "drop", "add", "pillar"].includes(type)) continue;
+      if (!["tighten", "loosen", "replace", "drop", "add", "pillar", "status"].includes(type)) continue;
       const reason = String(cc.reason ?? "").trim().slice(0, 240);
       const conditionId = typeof cc.conditionId === "string" ? cc.conditionId : undefined;
       const pillarId = typeof cc.pillarId === "string" ? cc.pillarId : undefined;
@@ -239,7 +258,13 @@ Rules:
       if (["tighten", "loosen", "replace", "drop"].includes(type) && !target) continue;
       let after: ReviewChange["after"] | undefined;
       const a = cc.after as Record<string, unknown> | undefined;
-      if (type === "pillar") {
+      if (type === "status") {
+        const pl = pillars.find((x) => x.id === pillarId);
+        const st = a?.status;
+        if (!pl || (st !== "intact" && st !== "watch" && st !== "broken") || st === pl.status) continue;
+        const note = typeof a?.statusNote === "string" ? a.statusNote.trim().slice(0, 300) : "";
+        after = { status: st, ...(note ? { statusNote: note } : {}) };
+      } else if (type === "pillar") {
         if (!a || typeof a.title !== "string" || typeof a.claim !== "string") continue;
         after = { title: a.title.trim().slice(0, 40), claim: a.claim.trim().slice(0, 240) };
       } else if (type !== "drop") {
@@ -271,7 +296,13 @@ Rules:
         type,
         conditionId,
         pillarId,
-        before: target ? describeCondition(target) : type === "pillar" && pillarId ? pillars.find((p) => p.id === pillarId)?.claim : undefined,
+        before: target
+          ? describeCondition(target)
+          : type === "pillar" && pillarId
+            ? pillars.find((p) => p.id === pillarId)?.claim
+            : type === "status" && pillarId
+              ? `${pillars.find((p) => p.id === pillarId)?.title}: ${pillars.find((p) => p.id === pillarId)?.status ?? "not set"}`
+              : undefined,
         after,
         reason,
       });
