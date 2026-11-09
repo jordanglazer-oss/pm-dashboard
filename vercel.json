@@ -7,6 +7,10 @@
     {
       "path": "/api/cron/daily-value",
       "schedule": "30 21 * * 1-5"
+    },
+    {
+      "path": "/api/cron/holdings-watch",
+      "schedule": "45 21 * * 1-5"
     }
   ]
 }

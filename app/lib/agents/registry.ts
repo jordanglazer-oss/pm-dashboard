@@ -32,7 +32,7 @@ export type WatcherDef = {
 
 export const WATCHERS: WatcherDef[] = [
   { id: "earnings-compare", label: "Earnings comparison", phase: 1, defaultModel: "haiku", shadow: "sonnet", shadowUntil: "2026-11-30", what: "Compares a FactSet results recap with the preview that came before it" },
-  { id: "triage", label: "Triage", phase: 3, defaultModel: "haiku", what: "Decides whether a holding's move is the market, the sector, or the company" },
+  { id: "triage", label: "Triage", phase: 3, defaultModel: "haiku", what: "Reads the free sources (FactSet alerts, SEC filings, earnings date) behind a company-specific move — the market/sector test before it is code, at no cost" },
   { id: "fact-check", label: "Fact-checker", phase: 3, defaultModel: "haiku", what: "Checks each finding against its source before it is flagged" },
   { id: "reconcile", label: "Reconcile", phase: 3, defaultModel: "haiku", what: "Squares a provisional finding with the FactSet alert once it arrives" },
   { id: "holdings-investigate", label: "Holdings investigation", phase: 3, defaultModel: "sonnet", what: "Looks into a company-specific move against the thesis" },

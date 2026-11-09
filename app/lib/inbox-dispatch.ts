@@ -63,6 +63,7 @@ import {
 import { parseStreetTakeaway, extractPrimaryIdentifier } from "./street-takeaways-parse";
 import { isEarningsPreview, parseEarningsPreview, appendPreview, describePreview, type EarningsPreview } from "./earnings-previews";
 import { runEarningsCompare } from "./agents/earnings-compare";
+import { reconcileHoldingsEvents } from "./agents/holdings-watch";
 import { reviewThesis } from "./thesis-review";
 import { bellwetherTickers, appendThemeEvidence } from "./themes";
 import { after } from "next/server";
@@ -673,6 +674,10 @@ async function handleStreetTakeaways(bodyText: string, subject: string): Promise
       }
     });
   }
+  // Phase 3 reconcile: any new FactSet alert squares a provisional
+  // holdings-watch explanation for the same name (agents key, after the
+  // response; returns at once when nothing is waiting). Never throws.
+  if (added) after(() => reconcileHoldingsEvents(entry).then(() => undefined));
   const label = factsetKindLabel(entry);
   return {
     ok: true,

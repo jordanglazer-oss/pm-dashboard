@@ -11,6 +11,7 @@ import { PageHeading } from "@/app/components/PageHeading";
 import { usePersistedOpen } from "@/app/lib/useCollapsed";
 import type { AgentFlag } from "@/app/lib/agents/flags";
 import type { CompareRun, CompareAnswer } from "@/app/lib/agents/earnings-compare";
+import type { HoldingsDay, HoldingsEvent } from "@/app/lib/agents/holdings-watch";
 
 /**
  * /monitor — the watchers' desk. What they flagged (Act / Dismiss / note),
@@ -268,6 +269,119 @@ function EarningsCompareSection() {
   );
 }
 
+const signed = (n: number | null | undefined) => (n == null ? "?" : `${n > 0 ? "+" : ""}${n.toFixed(1)}%`);
+const CLASS_LABEL: Record<HoldingsEvent["class"], string> = { market: "Market", sector: "Sector", company: "Company", fund: "Fund" };
+
+function eventStatus(e: HoldingsEvent): React.ReactNode {
+  if (e.reconciled) return e.reconciled.verdict === "confirmed" ? <span className="text-pos">FactSet confirmed</span> : <span className="text-warn">FactSet corrected</span>;
+  if (e.provisional) return <span className="text-warn">Provisional, FactSet pending</span>;
+  if (e.flagId) return <span>Flagged</span>;
+  if (e.error) return <span className="text-neg">Error</span>;
+  return <span className="text-ink-3">Logged</span>;
+}
+
+function HoldingsWatchSection() {
+  const [data, setData] = useState<{ days: HoldingsDay[]; events: HoldingsEvent[] } | null>(null);
+  const [open, toggle] = usePersistedOpen("monitor.holdings.open", true);
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState<string | null>(null);
+
+  const load = useCallback(async () => {
+    try {
+      setData(await fetch("/api/agents/holdings-watch").then((r) => r.json()));
+    } catch {
+      setData({ days: [], events: [] });
+    }
+  }, []);
+  useEffect(() => {
+    void Promise.resolve().then(load);
+  }, [load]);
+
+  const runNow = async () => {
+    setBusy(true);
+    setMsg(null);
+    try {
+      const d = await fetch("/api/agents/holdings-watch", { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" }).then((r) => r.json());
+      setMsg(d?.skipped ? `Skipped: ${d.skipped}` : d?.ok ? `Done: ${d.day?.checked ?? 0} holdings checked, ${d.events?.length ?? 0} new moves looked at.` : d?.error ?? "Could not run.");
+      await load();
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const events = data?.events ?? [];
+  const waiting = events.filter((e) => e.provisional && !e.reconciled);
+  const last = data?.days[0];
+  return (
+    <section className="panel">
+      <button className="panel-h w-full text-left" onClick={toggle}>
+        <span className="t">Holdings watch</span>
+        <span className="m">
+          {last ? `last run ${last.date} · ${last.company} company moves · ${last.flagged} flagged` : "not run yet"}
+          {waiting.length ? ` · ${waiting.length} waiting on FactSet` : ""} · {open ? "hide" : "show"}
+        </span>
+      </button>
+      {open && (
+        <div className="flex flex-col gap-2.5 px-3.5 py-3">
+          <p className="text-[12.5px] leading-relaxed text-ink-3">
+            Runs by itself after each close. A holding that moved −4% or +5% is first set against the market and its sector (free). Only a company-specific move goes further: the FactSet alerts, SEC filings and earnings date already on hand, then, for a large move still unexplained, at most 3 web searches marked provisional until FactSet confirms. It flags only when a move touches a thesis pillar, or a large move stays unexplained.
+          </p>
+          <div className="flex flex-wrap items-center gap-2">
+            <button className={BTN} disabled={busy} onClick={runNow}>
+              {busy ? "Running… (up to 2 min)" : "Run today's check now"}
+            </button>
+            {last && (
+              <span className="text-[12.5px] text-ink-3">
+                {last.date}: S&amp;P 500 {signed(last.marketPct)} · Nasdaq {signed(last.nasdaqPct)} · TSX {signed(last.tsxPct)} · cost ${last.usd.toFixed(3)}
+              </span>
+            )}
+            {msg && <span className="text-[12.5px] text-ink-2">{msg}</span>}
+          </div>
+        </div>
+      )}
+      {open && events.length > 0 && (
+        <div className="tbl-wrap">
+          <table className="data-table">
+            <thead>
+              <tr>
+                <th className="pl-3.5">Day</th>
+                <th>Ticker</th>
+                <th className="n">Move</th>
+                <th className="n">After market</th>
+                <th>Read</th>
+                <th>What happened</th>
+                <th>Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              {events.map((e) => (
+                <tr key={e.id}>
+                  <td className="pl-3.5 font-mono text-ink-3">{e.date.slice(5)}</td>
+                  <td className="font-mono">{displayTicker(e.ticker)}</td>
+                  <td className="n">{signed(e.movePct)}</td>
+                  <td className="n">{signed(e.residualPct)}</td>
+                  <td>{CLASS_LABEL[e.class]}</td>
+                  <td className="!whitespace-normal text-ink-2">
+                    {e.cause ?? e.notFlaggedReason ?? "—"}
+                    {e.pillars?.filter((p) => p.effect !== "neutral").map((p) => (
+                      <div key={p.pillarId} className="text-[12px] text-ink-3">
+                        {p.effect === "challenges" ? "Challenges" : "Supports"} “{p.title ?? p.pillarId}”: {p.why}
+                      </div>
+                    ))}
+                    {e.reconciled?.note && <div className="text-[12px] text-ink-3">FactSet: {e.reconciled.note}</div>}
+                    {!e.flagId && e.notFlaggedReason && e.cause && <div className="text-[12px] text-ink-faint">Not flagged: {e.notFlaggedReason}</div>}
+                  </td>
+                  <td className="text-[12.5px]">{eventStatus(e)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </section>
+  );
+}
+
 export default function MonitorPage() {
   const [status, setStatus] = useState<Status | null>(null);
   const [flags, setFlags] = useState<AgentFlag[] | null>(null);
@@ -379,6 +493,7 @@ export default function MonitorPage() {
         </section>
       )}
 
+      <HoldingsWatchSection />
       <EarningsCompareSection />
 
       {status && (
