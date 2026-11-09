@@ -46,6 +46,7 @@ export const NAV_GROUPS: NavGroup[] = [
       { key: "risk", label: "Risk", href: "/risk", icon: "shield" },
       { key: "thesis", label: "Thesis", href: "/thesis", icon: "filecheck" },
       { key: "themes", label: "Themes", href: "/themes", icon: "star" },
+      { key: "funds", label: "Funds", href: "/funds", icon: "doc" },
       { key: "journal", label: "Journal", href: "/journal", icon: "book" },
     ],
   },
