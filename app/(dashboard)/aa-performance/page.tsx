@@ -13,6 +13,7 @@ import { useLiveTodayReturn } from "@/app/lib/useLiveTodayReturn";
 import { getTodayET } from "@/app/lib/market-hours";
 import { PageHeading } from "@/app/components/PageHeading";
 import { SleeveTracking } from "@/app/components/SleeveTracking";
+import { HoldingHistoryPanel } from "@/app/components/HoldingHistoryPanel";
 
 /* ─── Types ─── */
 type AllocationRow = {
@@ -1010,6 +1011,8 @@ export default function AAPerformancePage() {
       </section>
 
       <SleeveTracking />
+
+      <HoldingHistoryPanel />
 
       {/* ── Asset allocation — ONE panel, the four profile editors side by side ── */}
       <section className="panel">
