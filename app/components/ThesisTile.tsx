@@ -120,7 +120,7 @@ const STATUS_STYLE: Record<KillStatus, { dot: string; word: string }> = {
   tripped: { dot: "bg-neg", word: "Tripped" },
   unknown: { dot: "bg-ink-faint", word: "No data" },
   manual: { dot: "bg-ink-faint", word: "Manual" },
-  info: { dot: "bg-ink-faint", word: "Below — informational" },
+  info: { dot: "bg-warn", word: "Context only — not a thesis breaker" },
 };
 
 function todayIso(): string {
@@ -355,7 +355,9 @@ export default function ThesisTile({
         changed = true;
         return { ...c, trippedAt: today };
       }
-      if (check.status === "ok" && c.trippedAt) {
+      // A short-term condition now reads "info" (context only) — an old
+      // trip stamp on it is cleared just like a recovery.
+      if ((check.status === "ok" || check.status === "info") && c.trippedAt) {
         changed = true;
         return { ...c, trippedAt: null };
       }

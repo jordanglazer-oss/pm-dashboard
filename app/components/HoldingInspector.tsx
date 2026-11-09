@@ -9,7 +9,7 @@ import { groupTotal } from "@/app/lib/scoring";
 import { canonicalTicker, displayTicker } from "@/app/lib/ticker";
 import { skewWord, SKEW_TONE, type SynthesisResult, type StaleReason } from "@/app/lib/synthesis-screen-display";
 import { ThesisVerdictChip, useThesisVerdicts } from "./ThesisVerdictChip";
-import { describeCondition, type KillCondition } from "@/app/lib/kill-conditions";
+import { describeCondition, isShortTermKind, type KillCondition } from "@/app/lib/kill-conditions";
 import { AppIcon } from "./AppIcon";
 import { Menu, MenuTrigger, MenuContent, MenuItem, MenuSeparator } from "./ui/Menu";
 import { SetupChip } from "./SetupChip";
@@ -124,7 +124,8 @@ export function HoldingInspector({
   const word = res ? skewWord(res.skew) : null;
   const legs = legVerdicts[ticker.toUpperCase()];
   const conditions = thesis?.killConditions ?? [];
-  const trippedIds = new Set(conditions.filter((c) => c.trippedAt).map((c) => c.id));
+  // Short-term kinds are context only (never a trip), even if an old stamp remains.
+  const trippedIds = new Set(conditions.filter((c) => c.trippedAt && !isShortTermKind(c.kind)).map((c) => c.id));
   const currency = tickerCurrency(ticker);
   const stockHref = `/stock/${ticker.toLowerCase()}`;
   const lastScored = s.lastScored ? fmtDate(s.lastScored) : null;

@@ -598,10 +598,32 @@ export type CheckOptions = {
   ma200Informational?: boolean;
 };
 
+/**
+ * Short-term signals are CONTEXT, never a thesis breaker (Phase 2, policy
+ * rule 4: a stock is sold when its thesis weakens, not because the price, a
+ * rating or a score moved). A condition of one of these kinds still shows its
+ * live reading, but a met one reads "info" and never counts as a trip — for
+ * every thesis, held or watched. Only company-reported `metric` guards and
+ * `custom` breakers (AI-verified against filings) can trip.
+ */
+export const SHORT_TERM_KINDS: ReadonlySet<KillConditionKind> = new Set<KillConditionKind>([
+  "sia_floor",
+  "equate_rank",
+  "marketedge",
+  "score_floor",
+  "score_decay",
+  "revisions",
+  "risk_alert",
+  "ma200",
+  "technical",
+]);
+export const isShortTermKind = (kind: KillConditionKind): boolean => SHORT_TERM_KINDS.has(kind);
+
 export function checkAll(conditions: KillCondition[], s: KillSignals, opts?: CheckOptions): KillCheck[] {
+  void opts; // kept for callers; the short-term rule below now covers the 200-day case for every name
   return conditions.map((c) => {
     const k = checkCondition(c, s);
-    if (opts?.ma200Informational && k.status === "tripped" && guardsMa200(c)) return { ...k, status: "info" as const };
+    if (k.status === "tripped" && isShortTermKind(c.kind)) return { ...k, status: "info" as const };
     return k;
   });
 }

@@ -54,7 +54,7 @@ const STATUS_STYLE: Record<KillStatus, { dot: string; label: string }> = {
   unknown: { dot: "bg-ink-faint", label: "No data" },
   manual: { dot: "bg-ink-faint", label: "Manual" },
   // 200-day breaker on a held name: shown, never counted as a trip.
-  info: { dot: "bg-ink-faint", label: "Informational" },
+  info: { dot: "bg-warn", label: "Context only" },
 };
 
 const todayIso = () => new Date().toISOString().slice(0, 10);
