@@ -48,6 +48,9 @@ type PositionThesis = {
    *  whenever the prose, pillars or conditions change on a save that carries
    *  `versionReason`. */
   history?: ThesisVersion[];
+  /** Phase 2: themes the company belongs to and its place in each
+   *  ({ name, role, exposure? }) — drafted by AI, signed with the thesis. */
+  themes?: unknown[];
   /** LEGACY: the retired Tactical sleeve's plan (entry / target / stop).
    *  Nothing reads or writes it any more; it is carried through untouched by
    *  the read-merge-write below so no stored data is lost. */
@@ -156,6 +159,13 @@ export async function POST(req: NextRequest) {
         };
         next.history = [...(prev.history ?? []), version].slice(-MAX_HISTORY);
       }
+    }
+    if (Array.isArray(body?.themes)) {
+      next.themes = (body.themes as unknown[])
+        .filter((t): t is { name: string; role: string; exposure?: unknown } => !!t && typeof t === "object" && typeof (t as { name?: unknown }).name === "string" && typeof (t as { role?: unknown }).role === "string")
+        .slice(0, 5)
+        .map((t) => ({ name: t.name.trim().slice(0, 50), role: t.role.trim().slice(0, 220), ...(typeof t.exposure === "string" && t.exposure.trim() ? { exposure: t.exposure.trim().slice(0, 60) } : {}) }))
+        .filter((t) => t.name && t.role);
     }
     if (typeof body?.underwrittenAt === "string") next.underwrittenAt = body.underwrittenAt;
     if (typeof body?.underwritePrice === "number") next.underwritePrice = body.underwritePrice;

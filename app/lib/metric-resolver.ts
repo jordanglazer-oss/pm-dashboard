@@ -137,6 +137,20 @@ export function pillarTrends(
   return out;
 }
 
+/** Prompt block: every reported line from the last `max` Metrics Recaps,
+ *  oldest → newest per recap, so a drafter reads the multi-quarter trend
+ *  rather than one print. "" when no recap is on file. */
+export function recapHistoryBlock(store: StreetTakeawaysStore, ticker: string, max = 6): string {
+  const recaps = recapsFor(store, ticker).slice(0, max).reverse();
+  return recaps
+    .map((t) => {
+      const res = (t.results ?? []).map((r) => `    ${r.label}: ${r.actual ?? "—"}${r.yoy ? ` (${r.yoy} YoY)` : ""}${r.consensus ? ` vs cons ${r.consensus}` : ""}`);
+      const gd = (t.guidanceLines ?? []).map((g) => `    guide ${g.period} ${g.metric}: ${g.value}${g.priorGuidance ? ` (prior ${g.priorGuidance})` : ""}${g.direction ? ` · ${g.direction}` : ""}`);
+      return [`  ${t.event ?? "Recap"} (${t.date}):`, ...res, ...gd].join("\n");
+    })
+    .join("\n");
+}
+
 /** Every distinct printed line label across all recaps on file — the
  *  choices offered when the PM picks a pillar's measures. */
 export function recapLineLabels(store: StreetTakeawaysStore, ticker: string): { results: string[]; guidance: string[] } {

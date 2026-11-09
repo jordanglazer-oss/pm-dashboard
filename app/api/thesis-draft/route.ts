@@ -2,42 +2,48 @@ import Anthropic from "@anthropic-ai/sdk";
 import { NextRequest, NextResponse } from "next/server";
 import { getRedis } from "@/app/lib/redis";
 import { loadAlertInputs } from "@/app/lib/alert-inputs";
-import { KILL_TEMPLATES, type KillConditionKind, type MetricSpec, type ThesisPillar } from "@/app/lib/kill-conditions";
+import type { KillConditionKind, MetricSpec, ThesisPillar, PillarMeasure, PillarStance, ThesisTheme } from "@/app/lib/kill-conditions";
 import { buildTickerEvidence } from "@/app/lib/thesis-evidence";
 import { parseModelJson } from "@/app/lib/json-repair";
-import { loadStreetTakeaways } from "@/app/lib/street-takeaways";
-import { availableMetricLines, labelMatches } from "@/app/lib/metric-resolver";
+import { loadStreetTakeaways, formatStreetTakeawaysForPrompt, type StreetTakeawaysStore } from "@/app/lib/street-takeaways";
+import { availableMetricLines, labelMatches, recapHistoryBlock, recapLineLabels } from "@/app/lib/metric-resolver";
 import { canonicalTicker } from "@/app/lib/ticker";
 import { abbreviationRule } from "@/app/lib/prose-style";
 import type { SynthesisScreenCache, SynthesisEntry } from "@/app/lib/synthesis-screen-display";
 import { SONNET_MODEL, THINKING_OFF } from "@/app/lib/claude-model";
+import { POLICY_TEXT } from "@/app/lib/agents/policy";
 
 /**
- * POST /api/thesis-draft { ticker } — AI-drafted thesis: pillars + conditions.
+ * POST /api/thesis-draft { ticker } — AI-drafted LONG-TERM thesis (Phase 2).
  *
- * The generation half of the thesis-discipline build. One model call proposes
- * a PROPOSED "why I own it", the 2-4 PILLARS the case rests on, and one or two
- * pre-registered exit conditions per pillar — from material the app already
- * produced: the name's SYNTHESIS (base / bull / bear, key debate, "would change
- * the call"), the extracted RBC/JPM/Morningstar reports, the FactSet Metrics
- * Recap lines (the ONLY things a `metric` condition may reference — they are
- * what the deterministic resolver can read next quarter), and the live
- * position reads (SIA / Equate / MarketEdge).
+ * One research call (Sonnet, main key — Draft with AI is not a watcher) writes
+ * the whole thesis for the PM to read and sign:
+ *   - "why I own it" (3-5 bullets)
+ *   - 3-5 PILLARS: the durable drivers that must stay true for years, each
+ *     with the reported lines to track as its evidence (`measures`), and a
+ *     PROPOSED status (intact / watch / broken) with the evidence behind it
+ *   - 1-3 THESIS BREAKERS: long-horizon conditions that end the case
+ *     (custom, AI-verified after each report), plus at most one
+ *     company-reported `metric` guard per pillar
+ *   - THEMES: the investment themes the company belongs to and its place in
+ *     each (e.g. AI data-centre buildout — what it supplies, how much of
+ *     revenue), researched on the web
+ *
+ * Inputs: the synthesis, the stored generated thesis / bear case / company
+ * summary, the PM's analyst reports + FactSet alerts, EVERY reported line
+ * from the last 6 FactSet Metrics Recaps (the multi-quarter trend), the
+ * latest Transcript Intelligence, and up to 6 web searches for the 10-K
+ * business description, long-term targets and the theme position.
+ *
+ * Short-term signals (SIA, Equate, MarketEdge, score, revisions, technicals)
+ * are NOT proposed as conditions any more: under the policy a stock is sold
+ * when its thesis weakens, and none of those can say that.
  *
  * DESIGN RULE — draft, never commit: this route writes NOTHING to Redis. The
- * response fills the ThesisTile editor and the PM edits and signs by clicking
- * "Underwrite position" exactly as with a hand-written thesis. Pre-registration
- * only means something if the human commits to the conditions, so AI proposes
- * and the PM disposes.
- *
- * Condition priorities (agreed 2026-09-06): company-specific first. `metric`
- * conditions against reported lines, then `custom` (AI-verified) for pillars
- * the recap doesn't print, then at most two position reads (SIA / Equate /
- * MarketEdge). Score floor / decay are NOT proposed — the score is a
- * summary of these inputs and says nothing about which pillar broke. The
- * 200-day trend breaker is not proposed either: it is appended to EVERY
- * thesis by withBaselineConditions, so a slot spent on it would be wasted.
+ * response fills the ThesisTile editor and the PM signs by saving.
  */
+
+export const maxDuration = 300;
 
 const client = new Anthropic();
 
@@ -49,20 +55,19 @@ type DraftCondition = {
   pillarId?: string;
   metric?: MetricSpec;
 };
-type Draft = { why: string; pillars: ThesisPillar[]; conditions: DraftCondition[] };
+type Draft = { why: string; pillars: ThesisPillar[]; conditions: DraftCondition[]; themes: ThesisTheme[] };
 
-const VALID_KINDS = new Set<KillConditionKind>(KILL_TEMPLATES.map((t) => t.kind));
-const POSITION_KINDS = new Set<KillConditionKind>(["sia_floor", "equate_rank", "marketedge", "risk_alert", "revisions"]);
-const MAX_PILLARS = 4;
-const MAX_CONDITIONS = 8;
-const MAX_POSITION = 2;
+const MIN_PILLARS = 3;
+const MAX_PILLARS = 5;
+const MAX_BREAKERS = 3;
 const MAX_NOTE = 300;
+const STANCES = new Set(["intact", "watch", "broken"]);
 
-function clipNote(t: string): string {
-  if (t.length <= MAX_NOTE) return t;
-  const cut = t.slice(0, MAX_NOTE);
+function clipNote(t: string, max = MAX_NOTE): string {
+  if (t.length <= max) return t;
+  const cut = t.slice(0, max);
   const lastSpace = cut.lastIndexOf(" ");
-  const body = lastSpace > MAX_NOTE * 0.6 ? cut.slice(0, lastSpace) : cut;
+  const body = lastSpace > max * 0.6 ? cut.slice(0, lastSpace) : cut;
   return body.replace(/[\s(\[,;:—-]+$/, "") + "…";
 }
 
@@ -70,101 +75,141 @@ const slug = (t: string) => t.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(
 
 /** Validate + normalise the model's proposal. Invalid rows are dropped, not
  *  guessed at — the PM reviews whatever survives. */
-function sanitize(
-  raw: unknown,
-  available: { results: string[]; guidance: string[] },
-  live: { siaPercentile: number | null; equateRank: number | null | undefined; marketEdge: string | null; netRevisions: number | null },
-): Draft | null {
+function sanitize(raw: unknown, lineLabels: { results: string[]; guidance: string[] }, latest: { results: string[]; guidance: string[] }): Draft | null {
   if (!raw || typeof raw !== "object") return null;
-  const o = raw as { why?: unknown; pillars?: unknown; conditions?: unknown };
+  const o = raw as { why?: unknown; pillars?: unknown; breakers?: unknown; themes?: unknown };
   const why = typeof o.why === "string" ? o.why.trim() : "";
   if (!why) return null;
 
-  // Pillars: 2-4, unique titles.
   const pillars: ThesisPillar[] = [];
+  const conditions: DraftCondition[] = [];
   const seenTitles = new Set<string>();
   for (const p of Array.isArray(o.pillars) ? o.pillars : []) {
     if (!p || typeof p !== "object") continue;
-    const title = String((p as { title?: unknown }).title ?? "").trim().slice(0, 40);
-    const claim = String((p as { claim?: unknown }).claim ?? "").trim().slice(0, 240);
+    const pp = p as Record<string, unknown>;
+    const title = String(pp.title ?? "").trim().slice(0, 40);
+    const claim = String(pp.claim ?? "").trim().slice(0, 260);
     if (!title || !claim || seenTitles.has(title.toLowerCase())) continue;
     seenTitles.add(title.toLowerCase());
-    pillars.push({ id: `${slug(title)}-${pillars.length + 1}`, title, claim });
+    const id = `${slug(title)}-${pillars.length + 1}`;
+
+    // Measures: only lines that exist in the recaps on file (otherwise the
+    // trend can never be read). Up to 3.
+    const measures: PillarMeasure[] = [];
+    for (const m of Array.isArray(pp.measures) ? pp.measures : []) {
+      if (!m || typeof m !== "object") continue;
+      const mm = m as Record<string, unknown>;
+      const match = typeof mm.match === "string" ? mm.match.trim().slice(0, 60) : "";
+      const mode = mm.mode === "guidance" ? "guidance" : mm.mode === "actual" ? "actual" : "yoy";
+      if (!match) continue;
+      const pool = mode === "guidance" ? lineLabels.guidance : lineLabels.results;
+      const hit = pool.find((l) => labelMatches(l, match));
+      if (!hit) continue;
+      if (measures.some((x) => x.match.toLowerCase() === hit.toLowerCase() && (x.source === "guidance") === (mode === "guidance") && (x.field === "yoy") === (mode === "yoy"))) continue;
+      measures.push({
+        label: mode === "yoy" ? `${hit} YoY` : mode === "guidance" ? `${hit} guide` : hit,
+        source: mode === "guidance" ? "guidance" : "results",
+        match: hit,
+        ...(mode === "yoy" ? { field: "yoy" as const } : {}),
+      });
+      if (measures.length >= 3) break;
+    }
+
+    const status = typeof pp.status === "string" && STANCES.has(pp.status) ? (pp.status as PillarStance) : undefined;
+    const statusNote = typeof pp.statusNote === "string" && pp.statusNote.trim() ? clipNote(pp.statusNote.trim(), 280) : undefined;
+    pillars.push({
+      id,
+      title,
+      claim,
+      ...(measures.length ? { measures } : {}),
+      ...(status ? { status, statusBy: "ai" as const } : {}),
+      ...(status && statusNote ? { statusNote } : {}),
+    });
+
+    // Optional single metric guard per pillar — must exist in the LATEST recap
+    // and must pass today.
+    const g = pp.guard as Partial<MetricSpec> | undefined;
+    if (g && typeof g === "object" && typeof g.match === "string" && typeof g.threshold === "number" && Number.isFinite(g.threshold)) {
+      const source = g.source === "guidance" ? "guidance" : "results";
+      const pool = source === "results" ? latest.results : latest.guidance;
+      if (pool.some((line) => labelMatches(line.split(":")[0] ?? line, g.match!))) {
+        conditions.push({
+          kind: "metric",
+          pillarId: id,
+          theme: title,
+          metric: {
+            label: (typeof g.label === "string" && g.label.trim() ? g.label.trim() : g.match).slice(0, 60),
+            source,
+            match: g.match.trim().slice(0, 60),
+            field: g.field === "yoy" ? "yoy" : "actual",
+            period: typeof g.period === "string" && g.period.trim() ? g.period.trim().slice(0, 12) : undefined,
+            comparator: g.comparator === "<=" ? "<=" : ">=",
+            threshold: Math.round(g.threshold * 100) / 100,
+            unit: typeof g.unit === "string" ? g.unit.slice(0, 2) : undefined,
+          },
+        });
+      }
+    }
     if (pillars.length >= MAX_PILLARS) break;
   }
-  const pillarByTitle = new Map(pillars.map((p) => [p.title.toLowerCase(), p.id]));
+  if (pillars.length < MIN_PILLARS - 1) return null; // 2 is tolerated; fewer is not a thesis
 
-  const conditions: DraftCondition[] = [];
-  const seenPosition = new Set<KillConditionKind>();
-  const availableLabels = [...available.results, ...available.guidance];
-  for (const c of Array.isArray(o.conditions) ? o.conditions : []) {
-    if (!c || typeof c !== "object") continue;
-    const cc = c as Record<string, unknown>;
-    const kind = cc.kind as KillConditionKind;
-    if (!VALID_KINDS.has(kind)) continue;
-    if (kind === "score_floor" || kind === "score_decay") continue; // not proposed any more
-    // The 200-day breaker is appended to every thesis by
-    // withBaselineConditions — proposing it here would only burn one of the
-    // two position slots on a condition the PM gets for free.
-    if (kind === "ma200") continue;
-    const pillarTitle = typeof cc.pillar === "string" ? cc.pillar.trim().toLowerCase() : "";
-    const pillarId = pillarByTitle.get(pillarTitle) ?? (pillars.length ? undefined : undefined);
-    const themeRaw = cc.theme;
-    const theme = (typeof themeRaw === "string" ? themeRaw.trim() : pillars.find((p) => p.id === pillarId)?.title ?? "").slice(0, 40) || undefined;
-    const noteRaw = cc.note;
-    const note = typeof noteRaw === "string" ? clipNote(noteRaw.trim()) : undefined;
-    const thRaw = cc.threshold;
-    const threshold = typeof thRaw === "number" && Number.isFinite(thRaw) ? Math.round(thRaw * 10) / 10 : undefined;
-
-    if (kind === "metric") {
-      const m = cc.metric as Partial<MetricSpec> | undefined;
-      if (!m || typeof m !== "object") continue;
-      const source = m.source === "guidance" ? "guidance" : "results";
-      const match = typeof m.match === "string" ? m.match.trim() : "";
-      const th = typeof m.threshold === "number" && Number.isFinite(m.threshold) ? m.threshold : threshold;
-      const comparator = m.comparator === "<=" ? "<=" : ">=";
-      if (!match || th == null) continue;
-      // The line must exist in the latest recap — otherwise the resolver can
-      // never read it and the condition would sit at NO DATA forever.
-      const pool = source === "results" ? available.results : available.guidance;
-      if (!pool.some((line) => labelMatches(line.split(":")[0] ?? line, match))) continue;
-      const spec: MetricSpec = {
-        label: (typeof m.label === "string" && m.label.trim() ? m.label.trim() : match).slice(0, 60),
-        source,
-        match: match.slice(0, 60),
-        field: m.field === "yoy" ? "yoy" : "actual",
-        period: typeof m.period === "string" && m.period.trim() ? m.period.trim().slice(0, 12) : undefined,
-        comparator,
-        threshold: Math.round(th * 100) / 100,
-        unit: typeof m.unit === "string" ? m.unit.slice(0, 2) : undefined,
-      };
-      conditions.push({ kind, pillarId, theme, note, metric: spec });
-      continue;
-    }
-    if (kind === "custom") {
-      if (!note) continue;
-      conditions.push({ kind, pillarId, theme, note });
-      continue;
-    }
-    if (POSITION_KINDS.has(kind)) {
-      if (seenPosition.has(kind)) continue;
-      // Don't propose a position read that is already tripped or unreadable today.
-      if (kind === "sia_floor" && (live.siaPercentile == null || (threshold != null && live.siaPercentile < threshold))) continue;
-      if (kind === "equate_rank" && (live.equateRank == null || (threshold != null && live.equateRank > threshold))) continue;
-      if (kind === "marketedge" && (!live.marketEdge || live.marketEdge === "avoid")) continue;
-      if (kind === "revisions" && (live.netRevisions == null || (threshold != null && live.netRevisions < threshold))) continue;
-      seenPosition.add(kind);
-      conditions.push({ kind, threshold, pillarId, theme, note });
-    }
+  const byTitle = new Map(pillars.map((p) => [p.title.toLowerCase(), p]));
+  let breakers = 0;
+  for (const b of Array.isArray(o.breakers) ? o.breakers : []) {
+    if (!b || typeof b !== "object") continue;
+    const bb = b as Record<string, unknown>;
+    const note = typeof bb.note === "string" ? clipNote(bb.note.trim()) : "";
+    if (!note) continue;
+    const pillar = typeof bb.pillar === "string" ? byTitle.get(bb.pillar.trim().toLowerCase()) : undefined;
+    conditions.push({ kind: "custom", note, pillarId: pillar?.id, theme: (pillar?.title ?? (typeof bb.theme === "string" ? bb.theme : "")).slice(0, 40) || undefined });
+    if (++breakers >= MAX_BREAKERS) break;
   }
-  if (!conditions.length) return null;
 
-  // Order: company-specific first, then at most MAX_POSITION position reads.
-  const company = conditions.filter((c) => c.kind === "metric" || c.kind === "custom");
-  const position = conditions.filter((c) => POSITION_KINDS.has(c.kind)).slice(0, MAX_POSITION);
-  const kept = [...company, ...position].slice(0, MAX_CONDITIONS);
-  void availableLabels;
-  return { why, pillars, conditions: kept };
+  const themes: ThesisTheme[] = [];
+  for (const t of Array.isArray(o.themes) ? o.themes : []) {
+    if (!t || typeof t !== "object") continue;
+    const tt = t as Record<string, unknown>;
+    const name = typeof tt.name === "string" ? tt.name.trim().slice(0, 50) : "";
+    const role = typeof tt.role === "string" ? tt.role.trim().slice(0, 220) : "";
+    if (!name || !role || themes.some((x) => x.name.toLowerCase() === name.toLowerCase())) continue;
+    const exposure = typeof tt.exposure === "string" && tt.exposure.trim() ? tt.exposure.trim().slice(0, 60) : undefined;
+    themes.push({ name, role, ...(exposure ? { exposure } : {}) });
+    if (themes.length >= 3) break;
+  }
+
+  return { why, pillars, conditions, themes };
+}
+
+/** Run a server-tool (web search) conversation to its end: a long research
+ *  turn can stop with `pause_turn`, which is resumed by sending the partial
+ *  assistant turn back. Returns the final text and the cited URLs. */
+async function research(prompt: string, maxSearches: number): Promise<{ text: string; sources: Array<{ url: string; title?: string }> }> {
+  const messages: Anthropic.MessageParam[] = [{ role: "user", content: prompt }];
+  const sources = new Map<string, string | undefined>();
+  let text = "";
+  for (let turn = 0; turn < 4; turn++) {
+    const resp = await client.messages.create({
+      model: SONNET_MODEL,
+      thinking: THINKING_OFF,
+      max_tokens: 4000,
+      tools: [{ type: "web_search_20260209", name: "web_search", max_uses: maxSearches }],
+      messages,
+    });
+    for (const b of resp.content) {
+      if (b.type === "text") {
+        text += b.text;
+        for (const c of (b as Anthropic.TextBlock).citations ?? []) {
+          const cc = c as { url?: string; title?: string };
+          if (cc.url && !sources.has(cc.url)) sources.set(cc.url, cc.title);
+        }
+      }
+    }
+    if (resp.stop_reason !== "pause_turn") break;
+    messages.push({ role: "assistant", content: resp.content });
+    text = ""; // the JSON answer is written in the final turn
+  }
+  return { text, sources: [...sources.entries()].slice(0, 12).map(([url, title]) => ({ url, title })) };
 }
 
 export async function POST(req: NextRequest) {
@@ -211,14 +256,6 @@ export async function POST(req: NextRequest) {
     };
     const stocks: StoredStock[] = stocksRaw ? JSON.parse(stocksRaw) : [];
     const stock = stocks.find((s) => (s.ticker || "").toUpperCase() === tk);
-    const price = typeof stock?.price === "number" ? stock.price : stock?.healthData?.currentPrice ?? null;
-    const ma200 = stock?.healthData?.twoHundredDayAvg ?? null;
-    const aboveMa200 = price != null && ma200 != null && ma200 > 0 ? price >= ma200 : null;
-
-    // Position reads (same resolver the sweep uses), for the prompt and the sanitizer.
-    const { loadKillSignalSources, killSignalExtrasFor } = await import("@/app/lib/metric-resolver");
-    const extras = killSignalExtrasFor(tk, [], await loadKillSignalSources());
-
     // The synthesis — the primary source for pillars.
     let synth: SynthesisEntry | undefined;
     try {
@@ -240,23 +277,23 @@ export async function POST(req: NextRequest) {
         ].filter(Boolean).join("\n")
       : "(no synthesis on file — generate one on Ideas › Synthesis first for a better draft)";
 
-    const available = availableMetricLines(takeaways, tk);
-    const linesBlock = available.results.length || available.guidance.length
-      ? `REPORTED LINES IN THE LATEST METRICS RECAP (${available.event ?? "earnings"}, ${available.asOf}). A "metric" condition may reference ONLY these labels — they are what the app can read again next quarter:\n` +
-        (available.results.length ? `Results:\n${available.results.map((l) => `  - ${l}`).join("\n")}\n` : "") +
-        (available.guidance.length ? `Guidance:\n${available.guidance.map((l) => `  - ${l}`).join("\n")}\n` : "")
-      : "NO METRICS RECAP ON FILE for this name yet — do not propose any \"metric\" conditions; use \"custom\" for company-specific tests (they are AI-verified against filings after each report).";
-
-    const positionLine = [
-      extras.siaPercentile != null ? `SIA percentile ${extras.siaPercentile}` : extras.siaSmax != null ? `SIA SMAX ${extras.siaSmax} (no percentile)` : "no SIA read",
-      extras.equateRank === undefined ? "no Equate sheet" : extras.equateRank === null ? "not in the Equate top-decile list" : `Equate rank ${extras.equateRank}`,
-      extras.marketEdgeOpinion ? `MarketEdge ${extras.marketEdgeOpinion.toUpperCase()}${extras.marketEdgePower != null ? ` (power ${extras.marketEdgePower})` : ""}` : "no MarketEdge read",
-      aboveMa200 != null ? `price ${aboveMa200 ? "above" : "BELOW"} the 200-day` : null,
-      ctx.netRevisions != null ? `net FY+1 revisions ${ctx.netRevisions >= 0 ? "+" : ""}${ctx.netRevisions}` : null,
-      ctx.earningsDate ? `next earnings ${ctx.earningsDate}` : null,
-    ].filter(Boolean).join(" · ");
+    const store = takeaways as StreetTakeawaysStore;
+    const available = availableMetricLines(store, tk);
+    const lineLabels = recapLineLabels(store, tk);
+    const history = recapHistoryBlock(store, tk, 6);
+    const historyBlock = history
+      ? `REPORTED HISTORY — every line from the last FactSet Metrics Recaps, oldest first. Read the TREND, not one print. Pillar "measures" may reference ONLY these line labels:\n${history}`
+      : "NO FACTSET METRICS RECAP ON FILE for this name — leave every pillar's \"measures\" empty and propose no \"guard\".";
+    const transcripts = (store[tk] ?? []).filter((t) => t.kind === "transcript").sort((a, b) => b.date.localeCompare(a.date)).slice(0, 2);
+    const transcriptBlock = transcripts.length ? formatStreetTakeawaysForPrompt(transcripts) : "";
 
     const existing = killWatch.find((k) => k.ticker === tk);
+    let existingPillars = "";
+    try {
+      const theses = thesesRaw ? (JSON.parse(thesesRaw) as Record<string, { pillars?: ThesisPillar[] }>) : {};
+      const ps = theses[tk]?.pillars ?? [];
+      existingPillars = ps.map((p) => `  - ${p.title}: ${p.claim}${p.status ? ` [signed status ${p.status}${p.statusNote ? `: ${p.statusNote}` : ""}]` : ""}`).join("\n");
+    } catch { /* none */ }
     let watchingWhy = "";
     try {
       const cases = casesRaw ? (JSON.parse(casesRaw) as Record<string, { why?: string; addedAt?: string }>) : {};
@@ -264,90 +301,96 @@ export async function POST(req: NextRequest) {
       if (c?.why) watchingWhy = `${c.why}${c.addedAt ? ` (captured ${c.addedAt.slice(0, 10)})` : ""}`;
     } catch { /* none */ }
 
-    // FUND with a thesis: the case is a mandate, not a company. Give the model
-    // what the fund actually holds and tell it to write conditions it can
-    // verify — relative performance, the exposure the fund exists for — and
-    // never "metric" (no earnings recap) or company-specific customs.
     const isFund = Boolean(stock?.instrumentType && stock.instrumentType !== "stock");
     const fd = stock?.fundData;
     const fundBlock = isFund
       ? [
-          `THIS IS A FUND / ETF, held as a long-run THESIS position. The thesis is the MANDATE — the exposure this fund exists to deliver — not a single company.`,
+          `THIS IS A FUND / ETF held as a long-run position. Under the policy a Thematic fund is held for a MANAGER who can outperform: pillars are the mandate (the exposure it exists to deliver), the manager and their record, and the vehicle (fees, structure). Leave "measures" empty and propose no "guard".`,
           fd?.category ? `Category: ${fd.category}${fd.fundFamily ? ` · ${fd.fundFamily}` : ""}${typeof fd.expenseRatio === "number" ? ` · MER ${fd.expenseRatio}%` : ""}` : null,
           fd?.topHoldings?.length ? `Top holdings: ${fd.topHoldings.slice(0, 10).map((h) => `${h.symbol ?? h.name}${typeof h.weight === "number" ? ` ${h.weight.toFixed(1)}%` : ""}`).join(", ")}` : "Top holdings: not on file",
           fd?.sectorWeightings?.length ? `Sectors: ${fd.sectorWeightings.slice(0, 6).map((w) => `${w.sector} ${typeof w.weight === "number" ? w.weight.toFixed(0) : "?"}%`).join(", ")}` : null,
           fd?.performance ? `Fund returns: ${Object.entries(fd.performance).filter(([, v]) => typeof v === "number").map(([k, v]) => `${k} ${(v as number).toFixed(1)}%`).join(" · ")}` : null,
           fd?.categoryPerformance ? `Category returns: ${Object.entries(fd.categoryPerformance).filter(([, v]) => typeof v === "number").map(([k, v]) => `${k} ${(v as number).toFixed(1)}%`).join(" · ")}` : null,
-          `FUND RULES: pillars are about the mandate (why this exposure, why this vehicle, what it must keep delivering). Conditions must be verifiable from public fund data: relative performance vs its category or a named benchmark over a stated window, a change of mandate / manager / fee, the exposure drifting away from what it was bought for. Use "custom" (and "technical" / "ma200" for trend) only — never "metric", "revisions" or company-earnings tests.`,
         ].filter(Boolean).join("\n")
       : "";
 
-    const prompt = `You are drafting a portfolio manager's pre-registered investment thesis for a ${isFund ? "fund held as a long-run position" : "holding"}. The PM will edit and sign it. Structure it as PILLARS: the 2-4 things the case actually rests on, each guarded by one or two conditions that would tell the PM that pillar has failed. Make every claim FALSIFIABLE — the point is that a future version of the PM cannot rationalize past their own exit criteria.
+    const generated = [
+      stock?.companySummary ? `Company summary: ${stock.companySummary.slice(0, 800)}` : null,
+      stock?.investmentThesis ? `Generated investment thesis (from scoring): ${stock.investmentThesis.slice(0, 1200)}` : null,
+      stock?.bearCase ? `Generated bear case: ${stock.bearCase.slice(0, 800)}` : null,
+    ].filter(Boolean).join("\n");
 
-TICKER: ${tk} — ${ctx.name || ""}${ctx.sector ? ` (${ctx.sector})` : ""}
+    const today = new Date().toISOString().slice(0, 10);
+    const prompt = `You are writing a portfolio manager's LONG-TERM investment thesis for ${tk} — ${ctx.name || ""}${ctx.sector ? ` (${ctx.sector})` : ""}. Today is ${today}. The PM will read it and sign it; you do the research and the writing.
+
+${POLICY_TEXT}
+
+WHAT A THESIS IS HERE: the three to five things that must stay true for this ${isFund ? "fund" : "company"} to be worth owning for YEARS. Quarterly noise, the share price and technical readings are not pillars and never break a thesis.
 ${fundBlock ? `\n${fundBlock}\n` : ""}
+RESEARCH (you have web search, up to 6 searches). Use it for what the material below lacks:
+${isFund ? "- the fund's mandate, manager tenure and long-run record vs its benchmark" : `- the latest annual report (10-K / AIF): segments and what drives each
+- long-term targets from the latest investor day or management commentary
+- the investment THEMES the company belongs to (for example the AI data-centre buildout) and its position in each: what it supplies, to whom, how exposed it is (share of revenue), and how secure that position is`}
+Prefer the PM's own material below when it covers a point; cite web facts by source.
+
 ${synthBlock}
 
-${evidence ? `INGESTED ANALYST & FACTSET EVIDENCE (dated, attributable — prefer these figures when they conflict with the synthesis):\n${evidence}\n` : ""}
-${linesBlock}
-
-POSITION READS TODAY: ${positionLine}
-${watchingWhy ? `
-WHY THE PM WAS WATCHING THIS NAME (captured when it was advanced from Suggested — the thesis should start from this belief):
-${watchingWhy}
-` : ""}${existing?.why ? `\nEXISTING THESIS (being redrafted — keep what still holds, drop what the evidence no longer supports):\n${existing.why}\n` : ""}${blocked.length ? `\nALREADY PROVEN UNVERIFIABLE FOR THIS NAME — DO NOT PROPOSE THESE OR ANY CLOSE VARIANT:\n${blocked.map((b) => `- ${b}`).join("\n")}\n` : ""}
-CONDITION KINDS:
-- metric: a reported figure from the Metrics Recap lines above vs a threshold. Checked automatically from the next recap. Fields: {"kind":"metric","pillar":"<pillar title>","metric":{"label":"<human label>","source":"results"|"guidance","match":"<the label EXACTLY as it appears in the lines above>","field":"actual"|"yoy","period":"<guidance only, e.g. FY2026>","comparator":">="|"<=","threshold":<number in the line's unit — % for yoy/margins, $B for dollar lines as printed>,"unit":"%"|"$"|""}}
-- custom: a company-specific test the recap does NOT print (a segment, backlog, contract, unit metric, market-share or competitive-position fact). AI-verified against filings after each report. Must name the metric, the comparison and the current reference figure, be reported EVERY quarter, and be one test (never "and"). {"kind":"custom","pillar":"...","note":"...","theme":"..."}
-- sia_floor (threshold = percentile, e.g. 50), equate_rank (threshold = rank, e.g. 60), marketedge, revisions (threshold = net floor, e.g. 0): the name's POSITION in the market / its universe. At most TWO of these, and only ones that currently pass. Do NOT propose a 200-day-average condition — every thesis carries that trend breaker automatically.
-
-Answer in JSON only:
+${generated ? `GENERATED CONTEXT:\n${generated}\n` : ""}${evidence ? `INGESTED ANALYST & FACTSET EVIDENCE (dated, attributable — prefer these figures):\n${evidence}\n` : ""}
+${historyBlock}
+${transcriptBlock ? `\nLATEST EARNINGS-CALL TRANSCRIPT NOTES:\n${transcriptBlock}\n` : ""}${watchingWhy ? `\nWHY THE PM WAS WATCHING THIS NAME:\n${watchingWhy}\n` : ""}${existing?.why ? `\nEXISTING THESIS (being redrafted — keep what still holds, drop what the evidence no longer supports):\n${existing.why}\n` : ""}${existingPillars ? `EXISTING PILLARS:\n${existingPillars}\n` : ""}${blocked.length ? `\nALREADY PROVEN UNVERIFIABLE FOR THIS NAME — never propose these or a close variant:\n${blocked.map((b) => `- ${b}`).join("\n")}\n` : ""}
+When the research is done, answer with ONE JSON object and nothing else:
 {
-  "why": "3-5 bullet lines separated by \\n, each starting with '• '. Lead each with the claim itself and the figure it rests on (attribute inline, e.g. '(RBC 2026-07-28)' / '(FactSet Q2 recap)'). One bullet on what should happen next. Final bullet starts '• Wrong if: '.",
-  "pillars": [ { "title": "2-5 words", "claim": "one falsifiable sentence with the figure it rests on" } ],
-  "conditions": [ ... ]
+  "why": "3-5 bullet lines separated by \\n, each starting with '• '. The long-term case in plain words, each with the figure it rests on and its source inline, e.g. '(FactSet Q2 recap)' / '(10-K 2025)'. Final bullet starts '• Wrong if: '.",
+  "themes": [ { "name": "short theme name, e.g. AI data-centre buildout", "role": "the company's place in it in one sentence", "exposure": "e.g. ~60% of revenue (10-K 2025)" } ],
+  "pillars": [
+    {
+      "title": "2-5 words",
+      "claim": "one falsifiable sentence about the long term, with the figure it rests on",
+      "measures": [ { "match": "<a line label EXACTLY as printed in REPORTED HISTORY>", "mode": "yoy" | "actual" | "guidance" } ],
+      "status": "intact" | "watch" | "broken",
+      "statusNote": "one or two sentences: the evidence for that status, with figures, dates and sources",
+      "guard": { "label": "...", "source": "results" | "guidance", "match": "<label from the LATEST recap>", "field": "actual" | "yoy", "comparator": ">=" | "<=", "threshold": <number>, "unit": "%" | "$" | "" }
+    }
+  ],
+  "breakers": [ { "pillar": "<pillar title>", "note": "a long-horizon condition that would END the case, checkable from what the company reports" } ]
 }
 
 Rules:
-- 2 to 4 pillars, each a DIFFERENT leg of the case (demand driver, margin/unit economics, competitive position, capital allocation, balance sheet, a regulatory or industry-structure fact). Draw them from the synthesis base/bull case and key debate.
-- Every condition names its "pillar" by title. Each pillar gets at least one condition; a company-specific condition (metric or custom) for every pillar where the recap or the reports give you a figure.
-- PREFER metric over custom whenever the recap prints the line. Use "match" verbatim from the lines above. Set the threshold from the reported figure with sensible room (a growth line that printed +73% YoY might get a floor of 40%; a margin that printed 71% might get a floor of 65%). Never set a threshold the latest print already fails.
-- At least ONE condition must test the company's position in its industry or the market (a share, a relative-growth, a peer-relative figure as a custom — or one of the position kinds).
-- Do NOT propose score_floor or score_decay.
-- Keep each custom under 250 characters. One test per condition. No judgment calls ("management loses credibility").
-- Ground everything in the material above — no invented figures, segments or events.
-- ${abbreviationRule('the "why" bullets, the pillar set, and the condition notes — each is displayed on its own, so an acronym used in a condition note must be spelled out in that note (or in its pillar title/claim) rather than only in "why"')}`;
+- 3 to 5 pillars, each a DIFFERENT durable driver (end-market demand, competitive position / moat, unit economics and margins, capital allocation and balance sheet, an industry-structure or regulatory fact). Where the company belongs to a theme, at least one pillar states its position in that theme.
+- measures: 1-3 per pillar where REPORTED HISTORY prints a line that evidences it; [] otherwise. Never invent a label.
+- status: judge each pillar on the multi-quarter evidence, not one print. "intact" unless the evidence shows sustained erosion ("watch") or a structural break ("broken"). A share-price fall is never evidence.
+- guard: OPTIONAL, at most one per pillar, only on a line in the latest recap, set with room so today's print passes. Omit the key when not useful.
+- breakers: 1 to 3. Structural, long-horizon (loss of a key customer, a regulatory change, losing the leadership position), each one test, under 250 characters, against something the company reports at least annually. Never a price, technical, rating or score condition.
+- themes: 0 to 3; [] when the company belongs to no clear theme.
+- No invented figures, segments, customers or events. Every figure has a source.
+- ${abbreviationRule('the "why" bullets, the pillars and the breakers — each is displayed on its own')}`;
 
-    const ask = async (extra = "") => {
-      const resp = await client.messages.create({
+    let { text, sources } = await research(prompt, 6);
+    let parseResult = parseModelJson(text);
+    if (!parseResult.ok) {
+      console.warn(`[thesis-draft] ${tk} JSON parse failed, retrying once without search:`, parseResult.error, parseResult.excerpt ?? "");
+      const retry = await client.messages.create({
         model: SONNET_MODEL,
         thinking: THINKING_OFF,
-        max_tokens: 1600,
-        messages: [{ role: "user", content: prompt + extra }],
+        max_tokens: 4000,
+        messages: [
+          { role: "user", content: prompt },
+          { role: "assistant", content: text.slice(0, 12000) || "(no answer)" },
+          { role: "user", content: "Reply again with the JSON object ONLY — no prose, no code fences, every string double-quoted with inner quotes escaped, newlines inside strings written as \\n." },
+        ],
       });
-      return resp.content.filter((b): b is Anthropic.TextBlock => b.type === "text").map((b) => b.text).join("");
-    };
-    let parseResult = parseModelJson(await ask());
-    if (!parseResult.ok) {
-      // One retry with a hard format nudge — a bad wrapper (prose after the
-      // object, an unescaped quote) is a formatting slip, not a reason to
-      // throw the draft away.
-      console.warn(`[thesis-draft] ${tk} JSON parse failed, retrying once:`, parseResult.error, parseResult.excerpt ?? "");
-      parseResult = parseModelJson(await ask("\n\nFORMAT: reply with the JSON object ONLY — no prose before or after it, no code fences, every string double-quoted with inner quotes escaped, newlines inside strings written as \\n."));
+      text = retry.content.filter((b): b is Anthropic.TextBlock => b.type === "text").map((b) => b.text).join("");
+      parseResult = parseModelJson(text);
     }
     if (!parseResult.ok) {
       console.error(`[thesis-draft] ${tk} JSON parse failed twice:`, parseResult.error, parseResult.excerpt ?? "");
       return NextResponse.json({ error: `draft failed — unparseable response: ${parseResult.error}` }, { status: 502 });
     }
-    const draft = sanitize(parseResult.value, available, {
-      siaPercentile: extras.siaPercentile ?? null,
-      equateRank: extras.equateRank,
-      marketEdge: extras.marketEdgeOpinion ?? null,
-      netRevisions: ctx.netRevisions ?? null,
-    });
+    const draft = sanitize(parseResult.value, lineLabels, available);
     if (!draft) return NextResponse.json({ error: "draft failed — model returned no usable proposal" }, { status: 502 });
+    sources = sources.slice(0, 12);
 
-    return NextResponse.json({ draft, usedSynthesis: !!synth, recapLines: available.results.length + available.guidance.length });
+    return NextResponse.json({ draft, sources, usedSynthesis: !!synth, recapLines: available.results.length + available.guidance.length });
   } catch (e) {
     console.error("thesis-draft error:", e);
     return NextResponse.json({ error: "draft failed" }, { status: 500 });

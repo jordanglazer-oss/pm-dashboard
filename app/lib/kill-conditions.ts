@@ -292,9 +292,18 @@ export type ThesisPillar = {
   status?: PillarStance;
   /** YYYY-MM-DD the status last changed — stamped server-side on save. */
   statusSince?: string;
-  /** Why the status is what it is (most useful on Watch / Broken). */
+  /** Why the status is what it is, with the evidence it rests on. */
   statusNote?: string;
+  /** Who wrote the status: "ai" = proposed by Draft with AI / a review and
+   *  signed unchanged by the PM; "pm" = the PM set or changed it. */
+  statusBy?: "ai" | "pm";
 };
+
+/** A theme the company belongs to and its place in it (Phase 2), e.g.
+ *  { name: "AI data-centre buildout", role: "Supplies optical interconnects
+ *  to hyperscalers", exposure: "~60% of revenue" }. Drafted by AI, signed by
+ *  the PM with the thesis; the later theme watchers group holdings by `name`. */
+export type ThesisTheme = { name: string; role: string; exposure?: string };
 
 export type KillCondition = {
   id: string;

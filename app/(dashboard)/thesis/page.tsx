@@ -428,16 +428,19 @@ export default function ThesisDeskPage() {
             ticker: t.ticker,
             why: d.draft.why,
             ...(Array.isArray(d.draft.pillars) ? { pillars: d.draft.pillars } : {}),
+            ...(Array.isArray(d.draft.themes) ? { themes: d.draft.themes } : {}),
             // Versions the previous signed state (route keeps up to 12).
             versionReason: mode === "selected" ? "redraft (selected)" : "bulk draft",
             killConditions: (
-              d.draft.conditions as { kind: string; threshold?: number; note?: string; theme?: string }[]
+              d.draft.conditions as { kind: string; threshold?: number; note?: string; theme?: string; pillarId?: string; metric?: unknown }[]
             ).map((c, n) => ({
               id: `${c.kind}-${Date.now()}-${n}`,
               kind: c.kind,
               threshold: c.threshold,
               note: c.note,
               theme: c.theme,
+              ...(c.pillarId ? { pillarId: c.pillarId } : {}),
+              ...(c.metric ? { metric: c.metric } : {}),
               addedAt: todayIso(),
             })),
             underwrittenAt: todayIso(),

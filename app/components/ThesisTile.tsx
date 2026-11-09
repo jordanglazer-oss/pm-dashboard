@@ -15,6 +15,7 @@ import {
   type KillStatus,
   type TechnicalMetricId,
   type ThesisPillar,
+  type ThesisTheme,
   type PillarStance,
   type PillarMeasure,
   PILLAR_STANCE_LABEL,
@@ -55,6 +56,7 @@ type ThesisEntry = {
   aiDrafted?: boolean;
   /** The 2-4 things the case rests on; conditions link to them via pillarId. */
   pillars?: ThesisPillar[];
+  themes?: ThesisTheme[];
   history?: Array<{ savedAt: string; reason: string }>;
 };
 
@@ -152,6 +154,9 @@ export default function ThesisTile({
   const [draftWhy, setDraftWhy] = useState("");
   const [draftConds, setDraftConds] = useState<KillCondition[]>([]);
   const [draftPillars, setDraftPillars] = useState<ThesisPillar[]>([]);
+  const [draftThemes, setDraftThemes] = useState<ThesisTheme[]>([]);
+  // Web sources the AI draft cited (shown in the editor so the PM can check them).
+  const [draftSources, setDraftSources] = useState<Array<{ url: string; title?: string }>>([]);
   const [addKind, setAddKind] = useState(MANUAL_TEMPLATES[0].kind);
   const [addPillar, setAddPillar] = useState<string>("");
   // Server-resolved signals (metric readings off the ingested recap, SIA /
@@ -203,6 +208,8 @@ export default function ThesisTile({
       setDraftWhy(d.draft.why);
       const pillars: ThesisPillar[] = Array.isArray(d.draft.pillars) ? d.draft.pillars : [];
       setDraftPillars(pillars);
+      setDraftThemes(Array.isArray(d.draft.themes) ? d.draft.themes : []);
+      setDraftSources(Array.isArray(d.sources) ? d.sources : []);
       setDraftConds(
         withBaselineConditions(
           (
@@ -368,6 +375,8 @@ export default function ThesisTile({
     setDraftWhy(entry?.why ?? "");
     setDraftConds(conditions.map((c) => ({ ...c })));
     setDraftPillars((entry?.pillars ?? []).map((p) => ({ ...p })));
+    setDraftThemes((entry?.themes ?? []).map((t) => ({ ...t })));
+    setDraftSources([]);
     setAiDrafted(false);
     setVersionReason(entry ? "edit" : "underwrite");
     setEditing(true);
@@ -396,6 +405,8 @@ export default function ThesisTile({
     setDraftWhy(entry?.why ?? "");
     setDraftConds(withBaselineConditions(conds));
     setDraftPillars(pillars);
+    setDraftThemes((entry?.themes ?? []).map((t) => ({ ...t })));
+    setDraftSources([]);
     setAiDrafted(false);
     setVersionReason("review applied");
     setEditing(true);
@@ -475,6 +486,7 @@ export default function ThesisTile({
         why: draftWhy.trim(),
         killConditions: signedConds,
         pillars: stampedPillars,
+        themes: draftThemes,
         aiDrafted, // provenance: started from an AI draft (PM edited + signed)
         versionReason, // the server versions the PRIOR signed state under this reason
       };
@@ -509,6 +521,7 @@ export default function ThesisTile({
         updatedAt: new Date().toISOString(),
         killConditions: signedConds,
         pillars: stampedPillars,
+        themes: draftThemes,
         underwrittenAt: e?.underwrittenAt ?? (body.underwrittenAt as string | undefined),
         underwritePrice: e?.underwritePrice ?? (body.underwritePrice as number | undefined) ?? null,
         reUnderwriteBy: body.reUnderwriteBy as string | undefined,
@@ -524,7 +537,7 @@ export default function ThesisTile({
     } finally {
       setSaving(false);
     }
-  }, [ticker, draftWhy, draftConds, draftPillars, entry, signals.price, aiDrafted, versionReason, earningsDate]);
+  }, [ticker, draftWhy, draftConds, draftPillars, draftThemes, entry, signals.price, aiDrafted, versionReason, earningsDate]);
 
   const runCheck = useCallback(async () => {
     setChecking(true);
@@ -646,11 +659,11 @@ export default function ThesisTile({
             <button
               onClick={draftWithAi}
               disabled={drafting}
-              title="One model call — proposes a thesis + kill conditions from this name's generated thesis, bear case, and live signals. Nothing is saved until you sign it."
+              title="Researches and writes the long-term thesis: themes, 3-5 pillars with their evidence and a proposed status, and the breakers. Reads your reports, FactSet recaps and transcripts and searches the web (about 1-2 minutes, ~15¢). Nothing is saved until you sign it."
               className={BTN}
             >
               <AppIcon name="spark" size={13} />
-              {drafting ? "Drafting…" : "Draft with AI"}
+              {drafting ? "Researching… (1-2 min)" : "Draft with AI"}
             </button>
             {entry?.why && (
               <button
@@ -737,6 +750,20 @@ export default function ThesisTile({
             </p>
           )}
 
+          {(entry?.themes?.length ?? 0) > 0 && (
+            <div className="flex flex-col gap-1 border-t border-line-soft px-3.5 py-2">
+              {entry!.themes!.map((t) => (
+                <p key={t.name} className="min-w-0 break-words text-[12px] leading-[1.45] text-ink-2">
+                  <span className="mr-1.5 text-[11px] text-ink-3">Theme</span>
+                  <span className="font-medium text-ink">{t.name}</span>
+                  {t.exposure && <span className="ml-1.5 font-mono text-[11px] text-ink-3">{t.exposure}</span>}
+                  <span className="text-ink-3"> — </span>
+                  {t.role}
+                </p>
+              ))}
+            </div>
+          )}
+
           {(checks.length > 0 || (entry?.pillars?.length ?? 0) > 0) && (
             // One full-width column: each condition's text runs across the
             // page, and a long AI-checked reading drops to its own line.
@@ -765,7 +792,7 @@ export default function ThesisTile({
                           {pillar.status && STANCE_STYLE[pillar.status] && (
                             <span
                               className={`inline-flex items-center gap-1.5 text-[11px] font-medium ${STANCE_STYLE[pillar.status].text}`}
-                              title={`Your signed status${pillar.statusSince ? ` since ${pillar.statusSince}` : ""}${pillar.statusNote ? ` — ${pillar.statusNote}` : ""}`}
+                              title={`${pillar.statusBy === "ai" ? "AI-proposed, signed by you" : "Your signed status"}${pillar.statusSince ? ` since ${pillar.statusSince}` : ""}${pillar.statusNote ? ` — ${pillar.statusNote}` : ""}`}
                             >
                               <span className={`dot ${STANCE_STYLE[pillar.status].dot}`} /> {PILLAR_STANCE_LABEL[pillar.status]}
                               {pillar.statusSince && <span className="font-mono font-normal text-ink-3">{pillar.statusSince.slice(5)}</span>}
@@ -777,7 +804,7 @@ export default function ThesisTile({
                             </span>
                           )}
                           {rows.length === 0 && <span className="text-[11px] text-warn">no condition guards this pillar</span>}
-                          {pillar.statusNote && pillar.status && pillar.status !== "intact" && (
+                          {pillar.statusNote && pillar.status && (
                             <span className="basis-full break-words text-[11.5px] text-ink-3">{pillar.statusNote}</span>
                           )}
                           {(pillarTrends[pillar.id] ?? []).map((t) => (
@@ -986,6 +1013,35 @@ export default function ThesisTile({
             placeholder={`Why do you own ${ticker}? State it falsifiably: "buying because X, expecting Y, wrong if K."`}
             className="w-full rounded-control border border-line bg-surface px-2.5 py-2 text-[12.5px] leading-[1.5] text-ink placeholder:text-ink-faint focus:border-accent-border focus:outline-none"
           />
+          {(draftThemes.length > 0 || draftSources.length > 0) && (
+            <div className="space-y-1.5 rounded-control border border-line bg-surface-2 px-3 py-2">
+              {draftThemes.length > 0 && <span className="text-[11px] text-ink-3">Themes</span>}
+              {draftThemes.map((t) => (
+                <div key={t.name} className="flex items-start gap-2 text-[12px]">
+                  <p className="min-w-0 flex-1 break-words text-ink-2">
+                    <span className="font-medium text-ink">{t.name}</span>
+                    {t.exposure && <span className="ml-1.5 font-mono text-[11px] text-ink-3">{t.exposure}</span>} — {t.role}
+                  </p>
+                  <button onClick={() => setDraftThemes((ts) => ts.filter((x) => x !== t))} className="text-[11.5px] text-ink-3 hover:text-neg">remove</button>
+                </div>
+              ))}
+              {draftSources.length > 0 && (
+                <p className="break-words text-[11px] leading-[1.6] text-ink-3 [overflow-wrap:anywhere]">
+                  Researched on the web:{" "}
+                  {draftSources.map((src, i) => {
+                    let host = src.url;
+                    try { host = new URL(src.url).hostname.replace(/^www\./, ""); } catch { /* keep url */ }
+                    return (
+                      <span key={src.url}>
+                        {i > 0 && " · "}
+                        <a href={src.url} target="_blank" rel="noreferrer" className="text-accent hover:underline" title={src.title ?? src.url}>{host}</a>
+                      </span>
+                    );
+                  })}
+                </p>
+              )}
+            </div>
+          )}
           {/* Pillars — the 3-5 things the long-term case rests on. Conditions bind to one. */}
           <div className="space-y-1.5 rounded-control border border-line bg-surface-2 px-3 py-2">
             <div className="flex items-center justify-between">
@@ -1218,7 +1274,7 @@ function PillarExtrasEditor({
         Status
         <select
           value={pillar.status ?? ""}
-          onChange={(e) => onChange({ status: (e.target.value || undefined) as PillarStance | undefined })}
+          onChange={(e) => onChange({ status: (e.target.value || undefined) as PillarStance | undefined, statusBy: "pm" })}
           className={`${INPUT} w-28`}
           title="Your signed read of this pillar. Change it only on sustained evidence or a structural event."
         >
@@ -1228,10 +1284,11 @@ function PillarExtrasEditor({
           <option value="broken">Broken</option>
         </select>
       </label>
-      {pillar.status && pillar.status !== "intact" && (
+      {pillar.status && pillar.statusBy === "ai" && <span className="text-accent">AI-proposed</span>}
+      {pillar.status && (
         <input
           value={pillar.statusNote ?? ""}
-          onChange={(e) => onChange({ statusNote: e.target.value || undefined })}
+          onChange={(e) => onChange({ statusNote: e.target.value || undefined, statusBy: "pm" })}
           placeholder="Why — the evidence behind this status"
           className={`${INPUT} min-w-[14rem] flex-1`}
         />
