@@ -10,7 +10,12 @@ export type MonthMover = {
   returnPct: number;
   /** weightInClass × returnPct, in percentage points of the class. */
   contributionPts: number;
+  sector?: string;
+  themes?: string[];
 };
+
+/** An area of the book (sector / theme / sleeve) and how it moved the month. */
+export type MonthArea = { kind: "sector" | "theme" | "sleeve"; label: string; contributionPts: number; names: string[] };
 
 export type MonthFacts = {
   month: string;
@@ -28,6 +33,15 @@ export type MonthFacts = {
     rebalanceDays: string[];
     modelChanges: { date: string; note: string }[];
     journal: { date: string; ticker?: string; action: string; rationale: string }[];
+  };
+  /** Where the month came from, by area — ranked, used in words only. */
+  areas: MonthArea[];
+  /** Site context the draft uses so the PM doesn't have to type it. */
+  context: {
+    addedWhy: { symbol: string; name?: string; why: string }[];
+    soldWhy: { symbol: string; name?: string; why: string }[];
+    memoHeadlines: { date: string; headline: string; items: string[] }[];
+    actedFlags: { date: string; title: string; note?: string }[];
   };
   outlook: { regime: string | null; bottomLine: string | null; tactical: string | null; cyclical: string | null; structural: string | null; briefDate: string | null };
   method: string;

@@ -11,6 +11,15 @@ import type { MonthlyDraft } from "@/app/lib/pm-monthly-shared";
  * Word downloads of the SAVED text.
  */
 
+/** Sentences carrying a percentage — the update must never state a return figure, so each one is shown for the PM to check. */
+function percentSentences(text: string): string[] {
+  return text
+    .replace(/^#{2,3}\s+.*$/gm, "")
+    .split(/(?<=[.!?])\s+|\n+/)
+    .map((x) => x.trim())
+    .filter((x) => /\d\s?%|\bpour cent\b|\bpercent\b/i.test(x));
+}
+
 const BTN =
   "inline-flex h-7 items-center gap-1.5 rounded-control border border-line bg-surface px-2.5 text-[12.5px] text-ink-2 hover:bg-surface-hover disabled:opacity-50";
 
@@ -119,8 +128,8 @@ export function PmMonthlyDraft({ month }: { month: string }) {
       {open && (
         <div className="flex flex-col gap-3 px-3.5 py-3">
           <label className="flex flex-col gap-1 text-[12px] text-ink-3">
-            Your notes for the month: what we did and why, anything to stress or avoid. The draft follows these over everything else.
-            <textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={3} placeholder="e.g. Trimmed the number of stocks to focus on highest conviction; added Nasdaq core ETFs; don't mention the hedge." className="rounded-control border border-line bg-surface px-2.5 py-1.5 text-[13px] text-ink" />
+            Optional notes. The draft already reads the site for you: the month&apos;s trades and rebalances, why we bought or sold (theses and journal), which areas drove the month, acted-on alerts and the weekly memos. Add anything to stress or avoid; these win over everything else.
+            <textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={3} placeholder="Optional — e.g. emphasise the move to fewer, higher-conviction names; don't mention the hedge." className="rounded-control border border-line bg-surface px-2.5 py-1.5 text-[13px] text-ink" />
           </label>
           <div className="flex flex-wrap items-center gap-2">
             <button className={BTN} disabled={!!busy} onClick={draft} title="Researches the month's market backdrop and writes English + French in the house style from the facts below and your notes (~1-2 min, about 25¢).">
@@ -141,6 +150,16 @@ export function PmMonthlyDraft({ month }: { month: string }) {
             </a>
             {msg && <span className="text-[12.5px] text-ink-2">{msg}</span>}
           </div>
+          {[...percentSentences(en), ...percentSentences(fr)].length > 0 && (
+            <div className="rounded-control border border-warn/40 bg-warn/5 px-3 py-2 text-[12.5px] text-ink-2">
+              <div className="font-medium text-warn">Check these sentences — they contain a percentage. Return figures must not appear (other statistics, like the share of companies beating estimates, are fine):</div>
+              <ul className="mt-1 list-disc pl-5">
+                {[...percentSentences(en), ...percentSentences(fr)].map((x, i) => (
+                  <li key={i}>{x}</li>
+                ))}
+              </ul>
+            </div>
+          )}
           {dirty && (saved?.en || saved?.fr) && <p className="text-[12px] text-warn">The Word downloads use the last SAVED text — save first to include your edits.</p>}
           <p className="text-[12px] text-ink-3">Lines starting with &quot;## &quot; are section headings and &quot;### &quot; sub-headings; leave a blank line between paragraphs.</p>
           <div className="grid gap-3 lg:grid-cols-2">

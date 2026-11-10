@@ -2,7 +2,9 @@
  * The PM Monthly house style — the three client emails sent Aug–Oct 2026
  * (English + French), supplied by the PM on 2026-11-10 as the template.
  * Fed to the drafting and translation prompts as STYLE EXAMPLES only: the
- * model copies the structure, tone and length, never the facts.
+ * model copies the structure, tone and length, never the facts. The one
+ * historical RETURN figure in the October email was reworded (Nov 2026 rule:
+ * no return percentages anywhere in the update).
  */
 
 export const PM_MONTHLY_EXAMPLES_EN = `=== EXAMPLE: October 2026 ===
@@ -20,7 +22,7 @@ These changes build on our "Core and Explore" framework, combining broad market 
 
 We remain positive on the longer-term outlook. Strong corporate earnings and signs of broader market participation provide encouraging support. Investment in artificial intelligence and the power and data infrastructure supporting it continues to create opportunities, and we remain focused on how this investment translates into sustained revenues, profits and cash flow.
 
-With the U.S. midterm elections approaching on November 3, we are also entering a period that has historically been favourable for equities. The S&P 500's average price return in the 12 months following midterm elections since 1950 has been approximately 15%. History offers useful context, although it does not guarantee future returns.
+With the U.S. midterm elections approaching on November 3, we are also entering a period that has historically been favourable for equities. Since 1950, the 12 months following midterm elections have, on average, been a positive period for the S&P 500. History offers useful context, although it does not guarantee future returns.
 
 Ongoing concerns about interest rates, geopolitics and the scale and cost of the AI buildout continue to fuel a high level of investor pessimism. We continue to view this negative sentiment as a positive setup for markets, particularly alongside strong earnings and signs of broader market participation.
 
@@ -93,7 +95,7 @@ Ces changements s'inscrivent dans notre approche « Core and Explore », qui com
 
 Nous conservons une vision positive à long terme. La vigueur des bénéfices et les signes d'une participation plus large aux marchés constituent des appuis encourageants. Les investissements dans l'intelligence artificielle et les infrastructures énergétiques et de données qui la soutiennent continuent de créer des occasions. Nous suivons de près leur contribution à une croissance durable des revenus, des bénéfices et des flux de trésorerie.
 
-À l'approche des élections américaines de mi-mandat du 3 novembre, nous entrons également dans une période historiquement favorable aux actions. Depuis 1950, le rendement moyen du S&P 500, hors dividendes, a été d'environ 15 % au cours des 12 mois suivant ces élections. L'histoire fournit un contexte utile, sans garantir les rendements futurs.
+À l'approche des élections américaines de mi-mandat du 3 novembre, nous entrons également dans une période historiquement favorable aux actions. Depuis 1950, les 12 mois suivant ces élections ont en moyenne constitué une période positive pour le S&P 500. L'histoire fournit un contexte utile, sans garantir les rendements futurs.
 
 Les préoccupations persistantes concernant les taux d'intérêt, la géopolitique ainsi que l'ampleur et le coût des investissements dans l'intelligence artificielle continuent d'alimenter un fort pessimisme chez les investisseurs. Nous continuons de voir ce sentiment négatif comme un contexte favorable aux marchés, surtout dans un environnement de bénéfices solides et de participation boursière plus large.
 

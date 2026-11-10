@@ -5,7 +5,11 @@ import { tickersEqual } from "./ticker";
 import { collapseTrades } from "./holding-history";
 import { listModelVersions } from "./model-versions";
 import type { PimModelData, PimPerformanceData, PimPortfolioState } from "./pim-types";
-import type { MonthFacts, MonthMover } from "./pm-monthly-shared";
+import type { MonthArea, MonthFacts, MonthMover } from "./pm-monthly-shared";
+import { loadThemeViews } from "./themes";
+import { listFlags } from "./agents/flags";
+import { listMemos } from "./agents/sunday-memo";
+import { THESIS_ARCHIVE_KEY } from "./thesis-archive";
 
 /**
  * The facts behind a PM Monthly (Nov 2026): the month's model and index
@@ -103,7 +107,9 @@ export async function buildMonthFacts(month: string): Promise<MonthFacts> {
   const models = parse<PimModelData | null>(modelsRaw, null);
   const perf = parse<PimPerformanceData | null>(perfRaw, null);
   const state = parse<PimPortfolioState | null>(stateRaw, null);
-  const stocks = parse<{ ticker: string; name?: string; designation?: "core" | "alpha" | "thematic"; instrumentType?: string }[]>(stocksRaw, []);
+  const stocks = parse<{ ticker: string; name?: string; sector?: string; designation?: "core" | "alpha" | "thematic"; instrumentType?: string }[]>(stocksRaw, []);
+  const themeViews = await loadThemeViews().catch(() => ({ themes: [] as Awaited<ReturnType<typeof loadThemeViews>>["themes"] }));
+  const themesOf = (sym: string) => themeViews.themes.filter((t) => t.members.some((m) => tickersEqual(m.ticker, sym))).map((t) => t.name);
   const brief = parse<{ marketRegime?: string; bottomLine?: string; tacticalView?: string; cyclicalView?: string; structuralView?: string; generatedAt?: string }>(briefRaw, {});
   const regime = parse<{ composite?: { label?: string } }>(regimeRaw, {});
   const journal = parse<{ entries?: { date?: string; ticker?: string; action?: string; rationale?: string }[] }>(journalRaw, {});
@@ -166,6 +172,8 @@ export async function buildMonthFacts(month: string): Promise<MonthFacts> {
           weightInClass: h.weightInClass,
           returnPct: +r.toFixed(2),
           contributionPts: +((h.weightInClass * r)).toFixed(3),
+          ...(bucket === "alpha" && s?.sector ? { sector: s.sector } : {}),
+          ...(themesOf(h.symbol).length ? { themes: themesOf(h.symbol) } : {}),
         });
       }
     }),
@@ -198,6 +206,45 @@ export async function buildMonthFacts(month: string): Promise<MonthFacts> {
     .map((e) => ({ date: e.date ?? "", ticker: e.ticker, action: e.action ?? "", rationale: (e.rationale ?? "").slice(0, 400) }))
     .slice(0, 30);
 
+  // ── Areas: sectors (stocks), themes, sleeves — ranked by contribution ──
+  const areaMap = new Map<string, MonthArea>();
+  const addArea = (kind: MonthArea["kind"], label: string, m: MonthMover) => {
+    const k = `${kind}:${label}`;
+    const a = areaMap.get(k) ?? { kind, label, contributionPts: 0, names: [] };
+    a.contributionPts += m.contributionPts;
+    a.names.push(m.name ?? m.symbol);
+    areaMap.set(k, a);
+  };
+  for (const m of equity) {
+    addArea("sleeve", m.bucket === "core" ? "Core index ETFs" : m.bucket === "thematic" ? "Thematic funds" : "Individual stocks", m);
+    if (m.sector) addArea("sector", m.sector, m);
+    for (const t of m.themes ?? []) addArea("theme", t, m);
+  }
+  const areas = [...areaMap.values()].map((a) => ({ ...a, contributionPts: +a.contributionPts.toFixed(3) })).sort((a, b) => b.contributionPts - a.contributionPts);
+
+  // ── Why we bought / sold (theses on file) ──
+  const [thesesRaw, archiveRaw] = await Promise.all([redis.get("pm:position-theses"), redis.get(THESIS_ARCHIVE_KEY)]);
+  const theses = parse<Record<string, { why?: string }>>(thesesRaw, {});
+  const archive = parse<Record<string, { why?: string; removedAt?: string }[]>>(archiveRaw, {});
+  const whyFor = (sym: string, sold: boolean) => {
+    const key = Object.keys(sold ? archive : theses).find((k) => tickersEqual(k, sym));
+    if (!key) return "";
+    const v = sold ? archive[key]?.[archive[key].length - 1] : theses[key];
+    return (v?.why ?? "").slice(0, 700);
+  };
+  const addedWhy = trades.filter((t) => t.kind === "bought").map((t) => ({ symbol: t.symbol, name: t.name, why: whyFor(t.symbol, false) }));
+  const soldWhy = trades.filter((t) => t.kind === "sold out").map((t) => {
+    const j = journalEntries.find((e) => e.ticker && tickersEqual(e.ticker, t.symbol));
+    return { symbol: t.symbol, name: t.name, why: [j?.rationale, whyFor(t.symbol, true) ? `Original thesis: ${whyFor(t.symbol, true)}` : ""].filter(Boolean).join(" · ") };
+  });
+  const memoHeadlines = (await listMemos(8).catch(() => []))
+    .filter((m) => m.date >= start && m.date <= end)
+    .map((m) => ({ date: m.date, headline: m.headline, items: m.items.map((i) => i.title).slice(0, 6) }));
+  const actedFlags = (await listFlags().catch(() => []))
+    .filter((f) => f.status === "acted" && (f.resolvedAt ?? "").slice(0, 10) >= start && (f.resolvedAt ?? "").slice(0, 10) <= end)
+    .map((f) => ({ date: (f.resolvedAt ?? "").slice(0, 10), title: f.title, note: [...f.thread].reverse().find((m) => m.from === "pm")?.text }))
+    .slice(0, 12);
+
   return {
     month,
     start,
@@ -210,6 +257,8 @@ export async function buildMonthFacts(month: string): Promise<MonthFacts> {
     detractors,
     allMovers: movers.sort((a, b) => b.contributionPts - a.contributionPts),
     activity: { trades, rebalanceDays: [...rebalanceDays].sort(), modelChanges, journal: journalEntries },
+    areas,
+    context: { addedWhy, soldWhy, memoHeadlines, actedFlags },
     outlook: {
       regime: regime.composite?.label ?? brief.marketRegime ?? null,
       bottomLine: brief.bottomLine ?? null,
