@@ -32,3 +32,16 @@ export type MonthFacts = {
   outlook: { regime: string | null; bottomLine: string | null; tactical: string | null; cyclical: string | null; structural: string | null; briefDate: string | null };
   method: string;
 };
+
+export type MonthlyDraft = {
+  month: string;
+  /** Plain text: "## Heading", "### Subheading", blank line between paragraphs. */
+  en: string;
+  fr: string;
+  /** The PM's own notes for the month (what we did and why). */
+  notes: string;
+  aiDrafted: boolean;
+  sources: { url: string; title?: string }[];
+  updatedAt: string;
+  history?: { savedAt: string; en: string; fr: string }[];
+};

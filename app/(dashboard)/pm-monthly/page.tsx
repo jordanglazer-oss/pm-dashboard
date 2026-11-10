@@ -2,15 +2,16 @@
 
 import React, { useEffect, useState } from "react";
 import { PageHeading } from "@/app/components/PageHeading";
+import { PmMonthlyDraft } from "@/app/components/PmMonthlyDraft";
 import { Skeleton } from "@/app/components/Skeleton";
 import { displayTicker } from "@/app/lib/ticker";
 import type { MonthFacts, MonthMover } from "@/app/lib/pm-monthly-shared";
 
 /**
- * /pm-monthly — the PM Monthly workbench. Step 1 (live): the month's facts —
- * model and index returns, contributors and detractors, activity, outlook
- * inputs. Step 2 (next): AI draft in English and French in the house style,
- * edited here and downloaded as matching Word files.
+ * /pm-monthly — the PM Monthly workbench: the client-update draft (English +
+ * French, house style, Word downloads) on top, and below it the month's facts
+ * it is written from — model and index returns, contributors and detractors,
+ * activity, outlook inputs.
  */
 
 const fmt = (v: number | null | undefined, d = 2) => (v == null ? "—" : `${v > 0 ? "+" : ""}${v.toFixed(d)}%`);
@@ -85,9 +86,10 @@ export default function PmMonthlyPage() {
   return (
     <main className="flex flex-col gap-3.5 text-ink">
       <PageHeading
-        lede="The facts behind the month's client update: returns, what contributed and detracted, activity and the outlook. The English and French draft (Word) is added once the house template is in."
+        lede="The month's client update: draft it in English and French from the facts below and your notes, edit, save, and download as Word."
         actions={<input type="month" value={month} onChange={(e) => e.target.value && setMonth(e.target.value)} className="h-7 rounded-control border border-line bg-surface px-2 text-[12.5px] text-ink" />}
       />
+      <PmMonthlyDraft month={month} />
       {err && <p className="text-[13px] text-neg">{err}</p>}
       {!facts && !err && <Skeleton className="h-48 w-full" />}
       {facts && (
