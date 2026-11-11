@@ -3,7 +3,8 @@ import { createLogger } from "./logger";
 import { yahooClassShare } from "./yahoo-symbol";
 import { bucketTests } from "./sleeve-targets";
 import type { PimModelData, PimHolding } from "./pim-types";
-import { SLEEVES, type SleeveId, type SleeveSeries, type SleevePerformance } from "./sleeve-performance-shared";
+import { SLEEVES, BACKFILL_SOURCES, type SleeveId, type SleeveSeries, type SleevePerformance } from "./sleeve-performance-shared";
+import type { PimPerformanceData } from "./pim-types";
 export * from "./sleeve-performance-shared";
 
 /**
@@ -274,4 +275,89 @@ export async function updateSleevePerformance(): Promise<SleeveUpdateResult> {
   await redis.set(SLEEVE_PERF_KEY, JSON.stringify(next));
   log.info(`added ${added} day(s) through ${next.lastDate}${waiting ? ` — waiting: ${waiting}` : ""}`);
   return { ok: true, added, lastDate: next.lastDate, ...(waiting ? { waiting } : {}) };
+}
+
+// ── One-time backfill from the existing ledger series ───────────────────────
+
+export type BackfillPlanRow = { sleeve: SleeveId; source: string; points: number; firstDate: string | null; anchorDate: string | null; skipped?: string };
+
+/**
+ * Fill each sleeve's history BEFORE `startedAt` from the matching
+ * pm:pim-performance series (Core ← core, Thematic ← thematic, Stocks ←
+ * alpha — the units Alpha book only ever held the stocks). The legacy values
+ * are rescaled so the legacy series meets this one at `startedAt`; daily
+ * returns are kept as recorded. Entries on/after `startedAt` are never
+ * touched, so the forward, weights-based record is unchanged.
+ *
+ * Dry run unless `confirm`. On confirm: stashes the current blob at
+ * `pm:sleeve-performance.pre-backfill-<ts>` first, re-reads right before the
+ * write, and skips a sleeve already backfilled. pm:pim-performance is read
+ * only.
+ */
+export async function backfillSleeveHistory(confirm: boolean): Promise<{ ok: boolean; plan: BackfillPlanRow[]; applied?: boolean; stashKey?: string; error?: string }> {
+  const redis = await getRedis();
+  const [curRaw, perfRaw] = await Promise.all([redis.get(SLEEVE_PERF_KEY), redis.get("pm:pim-performance")]);
+  if (!curRaw) return { ok: false, plan: [], error: "sleeve tracking has not started yet" };
+  let cur: SleevePerformance;
+  let perf: PimPerformanceData | null;
+  try {
+    cur = JSON.parse(curRaw);
+    perf = perfRaw ? JSON.parse(perfRaw) : null;
+  } catch {
+    return { ok: false, plan: [], error: "could not read the stored series" };
+  }
+  const plan: BackfillPlanRow[] = [];
+  const additions: Partial<Record<SleeveId, SleeveSeries["history"]>> = {};
+  for (const id of SLEEVES) {
+    const src = BACKFILL_SOURCES[id];
+    const s = cur.series[id];
+    if (!src) {
+      plan.push({ sleeve: id, source: "none", points: 0, firstDate: null, anchorDate: null, skipped: "no existing series to draw from — starts at tracking start" });
+      continue;
+    }
+    if (s.backfilledFrom) {
+      plan.push({ sleeve: id, source: src.label, points: 0, firstDate: s.backfilledFrom.firstDate, anchorDate: null, skipped: "already filled" });
+      continue;
+    }
+    const legacy = perf?.models?.find((m) => m.groupId === "pim" && m.profile === src.profile)?.history ?? [];
+    const first = s.history[0];
+    const anchor = [...legacy].reverse().find((p) => p.date <= first.date);
+    if (!anchor || !(anchor.value > 0)) {
+      plan.push({ sleeve: id, source: src.label, points: 0, firstDate: null, anchorDate: null, skipped: "no recorded value on or before tracking start" });
+      continue;
+    }
+    const scale = first.value / anchor.value;
+    const add = legacy
+      .filter((p) => p.date < first.date && p.date <= anchor.date)
+      .map((p) => ({ date: p.date, value: +(p.value * scale).toFixed(6), dailyReturn: p.dailyReturn }));
+    additions[id] = add;
+    plan.push({ sleeve: id, source: src.label, points: add.length, firstDate: add[0]?.date ?? null, anchorDate: anchor.date, ...(add.length ? {} : { skipped: "nothing earlier on record" }) });
+  }
+  if (!confirm) return { ok: true, plan };
+
+  const ts = Date.now();
+  const stashKey = `${SLEEVE_PERF_KEY}.pre-backfill-${ts}`;
+  await redis.set(stashKey, curRaw);
+  // Re-read so a daily update that landed meanwhile is kept.
+  const freshRaw = await redis.get(SLEEVE_PERF_KEY);
+  const fresh: SleevePerformance = freshRaw ? JSON.parse(freshRaw) : cur;
+  const at = new Date().toISOString();
+  const next: SleevePerformance = { ...fresh, series: { ...fresh.series }, events: [...(fresh.events ?? [])] };
+  for (const id of SLEEVES) {
+    const add = additions[id];
+    const s = next.series[id];
+    if (!add?.length || s.backfilledFrom) continue;
+    const firstDate = s.history[0].date;
+    next.series[id] = {
+      ...s,
+      history: [...add.filter((p) => p.date < firstDate), ...s.history],
+      backfilledFrom: { source: `pm:pim-performance ${BACKFILL_SOURCES[id]!.profile}`, firstDate: add[0].date, lastDate: add[add.length - 1].date, points: add.length, at },
+    };
+    next.events.push({ date: firstDate, sleeve: id, note: `History before ${firstDate} filled from the existing ${BACKFILL_SOURCES[id]!.label} (${add.length} days from ${add[0].date}), rescaled to meet this series` });
+  }
+  next.events = next.events.slice(-300);
+  next.updatedAt = at;
+  await redis.set(SLEEVE_PERF_KEY, JSON.stringify(next));
+  log.info(`backfilled: ${plan.map((p) => `${p.sleeve}=${p.points}`).join(", ")}; prior state at ${stashKey}`);
+  return { ok: true, plan, applied: true, stashKey };
 }
