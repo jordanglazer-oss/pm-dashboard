@@ -87,7 +87,7 @@ export async function buildMonthFacts(month: string): Promise<MonthFacts> {
   const todayIso = new Date().toISOString().slice(0, 10);
   const to = end < todayIso ? end : todayIso;
   const redis = await getRedis();
-  const [modelsRaw, perfRaw, stateRaw, stocksRaw, briefRaw, regimeRaw, journalRaw, sleeveRaw] = await Promise.all([
+  const [modelsRaw, perfRaw, stateRaw, stocksRaw, briefRaw, regimeRaw, journalRaw] = await Promise.all([
     redis.get("pm:pim-models"),
     redis.get("pm:pim-performance"),
     redis.get("pm:pim-portfolio-state"),
@@ -95,7 +95,6 @@ export async function buildMonthFacts(month: string): Promise<MonthFacts> {
     redis.get("pm:brief"),
     redis.get("pm:market-regime"),
     redis.get("pm:decision-journal"),
-    redis.get("pm:sleeve-performance"),
   ]);
   const parse = <T,>(raw: string | null, fb: T): T => {
     try {
@@ -113,7 +112,6 @@ export async function buildMonthFacts(month: string): Promise<MonthFacts> {
   const brief = parse<{ marketRegime?: string; bottomLine?: string; tacticalView?: string; cyclicalView?: string; structuralView?: string; generatedAt?: string }>(briefRaw, {});
   const regime = parse<{ composite?: { label?: string } }>(regimeRaw, {});
   const journal = parse<{ entries?: { date?: string; ticker?: string; action?: string; rationale?: string }[] }>(journalRaw, {});
-  const sleeves = parse<{ series?: Record<string, { history: { date: string; value: number }[] }> } | null>(sleeveRaw, null);
 
   // ── Model returns for the month (stored series) ──
   const modelReturns: MonthFacts["modelReturns"] = [];
@@ -123,11 +121,6 @@ export async function buildMonthFacts(month: string): Promise<MonthFacts> {
     const a = [...h].reverse().find((p) => p.date <= prevEnd);
     const b = [...h].reverse().find((p) => p.date <= to);
     if (a && b && b.date >= start) modelReturns.push({ profile: m.profile, returnPct: +((b.value / a.value - 1) * 100).toFixed(2), through: b.date });
-  }
-  for (const [id, s] of Object.entries(sleeves?.series ?? {})) {
-    const a = [...s.history].reverse().find((p) => p.date <= prevEnd) ?? s.history[0];
-    const b = [...s.history].reverse().find((p) => p.date <= to);
-    if (a && b && b.date >= start && a.date < b.date) modelReturns.push({ profile: `sleeve:${id}`, returnPct: +((b.value / a.value - 1) * 100).toFixed(2), through: b.date, partial: a.date > prevEnd });
   }
 
   // ── Indices ──

@@ -725,6 +725,11 @@ export function PimPortfolio({ groups }: Props) {
     const t = bucketTests(stocks, pimModels);
     return { has: (ticker: string) => t.isCore(ticker) };
   }, [stocks, pimModels]);
+  // Thematic test — the Thematic book (Nov 2026) holds only the Thematic funds.
+  const thematicSymbols = useMemo(() => {
+    const t = bucketTests(stocks, pimModels);
+    return { has: (ticker: string) => t.isThematic(ticker) };
+  }, [stocks, pimModels]);
   // Alpha = everything outside Core: the stocks AND the Thematic funds (Oct
   // 2026, PM's call) — same rule as the Alpha performance series.
   const notAlpha = useCallback((symbol: string) => coreSymbols.has(symbolToTicker(symbol)), [coreSymbols]);
@@ -740,10 +745,15 @@ export function PimPortfolio({ groups }: Props) {
       if (hasEquity) {
         base.push("alpha");
         base.push("core");
+        // Thematic book (Nov 2026): the Thematic funds alone, so the existing
+        // pim|thematic series can run on units like Core and Alpha do.
+        if (selectedGroup.holdings.some((h) => h.assetClass === "equity" && h.weightInClass > 0 && thematicSymbols.has(symbolToTicker(h.symbol)))) {
+          base.push("thematic");
+        }
       }
     }
     return base;
-  }, [selectedGroup]);
+  }, [selectedGroup, thematicSymbols]);
 
   const activeProfile = availableProfiles.includes(selectedProfile)
     ? selectedProfile
@@ -779,7 +789,7 @@ export function PimPortfolio({ groups }: Props) {
   // profile weights. Both are equity-only standalone models.
   const ALPHA_WEIGHTS = { cash: 0, fixedIncome: 0, equity: 1, alternatives: 0 };
   const CORE_WEIGHTS = { cash: 0, fixedIncome: 0, equity: 1, alternatives: 0 };
-  const profileWeights = activeProfile === "alpha"
+  const profileWeights = activeProfile === "alpha" || activeProfile === "thematic"
     ? ALPHA_WEIGHTS
     : activeProfile === "core"
     ? CORE_WEIGHTS
@@ -800,6 +810,18 @@ export function PimPortfolio({ groups }: Props) {
       const normalized = totalWeight > 0
         ? alphaHoldings.map((h) => ({ ...h, weightInClass: h.weightInClass / totalWeight }))
         : alphaHoldings;
+      return { ...selectedGroup, holdings: normalized };
+    }
+
+    // Thematic: equity-only, ONLY the Thematic funds, re-normalized to 100%.
+    if (activeProfile === "thematic") {
+      const thHoldings = selectedGroup.holdings.filter(
+        (h) => h.assetClass === "equity" && thematicSymbols.has(symbolToTicker(h.symbol))
+      );
+      const totalWeight = thHoldings.reduce((s, h) => s + h.weightInClass, 0);
+      const normalized = totalWeight > 0
+        ? thHoldings.map((h) => ({ ...h, weightInClass: h.weightInClass / totalWeight }))
+        : thHoldings;
       return { ...selectedGroup, holdings: normalized };
     }
 
@@ -869,7 +891,7 @@ export function PimPortfolio({ groups }: Props) {
     }
 
     return selectedGroup;
-  }, [selectedGroup, activeProfile, coreSymbols, notAlpha, pimGroup, pimModels.sleeveTargets]);
+  }, [selectedGroup, activeProfile, coreSymbols, thematicSymbols, notAlpha, pimGroup, pimModels.sleeveTargets]);
 
   // Load positions from KV
   useEffect(() => {
@@ -1267,6 +1289,66 @@ export function PimPortfolio({ groups }: Props) {
       setSeeding(false);
     }
   }, [seedPlan, positions, selectedGroupId, activeProfile]);
+
+  // ── Add the model names a book is MISSING (Nov 2026) ─────────────────────
+  // A book with units for some names but none for others (the Alpha book
+  // held the stocks but never the Thematic funds) books no return on the
+  // missing ones. Each missing name is added at its model weight of the
+  // ENLARGED book — total = current value ÷ (1 − missing weight) — so every
+  // existing position keeps its exact units and cost basis, and the new ones
+  // start flat at today's price. Shown as a plan first; writes real positions.
+  const [filling, setFilling] = useState(false);
+  const fillPlan = useMemo(() => {
+    const empty = { rows: [] as { symbol: string; name: string; targetWeight: number; priceCad: number; units: number }[], missingPrices: [] as string[], currentValue: 0, newTotal: 0, missingWeight: 0 };
+    if (!effectiveGroup || !profileWeights) return empty;
+    const entry = positions.find((p) => p.groupId === selectedGroupId && p.profile === activeProfile);
+    if (!entry || !entry.positions.some((p) => p.units > 0)) return empty;
+    const held = new Set(entry.positions.filter((p) => p.units > 0).map((p) => symbolToTicker(p.symbol)));
+    const missingPrices: string[] = [];
+    const cands = effectiveGroup.holdings
+      .map((h) => {
+        const alloc = h.assetClass === "equity" ? profileWeights.equity : h.assetClass === "fixedIncome" ? profileWeights.fixedIncome : profileWeights.alternatives;
+        const targetWeight = h.weightInClass * alloc;
+        if (targetWeight <= 0 || held.has(symbolToTicker(h.symbol))) return null;
+        const px = livePrices[h.symbol] || 0;
+        const priceCad = px * (h.currency === "USD" ? usdCadRate : 1);
+        if (priceCad <= 0) { missingPrices.push(h.symbol); return null; }
+        return { symbol: h.symbol, name: h.name, targetWeight, priceCad };
+      })
+      .filter(Boolean) as { symbol: string; name: string; targetWeight: number; priceCad: number }[];
+    const missingWeight = cands.reduce((t, r) => t + r.targetWeight, 0);
+    const currentValue = profileMarketValue(activeProfile);
+    if (!cands.length || currentValue <= 0 || missingWeight >= 0.95) return { ...empty, missingPrices };
+    const newTotal = currentValue / (1 - missingWeight);
+    return { rows: cands.map((r) => ({ ...r, units: (newTotal * r.targetWeight) / r.priceCad })), missingPrices, currentValue, newTotal, missingWeight };
+  }, [effectiveGroup, profileWeights, positions, selectedGroupId, activeProfile, livePrices, usdCadRate, profileMarketValue]);
+
+  const applyFill = useCallback(async () => {
+    if (fillPlan.rows.length === 0) return;
+    if (!window.confirm(`Add ${fillPlan.rows.length} position(s) to ${PROFILE_LABELS[activeProfile]} at their model weights? Existing positions keep their exact units; the new ones start at today's price.`)) return;
+    setFilling(true);
+    try {
+      const base = positionsRef.current.length ? positionsRef.current : positions;
+      const next = base.map((p) => {
+        if (!(p.groupId === selectedGroupId && p.profile === activeProfile)) return p;
+        const kept = p.positions.filter((x) => !fillPlan.rows.some((r) => symbolToTicker(r.symbol) === symbolToTicker(x.symbol)));
+        return {
+          ...p,
+          positions: [...kept, ...fillPlan.rows.map((r) => ({ symbol: r.symbol, units: parseFloat(r.units.toFixed(4)), costBasis: parseFloat(r.priceCad.toFixed(4)) }))],
+          lastUpdated: new Date().toISOString(),
+        };
+      });
+      setPositions(next);
+      positionsRef.current = next;
+      await fetch("/api/kv/pim-positions", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ portfolios: next }),
+      });
+    } finally {
+      setFilling(false);
+    }
+  }, [fillPlan, positions, selectedGroupId, activeProfile]);
 
   /** Positions grouped the way the Models tab groups them, so the two pages
    *  read as one system rather than two different views of the same book. */
@@ -3250,7 +3332,7 @@ export function PimPortfolio({ groups }: Props) {
     if (src.cash > 0.0005) parts.push(`Cash ${(src.cash * 100).toFixed(0)}%`);
     return parts.join(" · ") + (liveTotal > 0.01 ? "" : " · target");
   })();
-  const isFullProfile = activeProfile !== "alpha" && activeProfile !== "core";
+  const isFullProfile = activeProfile !== "alpha" && activeProfile !== "core" && activeProfile !== "thematic";
 
   // ── Positioning snapshot (PNG) — read-only, renders on a canvas and hands
   // the file to the browser. Uses the SAME apportioned display weights as the
@@ -4395,6 +4477,46 @@ export function PimPortfolio({ groups }: Props) {
           </section>
         );
       })()}
+
+      {/* Model names this book has no units for (e.g. Thematic funds in Alpha) */}
+      {hasPositions && !editMode && (fillPlan.rows.length > 0 || fillPlan.missingPrices.length > 0) && (
+        <section className="panel animate-panel-in">
+          <div className="panel-h flex-wrap gap-y-1.5 py-1.5">
+            <span className="t-mark bg-hub-portfolio" aria-hidden />
+            <span className="t">{fillPlan.rows.length + fillPlan.missingPrices.length} model name{fillPlan.rows.length + fillPlan.missingPrices.length === 1 ? "" : "s"} with no units in {PROFILE_LABELS[activeProfile]}</span>
+            <span className="m min-w-0 break-words">they book no return until they have units</span>
+            {fillPlan.rows.length > 0 && (
+              <button onClick={applyFill} disabled={filling} className={`${BTN_PRIMARY} ml-auto`}>
+                {filling ? "Adding…" : `Add ${fillPlan.rows.length} at model weight`}
+              </button>
+            )}
+          </div>
+          <div className="px-3.5 py-2 text-[12.5px] text-ink-3">
+            Each is added at its model weight of the enlarged book; every existing position keeps its exact units and cost, and the new ones start flat at today&apos;s price. Returns are tracked from the next close.
+          </div>
+          {fillPlan.rows.length > 0 && (
+            <div className="tbl-wrap min-w-0">
+              <table className="data-table">
+                <thead>
+                  <tr><th className="pl-3.5">Name</th><th className="n">Model weight</th><th className="n">Price C$</th></tr>
+                </thead>
+                <tbody>
+                  {fillPlan.rows.map((r) => (
+                    <tr key={r.symbol}>
+                      <td className="pl-3.5"><span className="font-mono">{r.symbol}</span> <span className="text-ink-3">{r.name}</span></td>
+                      <td className="n">{fmtPct2(r.targetWeight)}</td>
+                      <td className="n">{r.priceCad.toFixed(2)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+          {fillPlan.missingPrices.length > 0 && (
+            <div className="px-3.5 pb-2.5 text-[12px] text-warn">No live price yet for {fillPlan.missingPrices.join(", ")} — refresh prices to include {fillPlan.missingPrices.length === 1 ? "it" : "them"}.</div>
+          )}
+        </section>
+      )}
 
       {/* No positions prompt */}
       {!hasPositions && !editMode && (

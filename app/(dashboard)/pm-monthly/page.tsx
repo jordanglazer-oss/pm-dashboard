@@ -17,8 +17,7 @@ import type { MonthFacts, MonthMover } from "@/app/lib/pm-monthly-shared";
 const fmt = (v: number | null | undefined, d = 2) => (v == null ? "—" : `${v > 0 ? "+" : ""}${v.toFixed(d)}%`);
 const tone = (v: number | null | undefined) => (v == null ? "text-ink-3" : v > 0 ? "text-pos" : v < 0 ? "text-neg" : "text-ink-2");
 const PROFILE_LABEL: Record<string, string> = {
-  conservative: "Conservative", balanced: "Balanced", growth: "Growth", allEquity: "All-Equity", alpha: "Alpha (units book)", core: "Core", thematic: "Thematic",
-  "sleeve:core": "Core sleeve (weights)", "sleeve:thematic": "Thematic sleeve (weights)", "sleeve:stocks": "Stock sleeve (weights)", "sleeve:nonCore": "Stocks + Thematic (weights)",
+  conservative: "Conservative", balanced: "Balanced", growth: "Growth", allEquity: "All-Equity", alpha: "Alpha (stocks + Thematic)", core: "Core", thematic: "Thematic",
 };
 
 function prevMonth(): string {
