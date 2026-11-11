@@ -1695,7 +1695,10 @@ export function PimPortfolio({ groups }: Props) {
     if (!selectedGroup) return { transactions: [] as PimTransaction[], positionUpdates: [] as PimPosition[] };
 
     // Resolve profile weights
-    const pWeights = profile === "alpha"
+    // Alpha, Core and Thematic are equity-only sleeve books (Nov 2026: Core and
+    // Thematic were skipped here before — no profile weights — so a rebalance
+    // never reached them).
+    const pWeights = profile === "alpha" || profile === "core" || profile === "thematic"
       ? { cash: 0, fixedIncome: 0, equity: 1, alternatives: 0 }
       : selectedGroup.profiles[profile];
     if (!pWeights) return { transactions: [] as PimTransaction[], positionUpdates: [] as PimPosition[] };
@@ -1709,11 +1712,15 @@ export function PimPortfolio({ groups }: Props) {
       profPositionMap.set(pos.symbol, pos);
     }
 
-    // Build effective group for this profile (handle alpha filtering)
+    // Build effective group for this profile (alpha / core / thematic filtering)
     let profGroup = selectedGroup;
-    if (profile === "alpha") {
+    if (profile === "alpha" || profile === "core" || profile === "thematic") {
+      const inBook = (sym: string) =>
+        profile === "core" ? coreSymbols.has(symbolToTicker(sym))
+        : profile === "thematic" ? thematicSymbols.has(symbolToTicker(sym))
+        : !notAlpha(sym);
       const alphaHoldings = selectedGroup.holdings.filter(
-        (h) => h.assetClass === "equity" && !notAlpha(h.symbol)
+        (h) => h.assetClass === "equity" && inBook(h.symbol)
       );
       const totalW = alphaHoldings.reduce((s, h) => s + h.weightInClass, 0);
       profGroup = {
@@ -1841,7 +1848,7 @@ export function PimPortfolio({ groups }: Props) {
     }
 
     return { transactions, positionUpdates: newPositions };
-  }, [selectedGroup, positions, selectedGroupId, prevCloses, livePrices, usdCadRate, prevCloseUsdCad, sharedCostBasisMap, coreSymbols, notAlpha, stagedExits]);
+  }, [selectedGroup, positions, selectedGroupId, prevCloses, livePrices, usdCadRate, prevCloseUsdCad, sharedCostBasisMap, coreSymbols, thematicSymbols, notAlpha, stagedExits]);
 
   // Compute pending trades across all profiles
   const pendingTrades = useMemo(() => {
@@ -2917,9 +2924,11 @@ export function PimPortfolio({ groups }: Props) {
           // picks. A name of the other designation was never going to be in
           // there, so its absence is expected and not worth warning about —
           // only a sleeve that COULD have held the sold name is a real miss.
-          const soldIsCore = coreSymbols.has(symbolToTicker(trade.sellSymbol));
+          // Core / Thematic sleeve books are re-sized after the trade (see
+          // "Sleeve books" below), so a missing sold leg there is no miss.
           const expectedHere =
-            (pp.profile !== "core" || soldIsCore) && (pp.profile !== "alpha" || !notAlpha(trade.sellSymbol));
+            pp.profile !== "core" && pp.profile !== "thematic" &&
+            (pp.profile !== "alpha" || !notAlpha(trade.sellSymbol));
           if (expectedHere) {
             const gName = pimModelsRef.current.groups.find((g) => g.id === pp.groupId)?.name ?? pp.groupId;
             unitlessBuyGroups.push(`${gName}/${pp.profile}`);
@@ -3040,10 +3049,16 @@ export function PimPortfolio({ groups }: Props) {
 
         // Target share of THIS profile's portfolio.
         let targetPct = 0;
-        if (pp.profile === "alpha") {
-          // Alpha is equity-only stocks (no Core ETFs, no Thematic funds), renormalized to 100%.
+        if (pp.profile === "alpha" || pp.profile === "core" || pp.profile === "thematic") {
+          // Equity-only sleeve books, renormalized to 100%: Alpha = everything
+          // outside Core (stocks + Thematic funds); Core = the Core ETFs;
+          // Thematic = the Thematic funds. (Core / Thematic were skipped
+          // before Nov 2026.) Buckets read from the CURRENT models.
+          const bt = bucketTests(stocks, modelsNow);
+          const inBook = (sym: string) =>
+            pp.profile === "core" ? bt.isCore(sym) : pp.profile === "thematic" ? bt.isThematic(sym) : !bt.isCore(sym);
           const alphaHoldings = g.holdings.filter(
-            (h) => h.assetClass === "equity" && !notAlpha(h.symbol),
+            (h) => h.assetClass === "equity" && inBook(h.symbol),
           );
           const alphaTotal = alphaHoldings.reduce((sum, h) => sum + h.weightInClass, 0);
           const inAlpha = alphaHoldings.some((h) => tickerEq(h.symbol, buyTicker));
@@ -3103,6 +3118,73 @@ export function PimPortfolio({ groups }: Props) {
       } catch { /* non-fatal; local state is correct */ }
       if (noTarget.length > 0) {
         buyOnlyNoTargetGroups.push(...noTarget);
+      }
+    }
+
+    // ── Sleeve books (Nov 2026): Core and Thematic hold only their bucket.
+    // A trade can leave one holding a name that is no longer in its sleeve
+    // (a switch out of a fund into a stock), missing a sleeve name (a switch
+    // from a stock into a Thematic fund, or a buy-only of a new Core ETF), or
+    // with uninvested cash (a sell-only). When that happens the book is
+    // re-sized to its sleeve's model targets at THIS trade's prices (the
+    // trade price for the traded names, the live price for the rest), keeping
+    // its total value — the same thing the trade did in the sleeve, applied
+    // to the book that tracks the sleeve on its own. Books whose membership
+    // didn't change are left exactly as they are (their drift is kept).
+    {
+      const modelsNow = pimModelsRef.current;
+      const bt = bucketTests(stocks, modelsNow);
+      const pxOf = (sym: string): number => {
+        if (trade.sellSymbol && tickerEq(sym, trade.sellSymbol) && sellPrice > 0) return sellPrice;
+        if (buyTicker && tickerEq(sym, buyTicker) && buyPrice > 0) return buyPrice;
+        return livePrices[sym] || 0;
+      };
+      let changed = false;
+      const resized = positionsRef.current.map((pp) => {
+        if (pp.profile !== "core" && pp.profile !== "thematic") return pp;
+        if (excludedSet.has(pp.groupId)) return pp;
+        const g = modelsNow.groups.find((x) => x.id === pp.groupId);
+        if (!g) return pp;
+        const inSleeve = (sym: string) => (pp.profile === "core" ? bt.isCore(sym) : bt.isThematic(sym));
+        const members = g.holdings.filter((h) => h.assetClass === "equity" && h.weightInClass > 0 && inSleeve(h.symbol));
+        const memberTotal = members.reduce((t, h) => t + h.weightInClass, 0);
+        if (!members.length || memberTotal <= 0) return pp;
+        const held = pp.positions.filter((p) => p.units > 0);
+        if (!held.length) return pp; // an unbuilt book stays unbuilt (Build from…)
+        const strays = held.filter((p) => !members.some((h) => tickerEq(h.symbol, p.symbol)));
+        const missing = members.filter((h) => !held.some((p) => tickerEq(p.symbol, h.symbol)));
+        let total = pp.cashBalance || 0;
+        for (const p of held) total += p.units * pxOf(p.symbol) * (tickerIsUsd(p.symbol) ? usdCadRate : 1);
+        const idleCash = (pp.cashBalance || 0) > total * 0.01;
+        if (!strays.length && !missing.length && !idleCash) return pp;
+        // Every member needs a price to be sized; otherwise leave the book and say so.
+        const unpriced = members.filter((h) => !(pxOf(h.symbol) > 0)).map((h) => h.symbol);
+        if (unpriced.length || total <= 0) {
+          unitlessBuyGroups.push(`${g.name}/${pp.profile} (needs a price for ${unpriced.join(", ") || "its holdings"} — use Rebalance)`);
+          return pp;
+        }
+        changed = true;
+        const next = members.map((h) => {
+          const priceCad = pxOf(h.symbol) * (tickerIsUsd(h.symbol) ? usdCadRate : 1);
+          const units = (total * (h.weightInClass / memberTotal)) / priceCad;
+          const prev = held.find((p) => tickerEq(p.symbol, h.symbol));
+          // Cost basis: weighted with the existing lot where one exists.
+          const costBasis = prev && prev.units > 0 && units > prev.units
+            ? (prev.units * prev.costBasis + (units - prev.units) * priceCad) / units
+            : prev?.costBasis || priceCad;
+          return { symbol: prev?.symbol ?? h.symbol, units: parseFloat(units.toFixed(4)), costBasis: parseFloat(costBasis.toFixed(4)) };
+        });
+        return { ...pp, positions: next, cashBalance: 0, lastUpdated: nowIso };
+      });
+      if (changed) {
+        setPositions(resized);
+        positionsRef.current = resized;
+        try {
+          await fetch("/api/kv/pim-positions", {
+            method: "PUT", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ portfolios: resized }),
+          });
+        } catch { /* non-fatal; local state is correct */ }
       }
     }
 
