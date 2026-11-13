@@ -90,6 +90,7 @@ const PROFILE_LABELS: Record<PimProfileType, string> = {
   alpha: "Alpha",
   core: "Core",
   thematic: "Thematic",
+  stocks: "Stocks",
 };
 
 const PAGE_SIZE = 50;

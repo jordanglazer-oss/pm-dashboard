@@ -46,7 +46,7 @@ const INPUT = "h-7 rounded-control border border-line bg-surface px-2 text-[12.5
 
 const CLASS_LABELS: Record<PimAssetClass, string> = { fixedIncome: "Fixed Income", equity: "Equities", alternative: "Alternatives" };
 const PROFILE_LABELS: Record<PimProfileType, string> = {
-  conservative: "Conservative", balanced: "Balanced", growth: "Growth", allEquity: "All-Equity", alpha: "Alpha", core: "Core", thematic: "Thematic",
+  conservative: "Conservative", balanced: "Balanced", growth: "Growth", allEquity: "All-Equity", alpha: "Alpha", core: "Core", thematic: "Thematic", stocks: "Stocks",
 };
 const pct = (v: number | null | undefined, dp = 2) => (v == null ? "—" : `${(v * 100).toFixed(dp)}%`);
 const allocOf = (g: PimModelGroup | undefined, profile: PimProfileType, ac: PimAssetClass): number => {

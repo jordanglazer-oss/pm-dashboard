@@ -62,8 +62,9 @@ async function computeWeightsFor(
   const isAlpha = profile === "alpha";
   const isCore = profile === "core";
   const isThematic = profile === "thematic";
+  const isStocks = profile === "stocks";
   const EQUITY_ONLY = { cash: 0, fixedIncome: 0, equity: 1, alternatives: 0 };
-  const profileWeights = isAlpha || isCore || isThematic ? EQUITY_ONLY : group.profiles[profile];
+  const profileWeights = isAlpha || isCore || isThematic || isStocks ? EQUITY_ONLY : group.profiles[profile];
   if (!profileWeights) return;
 
   // Core / Thematic: the bucket recorded on the model holding first, else the
@@ -87,12 +88,13 @@ async function computeWeightsFor(
     const posMap = new Map(positions.positions.map((p) => [p.symbol, p]));
 
     let activeHoldings;
-    if (isAlpha || isCore || isThematic) {
+    if (isAlpha || isCore || isThematic || isStocks) {
       activeHoldings = group.holdings.filter((h) => {
         if (h.assetClass !== "equity") return false;
         const tk = h.symbol.endsWith("-T") ? h.symbol.replace(/-T$/, ".TO") : h.symbol;
         const isCoreSym = buckets.isCore(tk);
         if (isThematic) return buckets.isThematic(tk);
+        if (isStocks) return !isCoreSym && !buckets.isThematic(tk);
         return isAlpha ? !isCoreSym : isCoreSym;
       });
     } else {

@@ -110,6 +110,17 @@ export async function PUT(req: NextRequest) {
           { status: 409 },
         );
       }
+      // A series the incoming body doesn't carry is KEPT, never dropped: a tab
+      // loaded before a series was added (e.g. the Stocks series, Nov 2026)
+      // would otherwise delete it on its next save. No client flow removes one.
+      if (Array.isArray(data.models)) {
+        const incomingKeys = new Set(data.models.map((m) => `${m.groupId}|${m.profile}`));
+        const kept = existing.models.filter((m) => !incomingKeys.has(`${m.groupId}|${m.profile}`));
+        if (kept.length) {
+          console.warn("[pm:pim-performance PUT] kept series missing from the body:", kept.map((m) => `${m.groupId}|${m.profile}`).join(", "));
+          data.models = [...data.models, ...kept];
+        }
+      }
     }
     await redis.set(KEY, JSON.stringify(data));
     return NextResponse.json({ ok: true });

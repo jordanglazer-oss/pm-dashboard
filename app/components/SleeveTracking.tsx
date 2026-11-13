@@ -28,6 +28,7 @@ const BOOKS: { profile: string; label: string; note: string }[] = [
   { profile: "core", label: "Core", note: "S&P 500 and Nasdaq index ETFs" },
   { profile: "thematic", label: "Thematic funds", note: "the Thematic funds alone" },
   { profile: "alpha", label: "Alpha", note: "everything outside Core: stocks + Thematic funds" },
+  { profile: "stocks", label: "Stocks", note: "the individual stocks alone" },
 ];
 
 const iso = (d: Date) => d.toISOString().slice(0, 10);

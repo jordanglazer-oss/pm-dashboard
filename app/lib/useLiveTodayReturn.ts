@@ -100,12 +100,13 @@ async function computeFor(
   const isAlpha = profile === "alpha";
   const isCore = profile === "core";
   const isThematic = profile === "thematic";
+  const isStocks = profile === "stocks";
   // Alpha + Core are both equity-only standalone models. Alpha
   // EXCLUDES core ETFs (everything-except-core); Core ONLY contains
   // core ETFs (inverse filter).
   const ALPHA_WEIGHTS = { cash: 0, fixedIncome: 0, equity: 1, alternatives: 0 };
   const CORE_WEIGHTS = { cash: 0, fixedIncome: 0, equity: 1, alternatives: 0 };
-  const profileWeights = isAlpha || isThematic
+  const profileWeights = isAlpha || isThematic || isStocks
     ? ALPHA_WEIGHTS
     : isCore
     ? CORE_WEIGHTS
@@ -142,12 +143,13 @@ async function computeFor(
     //   core  → equity, ONLY core symbols
     //   other → filter by >0% asset-class allocation
     let activeHoldings;
-    if (isAlpha || isCore || isThematic) {
+    if (isAlpha || isCore || isThematic || isStocks) {
       activeHoldings = group.holdings.filter((h) => {
         if (h.assetClass !== "equity") return false;
         const tk = h.symbol.endsWith("-T") ? h.symbol.replace(/-T$/, ".TO") : h.symbol;
         const isCoreSym = buckets.isCore(tk);
         if (isThematic) return buckets.isThematic(tk);
+        if (isStocks) return !isCoreSym && !buckets.isThematic(tk);
         return isAlpha ? !isCoreSym : isCoreSym;
       });
     } else {

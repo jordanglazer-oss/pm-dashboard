@@ -35,6 +35,24 @@ export async function PUT(req: NextRequest) {
       );
     }
     const redis = await getRedis();
+    // A book the incoming body doesn't carry is KEPT, never dropped: a tab
+    // loaded before a book was added (e.g. the Stocks book, Nov 2026) would
+    // otherwise delete it on its next trade. No client flow removes a book.
+    const existingRaw = await redis.get(KEY);
+    if (existingRaw) {
+      try {
+        const existing = JSON.parse(existingRaw) as { portfolios?: { groupId: string; profile: string }[] };
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const incoming = (data as any).portfolios as { groupId: string; profile: string }[];
+        const keys = new Set(incoming.map((b) => `${b.groupId}|${b.profile}`));
+        const kept = (existing.portfolios ?? []).filter((b) => !keys.has(`${b.groupId}|${b.profile}`));
+        if (kept.length) {
+          console.warn("[pm:pim-positions PUT] kept books missing from the body:", kept.map((b) => `${b.groupId}|${b.profile}`).join(", "));
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          (data as any).portfolios = [...incoming, ...kept];
+        }
+      } catch { /* unreadable existing blob — write as before */ }
+    }
     await redis.set(KEY, JSON.stringify(data));
     return NextResponse.json({ ok: true });
   } catch (e) {

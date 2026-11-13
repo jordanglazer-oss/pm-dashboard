@@ -345,11 +345,14 @@ export async function POST() {
       const isAlpha = model.profile === "alpha";
       const isCore = model.profile === "core";
       const isThematic = (model.profile as string) === "thematic";
-      // Alpha + Core + Thematic are firm-wide standalone models — PIM group only.
-      if ((isAlpha || isCore || isThematic) && model.groupId !== "pim") continue;
+      // Stocks (Nov 2026): the individual stocks alone — no Core ETFs, no
+      // Thematic funds. Seeded by /api/admin/seed-stocks-book.
+      const isStocks = (model.profile as string) === "stocks";
+      // Alpha + Core + Thematic + Stocks are firm-wide standalone models — PIM group only.
+      if ((isAlpha || isCore || isThematic || isStocks) && model.groupId !== "pim") continue;
       const ALPHA_WEIGHTS = { cash: 0, fixedIncome: 0, equity: 1, alternatives: 0 };
       const CORE_WEIGHTS = { cash: 0, fixedIncome: 0, equity: 1, alternatives: 0 };
-      const profileWeights = isAlpha || isThematic
+      const profileWeights = isAlpha || isThematic || isStocks
         ? ALPHA_WEIGHTS
         : isCore
         ? CORE_WEIGHTS
@@ -360,13 +363,14 @@ export async function POST() {
       // everything-except-core).
       // For core: equity-only, ONLY core ETFs (the inverse filter).
       // Both renormalize their selected holdings to sum to 1.0.
-      const effectiveHoldings = (isAlpha || isCore || isThematic)
+      const effectiveHoldings = (isAlpha || isCore || isThematic || isStocks)
         ? (() => {
             const filtered = group.holdings.filter((h) => {
               if (h.assetClass !== "equity") return false;
               const isCoreSym = buckets.isCore(h.symbol);
               const isThematicSym = buckets.isThematic(h.symbol);
               if (isThematic) return isThematicSym;
+              if (isStocks) return !isCoreSym && !isThematicSym;
               // Alpha = everything outside Core: the stocks AND the Thematic
               // funds (Oct 2026, PM's call). The Thematic series still tracks
               // the funds on their own.

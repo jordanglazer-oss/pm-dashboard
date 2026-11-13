@@ -61,10 +61,11 @@ export type BookPlan = {
 
 /** Target share of the book per holding, for one positions book. */
 export function bookTargets(pim: PimModelGroup, profile: string, bucket: (symbol: string) => EquityBucket): Array<{ h: PimHolding; pct: number }> {
-  if (profile === "alpha" || profile === "core" || profile === "thematic") {
+  if (profile === "alpha" || profile === "core" || profile === "thematic" || profile === "stocks") {
     // Alpha book = everything outside Core (stocks + Thematic funds, Oct 2026);
-    // Core book = the Core ETFs; Thematic book (Nov 2026) = the Thematic funds.
-    const inBook = (sym: string) => (profile === "core" ? bucket(sym) === "core" : profile === "thematic" ? bucket(sym) === "thematic" : bucket(sym) !== "core");
+    // Core book = the Core ETFs; Thematic book (Nov 2026) = the Thematic funds;
+    // Stocks book (Nov 2026) = the individual stocks alone.
+    const inBook = (sym: string) => (profile === "core" ? bucket(sym) === "core" : profile === "thematic" ? bucket(sym) === "thematic" : profile === "stocks" ? bucket(sym) === "alpha" : bucket(sym) !== "core");
     const eq = pim.holdings.filter((h) => h.assetClass === "equity" && inBook(h.symbol));
     const tot = eq.reduce((a, h) => a + h.weightInClass, 0);
     return tot > 0 ? eq.map((h) => ({ h, pct: h.weightInClass / tot })) : [];

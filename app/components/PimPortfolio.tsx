@@ -303,6 +303,7 @@ const PROFILE_LABELS: Record<PimProfileType, string> = {
   alpha: "Alpha",
   core: "Core",
   thematic: "Thematic",
+  stocks: "Stocks",
 };
 
 // ── Workspace control vocabulary (see design-pro/BUILD-BRIEF.md) ──
@@ -733,6 +734,13 @@ export function PimPortfolio({ groups }: Props) {
   // Alpha = everything outside Core: the stocks AND the Thematic funds (Oct
   // 2026, PM's call) — same rule as the Alpha performance series.
   const notAlpha = useCallback((symbol: string) => coreSymbols.has(symbolToTicker(symbol)), [coreSymbols]);
+  // Stocks book (Nov 2026): the individual stocks alone — no Core ETFs, no
+  // Thematic funds.
+  const isStockSym = useCallback(
+    (symbol: string) => !coreSymbols.has(symbolToTicker(symbol)) && !thematicSymbols.has(symbolToTicker(symbol)),
+    [coreSymbols, thematicSymbols],
+  );
+  const hasStocksBook = positions.some((p) => p.groupId === "pim" && p.profile === "stocks");
 
   const availableProfiles = useMemo<PimProfileType[]>(() => {
     if (!selectedGroup) return [];
@@ -750,10 +758,14 @@ export function PimPortfolio({ groups }: Props) {
         if (selectedGroup.holdings.some((h) => h.assetClass === "equity" && h.weightInClass > 0 && thematicSymbols.has(symbolToTicker(h.symbol)))) {
           base.push("thematic");
         }
+        // Stocks book (Nov 2026) — shown once it exists. It is created by the
+        // one-time /api/admin/seed-stocks-book (history + units copied from the
+        // Alpha book), never built here, so its record starts with the history.
+        if (hasStocksBook) base.push("stocks");
       }
     }
     return base;
-  }, [selectedGroup, thematicSymbols]);
+  }, [selectedGroup, thematicSymbols, hasStocksBook]);
 
   const activeProfile = availableProfiles.includes(selectedProfile)
     ? selectedProfile
@@ -789,7 +801,7 @@ export function PimPortfolio({ groups }: Props) {
   // profile weights. Both are equity-only standalone models.
   const ALPHA_WEIGHTS = { cash: 0, fixedIncome: 0, equity: 1, alternatives: 0 };
   const CORE_WEIGHTS = { cash: 0, fixedIncome: 0, equity: 1, alternatives: 0 };
-  const profileWeights = activeProfile === "alpha" || activeProfile === "thematic"
+  const profileWeights = activeProfile === "alpha" || activeProfile === "thematic" || activeProfile === "stocks"
     ? ALPHA_WEIGHTS
     : activeProfile === "core"
     ? CORE_WEIGHTS
@@ -810,6 +822,16 @@ export function PimPortfolio({ groups }: Props) {
       const normalized = totalWeight > 0
         ? alphaHoldings.map((h) => ({ ...h, weightInClass: h.weightInClass / totalWeight }))
         : alphaHoldings;
+      return { ...selectedGroup, holdings: normalized };
+    }
+
+    // Stocks: equity-only, ONLY the individual stocks, re-normalized to 100%.
+    if (activeProfile === "stocks") {
+      const stHoldings = selectedGroup.holdings.filter((h) => h.assetClass === "equity" && isStockSym(h.symbol));
+      const totalWeight = stHoldings.reduce((s, h) => s + h.weightInClass, 0);
+      const normalized = totalWeight > 0
+        ? stHoldings.map((h) => ({ ...h, weightInClass: h.weightInClass / totalWeight }))
+        : stHoldings;
       return { ...selectedGroup, holdings: normalized };
     }
 
@@ -891,7 +913,7 @@ export function PimPortfolio({ groups }: Props) {
     }
 
     return selectedGroup;
-  }, [selectedGroup, activeProfile, coreSymbols, thematicSymbols, notAlpha, pimGroup, pimModels.sleeveTargets]);
+  }, [selectedGroup, activeProfile, coreSymbols, thematicSymbols, notAlpha, isStockSym, pimGroup, pimModels.sleeveTargets]);
 
   // Load positions from KV
   useEffect(() => {
@@ -1206,6 +1228,11 @@ export function PimPortfolio({ groups }: Props) {
   // different asset mix over the same money — so the sibling profile's total
   // market value is the right size to build it at.
   const [seedFrom, setSeedFrom] = useState<PimProfileType>("balanced");
+  // "live" (default, Nov 2026): inside each asset class, the names take the
+  // sibling book's CURRENT weights (Positioning drift since the last
+  // rebalance); a name the sibling doesn't hold takes its model share.
+  // "model": the model target weights, as before.
+  const [seedBasis, setSeedBasis] = useState<"live" | "model">("live");
   const [seeding, setSeeding] = useState(false);
 
   /** Total CAD market value of a profile's book, cash included. */
@@ -1237,13 +1264,37 @@ export function PimPortfolio({ groups }: Props) {
     if (!effectiveGroup || !profileWeights) return { rows: [], totalValue: 0, cash: 0, missingPrices: [] as string[] };
     const totalValue = profileMarketValue(seedFrom);
     const missingPrices: string[] = [];
+    // Share of each holding INSIDE its asset class: model, or the sibling's live mix.
+    const classShare = new Map<string, number>();
+    {
+      const sib = positions.find((p) => p.groupId === selectedGroupId && p.profile === seedFrom);
+      const liveCad = (h: { symbol: string; currency: string }) => {
+        const pos = sib?.positions.find((p) => symbolToTicker(p.symbol) === symbolToTicker(h.symbol));
+        const px = livePrices[h.symbol] || 0;
+        return pos && pos.units > 0 && px > 0 ? pos.units * px * (h.currency === "USD" ? usdCadRate : 1) : 0;
+      };
+      for (const ac of ["equity", "fixedIncome", "alternative"]) {
+        const inClass = effectiveGroup.holdings.filter((h) => h.assetClass === ac && h.weightInClass > 0);
+        const modelTot = inClass.reduce((t, h) => t + h.weightInClass, 0);
+        if (modelTot <= 0) continue;
+        const held = seedBasis === "live" ? inClass.filter((h) => liveCad(h) > 0) : [];
+        const heldValue = held.reduce((t, h) => t + liveCad(h), 0);
+        const missingModel = inClass.filter((h) => !held.includes(h)).reduce((t, h) => t + h.weightInClass / modelTot, 0);
+        for (const h of inClass) {
+          classShare.set(h.symbol, held.includes(h) && heldValue > 0
+            ? (liveCad(h) / heldValue) * (1 - missingModel)
+            : h.weightInClass / modelTot);
+        }
+      }
+    }
     const rows = effectiveGroup.holdings
       .map((h) => {
         const alloc =
           h.assetClass === "equity" ? profileWeights.equity
           : h.assetClass === "fixedIncome" ? profileWeights.fixedIncome
           : profileWeights.alternatives;
-        const targetWeight = h.weightInClass * alloc;
+        const classTot = effectiveGroup.holdings.filter((x) => x.assetClass === h.assetClass).reduce((t, x) => t + x.weightInClass, 0);
+        const targetWeight = (classShare.get(h.symbol) ?? 0) * classTot * alloc;
         if (targetWeight <= 0) return null;
         const px = livePrices[h.symbol] || 0;
         const priceCad = px * (h.currency === "USD" ? usdCadRate : 1);
@@ -1257,7 +1308,7 @@ export function PimPortfolio({ groups }: Props) {
       })
       .filter(Boolean) as { symbol: string; name: string; currency: "CAD" | "USD"; targetWeight: number; targetValueCad: number; priceCad: number; units: number }[];
     return { rows, totalValue, cash: totalValue * (profileWeights.cash || 0), missingPrices };
-  }, [effectiveGroup, profileWeights, seedFrom, profileMarketValue, livePrices, usdCadRate]);
+  }, [effectiveGroup, profileWeights, seedFrom, seedBasis, positions, selectedGroupId, profileMarketValue, livePrices, usdCadRate]);
 
   const applySeed = useCallback(async () => {
     if (seedPlan.rows.length === 0) return;
@@ -1698,7 +1749,7 @@ export function PimPortfolio({ groups }: Props) {
     // Alpha, Core and Thematic are equity-only sleeve books (Nov 2026: Core and
     // Thematic were skipped here before — no profile weights — so a rebalance
     // never reached them).
-    const pWeights = profile === "alpha" || profile === "core" || profile === "thematic"
+    const pWeights = profile === "alpha" || profile === "core" || profile === "thematic" || profile === "stocks"
       ? { cash: 0, fixedIncome: 0, equity: 1, alternatives: 0 }
       : selectedGroup.profiles[profile];
     if (!pWeights) return { transactions: [] as PimTransaction[], positionUpdates: [] as PimPosition[] };
@@ -1714,10 +1765,11 @@ export function PimPortfolio({ groups }: Props) {
 
     // Build effective group for this profile (alpha / core / thematic filtering)
     let profGroup = selectedGroup;
-    if (profile === "alpha" || profile === "core" || profile === "thematic") {
+    if (profile === "alpha" || profile === "core" || profile === "thematic" || profile === "stocks") {
       const inBook = (sym: string) =>
         profile === "core" ? coreSymbols.has(symbolToTicker(sym))
         : profile === "thematic" ? thematicSymbols.has(symbolToTicker(sym))
+        : profile === "stocks" ? isStockSym(sym)
         : !notAlpha(sym);
       const alphaHoldings = selectedGroup.holdings.filter(
         (h) => h.assetClass === "equity" && inBook(h.symbol)
@@ -1848,7 +1900,7 @@ export function PimPortfolio({ groups }: Props) {
     }
 
     return { transactions, positionUpdates: newPositions };
-  }, [selectedGroup, positions, selectedGroupId, prevCloses, livePrices, usdCadRate, prevCloseUsdCad, sharedCostBasisMap, coreSymbols, thematicSymbols, notAlpha, stagedExits]);
+  }, [selectedGroup, positions, selectedGroupId, prevCloses, livePrices, usdCadRate, prevCloseUsdCad, sharedCostBasisMap, coreSymbols, thematicSymbols, notAlpha, isStockSym, stagedExits]);
 
   // Compute pending trades across all profiles
   const pendingTrades = useMemo(() => {
@@ -2928,7 +2980,8 @@ export function PimPortfolio({ groups }: Props) {
           // "Sleeve books" below), so a missing sold leg there is no miss.
           const expectedHere =
             pp.profile !== "core" && pp.profile !== "thematic" &&
-            (pp.profile !== "alpha" || !notAlpha(trade.sellSymbol));
+            (pp.profile !== "alpha" || !notAlpha(trade.sellSymbol)) &&
+            (pp.profile !== "stocks" || isStockSym(trade.sellSymbol));
           if (expectedHere) {
             const gName = pimModelsRef.current.groups.find((g) => g.id === pp.groupId)?.name ?? pp.groupId;
             unitlessBuyGroups.push(`${gName}/${pp.profile}`);
@@ -3049,14 +3102,16 @@ export function PimPortfolio({ groups }: Props) {
 
         // Target share of THIS profile's portfolio.
         let targetPct = 0;
-        if (pp.profile === "alpha" || pp.profile === "core" || pp.profile === "thematic") {
+        if (pp.profile === "alpha" || pp.profile === "core" || pp.profile === "thematic" || pp.profile === "stocks") {
           // Equity-only sleeve books, renormalized to 100%: Alpha = everything
           // outside Core (stocks + Thematic funds); Core = the Core ETFs;
           // Thematic = the Thematic funds. (Core / Thematic were skipped
           // before Nov 2026.) Buckets read from the CURRENT models.
           const bt = bucketTests(stocks, modelsNow);
           const inBook = (sym: string) =>
-            pp.profile === "core" ? bt.isCore(sym) : pp.profile === "thematic" ? bt.isThematic(sym) : !bt.isCore(sym);
+            pp.profile === "core" ? bt.isCore(sym) : pp.profile === "thematic" ? bt.isThematic(sym)
+            : pp.profile === "stocks" ? !bt.isCore(sym) && !bt.isThematic(sym)
+            : !bt.isCore(sym);
           const alphaHoldings = g.holdings.filter(
             (h) => h.assetClass === "equity" && inBook(h.symbol),
           );
@@ -3141,11 +3196,14 @@ export function PimPortfolio({ groups }: Props) {
       };
       let changed = false;
       const resized = positionsRef.current.map((pp) => {
-        if (pp.profile !== "core" && pp.profile !== "thematic") return pp;
+        if (pp.profile !== "core" && pp.profile !== "thematic" && pp.profile !== "stocks") return pp;
         if (excludedSet.has(pp.groupId)) return pp;
         const g = modelsNow.groups.find((x) => x.id === pp.groupId);
         if (!g) return pp;
-        const inSleeve = (sym: string) => (pp.profile === "core" ? bt.isCore(sym) : bt.isThematic(sym));
+        const inSleeve = (sym: string) =>
+          pp.profile === "core" ? bt.isCore(sym)
+          : pp.profile === "thematic" ? bt.isThematic(sym)
+          : !bt.isCore(sym) && !bt.isThematic(sym);
         const members = g.holdings.filter((h) => h.assetClass === "equity" && h.weightInClass > 0 && inSleeve(h.symbol));
         const memberTotal = members.reduce((t, h) => t + h.weightInClass, 0);
         if (!members.length || memberTotal <= 0) return pp;
@@ -3164,6 +3222,29 @@ export function PimPortfolio({ groups }: Props) {
           return pp;
         }
         changed = true;
+        if (pp.profile === "stocks") {
+          // Stocks book keeps its DRIFT (Nov 2026): strays are sold, a new
+          // stock comes in at its model share of the stocks, and the names
+          // already held scale together to fund it (or to absorb idle cash) —
+          // their weights relative to each other are unchanged.
+          const cad = (sym: string) => pxOf(sym) * (tickerIsUsd(sym) ? usdCadRate : 1);
+          const keep = held.filter((p) => members.some((h) => tickerEq(h.symbol, p.symbol)));
+          const keepValue = keep.reduce((t, p) => t + p.units * cad(p.symbol), 0);
+          const missingShare = missing.reduce((t, h) => t + h.weightInClass / memberTotal, 0);
+          const scale = keepValue > 0 ? (total * (1 - missingShare)) / keepValue : 0;
+          const kept = keep.map((p) => {
+            const units = p.units * scale;
+            const priceCad = cad(p.symbol);
+            const costBasis = units > p.units ? (p.units * p.costBasis + (units - p.units) * priceCad) / units : p.costBasis;
+            return { symbol: p.symbol, units: parseFloat(units.toFixed(4)), costBasis: parseFloat(costBasis.toFixed(4)) };
+          });
+          const added = (keepValue > 0 ? missing : members).map((h) => {
+            const priceCad = cad(h.symbol);
+            const units = (total * (h.weightInClass / memberTotal)) / priceCad;
+            return { symbol: h.symbol, units: parseFloat(units.toFixed(4)), costBasis: parseFloat(priceCad.toFixed(4)) };
+          });
+          return { ...pp, positions: [...kept, ...added], cashBalance: 0, lastUpdated: nowIso };
+        }
         const next = members.map((h) => {
           const priceCad = pxOf(h.symbol) * (tickerIsUsd(h.symbol) ? usdCadRate : 1);
           const units = (total * (h.weightInClass / memberTotal)) / priceCad;
@@ -3230,7 +3311,7 @@ export function PimPortfolio({ groups }: Props) {
     }
 
     return { ok: true, warning };
-  }, [pimPortfolioState, selectedGroupId, updatePimPortfolioState, scoredStocks, addStock, pimModels, updatePimModels, moveBucket, stocks, positions, usdCadRate, rebalanceStockWeights, updateStockFields, coreSymbols, notAlpha, livePrices]);
+  }, [pimPortfolioState, selectedGroupId, updatePimPortfolioState, scoredStocks, addStock, pimModels, updatePimModels, moveBucket, stocks, positions, usdCadRate, rebalanceStockWeights, updateStockFields, coreSymbols, notAlpha, isStockSym, livePrices]);
 
   /**
    * Run every valid trade in the queue sequentially. Skips invalid rows
@@ -3414,7 +3495,7 @@ export function PimPortfolio({ groups }: Props) {
     if (src.cash > 0.0005) parts.push(`Cash ${(src.cash * 100).toFixed(0)}%`);
     return parts.join(" · ") + (liveTotal > 0.01 ? "" : " · target");
   })();
-  const isFullProfile = activeProfile !== "alpha" && activeProfile !== "core" && activeProfile !== "thematic";
+  const isFullProfile = activeProfile !== "alpha" && activeProfile !== "core" && activeProfile !== "thematic" && activeProfile !== "stocks";
 
   // ── Positioning snapshot (PNG) — read-only, renders on a canvas and hands
   // the file to the browser. Uses the SAME apportioned display weights as the
@@ -4634,7 +4715,19 @@ export function PimPortfolio({ groups }: Props) {
                       </option>
                     ))}
                 </select>
-                <span className="m min-w-0 break-words">at this profile&apos;s own target weights</span>
+                <select
+                  value={seedBasis}
+                  onChange={(e) => setSeedBasis(e.target.value as "live" | "model")}
+                  className={`${INPUT} min-w-0 max-w-full`}
+                >
+                  <option value="live">at its current weights (Positioning)</option>
+                  <option value="model">at the model target weights</option>
+                </select>
+                <span className="m min-w-0 break-words">
+                  {seedBasis === "live"
+                    ? `each name keeps its weight in ${PROFILE_LABELS[seedFrom]} today (within its asset class, scaled to this profile's mix); names ${PROFILE_LABELS[seedFrom]} doesn't hold take their model share`
+                    : "at this profile's own target weights"}
+                </span>
                 <button
                   onClick={applySeed}
                   disabled={seeding}
