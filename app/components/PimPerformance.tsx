@@ -128,7 +128,9 @@ export function PimPerformance({ groupId, groupName, selectedProfile, onPerfData
             if (appendix?.ledgers?.length > 0) {
               let corrupted = false;
               for (const ledger of appendix.ledgers as AppendixModelLedger[]) {
-                if (ledger.profile === "alpha") continue;
+                // Alpha + Stocks (seeded Nov 2026) are standalone PIM series whose
+                // ledgers may start later than their performance history.
+                if (ledger.profile === "alpha" || ledger.profile === "stocks") continue;
                 const model = data.models.find(
                   (m: PimModelPerformance) => m.groupId === groupId && m.profile === ledger.profile
                 );
