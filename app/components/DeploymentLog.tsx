@@ -79,20 +79,20 @@ export function DeploymentLog({ onStatus }: { onStatus?: (s: LedgerStatus) => vo
       </div>
 
       {formOpen && (
-        <div className="mt-2 grid gap-2 rounded border border-line bg-surface p-2 sm:grid-cols-[auto_auto_1fr_auto]">
-          <label className="flex flex-col gap-0.5"><span className="text-[10px] uppercase tracking-wide text-ink-3">Day</span>
-            <input id="deploy-log-date" type="date" max={todayET()} value={date} onChange={(e) => setDate(e.target.value)} className="rounded border border-line bg-surface px-1.5 py-1" /></label>
-          <label className="flex flex-col gap-0.5"><span className="text-[10px] uppercase tracking-wide text-ink-3">Amount</span>
-            <select id="deploy-log-portion" value={portion} onChange={(e) => setPortion(e.target.value as "full" | "half")} className="rounded border border-line bg-surface px-1.5 py-1">
+        <div className="mt-2 grid grid-cols-2 gap-2 rounded border border-line bg-surface p-2">
+          <label className="flex min-w-0 flex-col gap-0.5"><span className="text-[10px] uppercase tracking-wide text-ink-3">Day</span>
+            <input id="deploy-log-date" type="date" max={todayET()} value={date} onChange={(e) => setDate(e.target.value)} className="min-w-0 rounded border border-line bg-surface px-1.5 py-1" /></label>
+          <label className="flex min-w-0 flex-col gap-0.5"><span className="text-[10px] uppercase tracking-wide text-ink-3">Amount</span>
+            <select id="deploy-log-portion" value={portion} onChange={(e) => setPortion(e.target.value as "full" | "half")} className="min-w-0 rounded border border-line bg-surface px-1.5 py-1">
               <option value="full">Full installment</option><option value="half">Half</option>
             </select></label>
-          <label className="flex flex-col gap-0.5"><span className="text-[10px] uppercase tracking-wide text-ink-3">Note (optional)</span>
-            <input id="deploy-log-note" value={note} onChange={(e) => setNote(e.target.value)} maxLength={280} className="rounded border border-line bg-surface px-1.5 py-1" /></label>
-          <div className="flex items-end gap-1.5">
+          <label className="col-span-2 flex min-w-0 flex-col gap-0.5"><span className="text-[10px] uppercase tracking-wide text-ink-3">Note (optional)</span>
+            <input id="deploy-log-note" value={note} onChange={(e) => setNote(e.target.value)} maxLength={280} className="min-w-0 rounded border border-line bg-surface px-1.5 py-1" /></label>
+          <div className="col-span-2 flex items-end gap-1.5">
             <button type="button" disabled={busy} onClick={async () => { if (await post({ add: { date, portion, note } })) { setFormOpen(false); setNote(""); } }} className="rounded bg-ink px-2.5 py-1 text-[11px] font-semibold text-white disabled:opacity-50">Save</button>
             <button type="button" onClick={() => { setFormOpen(false); setError(null); }} className="rounded border border-line px-2.5 py-1 text-[11px]">Cancel</button>
           </div>
-          {error && <div className="text-neg sm:col-span-4">{error}</div>}
+          {error && <div className="col-span-2 text-neg">{error}</div>}
         </div>
       )}
 

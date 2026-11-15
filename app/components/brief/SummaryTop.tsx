@@ -7,6 +7,7 @@ import { useStocks } from "@/app/lib/StockContext";
 import { Pct, RegimeTrack, Status, TileLink, fmtPct, ordinal, regimeTone, timeAgo, toneText, useRevealFold } from "./summary-ui";
 import { HedgeLedgerContext, type HedgePos } from "./hedge-ledger";
 import { PerformancePanel } from "./PerformancePanel";
+import { DeploymentLog } from "../DeploymentLog";
 
 /**
  * The decision panel — ONE hairline card: the four reads (Regime · Cash ·
@@ -123,6 +124,7 @@ function CashCell({ s }: { s: DailySummary }) {
     return (
       <Cell label="Cash">
         <div className="mt-1 text-[12px] text-ink-3">No cash call in the current brief.</div>
+        <DeploymentLog />
       </Cell>
     );
   }
@@ -154,6 +156,10 @@ function CashCell({ s }: { s: DailySummary }) {
         <span className="text-ink-3">{call.window}</span>
         <TileLink onClick={() => reveal("briefNarrativeCash")} className="ml-auto">How the score was built</TileLink>
       </div>
+      {/* The installment log + timing record. It lived only in the old "full"
+          Brief layout, which the page no longer renders, so the month's
+          deployment could not be recorded anywhere. */}
+      <DeploymentLog />
     </Cell>
   );
 }

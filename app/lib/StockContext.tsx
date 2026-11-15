@@ -236,6 +236,41 @@ if (typeof window !== "undefined") {
  * On beforeunload, all pending debounces auto-flush via fetch+keepalive
  * (sendBeacon has a ~64KB limit that the stocks blob can exceed).
  */
+/**
+ * Save one ticker's change to a per-ticker, per-source blob
+ * (pm:analyst-snapshots / pm:analyst-reports) as a PATCH of just the sources
+ * that differ between `prev` and `next`. The server merges it into what is
+ * stored, so this tab's (possibly hours-old) copy of every other ticker and
+ * source is never written back over the nightly estimates refresh or the
+ * email ingest. Requests are chained so two quick edits land in order.
+ */
+let tickerPatchChain: Promise<void> = Promise.resolve();
+function patchTickerSources(url: string, ticker: string, prev: object | undefined, next: object | undefined): void {
+  const before = (prev ?? {}) as Record<string, unknown>;
+  const after = (next ?? {}) as Record<string, unknown>;
+  const set: Record<string, unknown> = {};
+  const remove: string[] = [];
+  for (const [source, value] of Object.entries(after)) {
+    if (value === undefined) continue;
+    if (JSON.stringify(value) !== JSON.stringify(before[source])) set[source] = value;
+  }
+  for (const source of Object.keys(before)) {
+    if (after[source] === undefined && before[source] !== undefined) remove.push(source);
+  }
+  if (Object.keys(set).length === 0 && remove.length === 0) return;
+  const body = JSON.stringify({ ticker, set, remove });
+  tickerPatchChain = tickerPatchChain.then(() =>
+    fetch(url, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body,
+      keepalive: body.length < 60_000,
+    })
+      .then((r) => { if (!r.ok) console.error(`Failed to save ${url} for ${ticker}: ${r.status}`); })
+      .catch((e) => console.error(`Failed to save ${url} for ${ticker}:`, e)),
+  );
+}
+
 function useDebouncedPersist(url: string, bodyKey: string, delay = 500): [
   (data: unknown) => void,
   () => Promise<void>,
@@ -571,14 +606,8 @@ export function StockProvider({ children }: { children: React.ReactNode }) {
     }).catch((e) => console.error("Failed to persist pim-portfolio-state:", e));
   }, []);
   const [persistUiPrefs] = useDebouncedPersist("/api/kv/ui-prefs", "uiPrefs", 300);
-  const [persistAnalystSnapshots] = useDebouncedPersist("/api/kv/analyst-snapshots", "snapshots", 400);
-  const persistAnalystReports = useCallback((data: AnalystReports) => {
-    fetch("/api/kv/analyst-reports", {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ reports: data }),
-    }).catch((e) => console.error("Failed to persist analyst-reports:", e));
-  }, []);
+  // Analyst snapshots + report manifest save ONE ticker's changed sources
+  // (PATCH, merged server-side), never the whole map — see patchTickerSources.
 
   /* ─── Load from KV on mount ─── */
   useEffect(() => {
@@ -1785,10 +1814,10 @@ export function StockProvider({ children }: { children: React.ReactNode }) {
   const updateAnalystSnapshot = useCallback((ticker: string, next: TickerSnapshot | undefined) => {
     setAnalystSnapshotsState((prev) => {
       const updated = setSnapshotForTicker(prev, ticker, next);
-      persistAnalystSnapshots(updated);
+      patchTickerSources("/api/kv/analyst-snapshots", ticker, getSnapshotForTicker(prev, ticker), next);
       return updated;
     });
-  }, [persistAnalystSnapshots]);
+  }, []);
 
   const getAnalystReports = useCallback((ticker: string) => {
     return getReportsForTicker(analystReports, ticker);
@@ -1863,7 +1892,7 @@ export function StockProvider({ children }: { children: React.ReactNode }) {
       const current = getReportsForTicker(prev, ticker) ?? {};
       const nextForTicker: TickerReports = { ...current, [source]: meta };
       const updated = setReportsForTicker(prev, ticker, nextForTicker);
-      persistAnalystReports(updated);
+      patchTickerSources("/api/kv/analyst-reports", ticker, current, nextForTicker);
       return updated;
     });
 
@@ -1955,7 +1984,7 @@ export function StockProvider({ children }: { children: React.ReactNode }) {
       }
       derivedSnapshot = nextSnapshot;
       const updated = setSnapshotForTicker(prev, ticker, nextSnapshot);
-      persistAnalystSnapshots(updated);
+      patchTickerSources("/api/kv/analyst-snapshots", ticker, currentSnapshot, nextSnapshot);
       return updated;
     });
 
@@ -1972,7 +2001,7 @@ export function StockProvider({ children }: { children: React.ReactNode }) {
     // analystSnapshots is a REAL dependency: the upload reads the remembered
     // currency from it. Omitting it would let a correction made moments
     // earlier be missed by a stale closure on the very next upload.
-  }, [analystSnapshots, persistAnalystReports, persistAnalystSnapshots, stocks, updateScore, updateExplanations, tickerCurrency]);
+  }, [analystSnapshots, stocks, updateScore, updateExplanations, tickerCurrency]);
 
   const removeAnalystReport = useCallback(async (ticker: string, source: "rbc" | "jpm" | "morningstar") => {
     const reportId = reportIdFor(ticker, source);
@@ -1987,7 +2016,7 @@ export function StockProvider({ children }: { children: React.ReactNode }) {
       const nextForTicker: TickerReports = { ...current };
       delete nextForTicker[source];
       const updated = setReportsForTicker(prev, ticker, Object.keys(nextForTicker).length ? nextForTicker : undefined);
-      persistAnalystReports(updated);
+      patchTickerSources("/api/kv/analyst-reports", ticker, current, nextForTicker);
       return updated;
     });
     // RBC/JPM fields are PDF-driven only — removing the PDF removes the entry
@@ -2000,7 +2029,7 @@ export function StockProvider({ children }: { children: React.ReactNode }) {
       delete nextSnapshot[source];
       derivedSnapshot = nextSnapshot;
       const updated = setSnapshotForTicker(prev, ticker, nextSnapshot);
-      persistAnalystSnapshots(updated);
+      patchTickerSources("/api/kv/analyst-snapshots", ticker, currentSnapshot, nextSnapshot);
       return updated;
     });
 
@@ -2010,7 +2039,7 @@ export function StockProvider({ children }: { children: React.ReactNode }) {
     const consensus = computeAnalystConsensus(hasAny ? derivedSnapshot : undefined, stockPrice);
     updateScore(ticker, "analystConsensus", consensus.score);
     updateExplanations(ticker, { analystConsensus: buildConsensusExplanation(consensus) });
-  }, [persistAnalystReports, persistAnalystSnapshots, stocks, updateScore, updateExplanations]);
+  }, [stocks, updateScore, updateExplanations]);
 
   // Convert an existing analyst target's currency without re-extraction.
   // This is for pre-existing data where `targetCurrency` wasn't captured.
@@ -2058,7 +2087,7 @@ export function StockProvider({ children }: { children: React.ReactNode }) {
         const nextSnapshot: TickerSnapshot = { ...currentSnapshot, [source]: updatedEntry };
         derivedSnapshot = nextSnapshot;
         const updated = setSnapshotForTicker(prev, ticker, nextSnapshot);
-        persistAnalystSnapshots(updated);
+        patchTickerSources("/api/kv/analyst-snapshots", ticker, currentSnapshot, nextSnapshot);
         return updated;
       });
 
@@ -2072,7 +2101,7 @@ export function StockProvider({ children }: { children: React.ReactNode }) {
     } catch (e) {
       console.error(`Failed to convert ${source} target for ${ticker}:`, e);
     }
-  }, [analystSnapshots, persistAnalystSnapshots, stocks, updateScore, updateExplanations, tickerCurrency]);
+  }, [analystSnapshots, stocks, updateScore, updateExplanations, tickerCurrency]);
 
   /* ─── Toggle model eligibility: updates stock field AND syncs model holdings ─── */
   const toggleModelEligibility = useCallback((ticker: string, groupId: string, eligible: boolean) => {

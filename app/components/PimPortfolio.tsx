@@ -915,18 +915,54 @@ export function PimPortfolio({ groups }: Props) {
     return selectedGroup;
   }, [selectedGroup, activeProfile, coreSymbols, thematicSymbols, notAlpha, isStockSym, pimGroup, pimModels.sleeveTargets]);
 
-  // Load positions from KV
+  // Load positions from KV — on mount, and again whenever the PM comes BACK to
+  // this tab after being away. Every save here writes whole books, so a tab
+  // still holding yesterday's units (left open across a staged rebalance, a
+  // trade on another device, or the nightly job) would write them back over
+  // the newer ones on its next trade. Re-reading on return keeps the copy
+  // current before anything can be saved from it.
+  //   - skipped while an edit / rebalance / settlement is open or saving;
+  //   - a re-read is DISCARDED if this tab changed positions while it was in
+  //     flight, so it can never replace a trade that just happened here.
+  const positionsBusyRef = useRef(false); // kept in step further down, once every flag exists
+  const positionsEpochRef = useRef(0);
+  useEffect(() => { positionsEpochRef.current += 1; }, [positions]);
   useEffect(() => {
-    async function load() {
+    let alive = true;
+    let awaySince: number | null = null;
+    async function load(initial: boolean) {
+      if (!initial && positionsBusyRef.current) return;
+      const epoch = positionsEpochRef.current;
       try {
-        const res = await fetch("/api/kv/pim-positions");
-        if (res.ok) {
-          const data = await res.json();
-          setPositions(data.portfolios || []);
-        }
+        const res = await fetch("/api/kv/pim-positions", { cache: "no-store" });
+        if (!res.ok || !alive) return;
+        const data = await res.json();
+        const fresh: PimPortfolioPositions[] = data.portfolios || [];
+        if (initial) { setPositions(fresh); return; }
+        if (positionsBusyRef.current || epoch !== positionsEpochRef.current) return;
+        if (JSON.stringify(fresh) === JSON.stringify(positionsRef.current)) return;
+        positionsRef.current = fresh;
+        setPositions(fresh);
       } catch { /* ignore */ }
     }
-    load();
+    load(true);
+    const AWAY_MS = 60_000;
+    const onAway = () => { if (awaySince === null) awaySince = Date.now(); };
+    const onBack = () => {
+      const since = awaySince;
+      awaySince = null;
+      if (since !== null && Date.now() - since >= AWAY_MS) void load(false);
+    };
+    const onVisibility = () => (document.visibilityState === "hidden" ? onAway() : onBack());
+    window.addEventListener("blur", onAway);
+    window.addEventListener("focus", onBack);
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => {
+      alive = false;
+      window.removeEventListener("blur", onAway);
+      window.removeEventListener("focus", onBack);
+      document.removeEventListener("visibilitychange", onVisibility);
+    };
   }, []);
 
   // Every symbol Positioning prices for this group: the model's holdings plus
@@ -1349,6 +1385,10 @@ export function PimPortfolio({ groups }: Props) {
   // existing position keeps its exact units and cost basis, and the new ones
   // start flat at today's price. Shown as a plan first; writes real positions.
   const [filling, setFilling] = useState(false);
+  // Feeds the "re-read positions on return" guard above.
+  useEffect(() => {
+    positionsBusyRef.current = editMode || saving || showRebalance || showSettlement || settling || seeding || filling;
+  }, [editMode, saving, showRebalance, showSettlement, settling, seeding, filling]);
   const fillPlan = useMemo(() => {
     const empty = { rows: [] as { symbol: string; name: string; targetWeight: number; priceCad: number; units: number }[], missingPrices: [] as string[], currentValue: 0, newTotal: 0, missingWeight: 0 };
     if (!effectiveGroup || !profileWeights) return empty;

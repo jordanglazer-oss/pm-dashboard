@@ -1297,11 +1297,21 @@ export default function ResearchPage() {
     });
   }
 
+  // Last copy of pm:research the server confirmed (wire shape) + its
+  // fingerprint. Null until the first load lands.
+  const researchSyncRef = useRef<{ hash: string | null; base: Record<string, unknown> | null }>({ hash: null, base: null });
+
   useEffect(() => {
     fetch("/api/kv/research", { cache: "no-store" })
       .then((r) => r.json())
       .then(async (data) => {
         if (data.research) {
+          // What the server holds right now + its fingerprint: the base every
+          // later save is compared against (see sendResearchSave).
+          researchSyncRef.current = {
+            hash: typeof data.hash === "string" ? data.hash : null,
+            base: JSON.parse(JSON.stringify(data.research)) as Record<string, unknown>,
+          };
           let research = data.research as ResearchState;
 
           // Hydrate attachment dataUrls from per-image Redis keys. Legacy
@@ -1544,7 +1554,11 @@ export default function ResearchPage() {
         dataUrl: "", // placeholder; not read client-side
       })),
     };
-    const body = JSON.stringify({ research: serializable });
+    const wire = serializable as unknown as Record<string, unknown>;
+    // "" (never loaded) matches nothing, so a page whose load failed cannot
+    // save its empty lists over the real ones.
+    const baseHash = researchSyncRef.current.hash ?? "";
+    const body = JSON.stringify({ research: serializable, baseHash });
     if (useBeacon && typeof navigator !== "undefined" && "sendBeacon" in navigator) {
       // beforeunload fires synchronously; fetch() can't reliably complete
       // before the tab is torn down. navigator.sendBeacon is designed for
@@ -1560,13 +1574,49 @@ export default function ResearchPage() {
     // Return the promise so callers can await the PUT before triggering a
     // researchMentions recompute — the tally reads pm:research, so it must
     // run AFTER this write lands or it reads the pre-edit state.
-    return fetch("/api/kv/research", {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body,
-    })
-      .then(() => {})
-      .catch((e) => console.error("Failed to save research:", e));
+    const put = (payload: string) =>
+      fetch("/api/kv/research", { method: "PUT", headers: { "Content-Type": "application/json" }, body: payload });
+    return (async () => {
+      let res = await put(body);
+      let sent = wire;
+      // 409 = pm:research changed since this page last saw it (an emailed list
+      // was ingested, another tab saved, or one of this page's own background
+      // saves landed first). Fold THIS page's changes into the server's copy,
+      // field by field, and retry: a list the page changed since its base wins,
+      // every other list keeps what the server has.
+      for (let attempt = 0; res.status === 409 && attempt < 3; attempt++) {
+        const j = (await res.json().catch(() => null)) as { research?: Record<string, unknown>; hash?: string } | null;
+        if (!j?.research || typeof j.hash !== "string") break;
+        const base = researchSyncRef.current.base;
+        if (!base) {
+          // This page never loaded the lists, so it cannot tell what it
+          // changed. Save nothing and start again from the server's copy.
+          console.warn("[research] lists were never loaded on this page — reloading instead of saving");
+          window.location.reload();
+          return;
+        }
+        const server = j.research;
+        const merged: Record<string, unknown> = { ...server };
+        const fromServer: Record<string, unknown> = {};
+        for (const k of new Set([...Object.keys(server), ...Object.keys(wire)])) {
+          const mineChanged = k in wire && JSON.stringify(wire[k]) !== JSON.stringify(base[k]);
+          if (mineChanged) merged[k] = wire[k];
+          else if (k in server && k !== "attachments" && JSON.stringify(server[k]) !== JSON.stringify(wire[k])) fromServer[k] = server[k];
+        }
+        sent = merged;
+        res = await put(JSON.stringify({ research: merged, baseHash: j.hash }));
+        if (res.ok && Object.keys(fromServer).length > 0) {
+          // Show the lists that changed elsewhere without a refresh.
+          setState((prev) => ({ ...prev, ...(fromServer as Partial<ResearchState>) }));
+        }
+      }
+      if (res.ok) {
+        const j = (await res.json().catch(() => null)) as { hash?: string } | null;
+        if (typeof j?.hash === "string") researchSyncRef.current = { hash: j.hash, base: sent };
+      } else {
+        console.error("Failed to save research:", res.status);
+      }
+    })().catch((e) => console.error("Failed to save research:", e));
   }, []);
 
   const save = useCallback((next: ResearchState) => {

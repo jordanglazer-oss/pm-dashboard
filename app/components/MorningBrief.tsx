@@ -400,13 +400,18 @@ export function MorningBrief({
     }).catch(() => {});
     return () => { alive = false; };
   }, []);
-  const persistHedges = async (next: HedgePos[]) => {
+  // Sends ONLY the row that changed; the server merges it into the ledger by
+  // id and returns the full list, so this tab's copy of the other rows (which
+  // may be out of date, or empty after a failed load) is never written back.
+  const persistHedges = async (next: HedgePos[], changed: HedgePos) => {
     setHedges(next);
     try {
-      await fetch("/api/kv/hedges", {
+      const res = await fetch("/api/kv/hedges", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ hedges: next }),
+        body: JSON.stringify({ hedges: [changed] }),
       });
+      const j = await res.json().catch(() => null);
+      if (res.ok && Array.isArray(j?.hedges)) setHedges(j.hedges as HedgePos[]);
     } catch { /* local state already updated; next load reconciles */ }
   };
   const openHedgeForm = () => {
@@ -443,12 +448,15 @@ export function MorningBrief({
       contracts: num(hedgeForm.contracts),
       notes: hedgeForm.notes || undefined,
     };
-    await persistHedges([...hedges, pos]);
+    await persistHedges([...hedges, pos], pos);
     setShowHedgeForm(false);
     setSavingHedge(false);
   };
   const closeHedge = async (id: string) => {
-    await persistHedges(hedges.map((h) => (h.id === id ? { ...h, status: "closed" as const } : h)));
+    const target = hedges.find((h) => h.id === id);
+    if (!target) return;
+    const closed = { ...target, status: "closed" as const };
+    await persistHedges(hedges.map((h) => (h.id === id ? closed : h)), closed);
   };
 
   // Which Portfolio Risk Scan rows are expanded (by index). Summaries clamp to

@@ -15,7 +15,7 @@
       "runtimeExecutable": "/bin/bash",
       "runtimeArgs": [
         "-c",
-        "export PATH=/usr/local/bin:$PATH && export REDIS_URL=redis://127.0.0.1:6390 && npm run dev -- -p 3001"
+        "export PATH=/usr/local/bin:$PATH && export REDIS_URL=redis://127.0.0.1:6391 && export KV_URL= && export SITE_PASSWORD=local-test-password && export AUTH_SECRET= && npm run dev -- -p 3001"
       ],
       "port": 3001
     }
