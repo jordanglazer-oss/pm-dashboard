@@ -21,15 +21,15 @@ import { normalizeSeries, periodReturns, returnSince, type ValuePoint } from "@/
 import type { DailySummary } from "@/app/lib/daily-summary";
 import type { PimPerformanceData, PimProfileType } from "@/app/lib/pim-types";
 
-type ColKey = "1d" | "1w" | "1m" | "qtd" | "ytd" | "start";
-const COLS: { key: ColKey; label: string }[] = [
+type ColKey = "1d" | "1w" | "1m" | "qtd" | "ytd" | "range";
+const BASE_COLS: { key: ColKey; label: string }[] = [
   { key: "1d", label: "1D" },
   { key: "1w", label: "1W" },
   { key: "1m", label: "1M" },
   { key: "qtd", label: "QTD" },
   { key: "ytd", label: "YTD" },
-  { key: "start", label: "Start" },
 ];
+type Range = { from: string; to: string };
 
 const SLEEVES: { profile: PimProfileType; label: string; note: string }[] = [
   { profile: "core", label: "Core", note: "index ETFs" },
@@ -59,8 +59,18 @@ function quarterStart(today: string): string {
   return `${today.slice(0, 4)}-${String(q).padStart(2, "0")}-01`;
 }
 
+/** Return from the close BEFORE `from` to the last close on/before `to`; null when the series starts after `from`. */
+function rangeReturn(series: ValuePoint[], r: Range | null): number | null {
+  if (!r || !r.from || series.length < 2) return null;
+  const to = r.to || getTodayET();
+  const base = [...series].reverse().find((p) => p.date < r.from);
+  const end = [...series].reverse().find((p) => p.date <= to);
+  if (!base || !end || end.date <= base.date || !(base.value > 0)) return null;
+  return parseFloat(((end.value / base.value - 1) * 100).toFixed(2));
+}
+
 /** Period returns on a value series, with today's live move compounded on when the series hasn't closed today yet. */
-function compute(raw: { date: string; value: number }[], live: number | null): Computed {
+function compute(raw: { date: string; value: number }[], live: number | null, range: Range | null): Computed {
   const today = getTodayET();
   let series = normalizeSeries(raw);
   let isLive = false;
@@ -68,7 +78,7 @@ function compute(raw: { date: string; value: number }[], live: number | null): C
     series = [...series, { date: today, value: series[series.length - 1].value * (1 + live / 100) }];
     isLive = true;
   }
-  const empty: Returns = { "1d": null, "1w": null, "1m": null, qtd: null, ytd: null, start: null };
+  const empty: Returns = { "1d": null, "1w": null, "1m": null, qtd: null, ytd: null, range: null };
   if (series.length < 2) return { returns: empty, series, first: series[0]?.date ?? null, live: isLive };
   const p = periodReturns(series);
   const qs = quarterStart(today);
@@ -77,7 +87,6 @@ function compute(raw: { date: string; value: number }[], live: number | null): C
     x.setUTCDate(x.getUTCDate() - 1);
     return x.toISOString().slice(0, 10);
   };
-  const last = series[series.length - 1].value;
   return {
     returns: {
       "1d": p["1d"],
@@ -85,7 +94,7 @@ function compute(raw: { date: string; value: number }[], live: number | null): C
       "1m": p["1m"],
       qtd: series[0].date < qs ? returnSince(series, dayBefore(qs)) : null,
       ytd: p.ytd,
-      start: series[0].value > 0 ? parseFloat(((last / series[0].value - 1) * 100).toFixed(2)) : null,
+      range: rangeReturn(series, range),
     },
     series,
     first: series[0].date,
@@ -93,16 +102,14 @@ function compute(raw: { date: string; value: number }[], live: number | null): C
   };
 }
 
-/** Points for the trend line over the selected period. */
-function sliceFor(series: ValuePoint[], col: ColKey): ValuePoint[] {
+/** Points for the trend line: the custom range when one is set, else YTD. */
+function trendSlice(series: ValuePoint[], range: Range | null): ValuePoint[] {
   if (series.length < 2) return [];
-  const today = getTodayET();
-  const back: Partial<Record<ColKey, number>> = { "1d": 1, "1w": 5, "1m": 21 };
-  if (back[col] != null) return series.slice(Math.max(0, series.length - 1 - (back[col] as number)));
-  if (col === "start") return series;
-  const from = col === "ytd" ? `${today.slice(0, 4)}-01-01` : quarterStart(today);
+  const from = range?.from || `${getTodayET().slice(0, 4)}-01-01`;
+  const to = range?.from ? range.to || getTodayET() : getTodayET();
   const idx = series.findIndex((p) => p.date >= from);
-  return idx <= 0 ? series : series.slice(idx - 1);
+  const start = idx <= 0 ? 0 : idx - 1;
+  return series.slice(start).filter((p) => p.date <= to);
 }
 
 const fmt = (v: number | null) => (v == null ? "—" : `${v > 0 ? "+" : ""}${v.toFixed(2)}%`);
@@ -111,7 +118,7 @@ const tone = (v: number | null) => (v == null ? "text-ink-faint" : v > 0 ? "text
 type Row = { key: string; label: string; note: string; c: Computed; market?: boolean };
 
 /** One hook call per book (hooks can't run in a loop over a dynamic list). */
-function useBookRows(perf: PimPerformanceData | null, tick: number) {
+function useBookRows(perf: PimPerformanceData | null, tick: number, range: Range | null) {
   const hist = (p: PimProfileType) => perf?.models.find((m) => m.groupId === "pim" && m.profile === p)?.history ?? [];
   const core = useLiveTodayReturn("pim", "core");
   const thematic = useLiveTodayReturn("pim", "thematic");
@@ -132,7 +139,7 @@ function useBookRows(perf: PimPerformanceData | null, tick: number) {
 
   const build = (list: typeof SLEEVES): Row[] =>
     list
-      .map((b) => ({ key: b.profile, label: b.label, note: b.note, c: compute(hist(b.profile), live[b.profile].value) }))
+      .map((b) => ({ key: b.profile, label: b.label, note: b.note, c: compute(hist(b.profile), live[b.profile].value, range) }))
       .filter((r) => r.c.series.length > 0 || r.key === "thematic" || r.key === "stocks");
   return { sleeves: build(SLEEVES), client: build(CLIENT).filter((r) => r.c.series.length > 0) };
 }
@@ -172,7 +179,7 @@ function useMarketRows(s: DailySummary, tick: number): Row[] {
         "1m": comp(b.returns["1m"]),
         qtd: null,
         ytd: comp(b.returns.ytd),
-        start: null,
+        range: null,
       };
       return { key: b.key, label: b.key === "sp500" ? "S&P 500" : "S&P/TSX", note: b.key === "sp500" ? "USD" : "CAD", market: true, c: { returns, series: [], first: null, live: liveD != null } };
     });
@@ -180,7 +187,7 @@ function useMarketRows(s: DailySummary, tick: number): Row[] {
 
 export function PerformancePanel({ s }: { s: DailySummary }) {
   const [perf, setPerf] = useState<PimPerformanceData | null>(null);
-  const [col, setCol] = useState<ColKey>("ytd");
+  const [range, setRange] = useState<Range>({ from: "", to: "" });
   const [tick, setTick] = useState(0);
   const [clock, setClock] = useState<string | null>(null);
 
@@ -210,7 +217,11 @@ export function PerformancePanel({ s }: { s: DailySummary }) {
     return () => clearInterval(id);
   }, []);
 
-  const { sleeves, client } = useBookRows(perf, tick);
+  const activeRange = range.from ? range : null;
+  const cols = activeRange
+    ? [...BASE_COLS, { key: "range" as ColKey, label: `${range.from.slice(5)} → ${(range.to || getTodayET()).slice(5)}` }]
+    : BASE_COLS;
+  const { sleeves, client } = useBookRows(perf, tick, activeRange);
   const markets = useMarketRows(s, tick);
   const coreRow = sleeves.find((r) => r.key === "core");
   const anyLive = [...sleeves, ...client].some((r) => r.c.live);
@@ -218,77 +229,83 @@ export function PerformancePanel({ s }: { s: DailySummary }) {
     const d = coreRow?.c.series.filter((p) => !(coreRow.c.live && p.date === getTodayET())).at(-1)?.date;
     return d ?? null;
   }, [coreRow]);
+  const firstDate = coreRow?.c.first ?? undefined;
 
-  const vsCore = (r: Row) => {
+  const vsCore = (r: Row, k: ColKey) => {
     if (r.key === "core") return null;
-    const a = r.c.returns[col];
-    const b = coreRow?.c.returns[col] ?? null;
-    if (a == null || b == null) return null;
-    // Only compare like for like: both series must cover the period's start.
-    if (col === "start" && r.c.first !== coreRow?.c.first) return null;
-    return parseFloat((a - b).toFixed(2));
+    const a = r.c.returns[k];
+    const b = coreRow?.c.returns[k] ?? null;
+    return a == null || b == null ? null : parseFloat((a - b).toFixed(2));
   };
 
   const renderRow = (r: Row, showTrend: boolean) => {
-    const v = vsCore(r);
-    const pts = showTrend ? sliceFor(r.c.series, col) : [];
+    const pts = showTrend ? trendSlice(r.c.series, activeRange) : [];
     const building = !r.market && r.c.series.length < 2;
     const short = r.c.first && r.c.first >= `${getTodayET().slice(0, 4)}-01-01` ? `since ${r.c.first.slice(5)}` : "";
     return (
       <tr key={r.key}>
         <td className="pl-3.5">
           <span className="font-medium text-ink">{r.label}</span>
-          {(r.note || short) && <span className="ml-1.5 text-[11px] text-ink-3">{[r.note, short].filter(Boolean).join(" · ")}</span>}
+          {(r.note || short) && <div className="text-[11px] text-ink-3">{[r.note, short].filter(Boolean).join(" · ")}</div>}
         </td>
-        {COLS.map((c) => (
-          // Inline style: .data-table td is unlayered CSS, so a Tailwind bg utility would lose.
-          <td key={c.key} className="n" style={c.key === col ? { background: "var(--color-accent-soft)" } : undefined}>
-            <span className={`font-mono ${tone(r.c.returns[c.key])}`}>{building && c.key === "1d" ? "building" : fmt(r.c.returns[c.key])}</span>
-          </td>
-        ))}
-        <td className="n">
-          <span className={`font-mono ${r.key === "core" ? "text-ink-faint" : tone(v)}`}>{r.key === "core" ? "—" : v == null ? "—" : `${v > 0 ? "+" : ""}${v.toFixed(2)} pts`}</span>
-        </td>
-        <td className="pr-3.5">{pts.length > 1 ? <Sparkline points={pts} width={96} height={20} /> : <span className="text-[11px] text-ink-faint">{showTrend ? "building" : ""}</span>}</td>
+        {cols.map((c) => {
+          const v = r.c.returns[c.key];
+          const d = vsCore(r, c.key);
+          return (
+            <td key={c.key} className="n">
+              <div className={`font-mono ${tone(v)}`}>{building && c.key === "1d" ? "building" : fmt(v)}</div>
+              {r.key !== "core" && (
+                <div className={`font-mono text-[11px] ${d == null ? "text-ink-faint" : d > 0 ? "text-pos" : d < 0 ? "text-neg" : "text-ink-3"}`}>
+                  {d == null ? "\u00a0" : `${d > 0 ? "+" : ""}${d.toFixed(2)}`}
+                </div>
+              )}
+            </td>
+          );
+        })}
+        <td className="pr-3.5">{pts.length > 1 ? <Sparkline points={pts} width={96} height={22} /> : <span className="text-[11px] text-ink-faint">{showTrend ? "building" : ""}</span>}</td>
       </tr>
     );
   };
 
   const group = (label: string) => (
     <tr>
-      <td colSpan={COLS.length + 3} className="pl-3.5" style={{ background: "var(--color-surface-2)" }}>
+      <td colSpan={cols.length + 2} className="pl-3.5" style={{ background: "var(--color-surface-2)" }}>
         <span className="text-[10.5px] font-bold uppercase tracking-[0.1em] text-ink-3">{label}</span>
       </td>
     </tr>
   );
 
+  const DATE = "h-7 rounded-control border border-line bg-surface px-2 text-[12.5px] text-ink";
   return (
     <section className="panel">
       <div className="panel-h flex-wrap gap-y-1.5 py-1.5">
         <span className="t">Performance</span>
         <span className="m">
-          {anyLive ? `Live${clock ? ` · ${clock} ET` : ""} · on the ${lastClose ?? "last"} close` : lastClose ? `Through the ${lastClose} close` : "Loading…"} · C$ · vs Core
+          {anyLive ? `Live${clock ? ` · ${clock} ET` : ""} · on the ${lastClose ?? "last"} close` : lastClose ? `Through the ${lastClose} close` : "Loading…"} · C$
         </span>
-        <div className="seg ml-auto">
-          {COLS.map((c) => (
-            <button key={c.key} className={col === c.key ? "on" : ""} onClick={() => setCol(c.key)}>
-              {c.label}
+        <span className="ml-auto flex flex-wrap items-center gap-1.5 text-[12px] text-ink-3">
+          Range
+          <input type="date" aria-label="Range from" value={range.from} min={firstDate} onChange={(e) => setRange((r) => ({ ...r, from: e.target.value }))} className={DATE} />
+          to
+          <input type="date" aria-label="Range to" value={range.to} min={range.from || undefined} onChange={(e) => setRange((r) => ({ ...r, to: e.target.value }))} className={DATE} />
+          {(range.from || range.to) && (
+            <button className="text-accent hover:text-accent-ink" onClick={() => setRange({ from: "", to: "" })}>
+              Clear
             </button>
-          ))}
-        </div>
+          )}
+        </span>
       </div>
       <div className="tbl-wrap">
         <table className="data-table">
           <thead>
             <tr>
               <th className="pl-3.5">Book</th>
-              {COLS.map((c) => (
-                <th key={c.key} className={`n ${c.key === col ? "text-accent" : ""}`}>
+              {cols.map((c) => (
+                <th key={c.key} className={`n ${c.key === "range" ? "text-accent" : ""}`}>
                   {c.label}
                 </th>
               ))}
-              <th className="n">vs Core</th>
-              <th className="pr-3.5">Trend</th>
+              <th className="pr-3.5">{activeRange ? "Range trend" : "YTD trend"}</th>
             </tr>
           </thead>
           <tbody>
@@ -302,7 +319,7 @@ export function PerformancePanel({ s }: { s: DailySummary }) {
         </table>
       </div>
       <div className="flex flex-wrap items-center gap-2 px-3.5 py-2 text-[11.5px] text-ink-3">
-        <span>The highlighted period drives &ldquo;vs Core&rdquo; and the trend line. Today&apos;s move is live while the market is open.</span>
+        <span>Each cell: the return, and beneath it the points ahead of (+) or behind (−) Core over the same period. Set a range to add a column for any dates. Today&apos;s move is live while the market is open.</span>
         <Link href="/aa-performance" className="ml-auto text-accent hover:text-accent-ink">
           All performance
         </Link>
