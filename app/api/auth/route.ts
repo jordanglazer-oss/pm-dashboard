@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getRedis } from "@/app/lib/redis";
+import { AUTH_COOKIE, authCookieOptions, issueAuthToken } from "@/app/lib/auth-token";
 
 // Rate limit: 10 password attempts per minute per IP. Generous enough for
 // legitimate typos, tight enough to make brute-forcing the site password
@@ -49,14 +50,12 @@ export async function POST(req: NextRequest) {
   }
 
   if (password === sitePassword) {
+    const token = await issueAuthToken();
+    if (!token) {
+      return NextResponse.json({ error: "SITE_PASSWORD not configured" }, { status: 500 });
+    }
     const res = NextResponse.json({ ok: true });
-    res.cookies.set("auth", "authenticated", {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
-      sameSite: "lax",
-      maxAge: 60 * 60 * 24 * 30, // 30 days
-      path: "/",
-    });
+    res.cookies.set(AUTH_COOKIE, token, authCookieOptions());
     return res;
   }
 

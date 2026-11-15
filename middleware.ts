@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { AUTH_COOKIE, verifyAuthToken } from "@/app/lib/auth-token";
 
 // ── API auth gate ─────────────────────────────────────────────────────────
 // Rejects any unauthenticated request to /api/* with 401 before it reaches
@@ -7,12 +8,12 @@ import { NextRequest, NextResponse } from "next/server";
 // internet. Login endpoints are exempted so the login flow still works;
 // everything else requires the "auth" cookie set by /api/auth.
 //
-// No Redis reads/writes happen here — the middleware only inspects the
+// The cookie is a SIGNED token (app/lib/auth-token.ts) — the old fixed value
+// "authenticated" could be typed in by hand and is no longer accepted.
+//
+// No Redis reads/writes happen here — the middleware only verifies the
 // cookie. Logged-in browsers already send the cookie automatically
 // (same-origin), so existing functionality is unaffected.
-
-const AUTH_COOKIE = "auth";
-const AUTH_COOKIE_VALUE = "authenticated";
 
 // Paths that must stay open so a user who is NOT logged in can still log in.
 // Everything else under /api/* requires the auth cookie.
@@ -21,7 +22,7 @@ const PUBLIC_API_PATHS = new Set<string>([
   "/api/auth/check",  // GET to see if already logged in
 ]);
 
-export function middleware(req: NextRequest) {
+export async function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;
 
   // Only gate /api/* routes. Everything else (pages, static files) is
@@ -60,8 +61,7 @@ export function middleware(req: NextRequest) {
   }
 
   // All other API routes require the auth cookie.
-  const cookie = req.cookies.get(AUTH_COOKIE);
-  if (cookie?.value === AUTH_COOKIE_VALUE) {
+  if (await verifyAuthToken(req.cookies.get(AUTH_COOKIE)?.value)) {
     return NextResponse.next();
   }
 

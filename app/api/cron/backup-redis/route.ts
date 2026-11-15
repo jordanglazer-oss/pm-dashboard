@@ -15,6 +15,7 @@ import { buildEntryScan } from "@/app/lib/entry-scan";
 import { runCustomConditionChecks } from "@/app/lib/custom-condition-check";
 import { computeDataHealth, type DataHealthReport } from "@/app/lib/data-health";
 import { runAlertDigest } from "@/app/lib/alert-digest";
+import { emailBackupFailure } from "@/app/lib/backup-alert";
 
 // This one nightly slot runs, IN ORDER:
 //   backup → prune → hedging snapshot → FactSet estimates → market regime →
@@ -128,8 +129,10 @@ const EXCLUDE_PATTERNS = [
   // point-in-time data (Phase C validation source) and must be backed up.
   /-cache$/,                 // *-analysis-cache, *-scrape-cache (hash-gated)
   /-scrape-cache:/,
-  // ── Derived (recomputed from daily values + models) ──
-  /^pm:pim-performance/,     // includes .pre-* migration stashes
+  // pm:pim-performance itself IS backed up: it holds anchors, back-dated
+  // cut-overs and seeded series that cannot be recomputed. Only its
+  // pre-migration stashes (pm:pim-performance.pre-*) are left out.
+  /^pm:pim-performance\./,
   // ── Bulky binary uploads — separately restorable, not model/score data ──
   /^pm:analyst-report-pdf:/, // 70MB of uploaded PDFs
   /^pm:attachment:/,         // base64 screenshots/PDFs (the per-file keys)
@@ -182,6 +185,7 @@ export async function GET(req: NextRequest) {
   }
 
   const startedAt = Date.now();
+  let backupWritten = false;
   try {
     const redis = await getRedis();
 
@@ -190,6 +194,7 @@ export async function GET(req: NextRequest) {
     const backupKeys = allKeys.filter((k) => !shouldExclude(k));
 
     if (backupKeys.length === 0) {
+      await emailBackupFailure("No pm:* keys were found to back up.", false);
       return NextResponse.json(
         { ok: false, warning: "No pm:* keys found to back up — refusing to write empty backup" },
         { status: 200 },
@@ -222,6 +227,7 @@ export async function GET(req: NextRequest) {
     // and they can't OOM the live-data tier. Blob writes are independent of
     // Redis memory, so a full Redis no longer blocks the backup.
     if (!blobConfigured()) {
+      await emailBackupFailure("BLOB_READ_WRITE_TOKEN is not set, so the backup has nowhere to go.", false);
       return NextResponse.json(
         { ok: false, error: "BLOB_READ_WRITE_TOKEN not set — cannot write backup to Blob." },
         { status: 500 },
@@ -229,6 +235,7 @@ export async function GET(req: NextRequest) {
     }
     const fileStamp = stamp.replace(/[:.]/g, "-"); // filesystem-safe
     const backupInfo = await writeBackupBlob(snapshot, fileStamp);
+    backupWritten = true;
 
     // ── 4. Prune old Blob backups (retention) + purge any LEGACY Redis
     //       backups (pm:backup:* are now dead weight in Redis). ────────
@@ -479,6 +486,7 @@ export async function GET(req: NextRequest) {
     });
   } catch (e) {
     console.error("Redis backup failed:", e);
+    await emailBackupFailure(e instanceof Error ? e.message : String(e), backupWritten);
     return NextResponse.json(
       { error: "Backup failed", message: e instanceof Error ? e.message : String(e) },
       { status: 500 },

@@ -44,8 +44,10 @@ const EXCLUDE_PATTERNS = [
   /^pm:thesis-health$/,      // Phase 03 cache (rebuilds from score-history + snapshots)
   /-cache$/,                 // *-analysis-cache, *-scrape-cache (hash-gated)
   /-scrape-cache:/,
-  // ── Derived (recomputed from daily values + models) ──
-  /^pm:pim-performance/,     // includes .pre-* migration stashes
+  // pm:pim-performance itself IS backed up: it holds anchors, back-dated
+  // cut-overs and seeded series that cannot be recomputed. Only its
+  // pre-migration stashes (pm:pim-performance.pre-*) are left out.
+  /^pm:pim-performance\./,
   // ── Bulky binary uploads — separately restorable, not model/score data ──
   /^pm:analyst-report-pdf:/, // 70MB of uploaded PDFs
   /^pm:attachment:/,         // base64 screenshots/PDFs (the per-file keys)

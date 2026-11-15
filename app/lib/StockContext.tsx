@@ -511,8 +511,14 @@ export function StockProvider({ children }: { children: React.ReactNode }) {
   // lost the race is dropped and the PM is told to redo it.
   const pimRevisionRef = useRef<number | undefined>(undefined);
   const pimPersistChain = useRef<Promise<void>>(Promise.resolve());
+  // Bumped whenever the server refuses a save as stale. Saves queued BEFORE
+  // that refusal were built on the same out-of-date copy, so they are dropped
+  // instead of going out with the freshly adopted revision.
+  const pimEpochRef = useRef(0);
   const persistPim = useCallback((data: PimModelData) => {
+    const epoch = pimEpochRef.current;
     pimPersistChain.current = pimPersistChain.current.then(async () => {
+      if (epoch !== pimEpochRef.current) return;
       try {
         const res = await fetch("/api/kv/pim-models", {
           method: "PUT",
@@ -520,6 +526,7 @@ export function StockProvider({ children }: { children: React.ReactNode }) {
           body: JSON.stringify({ ...data, revision: pimRevisionRef.current }),
         });
         if (res.status === 409) {
+          pimEpochRef.current += 1;
           const j = await res.json().catch(() => ({}));
           if (j?.current?.groups) {
             pimRevisionRef.current = j.revision;

@@ -86,8 +86,23 @@ export async function POST(req: NextRequest) {
     // Apply the restore.
     const results: Array<{ key: string; restoredBytes: number; previousBytes: number | null }> = [];
     for (const k of keys) {
-      const value = data[k];
+      let value = data[k];
       const previousBytes = stash[k]?.length ?? null;
+      // pm:pim-models carries a revision the browser tabs compare against.
+      // A backup holds an OLDER revision, so every open tab would pass the
+      // stale-tab check and overwrite the restore on its next save. Stamp the
+      // restored copy ahead of whatever is live.
+      if (k === "pm:pim-models") {
+        try {
+          const restored = JSON.parse(value) as { revision?: number };
+          const live = stash[k] ? (JSON.parse(stash[k] as string) as { revision?: number }) : null;
+          const liveRev = typeof live?.revision === "number" ? live.revision : 0;
+          const backupRev = typeof restored.revision === "number" ? restored.revision : 0;
+          value = JSON.stringify({ ...restored, revision: Math.max(liveRev, backupRev) + 1 });
+        } catch {
+          /* unparseable — restore the backup's value as it is */
+        }
+      }
       await redis.set(k, value);
       results.push({ key: k, restoredBytes: value.length, previousBytes });
     }

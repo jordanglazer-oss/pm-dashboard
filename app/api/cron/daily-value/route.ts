@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { refreshDailyValues } from "@/app/lib/daily-value-refresh";
+import { emailIfBackupStale } from "@/app/lib/backup-alert";
 
 /**
  * GET /api/cron/daily-value — weekday after-close (21:30 UTC = 17:30 ET,
@@ -30,5 +31,8 @@ export async function GET(req: NextRequest) {
   // (Nov 2026: the separate weights-only sleeve tracker, pm:sleeve-performance,
   // is no longer updated — the Core / Thematic / Alpha books in the ledger
   // above are the single source of sleeve performance.)
-  return NextResponse.json({ ok: !result.error, startedAt, finishedAt: new Date().toISOString(), ...result });
+  // Independent of the backup cron on purpose: if that job never starts, this
+  // one still notices the newest backup is overdue and emails. Best-effort.
+  const backupCheck = await emailIfBackupStale();
+  return NextResponse.json({ ok: !result.error, startedAt, finishedAt: new Date().toISOString(), ...result, backupCheck });
 }
