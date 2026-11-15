@@ -4,8 +4,9 @@ import React, { useContext } from "react";
 import Link from "next/link";
 import type { DailySummary } from "@/app/lib/daily-summary";
 import { useStocks } from "@/app/lib/StockContext";
-import { LabelRows, Pct, RegimeTrack, Spark, Status, TileLink, fmtPct, ordinal, regimeTone, timeAgo, toneText, useRevealFold } from "./summary-ui";
+import { Pct, RegimeTrack, Status, TileLink, fmtPct, ordinal, regimeTone, timeAgo, toneText, useRevealFold } from "./summary-ui";
 import { HedgeLedgerContext, type HedgePos } from "./hedge-ledger";
+import { PerformancePanel } from "./PerformancePanel";
 
 /**
  * The decision panel — ONE hairline card: the four reads (Regime · Cash ·
@@ -273,79 +274,6 @@ function HedgeLogForm() {
   );
 }
 
-/** "14:32 ET" for today, "Sep 5, 16:01 ET" for an older stamp — so a stale
- *  ledger is visible on the tile rather than silently flat. */
-function fmtEtClock(iso: string): string {
-  const d = new Date(iso);
-  if (!Number.isFinite(d.getTime())) return "";
-  const sameDay = new Intl.DateTimeFormat("en-CA", { timeZone: "America/New_York", year: "numeric", month: "2-digit", day: "2-digit" });
-  const time = new Intl.DateTimeFormat("en-US", { timeZone: "America/New_York", hour: "2-digit", minute: "2-digit", hour12: false }).format(d);
-  if (sameDay.format(d) === sameDay.format(new Date())) return `${time} ET`;
-  const day = new Intl.DateTimeFormat("en-US", { timeZone: "America/New_York", month: "short", day: "numeric" }).format(d);
-  return `${day}, ${time} ET`;
-}
-
-/* ── Alpha vs core ───────────────────────────────────────────────────── */
-
-const PERIODS = [
-  ["1w", "1W"],
-  ["1m", "1M"],
-  ["3m", "3M"],
-  ["ytd", "YTD"],
-] as const;
-
-const DAY_MODELS: [string, string][] = [
-  ["balanced", "Balanced"],
-  ["growth", "Growth"],
-  ["allEquity", "All-Eq"],
-];
-
-/**
- * The spread is the hero figure; everything supporting it reads as labelled
- * rows — per-model day returns on the left, the spread by period on the right
- * — so nothing is a run of text and a long value wraps rather than truncates.
- */
-function AlphaCell({ s }: { s: DailySummary }) {
-  const p = s.performance?.alphaCore;
-  const rows = s.performance?.models ?? [];
-  const group = rows.some((r) => r.groupId === "pim") ? "pim" : rows[0]?.groupId;
-  const dayReturns = DAY_MODELS.map(([profile, label]) => ({ label, v: rows.find((r) => r.groupId === group && r.profile === profile)?.returns["1d"] ?? null }));
-  const modelRows = dayReturns.filter((d) => d.v != null).map((d) => ({ label: d.label, value: <Pct v={d.v} /> }));
-  if (!p || !p.available) {
-    return (
-      <Cell label="Alpha vs core" href="/aa-performance" last>
-        <div className="mb-2 mt-1 text-[12px] text-ink-3">No alpha / core series yet.</div>
-        <LabelRows title="Model · today" rows={modelRows} />
-      </Cell>
-    );
-  }
-  const d1 = p.spread["1d"];
-  const mom = p.momentum.direction;
-  return (
-    <Cell label="Alpha vs core" href="/aa-performance" last>
-      <div className="mb-2.5 mt-1 flex items-start gap-2">
-        <div className="min-w-0">
-          <div className={`figure text-[26px] leading-none ${d1 == null ? "text-ink-3" : d1 > 0 ? "text-pos" : d1 < 0 ? "text-neg" : "text-ink"}`}>{fmtPct(d1)}</div>
-          <div className="mt-1.5 break-words text-[11px] text-ink-3">spread today{mom ? ` · ${mom}` : ""}{p.lastUpdated ? ` · updated ${fmtEtClock(p.lastUpdated)}` : ""}</div>
-        </div>
-        {p.spark.length > 2 && <Spark points={p.spark.map((x) => x.value)} baseline={100} width={72} height={26} className="ml-auto shrink-0" />}
-      </div>
-      {/* Two columns only where the cell is genuinely wide: at xl the decision
-          panel is four cells across, so the rows go back to full width there
-          rather than breaking a label mid-word. */}
-      <div className="grid grid-cols-1 gap-x-5 gap-y-2.5 lg:grid-cols-2 xl:grid-cols-1 2xl:grid-cols-2">
-        <LabelRows title="Model · today" rows={modelRows} />
-        <LabelRows title="Spread" rows={PERIODS.map(([k, label]) => ({ label, value: <Pct v={p.spread[k]} pp deadband={0.05} /> }))} />
-      </div>
-      {p.momentum.prior != null && (
-        <div className="mt-2 break-words text-[11px] text-ink-3" title="1-month spread five sessions ago">
-          1M spread was <span className="font-mono">{fmtPct(p.momentum.prior).replace("%", "pp")}</span> a week ago
-        </div>
-      )}
-    </Cell>
-  );
-}
-
 /* ── Bottom line + since last brief ──────────────────────────────────── */
 
 function digestParts(s: DailySummary): string[] {
@@ -400,12 +328,14 @@ export function DecisionPanel({ s, regimeDetailOpen, onToggleRegimeDetail }: { s
     // reads sit in the card beneath it. Same cells, same controls.
     <section id="s-today" className="flex flex-col gap-3.5 animate-panel-in" style={{ scrollMarginTop: 64 }}>
       <BottomLine s={s} />
+      {/* Nov 2026: every PIM book's performance, live, right under the bottom
+          line — replaces the Alpha vs core cell (Core is the yardstick for every row). */}
+      <PerformancePanel s={s} />
       <div className="panel">
-        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3">
           <RegimeCell s={s} detailOpen={regimeDetailOpen} onToggleDetail={onToggleRegimeDetail} />
           <CashCell s={s} />
           <HedgeCell s={s} />
-          <AlphaCell s={s} />
         </div>
         <HedgeLogForm />
       </div>

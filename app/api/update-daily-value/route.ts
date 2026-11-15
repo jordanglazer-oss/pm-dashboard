@@ -335,6 +335,50 @@ export async function POST() {
       }
     }
 
+    // A PIM book that has units but no series yet (Nov 2026: the Thematic
+    // book was first given units on Positioning, and no series existed for it)
+    // gets one here, otherwise it would never be tracked — this loop only
+    // updates series that already exist. Seeded from its Appendix ledger when
+    // one exists; else at 100 on the last weekday close (plus the day before,
+    // so it has the two points the loop needs), with a matching ledger written
+    // below so the Performance tile's Appendix check agrees. Deterministic, so
+    // a run that computes nothing (weekend) and doesn't save simply re-seeds.
+    const seededAt100: Array<{ profile: string; history: { date: string; value: number; dailyReturn: number }[] }> = [];
+    {
+      const prevWeekday = (d: string) => {
+        const x = new Date(`${d}T12:00:00Z`);
+        do x.setUTCDate(x.getUTCDate() - 1); while (x.getUTCDay() === 0 || x.getUTCDay() === 6);
+        return x.toISOString().slice(0, 10);
+      };
+      let ledgers: { profile: string; entries: { date: string; value: number; dailyReturn: number }[] }[] | null = null;
+      for (const book of positionsData.portfolios) {
+        if (book.groupId !== "pim" || !book.positions.some((p) => p.units > 0)) continue;
+        if (perfData.models.some((m) => m.groupId === "pim" && m.profile === book.profile)) continue;
+        if (ledgers === null) {
+          try {
+            const raw = await redis.get(APPENDIX_KEY);
+            ledgers = raw ? (JSON.parse(raw).ledgers ?? []) : [];
+          } catch {
+            ledgers = [];
+          }
+        }
+        const ledger = ledgers!.find((l) => l.profile === book.profile);
+        let history: { date: string; value: number; dailyReturn: number; anchored?: boolean }[];
+        if (ledger && ledger.entries.length >= 2) {
+          history = ledger.entries.map((e) => ({ date: e.date, value: e.value, dailyReturn: e.dailyReturn }));
+        } else {
+          const base = prevWeekday(today);
+          history = [
+            { date: prevWeekday(base), value: 100, dailyReturn: 0 },
+            { date: base, value: 100, dailyReturn: 0, anchored: true },
+          ];
+          seededAt100.push({ profile: book.profile, history });
+        }
+        perfData.models.push({ groupId: "pim", profile: book.profile as PimProfileType, history, lastUpdated: new Date().toISOString() });
+        console.log(`[update-daily-value] started a series for pim|${book.profile} (${ledger && ledger.entries.length >= 2 ? "from its Appendix ledger" : `at 100 from ${history[history.length - 1].date}`})`);
+      }
+    }
+
     // Update each model — ONLY append new days, never modify historical entries
     for (const model of perfData.models) {
       if (model.history.length < 2) continue;
@@ -727,6 +771,12 @@ export async function POST() {
         const appendixData: { ledgers: { profile: string; entries: { date: string; value: number; dailyReturn: number; addedAt: string }[] }[] } =
           appendixRaw ? JSON.parse(appendixRaw) : { ledgers: [] };
         const now = new Date().toISOString();
+
+        // Ledgers for series started at 100 above (their two seed points).
+        for (const seed of seededAt100) {
+          if (appendixData.ledgers.some((l) => l.profile === seed.profile)) continue;
+          appendixData.ledgers.push({ profile: seed.profile, entries: seed.history.map((h) => ({ date: h.date, value: h.value, dailyReturn: h.dailyReturn, addedAt: now })) });
+        }
 
         for (const upd of updates) {
           const model = perfData.models.find(
