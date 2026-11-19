@@ -20,6 +20,7 @@ import { getTodayET, isMarketOpenOrAfterET } from "@/app/lib/market-hours";
 import { normalizeSeries, periodReturns, returnSince, type ValuePoint } from "@/app/lib/daily-summary/periods";
 import type { DailySummary } from "@/app/lib/daily-summary";
 import type { PimPerformanceData, PimProfileType } from "@/app/lib/pim-types";
+import { BENCHMARKS, useBenchmarkHistory, type BenchKey } from "@/app/lib/useBenchmarkHistory";
 
 type ColKey = "1d" | "1w" | "1m" | "qtd" | "ytd" | "range";
 const BASE_COLS: { key: ColKey; label: string }[] = [
@@ -144,13 +145,20 @@ function useBookRows(perf: PimPerformanceData | null, tick: number, range: Range
   return { sleeves: build(SLEEVES), client: build(CLIENT).filter((r) => r.c.series.length > 0) };
 }
 
-/** S&P 500 / TSX: period returns from the summary, today's move live from /api/prices. */
-function useMarketRows(s: DailySummary, tick: number): Row[] {
+/**
+ * Markets. With the daily index series loaded, every benchmark (S&P 500 in
+ * C$ and US$, Nasdaq, TSX) runs through the SAME `compute` as the books, so
+ * QTD and the custom range work for them too; today's move is live from
+ * /api/prices. If the series can't be loaded the rows fall back to the
+ * summary's pre-computed returns, exactly as before (no QTD / range).
+ */
+function useMarketRows(s: DailySummary, tick: number, range: Range | null): Row[] {
+  const hist = useBenchmarkHistory();
   const [quotes, setQuotes] = useState<Record<string, number | null>>({});
   useEffect(() => {
     if (!isTradingHours()) return;
     let alive = true;
-    fetch("/api/prices", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ tickers: ["^GSPC", "^GSPTSE"] }) })
+    fetch("/api/prices", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ tickers: ["^GSPC", "^GSPTSE", "^IXIC", "USDCAD=X"] }) })
       .then((r) => (r.ok ? r.json() : null))
       .then((d: { prices?: Record<string, number | null>; previousCloses?: Record<string, number | null> } | null) => {
         if (!alive || !d) return;
@@ -159,7 +167,9 @@ function useMarketRows(s: DailySummary, tick: number): Row[] {
           const c = d.previousCloses?.[t];
           return p && c && c > 0 ? ((p - c) / c) * 100 : null;
         };
-        setQuotes({ sp500: pct("^GSPC"), tsx: pct("^GSPTSE") });
+        const sp = pct("^GSPC");
+        const fx = pct("USDCAD=X");
+        setQuotes({ sp500: sp, tsx: pct("^GSPTSE"), nasdaq: pct("^IXIC"), sp500cad: sp == null || fx == null ? null : ((1 + sp / 100) * (1 + fx / 100) - 1) * 100 });
       })
       .catch(() => {});
     return () => {
@@ -168,6 +178,15 @@ function useMarketRows(s: DailySummary, tick: number): Row[] {
   }, [tick]);
 
   const today = getTodayET();
+  const withSeries = BENCHMARKS.filter((b) => (hist?.[b.key]?.length ?? 0) > 1);
+  if (withSeries.length > 0) {
+    return withSeries.map((b) => {
+      const live = quotes[b.key as BenchKey] ?? null;
+      // With a live quote, drop Yahoo's partial bar for today so the move is compounded once, on the last close.
+      const raw = (hist![b.key] ?? []).filter((p) => (live != null ? p.date < today : p.date <= today));
+      return { key: b.key, label: b.label, note: b.note, market: true, c: compute(raw, live, range) };
+    });
+  }
   return (s.performance?.benchmarks ?? [])
     .filter((b) => b.key === "sp500" || b.key === "tsx")
     .map((b) => {
@@ -222,7 +241,7 @@ export function PerformancePanel({ s }: { s: DailySummary }) {
     ? [...BASE_COLS, { key: "range" as ColKey, label: `${range.from.slice(5)} → ${(range.to || getTodayET()).slice(5)}` }]
     : BASE_COLS;
   const { sleeves, client } = useBookRows(perf, tick, activeRange);
-  const markets = useMarketRows(s, tick);
+  const markets = useMarketRows(s, tick, activeRange);
   const coreRow = sleeves.find((r) => r.key === "core");
   const anyLive = [...sleeves, ...client].some((r) => r.c.live);
   const lastClose = useMemo(() => {

@@ -3,6 +3,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { Sparkline } from "@/app/components/Sparkline";
 import type { PimPerformanceData, PimDailyReturn } from "@/app/lib/pim-types";
+import { BENCHMARKS, useBenchmarkHistory } from "@/app/lib/useBenchmarkHistory";
 
 /**
  * Sleeves vs Core — the Core, Thematic and Alpha books' performance from the
@@ -50,7 +51,7 @@ function rangeFor(p: Preset, custom: { from: string; to: string }): { from: stri
 }
 
 /** Base = last point BEFORE `from` (the prior close) or the first point; end = last point on/before `to`. */
-function retOver(h: PimDailyReturn[], from: string | null, to: string) {
+function retOver(h: { date: string; value: number }[], from: string | null, to: string) {
   if (h.length < 2) return { pct: null as number | null, base: null as string | null, end: null as string | null, partial: false };
   const endPt = [...h].reverse().find((p) => p.date <= to);
   const before = from ? [...h].reverse().find((p) => p.date < from) : undefined;
@@ -59,6 +60,13 @@ function retOver(h: PimDailyReturn[], from: string | null, to: string) {
   if (!endPt || endPt.date <= basePt.date || !(basePt.value > 0)) return { pct: null, base: basePt?.date ?? null, end: endPt?.date ?? null, partial };
   return { pct: (endPt.value / basePt.value - 1) * 100, base: basePt.date, end: endPt.date, partial };
 }
+
+/** The day after `d` — so `retOver` picks `d` itself as the base close. */
+const nextDay = (d: string) => {
+  const x = new Date(`${d}T12:00:00Z`);
+  x.setUTCDate(x.getUTCDate() + 1);
+  return x.toISOString().slice(0, 10);
+};
 
 const fmt = (v: number | null) => (v == null ? "—" : `${v > 0 ? "+" : ""}${v.toFixed(2)}%`);
 const tone = (v: number | null) => (v == null ? "text-ink-3" : v > 0 ? "text-pos" : v < 0 ? "text-neg" : "text-ink-2");
@@ -88,6 +96,7 @@ export function SleeveTracking() {
     for (const b of BOOKS) out[b.profile] = perf?.models.find((m) => m.groupId === "pim" && m.profile === b.profile)?.history ?? [];
     return out;
   }, [perf]);
+  const bench = useBenchmarkHistory();
   const range = rangeFor(preset, custom);
   const coreR = retOver(series.core ?? [], range.from, range.to);
   const firstDate = Object.values(series).map((h) => h[0]?.date).filter(Boolean).sort()[0];
@@ -156,6 +165,30 @@ export function SleeveTracking() {
                       <td className="text-[12px]">
                         {unitBooks.has(b.profile) ? <span className="text-ink-2">units (live weights)</span> : <span className="text-warn">model weights — add units on Positioning</span>}
                       </td>
+                    </tr>
+                  );
+                })}
+                {/* Benchmarks over the SAME period, measured from the same base close as Core. */}
+                {BENCHMARKS.filter((b) => (bench?.[b.key]?.length ?? 0) > 1).map((b) => {
+                  const h = bench![b.key]!;
+                  // Same base and end closes as Core, so the two are measured over identical days.
+                  const r = coreR.base && coreR.end ? retOver(h.filter((p) => p.date <= coreR.end!), nextDay(coreR.base), coreR.end) : retOver(h, range.from, range.to);
+                  const slice = h.filter((p) => (!r.base || p.date >= r.base) && p.date <= range.to);
+                  const vs = r.pct == null || coreR.pct == null ? null : coreR.pct - r.pct;
+                  return (
+                    <tr key={b.key}>
+                      <td className="pl-3.5">
+                        <span className="font-medium text-ink-2">{b.label}</span>
+                        <div className="text-[11px] text-ink-3">index · {b.note}</div>
+                      </td>
+                      <td>
+                        <Sparkline points={slice} width={140} height={28} />
+                      </td>
+                      <td className={`n ${tone(r.pct)}`}>{fmt(r.pct)}</td>
+                      <td className={`n ${tone(vs)}`} title="Core minus this index over the same period">
+                        {vs == null ? "—" : <span>Core {vs > 0 ? "+" : ""}{vs.toFixed(2)} pts</span>}
+                      </td>
+                      <td className="text-[12px] text-ink-3">price index, no dividends</td>
                     </tr>
                   );
                 })}
