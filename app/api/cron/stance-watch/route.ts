@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { runStanceWatch } from "@/app/lib/agents/stance-watch";
 import { runManagerWatch } from "@/app/lib/agents/manager-watch";
 import { listFlags } from "@/app/lib/agents/flags";
+import { runPortfolioAudit } from "@/app/lib/agents/portfolio-audit";
 import { sendAuditEmail } from "@/app/lib/agents/flag-mail";
 
 /**
@@ -10,6 +11,8 @@ import { sendAuditEmail } from "@/app/lib/agents/flag-mail";
  * bearer; /api/cron/* is exempt from the cookie middleware.
  * Also runs the quarterly manager watch when this quarter has not been
  * reviewed yet (returns at once otherwise).
+ * Then the rule-based portfolio audit (app/lib/agents/portfolio-audit.ts,
+ * no model call; raises flags, writes pm:agent-state:portfolio-audit).
  * Last step: the end-of-day audit email (app/lib/agents/flag-mail.ts) —
  * always queued on a weekday, even with nothing new; never fails the cron.
  * Redis: writes only pm:agent-state:stance / :manager-watch /
@@ -33,9 +36,12 @@ export async function GET(req: NextRequest) {
     } catch (e) {
       manager = { ok: false, error: e instanceof Error ? e.message : String(e) };
     }
+    // Rule audits ($0) run before the email so tonight's email carries them.
+    const audit = await runPortfolioAudit();
+    console.log(`[cron/stance-watch] portfolio audit: ${audit.skipped ?? audit.error ?? `${audit.findings.length} findings, ${audit.raised.length} new`}`);
     const mail = await sendAuditEmail(await listFlags());
     console.log(`[cron/stance-watch] audit email: ${mail.queued ? "queued" : mail.reason ?? "not queued"}`);
-    return NextResponse.json({ ...out, manager, auditEmail: { ok: mail.ok, queued: mail.queued, reason: mail.reason, newCount: mail.email?.newCount } });
+    return NextResponse.json({ ...out, manager, portfolioAudit: { ok: audit.ok, skipped: audit.skipped, error: audit.error, findings: audit.findings.length, raised: audit.raised.length }, auditEmail: { ok: mail.ok, queued: mail.queued, reason: mail.reason, newCount: mail.email?.newCount } });
   } catch (e) {
     console.error("[cron/stance-watch] failed:", e);
     return NextResponse.json({ ok: false, error: e instanceof Error ? e.message : String(e) }, { status: 500 });
