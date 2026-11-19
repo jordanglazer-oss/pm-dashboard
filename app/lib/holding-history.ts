@@ -28,7 +28,7 @@ const toYahoo = (s: string) => yahooClassShare(s.endsWith("-T") ? s.replace(/-T$
 
 type Series = { dates: string[]; adj: number[]; last: number | null };
 
-async function history(symbol: string, sinceIso: string): Promise<Series> {
+export async function history(symbol: string, sinceIso: string): Promise<Series> {
   const out: Series = { dates: [], adj: [], last: null };
   try {
     if (isFundserv(symbol)) {

@@ -561,7 +561,15 @@ export function PimPerformance({ groupId, groupName, selectedProfile, onPerfData
   const trackingStartDate =
     // (its inception is the anchored base entry — the rebalance day's close —
     // not the zero-return point stored the day before it).
-    (selectedProfile === "thematic" ? (effectiveHistory.find((h) => (h as { anchored?: boolean }).anchored)?.date ?? effectiveHistory[0]?.date) : undefined) ??
+    // Once the stretch before that anchor has been BACKFILLED (real daily
+    // returns there, not the flat placeholder), inception is the first entry.
+    (selectedProfile === "thematic"
+      ? (() => {
+          const ai = effectiveHistory.findIndex((h) => (h as { anchored?: boolean }).anchored);
+          const backfilled = ai > 0 && effectiveHistory.slice(1, ai + 1).some((h) => h.dailyReturn !== 0);
+          return backfilled || ai < 0 ? effectiveHistory[0]?.date : effectiveHistory[ai].date;
+        })()
+      : undefined) ??
     PROFILE_INCEPTION_OVERRIDE[selectedProfile] ??
     (trackingStart as { date: string } | undefined)?.date;
   const trackingStartLabel = trackingStartDate
