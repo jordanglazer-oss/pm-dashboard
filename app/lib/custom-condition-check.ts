@@ -136,13 +136,40 @@ Rules:
     .filter((b): b is Anthropic.TextBlock => b.type === "text")
     .map((b) => b.text)
     .join("");
-  const res = parseModelJson<{
+  type Answer = {
     status?: string;
     reading?: string;
     evidence?: string;
     undisclosed?: boolean;
     suggestedRewrite?: string;
-  }>(text);
+  };
+  let res = parseModelJson<Answer>(text);
+  if (!res.ok && text.trim()) {
+    // After web searches the model sometimes answers in prose ("The condition
+    // is…") instead of the JSON asked for. One cheap follow-up, no tools, asks
+    // it to restate its own answer in the required shape. A failed retry is
+    // swallowed so it can never abort the nightly sweep.
+    const retry = await client.messages.create({
+      model: SONNET_MODEL,
+      thinking: THINKING_OFF,
+      max_tokens: 600,
+      messages: [
+        { role: "user", content: prompt },
+        { role: "assistant", content: text.trim() },
+        {
+          role: "user",
+          content:
+            "Restate your answer above as the JSON object specified (status, reading, evidence, and undisclosed / suggestedRewrite where they apply). Reply with the JSON object only — no other text.",
+        },
+      ],
+    }).catch(() => null);
+    const retryText = (retry?.content ?? [])
+      .filter((b): b is Anthropic.TextBlock => b.type === "text")
+      .map((b) => b.text)
+      .join("");
+    const second = parseModelJson<Answer>(retryText);
+    if (second.ok) res = second;
+  }
   if (!res.ok) {
     console.error(
       `[custom-condition-check] ${ticker} JSON parse failed:`,
