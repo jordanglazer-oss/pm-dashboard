@@ -15,9 +15,11 @@ export const maxDuration = 300;
 
 const PROMPT = (facts: string) => `You are drafting a ONE-PAGE client explainer for a wealth-management team: why we own this fund / ETF. Advisors will use it to explain the holding to clients, so write in plain, confident, compliant language: no promises, no predictions of returns, no jargon without a short explanation.
 
-Research the fund on the web (at most 5 searches): the manager / firm, the team and how long they have run it, the investment philosophy and process, and anything notable recently (manager change, fee change, strategy change). Prefer the fund company's own pages and Morningstar.
+Research the fund on the web (at most 5 searches): the manager / firm, the team and how long they have run it, the investment philosophy and process, and anything notable recently (manager change, fee change, strategy change). Start with the manager's OFFICIAL fact sheet and fund page and cite it in "sources"; use Morningstar only to fill gaps. Never cite forums or blogs.
 
 Use ONLY the figures in the FACTS block for performance, fees and assets (they are what our dashboard shows); do not quote other performance numbers. If a fact is missing, leave it out rather than guess.
+
+STYLE: POINT FORM throughout. Where a field below says "points", write short points (a line each, under 20 words), ONE POINT PER LINE separated by a newline, with no bullet character and no paragraphs. Use CANADIAN spelling (favour, centre, colour, cheque, program, licence as a noun).
 
 === FACTS (from our dashboard) ===
 ${facts}
@@ -27,15 +29,15 @@ Return ONLY this JSON, no markdown:
   "name": "full fund name",
   "headline": "one sentence a client can take away",
   "whyWeOwn": ["3-4 short reasons, each one sentence"],
-  "manager": { "firm": "", "team": "lead managers and their role", "since": "how long the team has run it, e.g. 'since 2014'", "philosophy": "2-3 sentences" },
-  "process": "3-4 sentences on how they pick and size holdings",
-  "role": "2 sentences: its job in our portfolio (Core = broad market exposure; Managed Alpha = a manager we believe can outperform in a long-term theme)",
-  "record": "2-3 sentences on the record versus its category using the FACTS figures, balanced (mention weaker periods too)",
-  "fees": "one sentence on the fee (MER) in context",
+  "manager": { "firm": "", "team": "lead managers and their role", "since": "how long the team has run it, e.g. 'since 2014'", "philosophy": "2-3 points on what they believe" },
+  "process": "3-4 points on how they pick and size holdings",
+  "role": "2-3 points: its job in our portfolio and its size in our model from the FACTS (Core = broad market exposure; Managed Alpha = a manager we believe can outperform in a long-term theme)",
+  "record": "2-3 points on the record versus its category using the FACTS figures, balanced (mention weaker periods too)",
+  "fees": "one point on the cost (MER) in context",
   "risks": ["2-4 plain risks a client should understand"],
   "talkingPoints": ["4-6 short client-ready lines"],
   "watch": "one sentence, internal: what would make us reconsider the holding",
-  "sources": [ { "url": "", "title": "" } ]
+  "sources": [ { "url": "", "title": "" } ]   // the official fact sheet first
 }`;
 
 export async function POST(req: NextRequest) {

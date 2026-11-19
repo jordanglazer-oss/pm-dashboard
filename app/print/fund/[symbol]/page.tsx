@@ -8,9 +8,20 @@ import type { FundOnePager, FundRow } from "@/app/lib/fund-one-pagers-shared";
  * Print view of one signed fund one-pager — clean, single page, browser
  * Print → Save as PDF. Lives OUTSIDE the (dashboard) group so no app chrome
  * renders; the data comes from /api/fund-one-pagers, which the auth
- * middleware still protects (no cookie → nothing to show). The internal "would make us reconsider" line and the
- * source list are NOT printed.
+ * middleware still protects (no cookie → nothing to show). The internal
+ * "would make us reconsider" line is NOT printed; the sources are, as a
+ * footer. Every text field prints in POINT FORM: one bullet per line of
+ * the saved text (an older one-paragraph draft prints as a single point).
  */
+
+/** One point per line; strips a leading bullet / dash the PM may have typed. */
+const toPoints = (text: string) => text.split(/\n+/).map((l) => l.replace(/^\s*(?:[-•*·]|\d+[.)])\s*/, "").trim()).filter(Boolean);
+function Points({ text }: { text: string }) {
+  const pts = toPoints(text);
+  if (!pts.length) return null;
+  return <ul className="mt-1 list-disc pl-4">{pts.map((x, i) => <li key={i}>{x}</li>)}</ul>;
+}
+const host = (url: string) => { try { return new URL(url).hostname.replace(/^www\./, ""); } catch { return url; } };
 
 const pctOr = (v?: number) => (v == null ? "—" : `${v.toFixed(1)}%`);
 
@@ -61,21 +72,21 @@ export default function FundPrintPage() {
               {p.manager.team ? ` — ${p.manager.team}` : ""}
               {p.manager.since ? ` (${p.manager.since})` : ""}
             </p>
-            <p className="mt-1">{p.manager.philosophy}</p>
+            <Points text={p.manager.philosophy} />
           </section>
           <section>
             <h2 className="text-[11px] font-semibold uppercase tracking-[0.1em] text-[#1c2a44]">How they invest</h2>
-            <p className="mt-1">{p.process}</p>
+            <Points text={p.process} />
           </section>
         </div>
         <div className="flex flex-col gap-3">
           <section>
             <h2 className="text-[11px] font-semibold uppercase tracking-[0.1em] text-[#1c2a44]">Its role in our portfolio</h2>
-            <p className="mt-1">{p.role}</p>
+            <Points text={p.role} />
           </section>
           <section>
             <h2 className="text-[11px] font-semibold uppercase tracking-[0.1em] text-[#1c2a44]">Track record</h2>
-            <p className="mt-1">{p.record}</p>
+            <Points text={p.record} />
             {f?.perf && (
               <table className="mt-1.5 w-full text-[11.5px]">
                 <thead>
@@ -106,8 +117,8 @@ export default function FundPrintPage() {
             )}
           </section>
           <section>
-            <h2 className="text-[11px] font-semibold uppercase tracking-[0.1em] text-[#1c2a44]">Fees</h2>
-            <p className="mt-1">{p.fees}</p>
+            <h2 className="text-[11px] font-semibold uppercase tracking-[0.1em] text-[#1c2a44]">Cost</h2>
+            <Points text={p.fees} />
           </section>
           <section>
             <h2 className="text-[11px] font-semibold uppercase tracking-[0.1em] text-[#1c2a44]">Risks to understand</h2>
@@ -120,6 +131,15 @@ export default function FundPrintPage() {
         <h2 className="text-[11px] font-semibold uppercase tracking-[0.1em] text-[#1c2a44]">In a sentence or two</h2>
         <ul className="mt-1 list-disc pl-4">{p.talkingPoints.map((x, i) => <li key={i}>{x}</li>)}</ul>
       </section>
+
+      {p.sources.length > 0 && (
+        <p className="mt-3 text-[10px] leading-snug text-[#5a6070]">
+          <span className="font-semibold">Sources:</span>{" "}
+          {p.sources.slice(0, 6).map((s, i) => (
+            <span key={s.url}>{i > 0 ? "; " : ""}{s.title ? `${s.title} (${host(s.url)})` : host(s.url)}</span>
+          ))}
+        </p>
+      )}
 
       <p className="mt-4 text-[10px] leading-snug text-[#7a7f8c]">
         Performance figures {f?.asOf ? `as of ${f.asOf}` : "from the latest data on file"}, annualised, in the fund&apos;s currency, net of fees where reported. Past performance is not indicative of future results. For discussion purposes only. Prepared {p.signedAt?.slice(0, 10)}.

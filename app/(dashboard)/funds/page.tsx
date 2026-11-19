@@ -67,10 +67,10 @@ function Editor({ draft, onChange }: { draft: Draft; onChange: (d: Draft) => voi
       <Field label="Talking points" value={draft.talkingPoints.join("\n")} onChange={(v) => set("talkingPoints", lines(v))} rows={4} list />
       <Field label="Manager — firm" value={draft.manager.firm} onChange={(v) => set("manager", { ...draft.manager, firm: v })} rows={1} />
       <Field label="Manager — team and tenure" value={`${draft.manager.team}${draft.manager.since ? `\n${draft.manager.since}` : ""}`} onChange={(v) => { const [team, ...rest] = v.split("\n"); set("manager", { ...draft.manager, team: team ?? "", since: rest.join(" ") }); }} />
-      <Field label="Philosophy" value={draft.manager.philosophy} onChange={(v) => set("manager", { ...draft.manager, philosophy: v })} rows={3} />
-      <Field label="Process" value={draft.process} onChange={(v) => set("process", v)} rows={3} />
-      <Field label="Role in our portfolio" value={draft.role} onChange={(v) => set("role", v)} />
-      <Field label="Record vs category" value={draft.record} onChange={(v) => set("record", v)} rows={3} />
+      <Field label="Philosophy" value={draft.manager.philosophy} onChange={(v) => set("manager", { ...draft.manager, philosophy: v })} rows={3} list />
+      <Field label="Process" value={draft.process} onChange={(v) => set("process", v)} rows={3} list />
+      <Field label="Role in our portfolio" value={draft.role} onChange={(v) => set("role", v)} list />
+      <Field label="Record vs category" value={draft.record} onChange={(v) => set("record", v)} rows={3} list />
       <Field label="Fees" value={draft.fees} onChange={(v) => set("fees", v)} rows={1} />
       <Field label="Risks" value={draft.risks.join("\n")} onChange={(v) => set("risks", lines(v))} rows={3} list />
       <Field label="What would make us reconsider (internal — not printed)" value={draft.watch} onChange={(v) => set("watch", v)} />
