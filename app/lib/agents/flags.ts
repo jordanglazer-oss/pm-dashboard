@@ -2,6 +2,7 @@ import { randomUUID } from "crypto";
 import { getRedis } from "@/app/lib/redis";
 import { createLogger } from "@/app/lib/logger";
 import { watcherDef } from "./registry";
+import { emailFlagNow } from "./flag-mail";
 
 /**
  * The watchers' flag log — everything a watcher raises for the PM.
@@ -40,6 +41,8 @@ export type AgentFlag = {
   /** What the watcher suggests the PM consider (never an instruction). */
   suggestion?: string;
   evidence?: { label: string; url?: string }[];
+  /** When the "high" email for this flag was queued — it is emailed once. */
+  emailedAt?: string;
   /** Same open dedupeKey → the existing flag is updated, not duplicated. */
   dedupeKey?: string;
   status: FlagStatus;
@@ -124,6 +127,8 @@ export async function raiseFlag(input: RaiseFlagInput): Promise<AgentFlag> {
         updatedAt: now,
         thread: [...existing.thread, { at: now, from: "watcher", text: `Updated: ${input.detail}` }],
       };
+      // A flag that has just become high (and was never emailed) is emailed now.
+      if (next.priority === "high" && !existing.emailedAt && (await emailFlagNow(next))) next.emailedAt = now;
       await redis.set(key(existing.id), JSON.stringify(next));
       return next;
     }
@@ -148,6 +153,8 @@ export async function raiseFlag(input: RaiseFlagInput): Promise<AgentFlag> {
     thread: [],
   };
   // NX: a fresh UUID never collides, but never overwrite an existing flag.
+  // High flags are emailed at once (best-effort; never fails the raise).
+  if (flag.priority === "high" && (await emailFlagNow(flag))) flag.emailedAt = now;
   await redis.set(key(flag.id), JSON.stringify(flag), { NX: true });
   return flag;
 }

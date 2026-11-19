@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { runStanceWatch } from "@/app/lib/agents/stance-watch";
 import { runManagerWatch } from "@/app/lib/agents/manager-watch";
+import { listFlags } from "@/app/lib/agents/flags";
+import { sendAuditEmail } from "@/app/lib/agents/flag-mail";
 
 /**
  * GET /api/cron/stance-watch — weekday after-close stance watch + hedge
@@ -8,8 +10,10 @@ import { runManagerWatch } from "@/app/lib/agents/manager-watch";
  * bearer; /api/cron/* is exempt from the cookie middleware.
  * Also runs the quarterly manager watch when this quarter has not been
  * reviewed yet (returns at once otherwise).
- * Redis: writes only pm:agent-state:stance / :manager-watch and, on a
- * change, pm:agent-flag:*.
+ * Last step: the end-of-day audit email (app/lib/agents/flag-mail.ts) —
+ * always queued on a weekday, even with nothing new; never fails the cron.
+ * Redis: writes only pm:agent-state:stance / :manager-watch /
+ * :audit-email, pm:mail-outbox and, on a change, pm:agent-flag:*.
  */
 
 export const dynamic = "force-dynamic";
@@ -29,7 +33,9 @@ export async function GET(req: NextRequest) {
     } catch (e) {
       manager = { ok: false, error: e instanceof Error ? e.message : String(e) };
     }
-    return NextResponse.json({ ...out, manager });
+    const mail = await sendAuditEmail(await listFlags());
+    console.log(`[cron/stance-watch] audit email: ${mail.queued ? "queued" : mail.reason ?? "not queued"}`);
+    return NextResponse.json({ ...out, manager, auditEmail: { ok: mail.ok, queued: mail.queued, reason: mail.reason, newCount: mail.email?.newCount } });
   } catch (e) {
     console.error("[cron/stance-watch] failed:", e);
     return NextResponse.json({ ok: false, error: e instanceof Error ? e.message : String(e) }, { status: 500 });
