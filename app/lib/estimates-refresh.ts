@@ -5,6 +5,7 @@ import {
   setSnapshotForTicker,
   type AnalystSnapshots,
 } from "@/app/lib/analyst-snapshots";
+import { appendAnalystHistory, type AnalystInput } from "@/app/lib/analyst-history";
 import { createLogger } from "@/app/lib/logger";
 
 const log = createLogger("Estimates-refresh");
@@ -28,7 +29,8 @@ type StockRow = { ticker?: string; bucket?: string };
  * analyst count, EPS FY+1 up/down revisions) for every Portfolio + Watchlist
  * holding — WITHOUT a full rescore. Costs ~1-2 batched FactSet calls total.
  *
- * Redis safety: touches exactly two keys.
+ * Redis safety: touches two keys, plus the append-only write-aside
+ * pm:analyst-history (app/lib/analyst-history.ts) after the merge.
  *   • pm:analyst-snapshots — READ-MERGE-WRITE. For each ticker we only set the
  *     `.factset` sub-object (averageTarget/analystCount/revUp/revDown/asOf/
  *     lastUpdated), spreading the existing ticker snapshot so `.rbc`/`.jpm`
@@ -117,6 +119,17 @@ export async function refreshFactsetEstimates(): Promise<EstimatesRefreshStatus>
     return status;
   }
 
+  // Write-aside (never throws, never touches the snapshots): log today's
+  // FactSet readings to the append-only pm:analyst-history so the consensus
+  // can be read as a trend. Only what FactSet actually returned — no
+  // carried-forward values.
+  const readings: Record<string, AnalystInput> = {};
+  for (const ticker of resolvedTickers) {
+    const est = estimates[ticker];
+    readings[ticker] = { target: est.tgtPriceMean, count: est.numEstFy1, revUp: est.revUp, revDown: est.revDown };
+  }
+  const historyAdded = await appendAnalystHistory(redis, readings, today);
+
   const status: EstimatesRefreshStatus = {
     lastRunAt: nowIso,
     tickerCount: tickers.length,
@@ -124,6 +137,6 @@ export async function refreshFactsetEstimates(): Promise<EstimatesRefreshStatus>
     updatedCount,
   };
   await redis.set(ESTIMATES_STATUS_KEY, JSON.stringify(status)).catch(() => {});
-  log.info(`done — ${resolvedTickers.length}/${tickers.length} resolved, ${updatedCount} updated`);
+  log.info(`done — ${resolvedTickers.length}/${tickers.length} resolved, ${updatedCount} updated, ${historyAdded} history entries`);
   return status;
 }
