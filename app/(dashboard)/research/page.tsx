@@ -60,9 +60,13 @@ function RankedTable({
   onWatch,
   adding,
   resolvedNames,
+  showCountry = false,
 }: {
   title: string;
-  flag: "flagCA" | "flagUS";
+  /** Omitted for the combined (Both) table, where each row carries its own flag. */
+  flag?: "flagCA" | "flagUS";
+  /** Tag every row with its country — the combined Canadian + US ranking. */
+  showCountry?: boolean;
   rows: RankedRow[];
   onWatch: (row: RankedRow) => void;
   adding: string | null;
@@ -71,7 +75,7 @@ function RankedTable({
   return (
     <section className="panel">
       <div className="panel-h">
-        <span className="text-ink-3"><AppIcon name={flag} size={14} /></span>
+        {flag && <span className="text-ink-3"><AppIcon name={flag} size={14} /></span>}
         <span className="t">{title}</span>
         <span className="m font-mono">{rows.length}</span>
       </div>
@@ -99,6 +103,11 @@ function RankedTable({
                   <tr key={r.key} className={suggested ? "" : "text-ink-2"}>
                     <td className="n !pl-3.5 text-ink-3">{i + 1}</td>
                     <td>
+                      {showCountry && (
+                        <span className="mr-1.5 inline-flex align-[-2px]" title={r.currency === "CAD" ? "Canadian (CAD)" : "US (USD)"}>
+                          <AppIcon name={r.currency === "CAD" ? "flagCA" : "flagUS"} size={13} />
+                        </span>
+                      )}
                       <TickerLink ticker={r.heldTicker ?? r.ticker} className="font-mono font-medium text-ink hover:text-accent hover:underline">{displayTicker(r.ticker)}</TickerLink>
                       {r.bearish.length > 0 && (
                         <span className="ml-1.5 text-[11px] text-neg" title={`Bearish view: ${r.bearish.map((b) => b.label).join(", ")} (not counted)`}>
@@ -219,6 +228,8 @@ export default function RankedResearchPage() {
     () => allRows.filter((r) => r.listCount >= minLists && (!hideHeld || !r.held)),
     [allRows, minLists, hideHeld],
   );
+  /** Names the "Hide held" switch is removing at the current list threshold. */
+  const hiddenHeld = hideHeld ? allRows.filter((r) => r.listCount >= minLists && r.held).length : 0;
   const cad = filtered.filter((r) => r.currency === "CAD");
   const usd = filtered.filter((r) => r.currency === "USD");
 
@@ -310,10 +321,20 @@ export default function RankedResearchPage() {
           </div>
         </div>
 
-        {(ccy === "Both" || ccy === "CAD") && (
+        {hideHeld && hiddenHeld > 0 && (
+          <div className="text-[11.5px] text-ink-3">
+            <span className="font-mono text-ink">{hiddenHeld}</span> name{hiddenHeld === 1 ? "" : "s"} already on the Portfolio or Watchlist {hiddenHeld === 1 ? "is" : "are"} hidden.{" "}
+            <button onClick={() => setUiPref(PREF_HIDE_HELD, "0")} className="text-accent hover:underline">Show them</button>
+          </div>
+        )}
+        {/* Both = ONE ranking, Canadian and US names together, each tagged. */}
+        {ccy === "Both" && (
+          <RankedTable title="Canadian + US" showCountry rows={filtered} onWatch={addToWatchlist} adding={adding} resolvedNames={resolvedNames} />
+        )}
+        {ccy === "CAD" && (
           <RankedTable title="Canadian" flag="flagCA" rows={cad} onWatch={addToWatchlist} adding={adding} resolvedNames={resolvedNames} />
         )}
-        {(ccy === "Both" || ccy === "USD") && (
+        {ccy === "USD" && (
           <RankedTable title="US" flag="flagUS" rows={usd} onWatch={addToWatchlist} adding={adding} resolvedNames={resolvedNames} />
         )}
 
