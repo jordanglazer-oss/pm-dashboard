@@ -199,9 +199,15 @@ export async function planManagedAlphaBackfill(
   // Optional: Total Alpha (stocks only until the cut) → stocks + Managed Alpha over (base, cut].
   if (opts.rebuildAlpha) {
     const A = series("alpha");
-    const tg = models.sleeveTargets;
+    // Split between stocks and Managed Alpha: the bucket targets when the
+    // model carries them, else the PIM model's own equity weights today.
+    const st = models.sleeveTargets;
+    const stockW = pim.holdings.filter((h) => h.assetClass === "equity" && h.weightInClass > 0 && !tests.isCore(h.symbol) && !tests.isThematic(h.symbol)).reduce((s, h) => s + h.weightInClass, 0);
+    const fromTargets = !!st && st.alpha > 0 && st.thematic > 0;
+    const tg = fromTargets ? { alpha: st!.alpha, thematic: st!.thematic } : { alpha: stockW, thematic: totalW };
+    if (A && tg.alpha > 0 && tg.thematic > 0) notes.push(`Total Alpha split taken from ${fromTargets ? "the model's bucket targets" : "the PIM model's current equity weights (no bucket targets stored)"}: stocks ${r4(tg.alpha * 100)}% + Managed Alpha ${r4(tg.thematic * 100)}% of equity`);
     if (!A) notes.push("Total Alpha NOT rebuilt: no Alpha series on file");
-    else if (!tg || !(tg.alpha > 0) || !(tg.thematic > 0)) notes.push("Total Alpha NOT rebuilt: no bucket targets on the model");
+    else if (!(tg.alpha > 0) || !(tg.thematic > 0)) notes.push("Total Alpha NOT rebuilt: the PIM model has no stock weight or no Managed Alpha weight to split by");
     else if (!A.history.some((e) => e.date === base)) notes.push(`Total Alpha NOT rebuilt: the Alpha series has no ${base} entry`);
     else {
       const mRet = new Map<string, number>(sim.map((s) => [s.date, s.live ? s.ret : NaN]));
