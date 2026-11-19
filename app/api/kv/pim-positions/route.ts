@@ -1,5 +1,6 @@
 import { getRedis } from "@/app/lib/redis";
 import { NextRequest, NextResponse } from "next/server";
+import { missingFromBody } from "@/app/lib/kv-merge";
 import { appendSales, diffSales, type LedgerBook, type SaleEvent } from "@/app/lib/sales-ledger";
 
 const KEY = "pm:pim-positions";
@@ -46,8 +47,7 @@ export async function PUT(req: NextRequest) {
         const existing = JSON.parse(existingRaw) as { portfolios?: { groupId: string; profile: string }[] };
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const incoming = (data as any).portfolios as { groupId: string; profile: string }[];
-        const keys = new Set(incoming.map((b) => `${b.groupId}|${b.profile}`));
-        const kept = (existing.portfolios ?? []).filter((b) => !keys.has(`${b.groupId}|${b.profile}`));
+        const kept = missingFromBody(existing.portfolios ?? [], incoming);
         if (kept.length) {
           console.warn("[pm:pim-positions PUT] kept books missing from the body:", kept.map((b) => `${b.groupId}|${b.profile}`).join(", "));
           // eslint-disable-next-line @typescript-eslint/no-explicit-any

@@ -169,10 +169,11 @@ Two traps that have already bitten:
 npm run dev          # next dev (localhost:3000)
 npm run build        # next build (run before pushing if touching server routes)
 npm run lint         # eslint
-npx tsc --noEmit     # typecheck only — run after edits, no test suite exists
+npx tsc --noEmit     # typecheck only — run after edits
+npm test             # Vitest unit tests (tests/*.test.ts) — pure, no Redis, no network
 ```
 
-There are no automated tests. Verification = `tsc --noEmit` + `lint` + manual smoke in dev.
+A small Vitest suite in `tests/` guards the money math and the save rules: `rebalanceHoldings` (`app/lib/rebalance.ts`, the pure core of `rebalanceStockWeights`), `enforceSleeveTargets`, the merge-on-write / revision helpers the PIM KV routes call (`app/lib/kv-merge.ts`), `tickerMatch`, `yahooClassShare` and weight-decision `reconcile()`. **Deploy gate:** the `prebuild` script runs `tsc --noEmit && vitest run` before every `next build` (Vercel runs `npm run build`), so a type error or failing test blocks the deploy. When changing that logic, update or add a test rather than loosening one. Verification = `npm test` + `tsc --noEmit` + `lint` + manual smoke in dev.
 
 ## Architecture
 

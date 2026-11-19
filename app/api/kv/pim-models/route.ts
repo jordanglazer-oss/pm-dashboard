@@ -1,5 +1,6 @@
 import { getRedis } from "@/app/lib/redis";
 import { NextRequest, NextResponse } from "next/server";
+import { checkModelsRevision } from "@/app/lib/kv-merge";
 import { pimModelSeed } from "@/app/lib/pim-seed";
 
 const KEY = "pm:pim-models";
@@ -64,12 +65,11 @@ export async function PUT(req: NextRequest) {
     // silently roll it back. Refuse it and hand back the current model.
     const storedRaw = await redis.get(KEY);
     const stored = storedRaw ? (JSON.parse(storedRaw) as { revision?: number }) : null;
-    const storedRev = typeof stored?.revision === "number" ? stored.revision : 0;
-    const bodyRev = typeof (data as { revision?: unknown }).revision === "number" ? (data as { revision: number }).revision : null;
     // A body with NO revision is refused too once the stored model has one:
     // it comes from a tab whose load failed and fell back to the built-in
     // sample models, and saving it would replace the live models with them.
-    if (storedRev > 0 && (bodyRev === null || bodyRev < storedRev)) {
+    const { storedRev, bodyRev, refuse } = checkModelsRevision(stored, data as { revision?: unknown });
+    if (refuse) {
       console.warn(`[pm:pim-models PUT] ${bodyRev === null ? "missing revision" : `stale revision ${bodyRev}`} vs ${storedRev} — refused`);
       return NextResponse.json({ error: "stale", revision: storedRev, current: JSON.parse(storedRaw as string) }, { status: 409 });
     }

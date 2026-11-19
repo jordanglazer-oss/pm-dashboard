@@ -16,6 +16,7 @@ import { defaultMarketData } from "./defaults";
 import { pimModelSeed as pimModelSeedFallback } from "./pim-seed";
 import { mergeStocks } from "./stocks-merge";
 import { enforceSleeveTargets } from "./sleeve-targets";
+import { rebalanceHoldings, tickerMatch as legacyTickerMatch } from "./rebalance";
 import type { AnalystSnapshots, TickerSnapshot, AnalystReports, TickerReports, AnalystEntry, ExtractedReport } from "./analyst-snapshots";
 import { setSnapshotForTicker, getSnapshotForTicker, setReportsForTicker, getReportsForTicker, reportIdFor, computeAnalystConsensus, buildConsensusExplanation } from "./analyst-snapshots";
 import { mapBoostedAiToAiRating, mapSmaxToRelativeStrength, type BoostedAiConsensus } from "./external-scoring";
@@ -25,14 +26,14 @@ import { buildResearchMentionsExplanation } from "./research-mentions-display";
 // corresponding entry in pm:stocks (and therefore no `designation` field).
 // The primary lock mechanism is now driven by per-stock `designation` in
 // pm:stocks (Core vs Alpha), set by the user via the Role toggle in the
-// Stocks tab. See `isAlphaLockedHolding` below.
+// Stocks tab. See `isAlphaLockedHolding` in app/lib/rebalance.ts.
 //
 // Why this fallback exists: historically the lock list was the only
 // mechanism. If pm:stocks somehow loses an entry (or one was never created
 // for a fund that exists in pm:pim-models), we want to fail safe by still
 // locking the three specialty funds that were originally hardcoded — they
 // would otherwise be silently re-scaled into the Core ETF residual pool.
-const LEGACY_LOCKED_EQUITY_SYMBOLS = new Set(["FID5982", "FID5982-T", "GRNJ"]);
+// (The set itself now lives in app/lib/rebalance.ts with the rebalance math.)
 
 // PM-entered category keys (inputType "manual") — updateScore stamps
 // manualScoredAt for these so aged manual entries are badgeable.
@@ -858,9 +859,7 @@ export function StockProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   /* ─── Helper: ticker matching across -T / .TO variants ─── */
-  const tickerMatch = useCallback((a: string, b: string) => {
-    return a === b || a.replace("-T", ".TO") === b.replace("-T", ".TO");
-  }, []);
+  const tickerMatch = useCallback((a: string, b: string) => legacyTickerMatch(a, b), []);
 
   /* ─── Helper: detect currency from ticker ─── */
   // Preferred source: the `currency` field from Yahoo (stored on each Stock
@@ -891,144 +890,11 @@ export function StockProvider({ children }: { children: React.ReactNode }) {
 
   /* ─── Rebalance: individual stocks keep fixed weight, freed weight → Core ETFs ─── */
   const rebalanceStockWeights = useCallback((holdings: PimHolding[], extraStock?: Stock, groupId?: string): PimHolding[] => {
-    // Reference per-stock weight from PIM base model (Redis-backed baseline, seed fallback)
-    const pimBaseGroup = pimBaseline.find((g) => g.id === "pim");
-    const refPerStock = 0.018182; // PIM baseline default for individual stocks
-
-    // Build a set of individual stock symbols from the PIM base model seed
-    // Stocks are equity holdings with weightInClass === refPerStock (the fixed per-stock weight)
-    const seedStockSymbols = new Set<string>();
-    if (pimBaseGroup) {
-      for (const h of pimBaseGroup.holdings) {
-        if (h.assetClass === "equity" && Math.abs(h.weightInClass - refPerStock) < 0.001) {
-          seedStockSymbols.add(h.symbol);
-          seedStockSymbols.add(h.symbol.replace(/-T$/, ".TO"));
-          seedStockSymbols.add(h.symbol.replace(/\.TO$/, "-T"));
-        }
-      }
-    }
-    // Also include any portfolio stocks added after seed
-    for (const s of stocks) {
-      if (s.bucket === "Portfolio" && isStock(s)) {
-        seedStockSymbols.add(s.ticker);
-        seedStockSymbols.add(s.ticker.replace(".TO", "-T"));
-        seedStockSymbols.add(s.ticker.replace("-T", ".TO"));
-      }
-    }
-    if (extraStock && isStock(extraStock)) {
-      seedStockSymbols.add(extraStock.ticker);
-      seedStockSymbols.add(extraStock.ticker.replace(".TO", "-T"));
-      seedStockSymbols.add(extraStock.ticker.replace("-T", ".TO"));
-    }
-
-    // Determine whether an equity ETF/MF holding should be Alpha-locked (weight
-    // preserved through rebalance) vs Core (absorbs residual). The PRIMARY
-    // mechanism is the per-stock `designation` field in pm:stocks, set by the
-    // user via the Role toggle in the Stocks tab. Default-undefined designation
-    // is treated as Alpha — this matches both the UI default (PortfolioOverview
-    // renders `(s.designation || "alpha") === "core"`) and types.ts which
-    // documents the field as "default alpha". Only an EXPLICIT "core" tag
-    // makes a holding residual-absorbing.
-    //
-    // Behavior decision tree:
-    //   - pm:stocks entry has designation === "core"   → NOT locked (Core ETF)
-    //   - pm:stocks entry exists, any other state      → Alpha-locked
-    //   - no pm:stocks entry at all (rare/stale data)  → legacy fallback
-    const isAlphaLockedHolding = (symbol: string): boolean => {
-      const stockEntry = stocks.find((s) =>
-        s.ticker === symbol ||
-        s.ticker.replace(/\.TO$/, "-T") === symbol ||
-        s.ticker.replace(/-T$/, ".TO") === symbol,
-      );
-      if (stockEntry) {
-        // Any tagged-or-untagged pm:stocks entry locks UNLESS explicitly "core"
-        return stockEntry.designation !== "core";
-      }
-      // No pm:stocks entry at all → legacy fallback
-      return LEGACY_LOCKED_EQUITY_SYMBOLS.has(symbol);
-    };
-
-    const equityHoldings = holdings.filter((h) => h.assetClass === "equity");
-    const nonEquity = holdings.filter((h) => h.assetClass !== "equity");
-
-    // Split equity holdings into three pools:
-    //   1) individual stocks — locked at refPerStock
-    //   2) Alpha-tagged funds — pass-through, keep current weightInClass
-    //   3) Core-tagged ETFs — absorb residual equity weight proportionally
-    // A PINNED stock (weight set in a Review commit) is skipped by the rule —
-    // it holds its pinned weight like a hand-set fund until the pin is released.
-    const isPinned = (h: PimHolding) => h.pinned != null && Number.isFinite(h.pinned.weightInClass);
-    const stockHoldings = equityHoldings.filter((h) => seedStockSymbols.has(h.symbol) && !isPinned(h));
-    const lockedHoldings = equityHoldings.filter(
-      (h) => (seedStockSymbols.has(h.symbol) && isPinned(h)) || (!seedStockSymbols.has(h.symbol) && isAlphaLockedHolding(h.symbol)),
-    ).map((h) => (isPinned(h) ? { ...h, weightInClass: h.pinned!.weightInClass } : h));
-    const etfHoldings = equityHoldings.filter(
-      (h) => !seedStockSymbols.has(h.symbol) && !isAlphaLockedHolding(h.symbol),
-    );
-
-    if (stockHoldings.length === 0 && etfHoldings.length === 0 && lockedHoldings.length === 0) return holdings;
-
-    // Each stock keeps the SAME per-stock weight as the PIM base model
-    const stockTotal = refPerStock * stockHoldings.length;
-
-    // Locked specialty funds keep their existing weightInClass untouched
-    const lockedTotal = lockedHoldings.reduce((s, h) => s + h.weightInClass, 0);
-
-    // ── Residual rule: individual stocks fixed, Core ETFs absorb the gap ──
-    //
-    // Every individual stock carries the SAME weight in every model —
-    // refPerStock — and the Core ETFs of that model take whatever is left.
-    // Membership changes (a name added, or a name a model is not allowed to
-    // own) therefore move the CORE sleeve, never the other stocks' weights.
-    //
-    // The inverse rule ran here for a while: Core/Alpha held their
-    // manually-set weight and the stocks flexed to fill the residual. It is
-    // a no-op on balanced data, which is why it survived, but it silently
-    // repriced every stock in a model whenever ANYTHING else changed. Adding
-    // LITE to KPMG dragged all 11 of its stocks from 1.20% to 1.09% of
-    // portfolio — the stocks paid for the new holding instead of the Core
-    // sleeve funding it. Same failure shape as PC USA, where a manual ITOT
-    // weight was absorbed by the stocks rather than by Core.
-    //
-    // `groupId` is retained on the signature for call-site auditability.
-
-    // Core (unlocked) ETFs absorb the remainder proportionally per PIM seed ratios
-    const seedEtfWeights = new Map<string, number>();
-    if (pimBaseGroup) {
-      for (const h of pimBaseGroup.holdings) {
-        if (
-          h.assetClass === "equity" &&
-          !seedStockSymbols.has(h.symbol) &&
-          !isAlphaLockedHolding(h.symbol)
-        ) {
-          seedEtfWeights.set(h.symbol, h.weightInClass);
-        }
-      }
-    }
-
-    const etfTotal = Math.max(0, 1.0 - stockTotal - lockedTotal);
-    const seedEtfTotal = [...seedEtfWeights.values()].reduce((s, v) => s + v, 0);
-
-    // Three-bucket model: Core keeps its OWN current mix. The seed ratios
-    // describe the pre-restructure Core (no QQC.F / QQQX.U), and mixing seed
-    // ratios with current ones would not sum to etfTotal.
-    const useSeedRatios = !sleeveTargetsRef.current;
-    const rebalancedEtfs = etfHoldings.map((h) => {
-      // Use seed ratio if available, otherwise preserve current ratio
-      const seedWeight = useSeedRatios ? seedEtfWeights.get(h.symbol) : undefined;
-      const ratio = seedWeight != null && seedEtfTotal > 0
-        ? seedWeight / seedEtfTotal
-        : (etfHoldings.length > 0 ? h.weightInClass / (etfHoldings.reduce((s, e) => s + e.weightInClass, 0) || 1) : 0);
-      return { ...h, weightInClass: parseFloat((ratio * etfTotal).toFixed(6)) };
-    });
-
-    return [
-      ...nonEquity,
-      ...lockedHoldings, // untouched — weightInClass preserved exactly
-      ...rebalancedEtfs,
-      ...stockHoldings.map((h) => ({ ...h, weightInClass: refPerStock })),
-    ];
-  }, [stocks, isStock, pimBaseline]);
+    // Pure math lives in app/lib/rebalance.ts (unit-tested); sleeveTargetsRef is
+    // read at call time exactly as before.
+    void groupId;
+    return rebalanceHoldings(holdings, { stocks, pimBaseline, extraStock, useSeedRatios: !sleeveTargetsRef.current });
+  }, [stocks, pimBaseline]);
 
   /* ─── Helper: get balanced asset class allocation for a group ─── */
   const getBalancedAlloc = useCallback((group: { profiles: Partial<Record<string, { fixedIncome: number; equity: number; alternatives: number }>> }, assetClass: "fixedIncome" | "equity" | "alternative"): number => {

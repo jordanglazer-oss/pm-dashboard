@@ -1,5 +1,6 @@
 import { getRedis } from "@/app/lib/redis";
 import { NextRequest, NextResponse } from "next/server";
+import { missingFromBody } from "@/app/lib/kv-merge";
 import type { PimPerformanceData, PimModelPerformance, PimDailyReturn } from "@/app/lib/pim-types";
 
 const KEY = "pm:pim-performance";
@@ -114,8 +115,7 @@ export async function PUT(req: NextRequest) {
       // loaded before a series was added (e.g. the Stocks series, Nov 2026)
       // would otherwise delete it on its next save. No client flow removes one.
       if (Array.isArray(data.models)) {
-        const incomingKeys = new Set(data.models.map((m) => `${m.groupId}|${m.profile}`));
-        const kept = existing.models.filter((m) => !incomingKeys.has(`${m.groupId}|${m.profile}`));
+        const kept = missingFromBody(existing.models, data.models);
         if (kept.length) {
           console.warn("[pm:pim-performance PUT] kept series missing from the body:", kept.map((m) => `${m.groupId}|${m.profile}`).join(", "));
           data.models = [...data.models, ...kept];
