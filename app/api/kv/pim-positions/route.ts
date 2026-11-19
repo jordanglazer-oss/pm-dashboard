@@ -1,5 +1,6 @@
 import { getRedis } from "@/app/lib/redis";
 import { NextRequest, NextResponse } from "next/server";
+import { appendSales, diffSales, type LedgerBook, type SaleEvent } from "@/app/lib/sales-ledger";
 
 const KEY = "pm:pim-positions";
 
@@ -39,6 +40,7 @@ export async function PUT(req: NextRequest) {
     // loaded before a book was added (e.g. the Stocks book, Nov 2026) would
     // otherwise delete it on its next trade. No client flow removes a book.
     const existingRaw = await redis.get(KEY);
+    let saleEvents: SaleEvent[] = [];
     if (existingRaw) {
       try {
         const existing = JSON.parse(existingRaw) as { portfolios?: { groupId: string; profile: string }[] };
@@ -51,9 +53,13 @@ export async function PUT(req: NextRequest) {
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           (data as any).portfolios = [...incoming, ...kept];
         }
+        // Write-aside only (see sales-ledger.ts): note any units that went DOWN.
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        saleEvents = diffSales((existing.portfolios ?? []) as LedgerBook[], (data as any).portfolios as LedgerBook[], "client");
       } catch { /* unreadable existing blob — write as before */ }
     }
     await redis.set(KEY, JSON.stringify(data));
+    await appendSales(redis, saleEvents); // never throws; never changes what was saved above
     return NextResponse.json({ ok: true });
   } catch (e) {
     console.error("Redis write error (pim-positions):", e);

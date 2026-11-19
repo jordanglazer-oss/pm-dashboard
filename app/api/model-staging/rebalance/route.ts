@@ -1,4 +1,5 @@
 import { after, NextRequest, NextResponse } from "next/server";
+import { appendSales, diffSales, type LedgerBook } from "@/app/lib/sales-ledger";
 import { getRedis } from "@/app/lib/redis";
 import { createLogger } from "@/app/lib/logger";
 import { getTodayET } from "@/app/lib/market-hours";
@@ -321,6 +322,8 @@ export async function POST(req: NextRequest) {
     };
     await redis.set("pm:pim-positions", JSON.stringify(nextPositions));
     trace.push(`positions written: ${nextBooks.size} books`);
+    // Write-aside (sales-ledger.ts): units sold + average cost at the sale, for the realized-gains tally.
+    await appendSales(redis, diffSales(positions.portfolios as LedgerBook[], nextPositions.portfolios as LedgerBook[], "staged-rebalance", asOf));
 
     const state = (stateRaw ? JSON.parse(stateRaw) : { groupStates: [], lastUpdated: "" }) as PimPortfolioState;
     const gs = state.groupStates.find((g) => g.groupId === GROUP) ?? { groupId: GROUP, lastRebalance: null, trackingStart: null, transactions: [] };
