@@ -209,7 +209,7 @@ export async function buildMonthFacts(month: string): Promise<MonthFacts> {
     areaMap.set(k, a);
   };
   for (const m of equity) {
-    addArea("sleeve", m.bucket === "core" ? "Core index ETFs" : m.bucket === "thematic" ? "Thematic funds" : "Individual stocks", m);
+    addArea("sleeve", m.bucket === "core" ? "Core index ETFs" : m.bucket === "thematic" ? "Managed Alpha funds" : "Individual stocks", m);
     if (m.sector) addArea("sector", m.sector, m);
     for (const t of m.themes ?? []) addArea("theme", t, m);
   }

@@ -3,7 +3,7 @@
 
 export const SLEEVES = ["core", "thematic", "stocks", "nonCore"] as const;
 export type SleeveId = (typeof SLEEVES)[number];
-export const SLEEVE_LABELS: Record<SleeveId, string> = { core: "Core", thematic: "Thematic funds", stocks: "Stocks (Alpha)", nonCore: "Stocks + Thematic" };
+export const SLEEVE_LABELS: Record<SleeveId, string> = { core: "Core", thematic: "Managed Alpha funds", stocks: "Stocks (Alpha)", nonCore: "Stocks + Managed Alpha" };
 
 export type SleevePoint = { date: string; value: number; dailyReturn: number };
 export type SleeveSeries = {
@@ -18,7 +18,7 @@ export type SleeveSeries = {
 /** Which existing ledger series fills each sleeve's past (Stocks + Thematic has none). */
 export const BACKFILL_SOURCES: Partial<Record<SleeveId, { profile: string; label: string }>> = {
   core: { profile: "core", label: "Core series" },
-  thematic: { profile: "thematic", label: "Thematic series" },
+  thematic: { profile: "thematic", label: "Managed Alpha series" },
   stocks: { profile: "alpha", label: "Alpha series (units book — stocks only)" },
 };
 export type SleeveEvent = { date: string; sleeve: SleeveId; note: string };

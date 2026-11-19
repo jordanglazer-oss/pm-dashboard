@@ -26,7 +26,7 @@ export const POLICY_TEXT = `INVESTMENT POLICY (version ${POLICY_VERSION})
    - Never hedge reactively after a spike: once fear is high, protection is expensive and the moment has usually passed.
    - The hedge check runs once a day, after the close.
 
-3. Thematic funds. Held for managers who can outperform. The question is always the manager and their record, not the theme's latest month.
+3. Managed Alpha funds. Held for managers who can outperform. The question is always the manager and their record, not the theme's latest month.
 
 4. Individual stocks (Alpha). Held only on a rock-solid long-term thesis. A stock is sold when its thesis weakens — not because the price fell, the market fell, or the stock looks expensive for a while.
 

@@ -35,7 +35,7 @@ export function factsBlock(f: MonthFacts): string {
   const hurt = [...f.areas].reverse().filter((a) => a.contributionPts < 0);
   const areaLine = (list: typeof f.areas, kind: string) => list.filter((a) => a.kind === kind).slice(0, 3).map((a) => `${a.label} (${a.names.slice(0, 3).join(", ")})`).join("; ") || "none";
   const sleeves = f.modelReturns.filter((m) => m.profile === "core" || m.profile === "thematic" || m.profile === "alpha" || m.profile === "stocks").sort((a, b) => b.returnPct - a.returnPct);
-  const sleeveName: Record<string, string> = { core: "Core index ETFs", thematic: "Thematic funds", alpha: "the Alpha sleeve (individual stocks and Thematic funds)", stocks: "our individual stock picks" };
+  const sleeveName: Record<string, string> = { core: "Core index ETFs", thematic: "Managed Alpha funds", alpha: "the Alpha sleeve (individual stocks and Managed Alpha funds)", stocks: "our individual stock picks" };
   return [
     `Month: ${monthName(f.month, "en")}${f.partialMonth ? ` (in progress, data through ${f.through})` : ""}`,
     `Markets this month (direction only): ${f.indexReturns.map((i) => `${i.label} ${moveWord(i.returnPct)}`).join("; ")}`,

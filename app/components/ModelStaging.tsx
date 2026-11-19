@@ -46,7 +46,7 @@ const INPUT = "h-7 rounded-control border border-line bg-surface px-2 text-[12.5
 
 const CLASS_LABELS: Record<PimAssetClass, string> = { fixedIncome: "Fixed Income", equity: "Equities", alternative: "Alternatives" };
 const PROFILE_LABELS: Record<PimProfileType, string> = {
-  conservative: "Conservative", balanced: "Balanced", growth: "Growth", allEquity: "All-Equity", alpha: "Alpha", core: "Core", thematic: "Thematic", stocks: "Stocks",
+  conservative: "Conservative", balanced: "Balanced", growth: "Growth", allEquity: "All-Equity", alpha: "Alpha", core: "Core", thematic: "Managed Alpha", stocks: "Stocks",
 };
 const pct = (v: number | null | undefined, dp = 2) => (v == null ? "—" : `${(v * 100).toFixed(dp)}%`);
 const allocOf = (g: PimModelGroup | undefined, profile: PimProfileType, ac: PimAssetClass): number => {
@@ -450,7 +450,7 @@ export function ModelStaging() {
             <AppIcon name="upload" size={13} />
             {parsing ? "Reading screenshot…" : "Upload screenshot"}
           </button>
-          <button className={BTN} onClick={startFromLive} disabled={parsing} title="Start a draft from the live models — e.g. to resize the Core / Thematic / Alpha buckets without a screenshot">
+          <button className={BTN} onClick={startFromLive} disabled={parsing} title="Start a draft from the live models — e.g. to resize the Core / Managed Alpha / Alpha buckets without a screenshot">
             Start from live models
           </button>
           <span className="text-[11.5px] text-ink-3">
@@ -966,8 +966,8 @@ function BucketInputs({ alpha0, thematic0, onResize }: { alpha0: number; themati
     <span className="ml-auto flex items-center gap-1.5">
       Alpha
       <input value={alpha} onChange={(e) => setAlpha(e.target.value)} className={`${INPUT} h-6 w-[64px] text-right tabular-nums`} aria-label="Alpha bucket % of equity" />
-      Thematic
-      <input value={thematic} onChange={(e) => setThematic(e.target.value)} className={`${INPUT} h-6 w-[64px] text-right tabular-nums`} aria-label="Thematic bucket % of equity" />
+      Managed Alpha
+      <input value={thematic} onChange={(e) => setThematic(e.target.value)} className={`${INPUT} h-6 w-[64px] text-right tabular-nums`} aria-label="Managed Alpha bucket % of equity" />
       <span className="text-ink-3">Core {Number.isFinite(coreT) ? (coreT * 100).toFixed(2) : "—"}%</span>
       <button
         className={BTN}

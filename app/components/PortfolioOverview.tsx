@@ -1181,7 +1181,7 @@ export function PortfolioOverview({
         notes: "",
         ...(designation ? { designation } : {}),
       };
-      const label = !isFund ? "stock" : designation === "core" ? "Core ETF" : instrumentType === "mutual-fund" ? "Thematic fund" : "Thematic ETF";
+      const label = !isFund ? "stock" : designation === "core" ? "Core ETF" : instrumentType === "mutual-fund" ? "Managed Alpha fund" : "Managed Alpha ETF";
       out.push({ symbol: h.symbol, stock, label, ...(watch ? { watchlistTicker: watch.ticker } : {}) });
     }
     return out;
@@ -1556,7 +1556,7 @@ export function PortfolioOverview({
                                   const cur = s.designation || "alpha";
                                   updateStockFields(s.ticker, { designation: cur === "alpha" ? "thematic" : cur === "thematic" ? "core" : "alpha" });
                                 }}
-                                title="Click to cycle Alpha → Thematic → Core"
+                                title="Click to cycle Alpha → Managed Alpha → Core"
                                 className={`rounded-md px-2 py-0.5 text-[10px] font-bold transition-colors ${
                                   (s.designation || "alpha") === "core"
                                     ? "bg-accent-soft text-accent hover:bg-accent-soft"
@@ -1565,7 +1565,7 @@ export function PortfolioOverview({
                                     : "bg-warn-soft text-warn hover:bg-warn-soft"
                                 }`}
                               >
-                                {(s.designation || "alpha") === "core" ? "Core" : s.designation === "thematic" ? "Thematic" : "Alpha"}
+                                {(s.designation || "alpha") === "core" ? "Core" : s.designation === "thematic" ? "Managed Alpha" : "Alpha"}
                               </button>
                             );
                           })()}

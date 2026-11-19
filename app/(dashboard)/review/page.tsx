@@ -267,7 +267,7 @@ export default function ReviewPage() {
       <div className="grid grid-cols-2 gap-2 md:grid-cols-5">
         {cell("Model · " + (profile === "allEquity" ? "All-Equity" : profile), <span className={tone(data?.model.mtd)}>{signed(data?.model.mtd)}</span>, <>MTD · 1M {signed(data?.model.r1m)} · SPY 1M {signed(spy)}{data?.model.asOf ? ` · as of ${data.model.asOf}` : ""}</>)}
         {bucketCell("alpha", "Alpha")}
-        {bucketCell("thematic", "Thematic")}
+        {bucketCell("thematic", "Managed Alpha")}
         {cell("Decisions", <>{decided}<span className="ml-1.5 text-[11px] font-normal text-ink-3">of {rows.length}</span></>, committed ? `committed ${review?.committedAt?.slice(0, 10)}` : review ? `draft · ${review.updatedAt.slice(0, 10)}` : "nothing decided yet")}
         {cell("Attention", <>{(data?.since.trips.length ?? 0) + (data?.since.verdictChanges.filter((v) => v.to && v.to !== "intact").length ?? 0)}</>, <>{data?.since.trips.length ?? 0} trips · {data?.since.reUnderwriteDue.length ?? 0} re-underwrites due</>)}
       </div>
@@ -354,13 +354,13 @@ export default function ReviewPage() {
                 </tr>
               );
             })}
-            {rows.length === 0 && <tr><td colSpan={10} className="text-ink-3">No Alpha stocks or Thematic funds in the PIM model.</td></tr>}
+            {rows.length === 0 && <tr><td colSpan={10} className="text-ink-3">No Alpha stocks or Managed Alpha funds in the PIM model.</td></tr>}
           </tbody>
         </table>
         <div className="flex flex-wrap items-center gap-3 border-t border-line-soft px-3 py-2 text-[11.5px] text-ink-3">
           <span>
             {pimModels.sleeveTargets
-              ? <>Bucket targets: Core {pct(pimModels.sleeveTargets.core * eqAlloc)} · Thematic {pct(pimModels.sleeveTargets.thematic * eqAlloc)} · Alpha {pct(pimModels.sleeveTargets.alpha * eqAlloc)} — change them in Stage changes on the Models page.</>
+              ? <>Bucket targets: Core {pct(pimModels.sleeveTargets.core * eqAlloc)} · Managed Alpha {pct(pimModels.sleeveTargets.thematic * eqAlloc)} · Alpha {pct(pimModels.sleeveTargets.alpha * eqAlloc)} — change them in Stage changes on the Models page.</>
               : <>No bucket targets yet — apply a three-bucket draft in Stage changes on the Models page.</>}
             {" "}Targets above are what the models hold today.
           </span>

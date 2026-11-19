@@ -176,7 +176,7 @@ export async function GET(req: NextRequest) {
         anchoredAt: cutDate,
         datesRestoredFromBackup: mismatches.map((m) => m.date),
         laterDaysRechained: rechained,
-        note: "Alpha = stocks only through the cut date; stocks + Thematic funds after it",
+        note: "Alpha = stocks only through the cut date; stocks + Managed Alpha funds after it",
       },
     };
 

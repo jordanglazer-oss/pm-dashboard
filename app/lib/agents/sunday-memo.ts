@@ -111,7 +111,7 @@ async function gather(today: string): Promise<string> {
     ``,
     `=== COMING WEEK: EARNINGS FROM HOLDINGS ===`,
     earnings.length ? earnings.join(", ") : "none on the calendar",
-    manager ? `\n=== LAST FUND REVIEW (${manager.quarter}) ===\n${(manager.reviews ?? []).filter((r) => r.severity !== "ok").map((r) => `- ${r.symbol}: ${r.findings.join("; ")}`).join("\n") || "- every Thematic fund passed"}` : "",
+    manager ? `\n=== LAST FUND REVIEW (${manager.quarter}) ===\n${(manager.reviews ?? []).filter((r) => r.severity !== "ok").map((r) => `- ${r.symbol}: ${r.findings.join("; ")}`).join("\n") || "- every Managed Alpha fund passed"}` : "",
   ].filter((x) => x !== "").join("\n");
 }
 

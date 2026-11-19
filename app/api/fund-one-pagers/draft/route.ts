@@ -29,7 +29,7 @@ Return ONLY this JSON, no markdown:
   "whyWeOwn": ["3-4 short reasons, each one sentence"],
   "manager": { "firm": "", "team": "lead managers and their role", "since": "how long the team has run it, e.g. 'since 2014'", "philosophy": "2-3 sentences" },
   "process": "3-4 sentences on how they pick and size holdings",
-  "role": "2 sentences: its job in our portfolio (Core = broad market exposure; Thematic = a manager we believe can outperform in a long-term theme)",
+  "role": "2 sentences: its job in our portfolio (Core = broad market exposure; Managed Alpha = a manager we believe can outperform in a long-term theme)",
   "record": "2-3 sentences on the record versus its category using the FACTS figures, balanced (mention weaker periods too)",
   "fees": "one sentence on the fee (MER) in context",
   "risks": ["2-4 plain risks a client should understand"],
@@ -47,7 +47,7 @@ export async function POST(req: NextRequest) {
   const p = (x?: number) => (x == null ? "?" : `${x}%`);
   const facts = [
     `Symbol: ${fund.symbol}${fund.name ? ` — ${fund.name}` : ""}`,
-    `Our bucket: ${fund.bucket === "core" ? "Core" : fund.bucket === "thematic" ? "Thematic" : fund.bucket === "fixedIncome" ? "Fixed income" : "Other"}; ${(fund.weightInClass * 100).toFixed(1)}% of the ${fund.assetClass === "equity" ? "equity" : fund.assetClass} class in our model`,
+    `Our bucket: ${fund.bucket === "core" ? "Core" : fund.bucket === "thematic" ? "Managed Alpha" : fund.bucket === "fixedIncome" ? "Fixed income" : "Other"}; ${(fund.weightInClass * 100).toFixed(1)}% of the ${fund.assetClass === "equity" ? "equity" : fund.assetClass} class in our model`,
     f.category ? `Category: ${f.category}` : "",
     f.fundFamily ? `Fund family: ${f.fundFamily}` : "",
     f.expenseRatio != null ? `MER / expense ratio: ${f.expenseRatio}%` : "",

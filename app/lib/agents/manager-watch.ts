@@ -121,7 +121,7 @@ export function reviewFund(now: FundSnapshot, prev: FundSnapshot | undefined): F
   return { ...now, gaps: g, findings, severity };
 }
 
-const SYSTEM = `You are the manager watcher for a portfolio manager. Each quarter the dashboard checks every Thematic fund against its category with plain rules. This fund tripped one. Write a short read of whether the manager's long-term case is weakening. You monitor and suggest; you never instruct.
+const SYSTEM = `You are the manager watcher for a portfolio manager. Each quarter the dashboard checks every Managed Alpha fund against its category with plain rules. This fund tripped one. Write a short read of whether the manager's long-term case is weakening. You monitor and suggest; you never instruct.
 
 ${POLICY_TEXT}
 
@@ -157,7 +157,7 @@ export async function runManagerWatch(opts: { force?: boolean } = {}): Promise<M
   }
   const pim = models?.groups?.find((g) => g.id === "pim");
   const thematic = (pim?.holdings ?? []).filter((h) => h.assetClass === "equity" && holdingBucket(h, stocks) === "thematic");
-  if (!thematic.length) return { ok: true, skipped: "no Thematic funds in the PIM model" };
+  if (!thematic.length) return { ok: true, skipped: "no Managed Alpha funds in the PIM model" };
 
   // The comparison point for fee / category / rating is the LAST REVIEWED
   // snapshot from an earlier quarter (a forced same-quarter re-run keeps it).

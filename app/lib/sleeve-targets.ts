@@ -75,7 +75,7 @@ export function bucketTests(stocks: BucketStock[], models: ModelsLike) {
   };
 }
 
-export const BUCKET_LABELS: Record<EquityBucket, string> = { core: "Core", thematic: "Thematic", alpha: "Alpha" };
+export const BUCKET_LABELS: Record<EquityBucket, string> = { core: "Core", thematic: "Managed Alpha", alpha: "Alpha" };
 
 /** Bucket totals of one group's equity class. */
 export function bucketTotals(holdings: PimHolding[], bucket: (symbol: string) => EquityBucket): Record<EquityBucket, number> {

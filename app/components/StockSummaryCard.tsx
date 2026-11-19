@@ -86,7 +86,7 @@ export function StockSummaryCard({ stock }: { stock: ScoredStock }) {
   const dotWord = (dot: string, text: string, cls = "text-ink") => <span className="inline-flex items-center gap-1.5"><span className={`dot ${dot}`} /><span className={`text-[14px] font-medium ${cls}`}>{text}</span></span>;
 
   // Bucket cell
-  const bucketMain = core ? chip("Core", "bg-line-soft text-ink-2") : !held ? chip("Watchlist", "bg-line-soft text-ink-2") : bucket === "thematic" ? chip("Thematic", "border border-pos-border bg-pos-soft text-pos") : chip("Alpha", "border border-accent-border bg-accent-soft text-accent");
+  const bucketMain = core ? chip("Core", "bg-line-soft text-ink-2") : !held ? chip("Watchlist", "bg-line-soft text-ink-2") : bucket === "thematic" ? chip("Managed Alpha", "border border-pos-border bg-pos-soft text-pos") : chip("Alpha", "border border-accent-border bg-accent-soft text-accent");
   const bucketSub = core ? "indexed / passive" : !held ? "not owned" : bucket === "thematic" ? "thematic fund — held at a set weight" : "individual stock — equal share of the Alpha bucket";
 
   // Thesis cell

@@ -26,9 +26,9 @@ const PRESETS: { key: Preset; label: string }[] = [
 
 const BOOKS: { profile: string; label: string; note: string }[] = [
   { profile: "core", label: "Core", note: "S&P 500 and Nasdaq index ETFs" },
-  { profile: "thematic", label: "Thematic funds", note: "the Thematic funds alone" },
-  { profile: "alpha", label: "Alpha", note: "everything outside Core: stocks + Thematic funds" },
-  { profile: "stocks", label: "Stocks", note: "the individual stocks alone" },
+  { profile: "thematic", label: "Managed Alpha", note: "third-party funds and ETFs outside Core" },
+  { profile: "stocks", label: "Individual Stocks", note: "the individual stocks alone" },
+  { profile: "alpha", label: "Total Alpha", note: "Managed Alpha + Individual Stocks" },
 ];
 
 const iso = (d: Date) => d.toISOString().slice(0, 10);

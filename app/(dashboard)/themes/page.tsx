@@ -208,7 +208,7 @@ function ThemeCard({
         <span className="t-mark bg-hub-portfolio" aria-hidden />
         <span className="t">{t.name}</span>
         <span className="m">
-          {held.length} held · <span className="font-mono">{pct(t.alphaShare)}</span> of Alpha + Thematic
+          {held.length} held · <span className="font-mono">{pct(t.alphaShare)}</span> of Alpha + Managed Alpha
           {t.signedAt && <> · signed <span className="font-mono">{t.signedAt.slice(0, 10)}</span>{t.aiDrafted ? " · AI-drafted" : ""}</>}
         </span>
         <div className="ml-auto flex items-center gap-2">

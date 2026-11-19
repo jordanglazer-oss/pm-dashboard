@@ -2622,14 +2622,14 @@ export default function StockDetailPage() {
                 titleClass="text-[13px] font-semibold text-ink"
                 title="Portfolio role"
               >
-                <p className="mb-3 text-[11.5px] text-ink-3">Core = indexed/passive. Thematic = a thematic / specialty fund held at a set weight. Alpha = active picks. Sector exposure is based on Alpha picks only.</p>
+                <p className="mb-3 text-[11.5px] text-ink-3">Core = indexed/passive. Managed Alpha = a thematic / specialty fund held at a set weight. Alpha = active picks. Sector exposure is based on Alpha picks only.</p>
                 <div className="seg">
                   <button type="button" onClick={() => updateStockFields(ticker, { designation: "core" })} className={stock.designation === "core" ? "on" : ""}>
                     Core
                   </button>
                   {!scoreable && (
                     <button type="button" onClick={() => updateStockFields(ticker, { designation: "thematic" })} className={stock.designation === "thematic" ? "on" : ""}>
-                      Thematic
+                      Managed Alpha
                     </button>
                   )}
                   <button type="button" onClick={() => updateStockFields(ticker, { designation: "alpha" })} className={(stock.designation || "alpha") === "alpha" ? "on" : ""}>

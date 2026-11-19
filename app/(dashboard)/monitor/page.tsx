@@ -416,13 +416,13 @@ function ManagerSection() {
       <button className="panel-h w-full text-left" onClick={toggle}>
         <span className="t">Manager watch</span>
         <span className="m">
-          {state ? `${state.quarter} · ${reviews.length} Thematic funds · ${tripped} to look at` : state === null ? "not run yet" : "…"} · {open ? "hide" : "show"}
+          {state ? `${state.quarter} · ${reviews.length} Managed Alpha funds · ${tripped} to look at` : state === null ? "not run yet" : "…"} · {open ? "hide" : "show"}
         </span>
       </button>
       {open && (
         <div className="flex flex-col gap-2.5 px-3.5 py-3">
           <p className="text-[12.5px] leading-relaxed text-ink-3">
-            Once a quarter, each Thematic fund against its category over 1, 3 and 5 years, plus any fee, category or rating change since the last review. Uses the fund data on PIM Model; refresh it there first if it is old. One weak year is a watch, not a case.
+            Once a quarter, each Managed Alpha fund against its category over 1, 3 and 5 years, plus any fee, category or rating change since the last review. Uses the fund data on PIM Model; refresh it there first if it is old. One weak year is a watch, not a case.
           </p>
           <div className="flex flex-wrap items-center gap-2">
             <button className={BTN} disabled={busy} onClick={runNow}>

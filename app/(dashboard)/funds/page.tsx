@@ -18,7 +18,7 @@ import type { FundOnePager, FundRow } from "@/app/lib/fund-one-pagers-shared";
 
 const BTN =
   "inline-flex h-7 items-center gap-1.5 rounded-control border border-line bg-surface px-2.5 text-[12.5px] text-ink-2 hover:bg-surface-hover disabled:opacity-50";
-const BUCKET_LABEL: Record<FundRow["bucket"], string> = { thematic: "Thematic", core: "Core", fixedIncome: "Fixed income", other: "Other" };
+const BUCKET_LABEL: Record<FundRow["bucket"], string> = { thematic: "Managed Alpha", core: "Core", fixedIncome: "Fixed income", other: "Other" };
 
 type Draft = Omit<FundOnePager, "updatedAt" | "signedAt" | "history">;
 

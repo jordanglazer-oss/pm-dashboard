@@ -276,7 +276,7 @@ export async function POST(req: NextRequest) {
     const fd = stock?.fundData;
     const fundBlock = isFund
       ? [
-          `THIS IS A FUND / ETF held as a long-run position. Under the policy a Thematic fund is held for a MANAGER who can outperform: pillars are the mandate (the exposure it exists to deliver), the manager and their record, and the vehicle (fees, structure). Leave "measures" empty and propose no "guard".`,
+          `THIS IS A FUND / ETF held as a long-run position. Under the policy a Managed Alpha fund is held for a MANAGER who can outperform: pillars are the mandate (the exposure it exists to deliver), the manager and their record, and the vehicle (fees, structure). Leave "measures" empty and propose no "guard".`,
           fd?.category ? `Category: ${fd.category}${fd.fundFamily ? ` · ${fd.fundFamily}` : ""}${typeof fd.expenseRatio === "number" ? ` · MER ${fd.expenseRatio}%` : ""}` : null,
           fd?.topHoldings?.length ? `Top holdings: ${fd.topHoldings.slice(0, 10).map((h) => `${h.symbol ?? h.name}${typeof h.weight === "number" ? ` ${h.weight.toFixed(1)}%` : ""}`).join(", ")}` : "Top holdings: not on file",
           fd?.sectorWeightings?.length ? `Sectors: ${fd.sectorWeightings.slice(0, 6).map((w) => `${w.sector} ${typeof w.weight === "number" ? w.weight.toFixed(0) : "?"}%`).join(", ")}` : null,

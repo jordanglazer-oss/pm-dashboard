@@ -64,7 +64,7 @@ function weightMathLabel(h: { symbol: string; assetClass: string; weightInClass:
   if (h.pinned) return { text: `Pinned · ${h.pinned.month}`, cls: "text-accent", locked: true };
   // Three-bucket model (sleeve targets set): the bucket says how it is sized.
   if (bucket === "alpha") return { text: "Alpha · equal split", cls: "text-ink-2" };
-  if (bucket === "thematic") return { text: "Thematic · set weight", cls: "text-warn", locked: true };
+  if (bucket === "thematic") return { text: "Managed Alpha · set weight", cls: "text-warn", locked: true };
   if (bucket === "core") return { text: "Core · residual", cls: "text-accent-ink" };
   if (WEIGHT_MATH_LOCKED.has(h.symbol)) return { text: "Balanced %", cls: "text-warn", locked: true };
   if (Math.abs(h.weightInClass - REF_PER_STOCK) < 0.0005) return { text: "Stock · 1.82%", cls: "text-ink-2" };
@@ -78,7 +78,7 @@ const PROFILE_LABELS: Record<PimProfileType, string> = {
   allEquity: "All-Equity",
   alpha: "Alpha",
   core: "Core",
-  thematic: "Thematic",
+  thematic: "Managed Alpha",
   stocks: "Stocks",
 };
 

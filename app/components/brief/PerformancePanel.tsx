@@ -33,9 +33,9 @@ type Range = { from: string; to: string };
 
 const SLEEVES: { profile: PimProfileType; label: string; note: string }[] = [
   { profile: "core", label: "Core", note: "index ETFs" },
-  { profile: "thematic", label: "Thematic", note: "funds" },
-  { profile: "alpha", label: "Alpha", note: "stocks + thematic" },
-  { profile: "stocks", label: "Stocks", note: "picks only" },
+  { profile: "thematic", label: "Managed Alpha", note: "funds" },
+  { profile: "stocks", label: "Individual Stocks", note: "picks only" },
+  { profile: "alpha", label: "Total Alpha", note: "managed + stocks" },
 ];
 const CLIENT: { profile: PimProfileType; label: string; note: string }[] = [
   { profile: "conservative", label: "Conservative", note: "" },

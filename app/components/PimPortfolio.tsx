@@ -302,7 +302,7 @@ const PROFILE_LABELS: Record<PimProfileType, string> = {
   allEquity: "All-Equity",
   alpha: "Alpha",
   core: "Core",
-  thematic: "Thematic",
+  thematic: "Managed Alpha",
   stocks: "Stocks",
 };
 
