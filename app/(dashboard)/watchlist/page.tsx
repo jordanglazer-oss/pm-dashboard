@@ -7,6 +7,7 @@ import { PageHeading } from "@/app/components/PageHeading";
 import { EmptyState } from "@/app/components/EmptyState";
 import { AppIcon } from "@/app/components/AppIcon";
 import TickerLink from "@/app/components/TickerLink";
+import FavourMonitor from "@/app/components/FavourMonitor";
 import { displayTicker } from "@/app/lib/ticker";
 import { addedByOptions, watchRows, type WatchlistPlan, type WatchRow } from "@/app/lib/watchlist-plan";
 
@@ -198,6 +199,7 @@ export default function WatchlistPage() {
           )}
           <div className="flex h-8 items-center px-3.5 text-[11.5px] text-ink-3">Sorted by change since added, most down first · prices in each stock&apos;s trading currency</div>
         </section>
+        <FavourMonitor />
       </div>
     </main>
   );
