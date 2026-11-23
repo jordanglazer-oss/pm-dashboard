@@ -25,6 +25,7 @@ import { ThesisRequiredBanner } from "@/app/components/ThesisRequiredBanner";
 import StreetTakeawaysTile from "@/app/components/StreetTakeawaysTile";
 import AnalystTrendTile from "@/app/components/AnalystTrendTile";
 import ContrarianTile from "@/app/components/ContrarianTile";
+import DevilsAdvocateAdhoc from "@/app/components/DevilsAdvocateAdhoc";
 import { StockSynthesisTile } from "@/app/components/StockSynthesisTile";
 import { LaneTile } from "@/app/components/LaneTile";
 import { StockSummaryCard } from "@/app/components/StockSummaryCard";
@@ -2594,6 +2595,12 @@ export default function StockDetailPage() {
 
           {/* Contrarian setup — signs of a contrarian pick (read-only, not scored). */}
           {scoreable && <ContrarianTile ticker={stock.ticker} />}
+          {/* Devil's advocate on demand — a watchlist name only (holdings get the monthly one on Monitor). */}
+          {stock.bucket === "Watchlist" && (
+            <CollapsibleSection prefKey="stock.devilsAdvocate" title="Devil's advocate" subtitle="The case against buying it today · on demand">
+              <DevilsAdvocateAdhoc ticker={stock.ticker} />
+            </CollapsibleSection>
+          )}
 
           {/* ── Risk & factors: three label/value reads, each with its full
               content one persisted click away (inside the sub-components). ── */}

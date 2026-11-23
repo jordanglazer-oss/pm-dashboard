@@ -9,6 +9,7 @@ import { AppIcon } from "@/app/components/AppIcon";
 import TickerLink from "@/app/components/TickerLink";
 import FavourMonitor from "@/app/components/FavourMonitor";
 import { ContrarianChip, useContrarianBook } from "@/app/components/ContrarianTile";
+import DevilsAdvocateAdhoc from "@/app/components/DevilsAdvocateAdhoc";
 import { displayTicker } from "@/app/lib/ticker";
 import { addedByOptions, watchRows, type WatchlistPlan, type WatchRow } from "@/app/lib/watchlist-plan";
 
@@ -103,6 +104,8 @@ export default function WatchlistPage() {
   const [prices, setPrices] = useState<Record<string, number | null>>({});
   const [editing, setEditing] = useState<string | null>(null);
   const contrarian = useContrarianBook(); // read-only contrarian read-out; never part of the score
+  // One row at a time shows its devil's advocate (a transient accordion, like the editor).
+  const [against, setAgainst] = useState<string | null>(null);
 
   const tickers = useMemo(() => stocks.filter((s) => s.bucket === "Watchlist").map((s) => s.ticker), [stocks]);
   const tickerKey = tickers.join(",");
@@ -176,12 +179,22 @@ export default function WatchlistPage() {
                         <td className="max-w-[280px] truncate" title={[r.plan.thesis, r.plan.breakers ? `Drop it if: ${r.plan.breakers}` : ""].filter(Boolean).join("\n")}>
                           <span className="text-ink-2">{r.plan.thesis || "—"}</span>
                         </td>
-                        <td className="!pr-3.5 !text-right">
+                        <td className="!pr-3.5 !text-right whitespace-nowrap">
+                          <button onClick={() => setAgainst(against === r.ticker ? null : r.ticker)} className="mr-3 text-[12px] text-accent hover:underline" title="The strongest case against buying this today">
+                            {against === r.ticker ? "Hide case against" : "Case against"}
+                          </button>
                           <button onClick={() => setEditing(editing === r.ticker ? null : r.ticker)} className="text-[12px] text-accent hover:underline">
                             {editing === r.ticker ? "Close" : r.plan.thesis || r.plan.targetBuyPrice != null ? "Edit" : "Add plan"}
                           </button>
                         </td>
                       </tr>
+                      {against === r.ticker && (
+                        <tr>
+                          <td colSpan={9} className="!px-3.5 !py-3">
+                            <DevilsAdvocateAdhoc ticker={r.ticker} />
+                          </td>
+                        </tr>
+                      )}
                       {editing === r.ticker && (
                         <tr>
                           <td colSpan={9} className="!p-0">
