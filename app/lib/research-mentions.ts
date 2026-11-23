@@ -75,7 +75,7 @@ type SourceConfig = {
 //
 // pm:research is a superset of any single scrape cache (scrape entries are
 // merged INTO it), so reading it is strictly fuller coverage.
-const SOURCES: SourceConfig[] = [
+export const SOURCES: SourceConfig[] = [
   { source: "upticks", label: "Newton Upticks", field: "newtonUpticks", direction: "bullish" },
   { source: "fundstrat-top", label: "Fundstrat Top Ideas", field: "fundstratTop", direction: "bullish" },
   { source: "fundstrat-bottom", label: "Fundstrat Bottom Ideas", field: "fundstratBottom", direction: "bearish" },
