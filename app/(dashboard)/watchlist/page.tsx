@@ -8,6 +8,7 @@ import { EmptyState } from "@/app/components/EmptyState";
 import { AppIcon } from "@/app/components/AppIcon";
 import TickerLink from "@/app/components/TickerLink";
 import FavourMonitor from "@/app/components/FavourMonitor";
+import { Explain } from "@/app/components/Explain";
 import { ContrarianChip, useContrarianBook } from "@/app/components/ContrarianTile";
 import DevilsAdvocateAdhoc from "@/app/components/DevilsAdvocateAdhoc";
 import { displayTicker } from "@/app/lib/ticker";
@@ -93,7 +94,7 @@ function Editor({ row, names, onSave, onCancel }: { row: WatchRow; names: string
             Added today at {fmt(row.price)}
           </button>
         )}
-        <span className="text-[11.5px] text-ink-3">The target is your number — nothing sets it automatically. Leave the date blank if it is not known.</span>
+        <span className="text-[11.5px] text-ink-3">Leave the date blank if not known.</span>
       </div>
     </div>
   );
@@ -128,7 +129,7 @@ export default function WatchlistPage() {
     <main className="min-h-screen overflow-x-hidden bg-ground text-ink">
       <PageHeading
         title="Watchlist"
-        lede="Why we would own each name, the price we would pay, and what would make us drop it. Names down the most since they were added come first."
+        lede="What we would buy, at what price."
         actions={<Link href="/research" className={BTN}>Ranked research</Link>}
       />
       <div className="flex flex-col gap-3.5">
@@ -136,7 +137,6 @@ export default function WatchlistPage() {
           <span><span className="font-mono text-ink">{rows.length}</span> on the watchlist</span>
           <span><span className="font-mono text-ink">{planned}</span> with a target buy price</span>
           <span><span className={`font-mono ${atTarget ? "text-pos" : "text-ink"}`}>{atTarget}</span> at or below target</span>
-          <span>An alert goes to Monitor and the end-of-day email when a name reaches its target.</span>
         </div>
         <section className="panel">
           <div className="panel-h">
@@ -213,7 +213,9 @@ export default function WatchlistPage() {
               </table>
             </div>
           )}
-          <div className="flex h-8 items-center px-3.5 text-[11.5px] text-ink-3">Sorted by change since added, most down first · prices in each stock&apos;s trading currency</div>
+          <Explain prefKey="explain.watchlist.plan" label="How this list works" className="px-3.5 py-2">
+            Sorted by change since added, most down first — we buy quality when it is out of favour. Prices are in each stock&apos;s trading currency. Every field is typed in by you; nothing is filled in automatically. When a name trades at or below its target buy price, an alert goes to Monitor and the end-of-day email. &quot;Case against&quot; writes the strongest argument against buying it today.
+          </Explain>
         </section>
         <FavourMonitor />
       </div>

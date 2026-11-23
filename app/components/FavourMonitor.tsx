@@ -4,6 +4,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import TickerLink from "@/app/components/TickerLink";
 import { displayTicker } from "@/app/lib/ticker";
 import { useStocks } from "@/app/lib/StockContext";
+import { Explain } from "@/app/components/Explain";
 import { FAVOUR_LABEL, type FavourGroup, type FavourRead, type FavourState } from "@/app/lib/favour";
 
 /**
@@ -59,11 +60,10 @@ export default function FavourMonitor() {
         <span><span className="font-mono text-ink">{count("out")}</span> out of favour</span>
         <span><span className="font-mono text-ink">{count("recovering")}</span> coming back</span>
         <span><span className="font-mono text-ink">{count("in")}</span> in favour</span>
-        <span>Versus the S&amp;P 500 (price index), in points; prices only, no score.</span>
         {data?.at && <span>Read {new Date(data.at).toLocaleString("en-CA", { dateStyle: "medium", timeStyle: "short" })}</span>}
         {data?.error && <span className="text-warn">{data.error}</span>}
       </div>
-      {!data && !failed && <p className="px-3.5 pb-3.5 text-[12.5px] text-ink-3">Reading a year of prices for each name — the first load can take up to a minute.</p>}
+      {!data && !failed && <p className="px-3.5 pb-3.5 text-[12.5px] text-ink-3">Loading prices — up to a minute the first time.</p>}
       {failed && <p className="px-3.5 pb-3.5 text-[12.5px] text-neg">Could not load the read. Refresh to try again.</p>}
       {data && rows.length > 0 && (
         <div className="tbl-wrap">
@@ -103,6 +103,9 @@ export default function FavourMonitor() {
           </table>
         </div>
       )}
+      <Explain prefKey="explain.watchlist.favour" label="How to read this" className="px-3.5 py-2">
+        Each column is the stock&apos;s return minus the S&amp;P 500&apos;s (price index) over that period, in points. &quot;From high&quot; is the last close against the highest close of the past year. Prices only — the score plays no part. Covers the stocks we own, the watchlist, and names on two or more research lists; refreshed about twice a day.
+      </Explain>
     </section>
   );
 }

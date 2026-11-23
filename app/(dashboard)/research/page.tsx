@@ -89,7 +89,7 @@ function RankedTable({
         <span className="m font-mono">{rows.length}</span>
       </div>
       {rows.length === 0 ? (
-        <EmptyState className="!py-8" glyph={<AppIcon name="list" size={18} />} title="No names match" body="Nothing on these lists passes the current filters." />
+        <EmptyState className="!py-8" glyph={<AppIcon name="list" size={18} />} title="No names match" body="Loosen the filters above." />
       ) : (
         <div className="tbl-wrap">
           <table className="data-table min-w-[860px]">
@@ -355,7 +355,7 @@ export default function RankedResearchPage() {
 
   return (
     <main className="min-h-screen bg-ground text-ink overflow-x-hidden">
-      <PageHeading title="Ranked research" lede="Every name on the research lists you follow, ranked by how many lists carry it and how strongly." />
+      <PageHeading title="Ranked research" lede="Names on your research lists, most-listed first." />
       <div className="flex flex-col gap-3.5">
         {/* Toolbar — filters first, funnel counts as meta, no title row. */}
         <div className="flex flex-wrap items-center gap-2">
@@ -398,7 +398,7 @@ export default function RankedResearchPage() {
 
         {hideHeld && hiddenHeld > 0 && (
           <div className="text-[11.5px] text-ink-3">
-            <span className="font-mono text-ink">{hiddenHeld}</span> name{hiddenHeld === 1 ? "" : "s"} already on the Portfolio or Watchlist {hiddenHeld === 1 ? "is" : "are"} hidden.{" "}
+            <span className="font-mono text-ink">{hiddenHeld}</span> held name{hiddenHeld === 1 ? "" : "s"} hidden.{" "}
             <button onClick={() => setUiPref(PREF_HIDE_HELD, "0")} className="text-accent hover:underline">Show them</button>
           </div>
         )}
@@ -424,12 +424,12 @@ export default function RankedResearchPage() {
               <span className={`text-ink-3 transition-transform ${fellOffCollapsed ? "-rotate-90" : ""}`}><AppIcon name="chevD" size={14} strokeWidth={2} /></span>
               <span className="t">Fell off</span>
               <span className="m font-mono">{fellOff.length}</span>
-              <span className="m hidden truncate sm:inline">Dropped from a list in the last 45 days and now on none — a fading name is worth seeing, not forgetting.</span>
+              <span className="m hidden truncate sm:inline">off every list, last 45 days</span>
             </button>
           </div>
           {!fellOffCollapsed && (
             fellOff.length === 0 ? (
-              <EmptyState className="!py-6" glyph={<AppIcon name="check" size={18} />} title="Nothing has fallen off" body="No name dropped off every list in the last 45 days." />
+              <EmptyState className="!py-6" glyph={<AppIcon name="check" size={18} />} title="Nothing has fallen off" body="None in the last 45 days." />
             ) : (
               <div className="tbl-wrap">
                 <table className="data-table min-w-[520px]">
