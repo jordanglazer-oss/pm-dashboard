@@ -220,3 +220,24 @@ describe("scheduleWithLog", () => {
     expect(c.switchWeightOn("2026-05-01")).toBeNull();
   });
 });
+
+import { checkByMonth } from "@/app/lib/range-attribution";
+
+describe("checkByMonth", () => {
+  it("compounds the estimate inside each month and reads the record over the same days", () => {
+    const daily = [
+      { date: "2026-01-30", book: 0.01, core: 0.02, nonCore: 0 },
+      { date: "2026-02-02", book: 0.1, core: 0.1, nonCore: 0.1 },
+      { date: "2026-02-03", book: -0.1, core: null, nonCore: -0.1 },
+    ];
+    const rec = new Map([["2026-01-29", 100], ["2026-01-30", 102], ["2026-02-03", 91.8]]);
+    const out = checkByMonth("2026-01-29", daily, (p) => (p === "allEquity" ? rec : new Map()));
+    expect(out.map((m) => m.month)).toEqual(["2026-01", "2026-02"]);
+    expect(out[0].book).toEqual({ est: 1, rec: 2 });
+    // February: +10% then −10% = −1%; the record runs from the January month-end close.
+    expect(out[1].book.est).toBeCloseTo(-1, 4);
+    expect(out[1].book.rec).toBeCloseTo(-10, 4);
+    expect(out[1].days).toBe(2);
+    expect(out[1].core.rec).toBeNull();
+  });
+});

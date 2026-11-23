@@ -119,6 +119,44 @@ export function ContributionView({ data, loading }: { data: RangeAttributionResp
                 {off && (
                   <div className="mx-3.5 mt-2.5 rounded-control border border-warn-border bg-warn-soft px-3 py-2 text-[12.5px] text-ink">
                     <span className="font-semibold">Treat the holding figures below with caution for this period.</span> They add up to {pts(data.estimatedReturnPct)}, but the recorded return is {pts(data.reconciliation.book.recordedPct)} — a gap of {Math.abs(gap!).toFixed(2)} points. The sleeve &quot;Recorded&quot; column is exact; the per-holding split is an estimate rebuilt from the trade log.
+                    {data.byMonth.length > 1 && (
+                      <div className="mt-2 overflow-x-auto">
+                        <div className="mb-1 text-[11px] font-semibold uppercase tracking-[0.08em] text-ink-3">Where the gap arises · estimate vs record, month by month</div>
+                        <table className="w-full min-w-[560px] text-[12px] tabular-nums">
+                          <thead>
+                            <tr className="text-left text-[11px] text-ink-3">
+                              <th className="font-normal">Month</th>
+                              <th className="text-right font-normal">Book est.</th>
+                              <th className="text-right font-normal">Book rec.</th>
+                              <th className="text-right font-normal">Core est.</th>
+                              <th className="text-right font-normal">Core rec.</th>
+                              <th className="text-right font-normal">Total Alpha est.</th>
+                              <th className="text-right font-normal">Total Alpha rec.</th>
+                              <th className="text-right font-normal">Alpha gap</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {data.byMonth.map((m) => {
+                              const g = m.nonCore.est != null && m.nonCore.rec != null ? m.nonCore.est - m.nonCore.rec : null;
+                              return (
+                                <tr key={m.month}>
+                                  <td>{m.month}</td>
+                                  <td className="text-right">{pts(m.book.est)}</td>
+                                  <td className="text-right">{pts(m.book.rec)}</td>
+                                  <td className="text-right">{pts(m.core.est)}</td>
+                                  <td className="text-right">{pts(m.core.rec)}</td>
+                                  <td className="text-right">{pts(m.nonCore.est)}</td>
+                                  <td className="text-right">{pts(m.nonCore.rec)}</td>
+                                  <td className="text-right">
+                                    <span className={g != null && Math.abs(g) >= 2 ? "font-semibold text-neg" : "text-ink-3"}>{g == null ? "—" : `${g > 0 ? "+" : ""}${g.toFixed(2)} pts`}</span>
+                                  </td>
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
                   </div>
                 )}
                 <p className="px-3.5 pt-2.5 text-[12.5px] text-ink-3">

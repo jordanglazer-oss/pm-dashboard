@@ -68,6 +68,8 @@ export type RangeAttribution = {
   avgWeightCoveredPct: number;
   holdings: HoldingContribution[];
   sleeves: SleeveTotal[];
+  /** Each day's estimated return (fractions) for the book, Core and everything outside Core — for a month-by-month check against the record. */
+  daily: { date: string; book: number; core: number | null; nonCore: number | null }[];
   /** Managed Alpha + Individual Stocks together (= the recorded Total Alpha book). */
   nonCore: { contributionPct: number; avgWeightPct: number; returnPct: number | null };
   top: HoldingContribution[];
@@ -258,6 +260,7 @@ export function computeRangeAttribution(calendar: string[], holdings: HoldingInp
   const sleeves: Sleeve[] = ["core", "thematic", "stocks"];
   const sAcc: Record<Sleeve, { growth: number; wSum: number; days: number }> = { core: { growth: 1, wSum: 0, days: 0 }, thematic: { growth: 1, wSum: 0, days: 0 }, stocks: { growth: 1, wSum: 0, days: 0 } };
   const nc = { growth: 1, wSum: 0, days: 0 };
+  const daily: RangeAttribution["daily"] = [];
   let G = 1;
   let covered = 0;
 
@@ -306,6 +309,7 @@ export function computeRangeAttribution(calendar: string[], holdings: HoldingInp
       nc.wSum += ncW;
       nc.days++;
     }
+    daily.push({ date: d, book: R, core: sDay.core.w > 0 ? sDay.core.wr / sDay.core.w : null, nonCore: ncW > 0 ? (sDay.thematic.wr + sDay.stocks.wr) / ncW : null });
     G *= 1 + R;
     covered += wTotal;
   }
@@ -354,6 +358,7 @@ export function computeRangeAttribution(calendar: string[], holdings: HoldingInp
     avgWeightCoveredPct: n > 0 ? r4((covered / n) * 100) : 0,
     holdings: rows,
     sleeves: sleeveTotals,
+    daily,
     nonCore: {
       contributionPct: r4(rows.filter((r) => r.sleeve !== "core").reduce((x, r) => x + r.contributionPct, 0)),
       avgWeightPct: n > 0 ? r4((nc.wSum / n) * 100) : 0,
@@ -369,4 +374,55 @@ export function seriesReturnPct(history: { date: string; value: number }[] | und
   const b = history?.find((e) => e.date === base);
   const e = history?.find((x) => x.date === end);
   return b && e && b.value > 0 ? r4((e.value / b.value - 1) * 100) : null;
+}
+
+export type MonthCheck = { month: string; days: number; book: { est: number; rec: number | null }; core: { est: number | null; rec: number | null }; nonCore: { est: number | null; rec: number | null } };
+
+/**
+ * Month by month: the estimate's return beside the recorded series' return
+ * over the SAME days, for the book, Core and everything outside Core. Shows
+ * WHERE a gap between the rebuild and the record arises. `recorded(profile)`
+ * returns that series' date → value map.
+ */
+export function checkByMonth(base: string, daily: RangeAttribution["daily"], recorded: (profile: "allEquity" | "core" | "alpha") => Map<string, number>): MonthCheck[] {
+  const out: MonthCheck[] = [];
+  const maps = { allEquity: recorded("allEquity"), core: recorded("core"), alpha: recorded("alpha") };
+  let prev = base;
+  let cur: { month: string; start: string; end: string; days: number; g: { book: number; core: number; nonCore: number }; has: { core: boolean; nonCore: boolean } } | null = null;
+  const flush = () => {
+    if (!cur) return;
+    const rec = (m: Map<string, number>) => {
+      const a = m.get(cur!.start);
+      const b = m.get(cur!.end);
+      return a && b && a > 0 ? r4((b / a - 1) * 100) : null;
+    };
+    out.push({
+      month: cur.month,
+      days: cur.days,
+      book: { est: r4((cur.g.book - 1) * 100), rec: rec(maps.allEquity) },
+      core: { est: cur.has.core ? r4((cur.g.core - 1) * 100) : null, rec: rec(maps.core) },
+      nonCore: { est: cur.has.nonCore ? r4((cur.g.nonCore - 1) * 100) : null, rec: rec(maps.alpha) },
+    });
+  };
+  for (const d of daily) {
+    const month = d.date.slice(0, 7);
+    if (!cur || cur.month !== month) {
+      flush();
+      cur = { month, start: prev, end: d.date, days: 0, g: { book: 1, core: 1, nonCore: 1 }, has: { core: false, nonCore: false } };
+    }
+    cur.end = d.date;
+    cur.days++;
+    cur.g.book *= 1 + d.book;
+    if (d.core != null) {
+      cur.g.core *= 1 + d.core;
+      cur.has.core = true;
+    }
+    if (d.nonCore != null) {
+      cur.g.nonCore *= 1 + d.nonCore;
+      cur.has.nonCore = true;
+    }
+    prev = d.date;
+  }
+  flush();
+  return out;
 }

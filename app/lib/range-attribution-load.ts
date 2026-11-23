@@ -3,7 +3,7 @@ import { history } from "./holding-history";
 import { sameSymbol } from "./model-staging";
 import { bucketTests, type BucketStock } from "./sleeve-targets";
 import type { PimModelData, PimPerformanceData, PimPortfolioState, PimProfileType, PimTransaction } from "./pim-types";
-import { computeRangeAttribution, scheduleWithLog, seriesReturnPct, weightAt, SLEEVE_LABELS, type HoldingInput, type LogContext, type PriceSeries, type RangeAttribution, type Sleeve, type TradeEvent } from "./range-attribution";
+import { checkByMonth, computeRangeAttribution, scheduleWithLog, seriesReturnPct, weightAt, SLEEVE_LABELS, type HoldingInput, type LogContext, type MonthCheck, type PriceSeries, type RangeAttribution, type Sleeve, type TradeEvent } from "./range-attribution";
 
 /**
  * Loader for "Contribution by holding" (Nov 2026) — READ-ONLY. Reads
@@ -115,8 +115,10 @@ export type RangeAttributionResponse =
       };
       /** First day of the trade log; before it the holdings are assumed. */
       logStartsOn: string | null;
+      /** Estimate vs record month by month — shows where a gap arises. */
+      byMonth: MonthCheck[];
       builtAt: string;
-    } & RangeAttribution);
+    } & Omit<RangeAttribution, "daily">);
 
 export async function loadRangeAttribution(from: string | null, to: string): Promise<RangeAttributionResponse> {
   const redis = await getRedis();
@@ -210,6 +212,8 @@ export async function loadRangeAttribution(from: string | null, to: string): Pro
   if (partial) caveats.push(`The performance series starts on ${base}, after the requested start date, so the range begins there.`);
   caveats.push("Returns are C$ total returns from adjusted closes (dividends included); mutual funds use their daily NAV, and a NAV not yet posted counts as 0% until it is.");
 
+  const { daily: _daily, ...rest } = result;
+  void _daily;
   const rec = (p: string) => seriesReturnPct(series(p), result.base, result.end);
   const bookRec = rec("allEquity");
   // Managed Alpha has its own record only from its series' first day; before
@@ -235,7 +239,8 @@ export async function loadRangeAttribution(from: string | null, to: string): Pro
       sleevesRecordedFrom,
     },
     logStartsOn: ctx.firstRebalance,
+    byMonth: checkByMonth(result.base, result.daily, (p) => new Map(series(p).map((e) => [e.date, e.value]))),
     builtAt: new Date().toISOString(),
-    ...result,
+    ...rest,
   };
 }
