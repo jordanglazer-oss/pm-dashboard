@@ -356,11 +356,40 @@ async function checkFlags(): Promise<HealthLine[]> {
   ];
 }
 
-function checkSeries(perf: PimPerformanceData | null, now: Date): HealthLine[] {
+type SeriesGroup = { id: string; profiles?: Record<string, unknown> };
+
+/**
+ * Does the weekday daily-value job (`app/api/update-daily-value/route.ts`)
+ * actually update this series? Mirrors that job's own skip rules: the group
+ * must exist in pm:pim-models; core / alpha / thematic / stocks are PIM-only;
+ * any other profile must be one of the group's profiles (so the old
+ * `core-balanced`-style series of the other groups, seeded once and never
+ * updated, are not judged as "behind"); a series with < 2 points is skipped.
+ * Keep in step with that loop.
+ */
+export function isDailyUpdatedSeries(
+  m: { groupId: string; profile: string; history?: unknown[] },
+  groups: SeriesGroup[],
+): boolean {
+  if ((m.history?.length ?? 0) < 2) return false;
+  const group = groups.find((g) => g.id === m.groupId);
+  if (!group) return false;
+  if (["core", "alpha", "thematic", "stocks"].includes(m.profile)) return m.groupId === "pim";
+  return !!group.profiles?.[m.profile];
+}
+
+export function checkSeries(perf: PimPerformanceData | null, now: Date, groups: SeriesGroup[] | null): HealthLine[] {
   const expected = expectedWeekday(now, 18 * 60);
-  const models = perf?.models ?? [];
-  if (models.length === 0) {
+  const all = perf?.models ?? [];
+  if (all.length === 0) {
     return [{ id: "series", title: "Performance series", status: "red", summary: "No performance series found." }];
+  }
+  // Models unreadable → judge every series (never hide a gap on a read failure).
+  const models = groups ? all.filter((m) => isDailyUpdatedSeries(m, groups)) : all;
+  const ignored = all.length - models.length;
+  const ignoredNote = ignored > 0 ? ` (${ignored} older series the daily update does not maintain are not checked.)` : "";
+  if (models.length === 0) {
+    return [{ id: "series", title: "Performance series", status: "red", summary: `No series the daily update maintains were found.${ignoredNote}` }];
   }
   const rows = models.map((m) => {
     const last = m.history?.[m.history.length - 1]?.date ?? "";
@@ -376,10 +405,10 @@ function checkSeries(perf: PimPerformanceData | null, now: Date): HealthLine[] {
       status,
       summary:
         stale.length === 0
-          ? `All ${rows.length} series are up to date (through ${expected}).`
-          : `${stale.length} of ${rows.length} series are behind (should reach ${expected}).${worstBehind >= 2 ? " A daily update was missed — those returns are not being recorded." : ""}`,
+          ? `All ${rows.length} tracked series are up to date (through ${expected}).${ignoredNote}`
+          : `${stale.length} of ${rows.length} tracked series are behind (should reach ${expected}).${worstBehind >= 2 ? " A daily update was missed — those returns are not being recorded." : ""}${ignoredNote}`,
       details: stale.slice(0, 10).map((r) => `${r.series}: last ${r.last || "never"}`),
-      data: { expected, series: rows },
+      data: { expected, series: rows, ignored, modelsRead: !!groups },
     },
   ];
 }
@@ -411,6 +440,8 @@ async function checkOutbox(redis: Redis, now: Date): Promise<HealthLine[]> {
 export async function buildHealthReport(now = new Date()): Promise<HealthReport> {
   const redis = await getRedis();
   const perf = parse<PimPerformanceData | null>(await redis.get("pm:pim-performance").catch(() => null), null);
+  const pimModels = parse<{ groups?: SeriesGroup[] } | null>(await redis.get("pm:pim-models").catch(() => null), null);
+  const seriesGroups = Array.isArray(pimModels?.groups) && pimModels.groups.length > 0 ? pimModels.groups : null;
 
   const backupLines = await safe("backup", "Nightly backup", () => checkBackups(now));
   const newestBackupAt = (backupLines[0]?.data as { newest?: { uploadedAt?: string } } | undefined)?.newest?.uploadedAt ?? null;
@@ -419,7 +450,7 @@ export async function buildHealthReport(now = new Date()): Promise<HealthReport>
     safe("redis-memory", "Database memory", () => checkRedisMemory(redis)),
     safe("ai-spend", "AI watchers' spending", () => checkAiSpend(redis, now)),
     safe("jobs", "Scheduled jobs", () => checkJobs(redis, now, perf, newestBackupAt)),
-    safe("series", "Performance series", async () => checkSeries(perf, now)),
+    safe("series", "Performance series", async () => checkSeries(perf, now, seriesGroups)),
     safe("flags", "Open watcher flags", () => checkFlags()),
     safe("outbox", "Email sending", () => checkOutbox(redis, now)),
   ]);
