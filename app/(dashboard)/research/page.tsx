@@ -392,6 +392,7 @@ export default function RankedResearchPage() {
               <Link href="/?bucket=Suggested" className="!text-accent hover:underline">Suggested</Link>
             </span>
             <span><span className="font-mono text-ink">{counts.held}</span> held</span>
+            <Link href="/watchlist" className="!text-accent hover:underline" title="Why we would own each watchlist name, and the price we would pay">Watchlist plan</Link>
           </div>
         </div>
 
