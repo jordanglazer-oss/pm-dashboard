@@ -9,6 +9,7 @@ import { StatStrip } from "@/app/components/StatStrip";
 import { AppIcon } from "@/app/components/AppIcon";
 import { PageHeading } from "@/app/components/PageHeading";
 import { usePersistedOpen } from "@/app/lib/useCollapsed";
+import { Explain } from "@/app/components/Explain";
 import type { AgentFlag } from "@/app/lib/agents/flags";
 import type { CompareRun, CompareAnswer } from "@/app/lib/agents/earnings-compare";
 import type { HoldingsDay, HoldingsEvent } from "@/app/lib/agents/holdings-watch";
@@ -136,6 +137,7 @@ function FlagCard({ flag, labelOf, onUpdate, onReplaced }: { flag: AgentFlag; la
           value={note}
           onChange={(e) => setNote(e.target.value)}
           placeholder={flag.conversation ? "Reply to the watcher, or a note on your decision" : open ? "Optional note — what you did or why not" : "Add a note"}
+          title={flag.conversation && open ? "Act or Dismiss with a note records your decision in the decision journal; the next review of this theme starts from it." : undefined}
           className="h-7 min-w-[220px] flex-1 rounded-control border border-line bg-surface px-2.5 text-[12.5px] text-ink placeholder:text-ink-faint"
         />
         {open ? (
@@ -162,7 +164,6 @@ function FlagCard({ flag, labelOf, onUpdate, onReplaced }: { flag: AgentFlag; la
         </button>
       </div>
       {replyErr && <p className="text-[12px] text-neg">{replyErr}</p>}
-      {flag.conversation && open && <p className="text-[11.5px] text-ink-faint">Act or Dismiss with a note records your decision in the decision journal; the next review of this theme starts from it.</p>}
     </div>
   );
 }
@@ -190,7 +191,7 @@ function agrees(run: CompareRun): string {
 
 function EarningsCompareSection() {
   const [data, setData] = useState<CompareData | null>(null);
-  const [open, toggle] = usePersistedOpen("monitor.compare.open", true);
+  const [open, toggle] = usePersistedOpen("monitor.compare.open", false);
   const [ticker, setTicker] = useState("");
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
@@ -229,14 +230,11 @@ function EarningsCompareSection() {
       <button className="panel-h w-full text-left" onClick={toggle}>
         <span className="t">Earnings comparisons</span>
         <span className="m">
-          {runs.length} runs · {data?.previewTickers.length ?? 0} previews on file · {open ? "hide" : "show"}
+          {runs.length} runs · {data?.previewTickers.length ?? 0} previews · {open ? "hide" : "show"}
         </span>
       </button>
       {open && (
         <div className="flex flex-col gap-2.5 px-3.5 py-3">
-          <p className="text-[12.5px] leading-relaxed text-ink-3">
-            Runs by itself when a FactSet results recap arrives for a book name, comparing it with the preview that came before. During the comparison period both models read the same inputs; only Haiku&apos;s answer can raise a flag.
-          </p>
           <div className="flex flex-wrap items-center gap-2">
             <input
               value={ticker}
@@ -250,12 +248,10 @@ function EarningsCompareSection() {
             </button>
             {msg && <span className="text-[12.5px] text-ink-2">{msg}</span>}
           </div>
-          {data?.previewTickers.length ? (
-            <div className="text-[12px] text-ink-3">
-              Previews on file:{" "}
-              {data.previewTickers.map((p) => `${displayTicker(p.ticker)} (${p.latest})`).join(", ")}
-            </div>
-          ) : null}
+          <Explain prefKey="explain.monitor.compare" label="How this works">
+            Runs by itself when a FactSet results recap arrives for a book name, comparing it with the preview that came before. During the comparison period both models read the same inputs; only Haiku&apos;s answer can raise a flag.
+            {data?.previewTickers.length ? <> Previews on file: {data.previewTickers.map((p) => `${displayTicker(p.ticker)} (${p.latest})`).join(", ")}.</> : null}
+          </Explain>
         </div>
       )}
       {open && runs.length > 0 && (
@@ -335,14 +331,14 @@ function StanceSection() {
       </button>
       {open && (
         <div className="flex flex-col gap-2.5 px-3.5 py-3">
-          <p className="text-[12.5px] leading-relaxed text-ink-3">
-            Runs by itself after each close. Plain rules, no AI cost; the watcher writes a short read only when a reading changes. The hedge window opens only when all four tests pass, and it is flagged once when it opens.
-          </p>
-          <div className="flex flex-wrap items-center gap-2">
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
             <button className={BTN} disabled={busy} onClick={runNow}>
               {busy ? "Checking…" : "Check now"}
             </button>
             {msg && <span className="text-[12.5px] text-ink-2">{msg}</span>}
+            <Explain prefKey="explain.monitor.stance" label="How this works" className="basis-full">
+              Runs by itself after each close. Plain rules, no AI cost; the watcher writes a short read only when a reading changes. The hedge window opens only when all four tests pass, and it is flagged once when it opens.
+            </Explain>
           </div>
           {state && (
             <div className="grid gap-3 md:grid-cols-2">
@@ -417,19 +413,19 @@ function ManagerSection() {
       <button className="panel-h w-full text-left" onClick={toggle}>
         <span className="t">Manager watch</span>
         <span className="m">
-          {state ? `${state.quarter} · ${reviews.length} Managed Alpha funds · ${tripped} to look at` : state === null ? "not run yet" : "…"} · {open ? "hide" : "show"}
+          {state ? `${state.quarter} · ${reviews.length} funds · ${tripped} to look at` : state === null ? "not run yet" : "…"} · {open ? "hide" : "show"}
         </span>
       </button>
       {open && (
         <div className="flex flex-col gap-2.5 px-3.5 py-3">
-          <p className="text-[12.5px] leading-relaxed text-ink-3">
-            Once a quarter, each Managed Alpha fund against its category over 1, 3 and 5 years, plus any fee, category or rating change since the last review. Uses the fund data on PIM Model; refresh it there first if it is old. One weak year is a watch, not a case.
-          </p>
-          <div className="flex flex-wrap items-center gap-2">
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
             <button className={BTN} disabled={busy} onClick={runNow}>
               {busy ? "Reviewing…" : "Review funds now"}
             </button>
             {msg && <span className="text-[12.5px] text-ink-2">{msg}</span>}
+            <Explain prefKey="explain.monitor.manager" label="How this works" className="basis-full">
+              Once a quarter, each Managed Alpha fund against its category over 1, 3 and 5 years, plus any fee, category or rating change since the last review. Uses the fund data on PIM Model; refresh it there first if it is old. One weak year is a watch, not a case.
+            </Explain>
           </div>
         </div>
       )}
@@ -485,6 +481,8 @@ const DA_TONE: Record<DaResult["verdict"], string> = {
 function DevilsAdvocateSection() {
   const [view, setView] = useState<DaMonthView | null | undefined>(undefined);
   const [open, toggle] = usePersistedOpen("monitor.advocate.open", true);
+  // Each holding shows its verdict and strongest point; the rest of every write-up is one persisted click away.
+  const [full, toggleFull] = usePersistedOpen("monitor.advocate.full", false);
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
 
@@ -525,24 +523,29 @@ function DevilsAdvocateSection() {
       <button className="panel-h w-full text-left" onClick={toggle}>
         <span className="t">Devil&apos;s advocate</span>
         <span className="m">
-          {view ? `review ${view.reviewOn} · ${done} of ${total} holdings done${results.length ? ` · ${wouldNot} would not buy today` : ""}` : view === null ? "could not load" : "…"} · {open ? "hide" : "show"}
+          {view ? `review ${view.reviewOn} · ${done} of ${total} done${results.length ? ` · ${wouldNot} would not buy` : ""}` : view === null ? "could not load" : "…"} · {open ? "hide" : "show"}
         </span>
       </button>
       {open && (
         <div className="flex flex-col gap-2.5 px-3.5 py-3">
-          <p className="text-[12.5px] leading-relaxed text-ink-3">
-            Once a month, the strongest case against every individual stock and Managed Alpha fund we hold (not the Core ETFs, bonds or alternatives), for the first-Monday review. It argues against each position on purpose, using only what is on file and no web
-            search: for a stock, the thesis, pillar statuses, FactSet alerts and analyst consensus; for a fund, our signed one-pager, its record against its category and the manager watch. It runs by itself in the evenings from{" "}
-            {view?.startsOn ?? "the Wednesday before"}; a holding already written this month is not rewritten. For a name we do not own yet, generate one from the Watchlist page.
-          </p>
-          <div className="flex flex-wrap items-center gap-2">
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
             <button className={BTN} disabled={busy} onClick={runNow}>
               {busy ? "Writing… (up to 2 minutes)" : done > 0 && done < total ? "Continue" : "Run now"}
             </button>
+            {results.length > 0 && (
+              <button className={BTN} onClick={toggleFull}>
+                {full ? "Top point only" : "Show full write-ups"}
+              </button>
+            )}
             {msg && <span className="text-[12.5px] text-ink-2">{msg}</span>}
-            {view && view.usd > 0 && <span className="text-[12px] text-ink-faint">Cost so far this month: ${view.usd.toFixed(2)}</span>}
+            {view && view.usd > 0 && <span className="text-[12px] text-ink-faint">Cost this month: ${view.usd.toFixed(2)}</span>}
           </div>
           {view && view.pending.length > 0 && results.length > 0 && <p className="text-[12.5px] text-ink-3">Still to do: {view.pending.map(displayTicker).join(", ")}</p>}
+          <Explain prefKey="explain.monitor.advocate" label="How this works">
+            Once a month, the strongest case against every individual stock and Managed Alpha fund we hold (not the Core ETFs, bonds or alternatives), for the first-Monday review. It argues against each position on purpose, using only what is on file and no web
+            search: for a stock, the thesis, pillar statuses, FactSet alerts and analyst consensus; for a fund, our signed one-pager, its record against its category and the manager watch. It runs by itself in the evenings from{" "}
+            {view?.startsOn ?? "the Wednesday before"}; a holding already written this month is not rewritten. For a name we do not own yet, generate one from the Watchlist page.
+          </Explain>
         </div>
       )}
       {open &&
@@ -560,16 +563,17 @@ function DevilsAdvocateSection() {
               </span>
             </div>
             <ul className="mt-1.5 list-disc pl-5 text-[13px] leading-relaxed text-ink-2">
-              {r.strongestCaseAgainst.map((p, i) => (
+              {(full ? r.strongestCaseAgainst : r.strongestCaseAgainst.slice(0, 1)).map((p, i) => (
                 <li key={i}>{p}</li>
               ))}
             </ul>
-            {r.weakestPillar && (
+            {!full && r.strongestCaseAgainst.length > 1 && <p className="mt-1 text-[12px] text-ink-faint">+{r.strongestCaseAgainst.length - 1} more point{r.strongestCaseAgainst.length === 2 ? "" : "s"}</p>}
+            {full && r.weakestPillar && (
               <p className="mt-1.5 text-[12.5px] text-ink-3">
                 <span className="font-semibold text-ink-2">Weakest {r.kind === "fund" ? "point" : "pillar"}:</span> {r.weakestPillar}
               </p>
             )}
-            {r.whatWouldChangeMind && (
+            {full && r.whatWouldChangeMind && (
               <p className="mt-1 text-[12.5px] text-ink-3">
                 <span className="font-semibold text-ink-2">What would change this:</span> {r.whatWouldChangeMind}
               </p>
@@ -616,12 +620,11 @@ function MemoSection() {
     <section className="panel">
       <button className="panel-h w-full text-left" onClick={toggle}>
         <span className="t">Sunday memo</span>
-        <span className="m">{list[0] ? `latest ${list[0].date} · ${list.length} in the archive` : memos === null ? "…" : "none yet"} · {open ? "hide" : "show"}</span>
+        <span className="m">{list[0] ? `latest ${list[0].date} · ${list.length} on file` : memos === null ? "…" : "none yet"} · {open ? "hide" : "show"}</span>
       </button>
       {open && (
         <div className="flex flex-col gap-3 px-3.5 py-3">
-          <p className="text-[12.5px] leading-relaxed text-ink-3">Written every Sunday evening for the Monday meeting (and emailed), from what the dashboard already knows: the week, open flags, company moves, the stance, weak pillars and the coming week&apos;s earnings. No web search.</p>
-          <div className="flex flex-wrap items-center gap-2">
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
             <button className={BTN} disabled={busy} onClick={writeNow}>
               {busy ? "Writing… (~1 min)" : "Write this week's memo now"}
             </button>
@@ -631,6 +634,9 @@ function MemoSection() {
               </button>
             )}
             {msg && <span className="text-[12.5px] text-neg">{msg}</span>}
+            <Explain prefKey="explain.monitor.memo" label="How this works" className="basis-full">
+              Written every Sunday evening for the Monday meeting (and emailed), from what the dashboard already knows: the week, open flags, company moves, the stance, weak pillars and the coming week&apos;s earnings. No web search.
+            </Explain>
           </div>
           {shown.map((m) => (
             <div key={m.date} className="flex flex-col gap-1.5 border-t border-line-soft pt-2.5">
@@ -708,10 +714,7 @@ function HoldingsWatchSection() {
       </button>
       {open && (
         <div className="flex flex-col gap-2.5 px-3.5 py-3">
-          <p className="text-[12.5px] leading-relaxed text-ink-3">
-            Runs by itself after each close. A holding that moved −4% or +5% is first set against the market and its sector (free). Only a company-specific move goes further: the FactSet alerts, SEC filings and earnings date already on hand, then, for a large move still unexplained, at most 3 web searches marked provisional until FactSet confirms. It flags only when a move touches a thesis pillar, or a large move stays unexplained.
-          </p>
-          <div className="flex flex-wrap items-center gap-2">
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
             <button className={BTN} disabled={busy} onClick={runNow}>
               {busy ? "Running… (up to 2 min)" : "Run today's check now"}
             </button>
@@ -721,6 +724,9 @@ function HoldingsWatchSection() {
               </span>
             )}
             {msg && <span className="text-[12.5px] text-ink-2">{msg}</span>}
+            <Explain prefKey="explain.monitor.holdings" label="How this works" className="basis-full">
+              Runs by itself after each close. A holding that moved −4% or +5% is first set against the market and its sector (free). Only a company-specific move goes further: the FactSet alerts, SEC filings and earnings date already on hand, then, for a large move still unexplained, at most 3 web searches marked provisional until FactSet confirms. It flags only when a move touches a thesis pillar, or a large move stays unexplained.
+            </Explain>
           </div>
         </div>
       )}
@@ -773,6 +779,8 @@ export default function MonitorPage() {
   const [error, setError] = useState<string | null>(null);
   const [resolvedOpen, toggleResolved] = usePersistedOpen("monitor.resolved.open", false);
   const [callsOpen, toggleCalls] = usePersistedOpen("monitor.calls.open", false);
+  // Reference material (what each watcher does, its model, its spend) starts closed; open flags lead the page.
+  const [watchersOpen, toggleWatchers] = usePersistedOpen("monitor.watchers.open", false);
 
   const load = useCallback(async () => {
     try {
@@ -825,7 +833,7 @@ export default function MonitorPage() {
   return (
     <main className="flex flex-col gap-3.5 text-ink">
       <PageHeading
-        lede="What the watchers flagged, what they cost this month, and which model each runs on. They suggest; you decide."
+        lede="What needs a look. The watchers suggest; you decide."
         actions={
           status && (
             <button className={BTN} onClick={togglePause}>
@@ -869,7 +877,7 @@ export default function MonitorPage() {
         {flags === null ? (
           <Skeleton className="m-3.5 h-16" />
         ) : openFlags.length === 0 ? (
-          <EmptyState glyph={<AppIcon name="eye" size={18} />} title="Nothing flagged" body="When a watcher finds something worth your attention it appears here and in the Brief's action queue." />
+          <EmptyState glyph={<AppIcon name="eye" size={18} />} title="Nothing flagged" body="New flags appear here and in the Brief." />
         ) : (
           openFlags.map((f) => <FlagCard key={f.id} flag={f} labelOf={labelOf} onUpdate={updateFlag} onReplaced={replaceFlag} />)
         )}
@@ -894,10 +902,13 @@ export default function MonitorPage() {
 
       {status && (
         <section className="panel">
-          <div className="panel-h">
-            <span className="t">Watchers</span>
-            <span className="m">model choice takes effect on the next run</span>
-          </div>
+          <button className="panel-h w-full text-left" onClick={toggleWatchers}>
+            <span className="t">Watchers and settings</span>
+            <span className="m">
+              {status.watchers.filter((w) => w.on).length} of {status.watchers.length} on · {watchersOpen ? "hide" : "show"}
+            </span>
+          </button>
+          {watchersOpen && (
           <div className="tbl-wrap">
             <table className="data-table">
               <thead>
@@ -939,7 +950,9 @@ export default function MonitorPage() {
                 ))}
               </tbody>
             </table>
+            <p className="px-3.5 py-2 text-[12px] text-ink-3">A model change takes effect on the next run.</p>
           </div>
+          )}
         </section>
       )}
 

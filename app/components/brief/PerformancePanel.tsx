@@ -12,6 +12,7 @@
  * The brief itself is never regenerated for this. Read-only.
  */
 
+import { Explain } from "@/app/components/Explain";
 import React, { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { Sparkline } from "@/app/components/Sparkline";
@@ -337,8 +338,10 @@ export function PerformancePanel({ s }: { s: DailySummary }) {
           </tbody>
         </table>
       </div>
-      <div className="flex flex-wrap items-center gap-2 px-3.5 py-2 text-[11.5px] text-ink-3">
-        <span>Each cell: the return, and beneath it the points ahead of (+) or behind (−) Core over the same period. Set a range to add a column for any dates. Today&apos;s move is live while the market is open.</span>
+      <div className="flex flex-wrap items-baseline gap-2 px-3.5 py-2 text-[11.5px] text-ink-3">
+        <Explain prefKey="explain.brief.performance" label="How to read this">
+          Each cell is the return, and beneath it the points ahead of (+) or behind (−) Core over the same period. Set a range to add a column for any dates. Today&apos;s move is live while the market is open.
+        </Explain>
         <Link href="/aa-performance" className="ml-auto text-accent hover:text-accent-ink">
           All performance
         </Link>

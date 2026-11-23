@@ -2,6 +2,7 @@
 
 import React, { useCallback, useEffect, useState } from "react";
 import { usePersistedOpen } from "@/app/lib/useCollapsed";
+import { Explain } from "@/app/components/Explain";
 import { noteToText, snapshotText, talkingPointsText, type EarningsDate, type MorningNote, type Source } from "@/app/lib/morning-note-shared";
 import { AppIcon } from "../AppIcon";
 import { Skeleton } from "../Skeleton";
@@ -307,7 +308,7 @@ export function MorningNotePanel() {
         <span className="t-mark bg-accent" />
         <span className="t">Morning note</span>
         <span className="m min-w-0 truncate">
-          {note ? `${longDate(note.date)} · written ${timeAgo(note.generatedAt)}${isToday ? "" : " · not today's"}` : "the pre-open read, weekdays before 8:00 ET"}
+          {note ? `${longDate(note.date)} · written ${timeAgo(note.generatedAt)}${isToday ? "" : " · not today's"}` : "weekdays before 8:00 ET"}
         </span>
         <div className="ml-auto flex shrink-0 flex-wrap items-center justify-end gap-1.5">
           {open && dates.length > 0 && (
@@ -365,16 +366,16 @@ export function MorningNotePanel() {
               <p key={w} className="m-0 border-b border-line-soft px-5 py-2 text-[12.5px] text-warn">{w}</p>
             ))}
             {!note ? (
-              <p className="m-0 px-5 py-4 text-[12.5px] text-ink-3">
-                No morning note yet. It is written automatically on weekday mornings; press “Write today&apos;s” to make one now (takes a minute or two).
-              </p>
+              <p className="m-0 px-5 py-4 text-[12.5px] text-ink-3">No morning note yet. Press “Write today&apos;s” to make one now.</p>
             ) : (
               <>
                 <Body n={note} />
-                <p className="m-0 border-t border-line-soft px-5 py-2 text-[11px] text-ink-3">
-                  Snapshot and earnings dates come from our own data. News, calendar and talking points are AI-written from sourced pages; check a figure against its link before quoting it.
-                  {note.usage ? ` This note used ${note.usage.searches} web searches, about $${note.usage.estUsd.toFixed(2)}.` : ""}
-                </p>
+                <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1 border-t border-line-soft px-5 py-2">
+                  {note.usage && <span className="text-[11px] text-ink-3">{note.usage.searches} web searches · about ${note.usage.estUsd.toFixed(2)}</span>}
+                  <Explain prefKey="explain.brief.morningNote" label="Where this comes from">
+                    Written automatically on weekday mornings before 8:00 ET (a minute or two). Snapshot and earnings dates come from our own data. News, calendar and talking points are AI-written from sourced pages; check a figure against its link before quoting it.
+                  </Explain>
+                </div>
               </>
             )}
           </>
