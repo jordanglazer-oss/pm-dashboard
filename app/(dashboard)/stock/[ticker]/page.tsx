@@ -2219,6 +2219,10 @@ export default function StockDetailPage() {
                                           {cat.key === "growth" && rawExp && !Array.isArray(rawExp) && rawExp.growthCalc && (
                                             <GrowthMath calc={rawExp.growthCalc} />
                                           )}
+                                          {/* Growth judged by the model because nothing could be computed — never passes for a computed score. */}
+                                          {cat.key === "growth" && rawExp && !Array.isArray(rawExp) && !rawExp.growthCalc && rawExp.growthBasis && (
+                                            <p className="text-[12px] leading-[1.5] text-warn">{rawExp.growthBasis}</p>
+                                          )}
                                           {dataPoints.length > 0 && (
                                             <div>
                                               <p className="mb-1.5 text-[11px] text-ink-3">Data points</p>
