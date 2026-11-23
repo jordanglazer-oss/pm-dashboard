@@ -24,6 +24,7 @@ import ThesisTile from "@/app/components/ThesisTile";
 import { ThesisRequiredBanner } from "@/app/components/ThesisRequiredBanner";
 import StreetTakeawaysTile from "@/app/components/StreetTakeawaysTile";
 import AnalystTrendTile from "@/app/components/AnalystTrendTile";
+import AnalystReportHistoryTile from "@/app/components/AnalystReportHistoryTile";
 import ContrarianTile from "@/app/components/ContrarianTile";
 import DevilsAdvocateAdhoc from "@/app/components/DevilsAdvocateAdhoc";
 import { StockSynthesisTile } from "@/app/components/StockSynthesisTile";
@@ -2596,6 +2597,9 @@ export default function StockDetailPage() {
 
           {/* Analyst trend — consensus over time (read-only, not scored). */}
           {scoreable && <AnalystTrendTile ticker={stock.ticker} />}
+
+          {/* Bank reports over time — RBC / JPM / Morningstar history (read-only, not scored). */}
+          {scoreable && <AnalystReportHistoryTile ticker={stock.ticker} />}
 
           {/* Contrarian setup — signs of a contrarian pick (read-only, not scored). */}
           {scoreable && <ContrarianTile ticker={stock.ticker} />}

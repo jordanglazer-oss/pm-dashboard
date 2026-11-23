@@ -17,6 +17,7 @@ import {
 import { canonicalTicker, tickersEqual } from "@/app/lib/ticker";
 import { blobConfigured, putDataUrl, getDataUrl, deleteBlob } from "@/app/lib/blob-store";
 import { appendInboxEvent } from "@/app/lib/inbox-log";
+import { recordReportHistory, isReportMeta, type ReportToRecord } from "@/app/lib/analyst-report-history";
 import { classifySubject, dispatchInbox, isFactsetAlertSender, isFactsetAlertBody } from "@/app/lib/inbox-dispatch";
 
 // Post-response work (earnings comparison + thesis review via after()) runs
@@ -124,6 +125,8 @@ async function persistReportToRedis(args: {
   // 2) Update the lightweight manifest.
   const reports = await readJson<AnalystReports>("pm:analyst-reports", {});
   const tickerReports: TickerReports = { ...(getReportsForTicker(reports, args.ticker) ?? {}) };
+  // The report this one replaces — recorded in the history below so it isn't lost.
+  const replaced = tickerReports[args.source];
   const meta: ReportMeta = {
     id: reportId,
     label: args.label,
@@ -174,6 +177,18 @@ async function persistReportToRedis(args: {
   }
   const nextSnapshots = setSnapshotForTicker(snapshots, args.ticker, nextSnapshot);
   await writeJson("pm:analyst-snapshots", nextSnapshots);
+
+  // 4) Write-aside: append to pm:analyst-report-history:<TICKER> — the report
+  //    being replaced (if any) and the new one. Never throws; never changes
+  //    what was saved above.
+  const toRecord: ReportToRecord[] = [];
+  if (isReportMeta(replaced) && replaced.hash !== meta.hash) {
+    const prevEntry = args.source === "morningstar" ? undefined : currentSnapshot[args.source];
+    const prevPrice = prevEntry && prevEntry.asOf && prevEntry.asOf === replaced.extracted.asOf ? prevEntry.priceAtReport : undefined;
+    toRecord.push({ source: args.source, meta: replaced, priceAtReport: prevPrice });
+  }
+  toRecord.push({ source: args.source, meta, priceAtReport: priceAtUpload });
+  await recordReportHistory(await getRedis(), args.ticker, toRecord);
 }
 
 export async function POST(request: NextRequest) {
