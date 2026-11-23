@@ -39,7 +39,7 @@ export const WATCHERS: WatcherDef[] = [
   { id: "thesis-review", label: "Thesis review", phase: 3, defaultModel: "sonnet", what: "Quarterly long-term thesis review per holding" },
   { id: "stance-watch", label: "Stance watch", phase: 4, defaultModel: "haiku", what: "After the close: writes a short read when a rule reading changes (regime, VIX, breadth, the brief's hedge call, an expiring hedge)" },
   { id: "hedge-window", label: "Hedge window", phase: 4, defaultModel: "haiku", what: "After the close: is protection cheap and sentiment calm enough to hedge — decided by code, flagged when the window opens" },
-  { id: "manager-watch", label: "Manager watch", phase: 4, defaultModel: "haiku", what: "Watches the thematic funds' managers and their record" },
+  { id: "manager-watch", label: "Manager Evaluator", phase: 4, defaultModel: "haiku", what: "Evaluates the Managed Alpha funds' managers and their record, monthly" },
   { id: "theme-detect", label: "Theme detection", phase: 5, defaultModel: "haiku", what: "Spots which theme a market move belongs to" },
   { id: "theme-review", label: "Theme review", phase: 5, defaultModel: "sonnet", what: "Reviews a theme and our exposure to it after a large move" },
   { id: "sunday-memo", label: "Sunday memo", phase: 5, defaultModel: "sonnet", what: "The weekly memo on the book, the stance and open threads" },

@@ -11,7 +11,7 @@ import { sendAuditEmail } from "@/app/lib/agents/flag-mail";
  * GET /api/cron/stance-watch — weekday after-close stance watch + hedge
  * window (22:00 UTC = 17:00 EST / 18:00 EDT, see vercel.json). CRON_SECRET
  * bearer; /api/cron/* is exempt from the cookie middleware.
- * Also runs the quarterly manager watch when this quarter has not been
+ * Also runs the monthly Manager Evaluator when this month has not been
  * reviewed yet (returns at once otherwise).
  * Then the rule-based portfolio audit (app/lib/agents/portfolio-audit.ts,
  * no model call; raises flags, writes pm:agent-state:portfolio-audit).

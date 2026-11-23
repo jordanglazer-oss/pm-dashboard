@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { readManagerState, runManagerWatch } from "@/app/lib/agents/manager-watch";
 
 /**
- * GET  /api/agents/manager-watch — the last quarterly fund review (Monitor).
+ * GET  /api/agents/manager-watch — the last monthly fund review (Monitor).
  *      Read-only.
  * POST /api/agents/manager-watch { force? } — review the Thematic funds now.
  *      Writes only pm:agent-state:manager-watch and a flag per fund that

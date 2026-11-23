@@ -173,7 +173,7 @@ export type DaFundFacts = {
     perf?: { oneYear?: number; threeYear?: number; fiveYear?: number };
     categoryPerf?: { oneYear?: number; threeYear?: number; fiveYear?: number };
   } | null;
-  /** The quarterly manager watch's last review of this fund. */
+  /** The monthly Manager Evaluator's last review of this fund. */
   managerReview?: { quarter: string; severity: string; findings: string[]; read?: string } | null;
 };
 
@@ -235,7 +235,7 @@ function buildFundBlock(f: DaFacts): string {
     if (d.expenseRatio != null) lines.push(`Fee (MER): ${d.expenseRatio}%`);
     if (d.starRating != null) lines.push(`Morningstar rating: ${d.starRating} stars`);
   }
-  lines.push("", "=== OUR QUARTERLY MANAGER WATCH ===");
+  lines.push("", "=== OUR MANAGER EVALUATOR (MONTHLY) ===");
   const r = f.fund?.managerReview;
   if (!r) lines.push("Nothing on file.");
   else {

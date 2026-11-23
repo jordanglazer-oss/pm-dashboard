@@ -411,7 +411,7 @@ function ManagerSection() {
   return (
     <section className="panel">
       <button className="panel-h w-full text-left" onClick={toggle}>
-        <span className="t">Manager watch</span>
+        <span className="t">Manager Evaluator</span>
         <span className="m">
           {state ? `${state.quarter} · ${reviews.length} funds · ${tripped} to look at` : state === null ? "not run yet" : "…"} · {open ? "hide" : "show"}
         </span>
@@ -424,7 +424,7 @@ function ManagerSection() {
             </button>
             {msg && <span className="text-[12.5px] text-ink-2">{msg}</span>}
             <Explain prefKey="explain.monitor.manager" label="How this works" className="basis-full">
-              Once a quarter, each Managed Alpha fund against its category over 1, 3 and 5 years, plus any fee, category or rating change since the last review. Uses the fund data on PIM Model; refresh it there first if it is old. One weak year is a watch, not a case.
+              Once a month, each Managed Alpha fund against its category over 1, 3 and 5 years, plus any fee, category or rating change since the last review. A flag is raised only when a fund trips something new or gets worse, plus a reminder in the first month of each quarter. Uses the fund data on PIM Model; refresh it there first if it is old. One weak year is a watch, not a case.
             </Explain>
           </div>
         </div>
@@ -543,7 +543,7 @@ function DevilsAdvocateSection() {
           {view && view.pending.length > 0 && results.length > 0 && <p className="text-[12.5px] text-ink-3">Still to do: {view.pending.map(displayTicker).join(", ")}</p>}
           <Explain prefKey="explain.monitor.advocate" label="How this works">
             Once a month, the strongest case against every individual stock and Managed Alpha fund we hold (not the Core ETFs, bonds or alternatives), for the first-Monday review. It argues against each position on purpose, using only what is on file and no web
-            search: for a stock, the thesis, pillar statuses, FactSet alerts and analyst consensus; for a fund, our signed one-pager, its record against its category and the manager watch. It runs by itself in the evenings from{" "}
+            search: for a stock, the thesis, pillar statuses, FactSet alerts and analyst consensus; for a fund, our signed one-pager, its record against its category and the Manager Evaluator. It runs by itself in the evenings from{" "}
             {view?.startsOn ?? "the Wednesday before"}; a holding already written this month is not rewritten. For a name we do not own yet, generate one from the Watchlist page.
           </Explain>
         </div>
