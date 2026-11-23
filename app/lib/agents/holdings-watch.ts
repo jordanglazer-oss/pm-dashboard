@@ -205,6 +205,8 @@ export function classifyMoveAgainst(
   return { residual, class: cls, ...(best ? { symbol: best.symbol, pct: best.pct } : {}) };
 }
 
+export const isSemis = (gicsIndustry: string | null | undefined) => /semiconductor/i.test(gicsIndustry ?? "");
+
 /** GICS industry → the narrower ETF that tracks it. Only technology
  *  industries; everything else keeps its SPDR sector ETF alone. */
 export function industryEtf(gicsIndustry: string | null | undefined): string | undefined {
@@ -399,7 +401,7 @@ async function investigate(prompt: string, note: string): Promise<{ text: string
   for (let turn = 0; turn < 3; turn++) {
     const r = await agentCall("holdings-investigate", {
       note,
-      max_tokens: 2000,
+      max_tokens: 4000,
       system: INVESTIGATE_SYSTEM,
       tools: [{ type: "web_search_20260209", name: "web_search", max_uses: MAX_SEARCHES }],
       messages,
@@ -510,6 +512,10 @@ export async function runHoldingsWatch(opts: { force?: boolean } = {}): Promise<
   // Quotes: holdings + the sector ETFs they need, 8 at a time.
   const gics = await techIndustries(holdings.filter((h) => sectorEtf(h.sector) === "XLK").map((h) => h.ticker!.trim().toUpperCase()));
   const etfsFor = (h: StockLite) => industryEtfs(h.sector, gics.get(h.ticker!.trim().toUpperCase()));
+  /** The narrowest group a holding belongs to: SMH / IGV when its GICS
+   *  industry is known, else its SPDR sector ETF. Peers are matched on this,
+   *  so a software name is never a "peer" of a chip name through XLK. */
+  const groupKey = (h: StockLite) => etfsFor(h).slice(-1)[0] ?? sectorEtf(h.sector);
   const sectorSyms = [...new Set(holdings.flatMap(etfsFor))];
   const symbols = [...holdings.map((h) => yahooClassShare(toYahoo(h.ticker!.trim()))), ...sectorSyms];
   const quotes = new Map<string, Quote | null>();
@@ -530,19 +536,19 @@ export async function runHoldingsWatch(opts: { force?: boolean } = {}): Promise<
     const t = theses[tk] ?? theses[tk.replace(/\.TO$|-T$/, "")];
     return new Set((t?.themes ?? []).map((x) => (x.name ?? "").trim().toLowerCase()).filter(Boolean));
   };
-  const dayMoves: { tk: string; chg: number; sector?: string; themes: Set<string> }[] = [];
+  const dayMoves: { tk: string; chg: number; group?: string; themes: Set<string> }[] = [];
   for (const h of holdings) {
     const tk = h.ticker!.trim().toUpperCase();
     const q = quotes.get(yahooClassShare(toYahoo(tk)));
     if (!q || (q.sessionDate && q.sessionDate !== today)) continue;
-    dayMoves.push({ tk, chg: q.chg, sector: sectorEtf(h.sector), themes: themesOf(tk) });
+    dayMoves.push({ tk, chg: q.chg, group: groupKey(h), themes: themesOf(tk) });
   }
   const bigMove = (chg: number) => chg <= MOVE_DOWN_PCT || chg >= MOVE_UP_PCT;
-  const peersOf = (tk: string, chg: number, sector: string | undefined): string[] => {
+  const sameWay = (tk: string, chg: number) => dayMoves.filter((m) => m.tk !== tk && bigMove(m.chg) && Math.sign(m.chg) === Math.sign(chg));
+  const peersOf = (tk: string, chg: number, group: string | undefined): string[] => {
     const mine = themesOf(tk);
-    return dayMoves
-      .filter((m) => m.tk !== tk && bigMove(m.chg) && Math.sign(m.chg) === Math.sign(chg))
-      .filter((m) => (sector && m.sector === sector) || [...m.themes].some((x) => mine.has(x)))
+    return sameWay(tk, chg)
+      .filter((m) => (group && m.group === group) || [...m.themes].some((x) => mine.has(x)))
       .sort((a, b) => Math.abs(b.chg) - Math.abs(a.chg))
       .slice(0, 8)
       .map((m) => `${m.tk} ${m.chg > 0 ? "+" : ""}${m.chg.toFixed(1)}%`);
@@ -561,13 +567,21 @@ export async function runHoldingsWatch(opts: { force?: boolean } = {}): Promise<
     if (q.chg > MOVE_DOWN_PCT && q.chg < MOVE_UP_PCT) continue;
     const ca = isCanadian(tk);
     const mkt = ca ? tsx : spy;
-    const alts = etfsFor(h).map((symbol) => ({ symbol, pct: quotes.get(symbol)?.chg ?? null }));
+    // SMH stands in for a non-chip hardware / networking name (comms
+    // equipment, electronic equipment, hardware) only when at least two other
+    // holdings in that group moved the same way today — evidence of a group
+    // move. A lone CSCO-style drop on a chip sell-off day stays "company".
+    const industry = gics.get(tk);
+    const groupPeers = sameWay(tk, q.chg).filter((m) => m.group === groupKey(h)).length;
+    const alts = etfsFor(h)
+      .filter((symbol) => symbol !== "SMH" || isSemis(industry) || groupPeers >= 2)
+      .map((symbol) => ({ symbol, pct: quotes.get(symbol)?.chg ?? null }));
     const beta = typeof h.beta === "number" && Number.isFinite(h.beta) && h.beta > 0 ? Math.min(h.beta, 3) : 1;
     const isFund = h.instrumentType === "etf";
     const c = classifyMoveAgainst(q.chg, beta, mkt?.chg ?? null, alts);
     const sec = c.symbol ?? sectorEtf(h.sector);
     const secQ = sec ? quotes.get(sec) ?? null : null;
-    const peers = peersOf(tk, q.chg, sectorEtf(h.sector));
+    const peers = peersOf(tk, q.chg, groupKey(h));
     const ev: HoldingsEvent = {
       id: `${today}:${tk}`,
       date: today,
@@ -634,8 +648,10 @@ export async function runHoldingsWatch(opts: { force?: boolean } = {}): Promise<
       const ed = stock.healthData?.earningsDate?.slice(0, 10);
       const earnings = ed && ed >= daysAgo(today, 2) && ed <= today ? [`Earnings reported ${ed} (calendar)`] : [];
       const peerTks = new Set((ev.peers ?? []).map((p) => p.split(" ")[0]));
+      // Only names in the ORIGINATING name's own peer set receive its cause —
+      // no overlap matching, no chaining onward.
       const group = groupCauses
-        .filter((g) => g.tickers.has(ev.ticker) || [...peerTks].some((t) => g.tickers.has(t)))
+        .filter((g) => g.tickers.has(ev.ticker))
         .map((g) => `Group-wide cause found earlier today while checking ${g.from} (related names fell together): ${g.cause}`);
       const free = [...factset.map(factsetBlock), ...filings, ...earnings, ...group];
       ev.freeSources = [...factset.map((e) => `FactSet ${e.kind} ${e.date}`), ...filings, ...earnings, ...(group.length ? ["Group-wide cause found earlier in this run"] : [])];
@@ -658,8 +674,12 @@ export async function runHoldingsWatch(opts: { force?: boolean } = {}): Promise<
         else ev.error = `triage answer unparseable: ${p.error}`;
       }
 
-      // Step 3: capped search when still unexplained and large enough.
-      if ((!answer || !answer.explained) && Math.abs(ev.residualPct) >= SEARCH_PCT && searched < MAX_SEARCH_PER_RUN) {
+      // Step 3: capped search when still unexplained and large enough. An
+      // answer that leans only on another name's group cause is not enough
+      // for a large move: it is still searched, so the name's own news (a
+      // guide cut on a sell-off day) can't hide behind the group.
+      const leansOnGroup = group.length > 0 && !!answer?.groupWide;
+      if ((!answer || !answer.explained || leansOnGroup) && Math.abs(ev.residualPct) >= SEARCH_PCT && searched < MAX_SEARCH_PER_RUN) {
         searched++;
         ev.stage = "search";
         const r = await investigate(`${header}${free.length ? `\n\n=== FREE SOURCES (did not explain it) ===\n${sourcesText}` : ""}`, `${ev.ticker} ${ev.movePct}% search`);
@@ -671,13 +691,19 @@ export async function runHoldingsWatch(opts: { force?: boolean } = {}): Promise<
           ev.provisional = true;
           ev.sources = r.sources;
           sourcesText = [sourcesText, r.cited].filter(Boolean).join("\n\n");
-        } else ev.error = `investigation answer unparseable: ${p.error}`;
+        } else {
+          // Unreadable / cut-off search answer: still a large unexplained move,
+          // so it is flagged (low, "no clear cause") with the real reason.
+          ev.error = `investigation answer unparseable: ${p.error}`;
+          answer = { explained: false, groupWide: false, cause: `The web search ran but its answer could not be read (${p.error}). Cause not established.`, pillars: [], touchesThesis: false, priority: "low", title: "", detail: "" };
+        }
       }
 
       if (answer) {
         ev.explained = answer.explained;
-        if (answer.explained && answer.groupWide) {
-          ev.groupWide = true;
+        if (answer.explained && answer.groupWide) ev.groupWide = true;
+        // Only a cause this name found itself (not one it was handed) is shared.
+        if (answer.explained && answer.groupWide && !leansOnGroup && group.length === 0) {
           groupCauses.push({ tickers: new Set([ev.ticker, ...peerTks]), cause: answer.cause, from: ev.ticker });
         }
         ev.cause = answer.cause;
@@ -727,7 +753,9 @@ export async function runHoldingsWatch(opts: { force?: boolean } = {}): Promise<
             : "per-run caps reached — logged only"
           : !answer.explained
             ? "the free sources don't explain it and it is below the search threshold (or the search cap was reached) — logged only"
-            : "does not touch a thesis pillar — logged only";
+            : leansOnGroup && ev.stage !== "search"
+              ? "explained only by another holding's group-wide cause (no search: below the threshold or the search cap was reached) — logged only, check the name's own news"
+              : "does not touch a thesis pillar — logged only";
       }
     } catch (e) {
       if (e instanceof AgentGatewayError) {

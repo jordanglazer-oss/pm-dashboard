@@ -138,13 +138,13 @@ export function hedgeWindowFrom(checklist: HedgeChecklist, regime: MarketRegimeD
   return { window, tests, ...(contract ? { contract } : {}), activeHedges };
 }
 
-/** VIX band with a 2-point buffer on the way out, so a VIX hovering around
- *  25 (25.5 → 24.6 → 28.4 this week) doesn't flip the band — and raise a
- *  stance flag — every day. */
+/** VIX band with a 2-point buffer on the way out of "high", so a VIX
+ *  hovering around 25 (25.5 → 24.6 → 28.4 this week) doesn't flip the band —
+ *  and raise a stance flag — every day. "complacent" has no buffer: the hedge
+ *  window's warning sign uses VIX ≤ 16 directly and the two must agree. */
 export function vixBand(v: number | null | undefined, prev?: string): string {
   if (typeof v !== "number") return "unknown";
   if (prev === "high" && v >= 23) return "high";
-  if (prev === "complacent" && v <= 18) return "complacent";
   return v >= 25 ? "high" : v <= 16 ? "complacent" : "normal";
 }
 

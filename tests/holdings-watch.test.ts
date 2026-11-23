@@ -45,7 +45,7 @@ describe("VIX band", () => {
     expect(vixBand(24.6, "high")).toBe("high");
     expect(vixBand(22.9, "high")).toBe("normal");
     expect(vixBand(24.6, "normal")).toBe("normal");
-    expect(vixBand(17, "complacent")).toBe("complacent");
+    expect(vixBand(17, "complacent")).toBe("normal");
   });
 });
 

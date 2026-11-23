@@ -119,7 +119,7 @@ async function gather(today: string): Promise<string> {
     vixLine,
     ``,
     `=== OPEN FLAGS (${open.length}; each as of the date shown) ===`,
-    ...open.slice(0, 20).map((f) => `- [${f.priority}] ${f.updatedAt.slice(0, 10)} ${f.ticker ? `${f.ticker}: ` : ""}${f.title} — ${f.detail.replace(/\s+/g, " ").slice(0, 220)}${f.thread.length ? ` (${f.thread.length} messages in thread)` : ""}`),
+    ...open.slice(0, 20).map((f) => `- [${f.priority}] ${(f.detailAt ?? f.createdAt).slice(0, 10)} ${f.ticker ? `${f.ticker}: ` : ""}${f.title} — ${f.detail.replace(/\s+/g, " ").slice(0, 220)}${f.thread.length ? ` (${f.thread.length} messages in thread)` : ""}`),
     weekResolved.length ? `Resolved this week: ${weekResolved.map((f) => `${f.ticker ?? ""} ${f.title} (${f.status})`).slice(0, 10).join("; ")}` : "",
     ``,
     `=== HOLDINGS THAT FELL 4%+ BY DAY (any cause) ===`,

@@ -1,6 +1,5 @@
 import { getRedis } from "@/app/lib/redis";
 import { createLogger } from "@/app/lib/logger";
-import { parseModelJson } from "@/app/lib/json-repair";
 import { enqueueMail } from "@/app/lib/mail-outbox";
 import { sameSymbol } from "@/app/lib/model-staging";
 import { describeCondition, type KillCondition, type ThesisPillar } from "@/app/lib/kill-conditions";
@@ -10,7 +9,7 @@ import { ANALYST_HISTORY_KEY, analystTrend, type AnalystHistory } from "@/app/li
 import type { AnalystSnapshots } from "@/app/lib/analyst-snapshots";
 import type { BucketStock } from "@/app/lib/sleeve-targets";
 import type { PimModelData, PimPortfolioState } from "@/app/lib/pim-types";
-import { agentCall, AgentGatewayError } from "./gateway";
+import { agentCall, AgentGatewayError, parseAgentJson } from "./gateway";
 import { POLICY_TEXT } from "./policy";
 import { listFlags, raiseFlag } from "./flags";
 import { readAgentSettings, isWatcherOn } from "./settings";
@@ -265,7 +264,7 @@ export async function runDevilsAdvocate(opts: { month?: string; force?: boolean;
           messages: [{ role: "user", content: `Review month: ${month} (meeting ${out.reviewOn}). Today: ${today}.\n\n${buildFactsBlock(facts)}` }],
         });
         out.usd += a.usd;
-        const p = parseModelJson<unknown>(a.text);
+        const p = parseAgentJson<unknown>(a);
         const answer = p.ok ? normaliseAnswer(p.value) : null;
         if (!answer) {
           out.failed.push({ ticker: h.symbol, reason: "the model's answer could not be read — it will be retried on the next run" });

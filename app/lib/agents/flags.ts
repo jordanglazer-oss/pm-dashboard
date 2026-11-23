@@ -38,6 +38,9 @@ export type AgentFlag = {
   title: string;
   /** What was found, in plain language. */
   detail: string;
+  /** When `detail` was last written by a watcher (create or dedupe refresh) —
+   *  the date its figures are true for. `updatedAt` also moves on notes. */
+  detailAt?: string;
   /** What the watcher suggests the PM consider (never an instruction). */
   suggestion?: string;
   evidence?: { label: string; url?: string }[];
@@ -119,6 +122,7 @@ export async function raiseFlag(input: RaiseFlagInput): Promise<AgentFlag> {
         priority: input.priority,
         title: input.title,
         detail: input.detail,
+        detailAt: now,
         suggestion: input.suggestion ?? existing.suggestion,
         evidence: input.evidence ?? existing.evidence,
         model: input.model ?? existing.model,
@@ -139,6 +143,7 @@ export async function raiseFlag(input: RaiseFlagInput): Promise<AgentFlag> {
     watcher: input.watcher,
     createdAt: now,
     updatedAt: now,
+    detailAt: now,
     priority: input.priority,
     ...(input.ticker ? { ticker: input.ticker.toUpperCase() } : {}),
     title: input.title,

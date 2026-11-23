@@ -256,7 +256,9 @@ export async function replyToConversation(flagId: string, note: string): Promise
       messages: [{ role: "user", content: `=== CONTEXT (refreshed now) ===\n${ctx.text}\n\n=== THREAD ===\n${thread.slice(-12000)}` }],
     });
     const p = parseAgentJson<{ reply?: unknown; suggestion?: unknown; question?: unknown }>(r);
-    const reply = p.ok && typeof p.value.reply === "string" ? p.value.reply.trim().slice(0, 1500) : r.text.slice(0, 1500);
+    const reply = p.ok && typeof p.value.reply === "string" ? p.value.reply.trim().slice(0, 1500) : r.truncated
+        ? "(My answer was cut off before it finished — please ask again, or ask a narrower question.)"
+        : r.text.slice(0, 1500);
     const q = p.ok && typeof p.value.question === "string" ? p.value.question.trim().slice(0, 300) : "";
     const sug = p.ok && typeof p.value.suggestion === "string" ? p.value.suggestion.trim().slice(0, 400) : "";
     await updateFlag(flagId, { action: "note", from: "watcher", note: `${reply}${sug && sug !== flag.suggestion ? `\nUpdated suggestion: ${sug}` : ""}${q ? `\n${q}` : ""}` });
