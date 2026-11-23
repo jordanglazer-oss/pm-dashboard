@@ -67,6 +67,7 @@ import { reconcileHoldingsEvents } from "./agents/holdings-watch";
 import { reviewThesis } from "./thesis-review";
 import { bellwetherTickers, appendThemeEvidence } from "./themes";
 import { after } from "next/server";
+import { recordRankedHistory } from "./ranked-source-history";
 
 // ── Subject → kind ──────────────────────────────────────────────────
 
@@ -984,6 +985,7 @@ async function readResearch(): Promise<ResearchState> {
 async function writeResearch(state: ResearchState): Promise<void> {
   const redis = await getRedis();
   await redis.set("pm:research", JSON.stringify(state));
+  await recordRankedHistory(redis, state); // write-aside; never throws
 }
 
 async function handleResearch(

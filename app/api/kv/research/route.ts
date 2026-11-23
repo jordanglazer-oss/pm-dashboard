@@ -2,6 +2,7 @@ import { getRedis } from "@/app/lib/redis";
 import { NextRequest, NextResponse } from "next/server";
 import { defaultResearch } from "@/app/lib/defaults";
 import { createHash } from "node:crypto";
+import { recordRankedHistory } from "@/app/lib/ranked-source-history";
 
 const KEY = "pm:research";
 
@@ -46,6 +47,7 @@ async function save(req: NextRequest) {
     }
     const nextRaw = JSON.stringify(research);
     await redis.set(KEY, nextRaw);
+    await recordRankedHistory(redis, research); // write-aside to pm:ranked-source-history; never throws
     return NextResponse.json({ ok: true, hash: fingerprint(nextRaw) });
   } catch (e) {
     console.error("Redis write error (research):", e);

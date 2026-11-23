@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { runStanceWatch } from "@/app/lib/agents/stance-watch";
 import { runManagerWatch } from "@/app/lib/agents/manager-watch";
+import { runWatchlistAlerts } from "@/app/lib/agents/watchlist-alerts";
 import { listFlags } from "@/app/lib/agents/flags";
 import { runPortfolioAudit } from "@/app/lib/agents/portfolio-audit";
 import { runDevilsAdvocateIfDue } from "@/app/lib/agents/devils-advocate";
@@ -37,6 +38,9 @@ export async function GET(req: NextRequest) {
     } catch (e) {
       manager = { ok: false, error: e instanceof Error ? e.message : String(e) };
     }
+    // Watchlist rules ($0, never throws): target buy price reached / newly on 2+ lists.
+    const watchlist = await runWatchlistAlerts();
+    console.log(`[cron/stance-watch] watchlist alerts: ${watchlist.skipped ?? watchlist.error ?? `${watchlist.alerts.length} found, ${watchlist.raised.length} new`}`);
     // Rule audits ($0) run before the email so tonight's email carries them.
     const audit = await runPortfolioAudit();
     console.log(`[cron/stance-watch] portfolio audit: ${audit.skipped ?? audit.error ?? `${audit.findings.length} findings, ${audit.raised.length} new`}`);

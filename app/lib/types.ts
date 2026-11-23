@@ -433,6 +433,9 @@ export type Stock = {
   manualScoredAt?: Partial<Record<ScoreKey, string>>;
   price?: number;
   costBasis?: number;
+  /** Watchlist plan (Nov 2026, app/lib/watchlist-plan.ts) — why we would own
+   *  it and at what price. Every field optional; old records load unchanged. */
+  watch?: import("./watchlist-plan").WatchlistPlan;
   notes: string;
   companySummary?: string;
   investmentThesis?: string;
