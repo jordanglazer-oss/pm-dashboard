@@ -16,6 +16,7 @@ import { SleeveTracking } from "@/app/components/SleeveTracking";
 import { HoldingHistoryPanel } from "@/app/components/HoldingHistoryPanel";
 import { CurrencyImpactPanel } from "@/app/components/CurrencyImpactPanel";
 import { RealizedGainsPanel } from "@/app/components/RealizedGainsPanel";
+import { ContributionPanel } from "@/app/components/ContributionPanel";
 
 /* ─── Types ─── */
 type AllocationRow = {
@@ -1013,6 +1014,8 @@ export default function AAPerformancePage() {
       </section>
 
       <SleeveTracking />
+
+      <ContributionPanel />
 
       <HoldingHistoryPanel />
 
