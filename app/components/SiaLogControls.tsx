@@ -94,21 +94,21 @@ export function SiaLogControls({ source, onChanged }: { source: "sia" | "tradelo
   const off = p?.modelCheck?.worstGapPts != null && p.modelCheck.worstGapPts > 1;
 
   return (
-    <div className="mx-3.5 mt-2.5 rounded-control border border-line bg-surface-2 px-3 py-2 text-[12.5px] text-ink-2">
+    <div className={open ? "mx-3.5 mt-2.5 rounded-control border border-line bg-surface-2 px-3 py-2 text-[12.5px] text-ink-2" : "px-3.5 pt-2 text-[12px] text-ink-3"}>
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
         <span>
-          <span className="font-semibold text-ink">Holdings source:</span>{" "}
+          <span className="font-medium text-ink-2">Holdings source:</span>{" "}
           {source === "sia" && s?.onFile ? (
-            <>SIA transaction log — actual units and trade dates, {s.first} to {s.last}</>
+            <>SIA log · actual units · {s.first} to {s.last}</>
           ) : s?.onFile && !s.enabled ? (
-            <>the dashboard&apos;s own trade log (the SIA log is on file but switched off)</>
+            <>trade log · model weights (SIA log switched off)</>
           ) : (
-            <>the dashboard&apos;s own trade log — model target weights, from 13 Apr 2026</>
+            <>trade log · model weights · from 13 Apr 2026</>
           )}
         </span>
         {s?.onFile && s.enabled && (
           <button disabled={!!busy} onClick={() => flip("disable")} className="font-medium underline decoration-line underline-offset-2">
-            Switch back to the trade log
+            Use the trade log
           </button>
         )}
         {s?.onFile && !s.enabled && (
@@ -117,16 +117,14 @@ export function SiaLogControls({ source, onChanged }: { source: "sia" | "tradelo
           </button>
         )}
         <button disabled={!!busy} onClick={() => setOpen((v) => !v)} className="font-medium underline decoration-line underline-offset-2">
-          {open ? "Close" : s?.onFile ? "Load a newer SIA export" : "Load the SIA transaction log"}
+          {open ? "Close" : s?.onFile ? "Load a newer export" : "Load the SIA log"}
         </button>
         {busy && <span className="text-ink-3">{busy}</span>}
       </div>
 
       {open && (
         <div className="mt-2 border-t border-line pt-2">
-          <p className="text-ink-3">
-            In SIA Charts, export the portfolio&apos;s transaction table (Date, Symbol, Action, Units, Price) as a CSV, then choose it here. You will see a preview before anything is saved. This only affects this panel&apos;s holding detail — it never changes recorded performance, and you can switch back at any time.
-          </p>
+          <p className="text-ink-3">Export the transaction table from SIA Charts as a CSV and choose it here. You see a preview before anything is saved; recorded performance is never changed.</p>
           <input ref={input} type="file" accept=".csv,text/csv" className="mt-1.5 text-[12.5px]" onChange={(e) => pick(e.target.files?.[0])} />
 
           {p?.error && <p className="mt-2 text-neg">{p.error}</p>}
@@ -134,17 +132,21 @@ export function SiaLogControls({ source, onChanged }: { source: "sia" | "tradelo
           {p?.summary && (
             <div className="mt-2 flex flex-col gap-1.5">
               <p>
-                <span className="font-semibold text-ink">{p.mode === "SAVED" ? "Saved." : "Preview — nothing saved yet."}</span> {p.summary.rows.toLocaleString()} trades on {p.summary.tradeDays} days, {p.summary.first} to {p.summary.last}; {p.summary.symbols} holdings over time, {p.summary.heldAtEnd.length} held at the end.
+                <span className="font-semibold text-ink">{p.mode === "SAVED" ? "Saved." : "Preview — nothing saved yet."}</span> {p.summary.rows.toLocaleString()} trades · {p.summary.first} to {p.summary.last} · {p.summary.symbols} holdings over time, {p.summary.heldAtEnd.length} held at the end
               </p>
               {(p.unreadableRows?.length ?? 0) > 0 && <p className="text-neg">{p.unreadableRows!.length} row(s) could not be read: {p.unreadableRows!.slice(0, 3).join(" · ")}</p>}
               {p.modelCheck && (
                 <p className={off ? "text-neg" : ""}>
-                  Check against the model on {p.modelCheck.date}: the largest difference in any holding&apos;s weight is {p.modelCheck.worstGapPts ?? "—"} point(s).{" "}
-                  {off ? "That is larger than expected — a stock split may be missing. Ask before saving." : "That is in line with the model."}
+                  Model check ({p.modelCheck.date}): largest weight difference {p.modelCheck.worstGapPts ?? "—"} pt.{" "}
+                  {off ? "Larger than expected — a stock split may be missing. Ask before saving." : "In line with the model."}
                 </p>
               )}
-              {p.splitsFound && Object.keys(p.splitsFound).length > 0 && <p className="text-ink-3">Stock splits applied: {Object.entries(p.splitsFound).map(([k, v]) => k + " (" + v + ")").join("; ")}.</p>}
-              {p.summary.resetToZero.length > 0 && <p className="text-ink-3">Unit counts that dipped below zero and were reset (usually reinvested fund distributions or an old merger): {p.summary.resetToZero.join(", ")}.</p>}
+              {p.splitsFound && Object.keys(p.splitsFound).length > 0 && (
+                <p className="text-ink-3" title={Object.entries(p.splitsFound).map(([k, v]) => k + " (" + v + ")").join("; ")}>
+                  Stock splits applied to {Object.keys(p.splitsFound).length} names: {Object.keys(p.splitsFound).join(", ")}
+                </p>
+              )}
+              {p.summary.resetToZero.length > 0 && <p className="text-ink-3">Unit counts reset at zero (fund distributions or an old merger): {p.summary.resetToZero.join(", ")}</p>}
               {p.mode !== "SAVED" && file && (
                 <div className="flex flex-wrap items-center gap-3">
                   <button disabled={!!busy} onClick={() => save(false)} className="rounded-control border border-line bg-surface px-3 py-1 font-medium text-ink">

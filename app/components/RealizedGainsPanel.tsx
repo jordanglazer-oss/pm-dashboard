@@ -3,6 +3,7 @@
 import React, { useEffect, useState } from "react";
 import { displayTicker } from "@/app/lib/ticker";
 import { usePersistedOpen } from "@/app/lib/useCollapsed";
+import { Explain } from "@/app/components/Explain";
 import type { RealizedTally } from "@/app/lib/realized-gains";
 
 /**
@@ -40,7 +41,7 @@ export function RealizedGainsPanel() {
     <section className="panel">
       <button className="panel-h w-full text-left" onClick={toggle}>
         <span className="t">Realized gains and losses</span>
-        <span className="m">Year to date · % of each book, never dollars · model-level estimate · {open ? "hide" : "show"}</span>
+        <span className="m">Year to date · % of book · estimate · {open ? "hide" : "show"}</span>
       </button>
       {open && (
         <>
@@ -51,10 +52,10 @@ export function RealizedGainsPanel() {
           ) : (
             <>
               <p className="px-3.5 pt-2.5 text-[12px] text-ink-3">
-                Model-level estimate for {data.year}: each sale&apos;s gain or loss against its average cost, as a share of the book just before the sale. Only sales from {data.coversFrom} on are covered — units and cost were not recorded before then. Client results differ with each account&apos;s own cost base.
+                {data.year} · sales from {data.coversFrom} on
               </p>
               {!data.books.length ? (
-                <p className="px-3.5 py-3 text-[12.5px] text-ink-2">No sales recorded yet since {data.coversFrom}. The tally fills in from the next sale.</p>
+                <p className="px-3.5 py-3 text-[12.5px] text-ink-2">No sales recorded yet.</p>
               ) : (
                 <div className="tbl-wrap">
                   <table className="data-table">
@@ -162,7 +163,13 @@ export function RealizedGainsPanel() {
                   )}
                 </>
               )}
-              <div className="pb-1" />
+              <Explain prefKey="explain.perf.realized" label="How gains are counted" className="px-3.5 pb-2.5 pt-1">
+                <ul className="list-disc pl-4">
+                  <li>Model-level estimate: each sale&apos;s gain or loss against its average cost, shown as a share of the book just before the sale — never dollars.</li>
+                  <li>Only sales from {data.coversFrom} on are covered; units and cost were not recorded before then.</li>
+                  <li>Client results differ with each account&apos;s own cost base.</li>
+                </ul>
+              </Explain>
             </>
           )}
         </>

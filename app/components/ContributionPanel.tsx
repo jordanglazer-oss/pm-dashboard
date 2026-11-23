@@ -5,6 +5,7 @@ import { usePersistedOpen } from "@/app/lib/useCollapsed";
 import type { RangeAttributionResponse } from "@/app/lib/range-attribution-load";
 import type { HoldingContribution, Sleeve } from "@/app/lib/range-attribution";
 import { SiaLogControls } from "@/app/components/SiaLogControls";
+import { Explain } from "@/app/components/Explain";
 
 /**
  * Contribution by holding (Nov 2026) — what added and what detracted over ANY
@@ -123,7 +124,6 @@ function MonthTable({ rows }: { rows: Extract<RangeAttributionResponse, { ok: tr
 export function ContributionView({ data, loading, onSourceChanged }: { data: RangeAttributionResponse | null; loading: boolean; onSourceChanged?: () => void }) {
   const [sleeve, setSleeve] = useState<"all" | Sleeve>("all");
   const [showAll, toggleAll] = usePersistedOpen("perf.contribution.table", false);
-  const [showNotes, toggleNotes] = usePersistedOpen("perf.contribution.notes", false);
   const view = useMemo(() => {
     if (!data || !data.ok) return null;
     const rows = sleeve === "all" ? data.holdings : data.holdings.filter((h) => h.sleeve === sleeve);
@@ -156,7 +156,7 @@ export function ContributionView({ data, loading, onSourceChanged }: { data: Ran
         <div className={loading ? "opacity-60" : ""}>
           {data.detailFrom && (
             <div className="mx-3.5 mt-2.5 rounded-control border border-line bg-surface-2 px-3 py-2 text-[12.5px] text-ink-2">
-              <span className="font-semibold text-ink">Holding detail starts {data.detailFrom}.</span> {data.source === "sia" ? "The SIA log begins that day." : "The trade log begins that day, so what was held earlier is not on file."} Everything in this section covers {data.range.base} to {data.range.end} ({data.range.days} trading days); the recorded return for that same stretch is <span className="font-medium">{pts(data.reconciliation.book.recordedPct)}</span>. The summary above covers the whole period.
+              <span className="font-semibold text-ink">Holding detail starts {data.detailFrom}</span> ({data.source === "sia" ? "the SIA log begins then" : "the trade log begins then"}). Recorded return from that date: <span className="font-medium">{pts(data.reconciliation.book.recordedPct)}</span>.
             </div>
           )}
           {(() => {
@@ -166,26 +166,26 @@ export function ContributionView({ data, loading, onSourceChanged }: { data: Ran
               <>
                 {off && (
                   <div className="mx-3.5 mt-2.5 rounded-control border border-warn-border bg-warn-soft px-3 py-2 text-[12.5px] text-ink">
-                    <span className="font-semibold">{data.source === "sia" ? "The holdings and the recorded return do not agree for this period." : "Treat the holding figures below with caution for this period."}</span> They add up to {pts(data.estimatedReturnPct)}, but the recorded return is {pts(data.reconciliation.book.recordedPct)} — a gap of {Math.abs(gap!).toFixed(2)} points. {data.source === "sia" ? "The holdings here are the real ones from the SIA log; the recorded return comes from the dashboard's own position books, so a gap means the two differ over this period. The monthly table shows where." : "The sleeve \"Recorded\" column is exact; the per-holding split is an estimate rebuilt from the trade log."}
+                    <span className="font-semibold">{data.source === "sia" ? "Holdings and the recorded return disagree for this period:" : "Treat the holding figures with caution for this period:"}</span> holdings add up to {pts(data.estimatedReturnPct)}, the record says {pts(data.reconciliation.book.recordedPct)} — {Math.abs(gap!).toFixed(2)} points apart.
                     {data.byMonth.length > 1 && <MonthTable rows={data.byMonth} />}
                   </div>
                 )}
                 <p className="px-3.5 pt-2.5 text-[12.5px] text-ink-3">
-                  {data.range.base} close to {data.range.end} close · {data.range.days} trading day{data.range.days === 1 ? "" : "s"}
+                  {data.range.base} to {data.range.end} · {data.range.days} trading day{data.range.days === 1 ? "" : "s"}
                   {sleeve !== "all" && (
                     <>
-                      {" "}· {SLEEVE_LABEL[sleeve]} contributed an estimated <span className={`font-medium ${tone(view.total)}`}>{pts(view.total)}</span>
+                      {" "}· {SLEEVE_LABEL[sleeve]} <span className={`font-medium ${tone(view.total)}`}>{pts(view.total)}</span>
                     </>
                   )}
-                  {!off && gap != null && <> · holdings add up to {pts(data.estimatedReturnPct)} vs {pts(data.reconciliation.book.recordedPct)} recorded</>}
+                  {!off && gap != null && <> · holdings {pts(data.estimatedReturnPct)} vs {pts(data.reconciliation.book.recordedPct)} recorded</>}
                 </p>
               </>
             );
           })()}
 
           <div className="flex flex-col gap-4 px-3.5 py-3 sm:flex-row sm:gap-8">
-            <MoverList title="Top 5 contributors" rows={view.top} empty="Nothing added over this period." />
-            <MoverList title="Top 5 detractors" rows={view.bottom} empty="Nothing detracted over this period." />
+            <MoverList title="Top 5 contributors" rows={view.top} empty="None." />
+            <MoverList title="Top 5 detractors" rows={view.bottom} empty="None." />
           </div>
 
           <div className="tbl-wrap">
@@ -239,12 +239,6 @@ export function ContributionView({ data, loading, onSourceChanged }: { data: Ran
               </tbody>
             </table>
           </div>
-          <p className="px-3.5 pt-1.5 text-[11.5px] text-ink-3">
-            &quot;Recorded return&quot; is the dashboard&apos;s own performance record for the same days and is exact. The &quot;Est.&quot; columns are rebuilt from model weights and prices; the last column is how far that rebuild is from the record.
-            {data.reconciliation.sleevesRecordedFrom && data.range.base < data.reconciliation.sleevesRecordedFrom && <> Managed Alpha and Individual Stocks have been recorded separately only since {data.reconciliation.sleevesRecordedFrom}; before that they were recorded together, so for this period compare them on the Total Alpha row.</>}
-
-          </p>
-
           <div className="px-3.5 py-2.5">
             <button onClick={toggleAll} className="text-[12.5px] font-medium text-ink-2 underline decoration-line underline-offset-2">
               {showAll ? "Hide the full table" : `Show every holding (${view.rows.length})`}
@@ -286,21 +280,20 @@ export function ContributionView({ data, loading, onSourceChanged }: { data: Ran
             </div>
           )}
 
-          <div className="px-3.5 pb-3 pt-1">
-            <button onClick={toggleNotes} className="text-[12.5px] font-medium text-ink-2 underline decoration-line underline-offset-2">
-              {showNotes ? "Hide how this is calculated" : `How this is calculated (${data.caveats.length} notes)`}
-            </button>
-            {showNotes && (
-              <>
-                <ul className="mt-1.5 list-disc pl-4 text-[11.5px] leading-snug text-ink-3">
-                  {data.caveats.map((c, i) => (
-                    <li key={i}>{c}</li>
-                  ))}
-                </ul>
-                {data.byMonth.length > 1 && <MonthTable rows={data.byMonth} />}
-              </>
-            )}
-          </div>
+          <Explain prefKey="perf.contribution.notes" label="How this is calculated" className="px-3.5 pb-3 pt-1">
+            <ul className="list-disc pl-4">
+              <li>&quot;Recorded return&quot; is the dashboard&apos;s own performance record for the same days and is exact. The &quot;Est.&quot; columns are rebuilt from holdings and prices; the last column is how far that rebuild is from the record.</li>
+              {data.reconciliation.sleevesRecordedFrom && data.range.base < data.reconciliation.sleevesRecordedFrom && (
+                <li>Managed Alpha and Individual Stocks have been recorded separately only since {data.reconciliation.sleevesRecordedFrom}; before that they were recorded together, so for this period compare them on the Total Alpha row.</li>
+              )}
+              {data.detailFrom && <li>The holding detail covers {data.range.base} to {data.range.end} ({data.range.days} trading days); the summary in section 1 covers the whole period.</li>}
+              {data.source === "sia" && <li>The holdings are the real ones from the SIA log; the recorded return comes from the dashboard&apos;s own position books, so a gap means the two differ over the period.</li>}
+              {data.caveats.map((c, i) => (
+                <li key={i}>{c}</li>
+              ))}
+            </ul>
+            {data.byMonth.length > 1 && <MonthTable rows={data.byMonth} />}
+          </Explain>
         </div>
       ) : null}
     </>
@@ -343,7 +336,7 @@ export function ContributionPanel() {
     <section className="panel">
       <div className="panel-h flex-wrap gap-y-1.5 py-1.5">
         <span className="t">Contribution by holding</span>
-        <span className="m">Model-level estimate · PIM equity book · weight × C$ total return, names sold in the period included</span>
+        <span className="m">PIM equity book · estimate</span>
       </div>
       <div className="flex flex-wrap items-center gap-2 px-3.5 pt-2.5">
         <div className="seg">
@@ -359,7 +352,6 @@ export function ContributionPanel() {
             <input type="date" value={custom.from} onChange={(e) => setCustom((c) => ({ ...c, from: e.target.value }))} className="h-7 rounded-control border border-line bg-surface px-2 text-[12.5px] text-ink" />
             to
             <input type="date" value={custom.to} min={custom.from || undefined} onChange={(e) => setCustom((c) => ({ ...c, to: e.target.value }))} className="h-7 rounded-control border border-line bg-surface px-2 text-[12.5px] text-ink" />
-            <span className="text-ink-faint">(empty &quot;from&quot; = from the start; empty &quot;to&quot; = today)</span>
           </span>
         )}
       </div>

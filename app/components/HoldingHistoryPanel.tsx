@@ -4,6 +4,7 @@ import React, { useEffect, useState } from "react";
 import Link from "next/link";
 import { displayTicker } from "@/app/lib/ticker";
 import { usePersistedOpen } from "@/app/lib/useCollapsed";
+import { Explain } from "@/app/components/Explain";
 import type { HoldingHistory } from "@/app/lib/holding-history-shared";
 
 /**
@@ -41,12 +42,11 @@ export function HoldingHistoryPanel() {
     <section className="panel">
       <button className="panel-h w-full text-left" onClick={toggle}>
         <span className="t">Holdings since first purchase</span>
-        <span className="m">PIM model · each buy and sell decision since · {open ? "hide" : "show"}</span>
+        <span className="m">PIM model · every decision · {open ? "hide" : "show"}</span>
       </button>
       {open && (
         <>
           <div className="flex flex-wrap items-center gap-3 px-3.5 py-2.5 text-[12.5px] text-ink-3">
-            <span>Price return is from the recorded fill; total return adds dividends (adjusted closes). A name with no buy on file starts at tracking start{data?.trackingStart ? ` (${data.trackingStart})` : ""}.</span>
             <label className="flex items-center gap-1.5">
               <input type="checkbox" checked={showSold} onChange={toggleSold} /> Show names sold out ({soldCount})
             </label>
@@ -55,7 +55,7 @@ export function HoldingHistoryPanel() {
             </label>
           </div>
           {!data ? (
-            <div className="px-3.5 pb-3 text-[12.5px] text-ink-3">Loading prices since each first purchase…</div>
+            <div className="px-3.5 pb-3 text-[12.5px] text-ink-3">Loading…</div>
           ) : data.error && !rows.length ? (
             <div className="px-3.5 pb-3 text-[12.5px] text-neg">{data.error}</div>
           ) : (
@@ -147,6 +147,13 @@ export function HoldingHistoryPanel() {
               </table>
             </div>
           )}
+          <Explain prefKey="explain.perf.holdingHistory" label="How returns are measured" className="px-3.5 py-2.5">
+            <ul className="list-disc pl-4">
+              <li>Price return is measured from the recorded fill; total return adds dividends (adjusted closes).</li>
+              <li>A name with no buy on file starts at tracking start{data?.trackingStart ? ` (${data.trackingStart})` : ""}.</li>
+              <li>Click a row to see each decision on that holding.</li>
+            </ul>
+          </Explain>
         </>
       )}
     </section>

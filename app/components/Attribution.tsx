@@ -2,6 +2,7 @@
 
 import { usePersistedOpen } from "@/app/lib/useCollapsed";
 import { AppIcon } from "@/app/components/AppIcon";
+import { Explain } from "@/app/components/Explain";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import type { PeriodKey, ReturnDecomposition, ContributionBreakdown } from "@/app/lib/attribution";
@@ -203,7 +204,7 @@ export function Attribution() {
     <section className="panel">
       <div className="panel-h flex-wrap gap-y-1 py-1.5">
         <span className="t">Return attribution</span>
-        <span className="m">Where your return came from · estimates</span>
+        <span className="m">By model · estimates</span>
         <div className="ml-auto flex flex-wrap items-center gap-2.5">
           {data && data.profiles.length > 1 && (
             <span className="hidden text-[11.5px] text-ink-faint sm:inline">← → switch model</span>
@@ -276,9 +277,6 @@ export function Attribution() {
                 </div>
               )}
             </div>
-            <p className="text-[11.5px] text-ink-3">
-              Your {data.profiles[profileIdx]?.label} model&apos;s actual {period} return (in CAD), split below into the three things that drove it. Toggle the benchmark on the right.
-            </p>
             {active && bench && (
               <div className="mt-1 flex flex-col gap-0.5 rounded-control border border-line-soft bg-surface-2 px-3 py-2">
                 <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5 text-[12.5px]">
@@ -293,7 +291,7 @@ export function Attribution() {
                   </span>
                 </div>
                 <p className="text-[11.5px] text-ink-3">
-                  Why: {active.sentence}. <span className="text-ink-faint">(Benchmark in its own currency; the FX effect is the Currency line.)</span>
+                  Why: {active.sentence}.
                 </p>
               </div>
             )}
@@ -331,10 +329,16 @@ export function Attribution() {
             ))}
           </div>
 
-          <p className="text-[11px] leading-4 text-ink-faint">
-            Estimates. Market = portfolio beta × benchmark return; Currency = USD-sleeve weight × USD/CAD move;
-            Selection = total minus those. Full sector allocation/selection attribution arrives once we store per-holding price history.
-          </p>
+          <Explain prefKey="explain.perf.attributionByModel" label="How this is calculated">
+            <ul className="list-disc pl-4">
+              <li>The total is the model&apos;s actual return in CAD for the period, split into market, currency and selection. All three are estimates.</li>
+              <li>Market = portfolio beta × benchmark return (the benchmark in its own currency; the FX effect is the Currency line). Currency = USD-sleeve weight × USD/CAD move. Selection = total minus those.</li>
+              <li>Contribution = each holding&apos;s current weight × its total-return move in CAD (incl. distributions) over the part of the period it was actually held; names bought mid-period are measured from the purchase. Weights include cash.</li>
+              <li>The contributions approximate the period return; cash, fees and intraperiod trades account for the gap.</li>
+              <li>&quot;% of gains / losses&quot; = that name&apos;s share of all positive (or negative) contributions; each column sums to 100%.</li>
+              <li>Names sold during the period stay listed with a &quot;sold&quot; tag — measured to the sale, with weight estimated from the model weight on the trade.</li>
+            </ul>
+          </Explain>
 
           {/* View 2 — PERIOD-based contribution breakdown (matches the selected period) */}
           {contrib && contrib.holdings.length > 0 && (
@@ -351,10 +355,8 @@ export function Attribution() {
                   </span>
                 </div>
                 <p className="text-[11.5px] text-ink-3">
-                  Percentage points each name added to (or subtracted from) your model&apos;s <span className="font-medium text-ink-2">{period}</span> return — its weight × its own move (in CAD, incl. distributions) <span className="font-medium text-ink-2">over the time you owned it</span>. Names bought mid-period are measured from the purchase, not the period start. The sum ({fmtPct(contrib.totalContributionPct)}) approximates the {period} figure up top; cash, fees and intraperiod trades account for the gap.
-                  {(contrib.excludedCount ?? 0) > 0
-                    ? ` ${contrib.excludedCount} position${contrib.excludedCount === 1 ? "" : "s"} without usable prices for this period excluded.`
-                    : ""}
+                  Points of the <span className="font-medium text-ink-2">{period}</span> return, over the time held · sum {fmtPct(contrib.totalContributionPct)}
+                  {(contrib.excludedCount ?? 0) > 0 ? ` · ${contrib.excludedCount} excluded (no prices)` : ""}
                 </p>
               </div>
 
@@ -461,9 +463,6 @@ export function Attribution() {
                   )}
                 </div>
               </div>
-              <p className="text-[11px] leading-4 text-ink-faint">
-                Contribution = each holding&apos;s current weight × its total-return move in CAD (incl. distributions) over the portion of the {period} window it was actually held. Weights include cash. &quot;% of gains / losses&quot; = that name&apos;s share of all positive (resp. negative) contributions; each column sums to 100%. Names sold during the period stay listed (&quot;sold&quot; tag) — measured to the sale, with weight estimated from the model weight on the trade. Estimates.
-              </p>
             </div>
           )}
 
@@ -473,7 +472,7 @@ export function Attribution() {
               <h3 className="text-[13px] font-semibold text-ink">Contribution to return</h3>
               <p className="text-[12.5px] text-ink-3">
                 {(profileData.contribDebug?.positions ?? 0) === 0
-                  ? `No saved account positions for the ${profileData.label} model — this breakdown reads position cost basis. Try another model with ← / →.`
+                  ? `No saved positions for the ${profileData.label} model.`
                   : `Couldn't match this model's positions to priced holdings.`}
               </p>
               {profileData.contribDebug && profileData.contribDebug.positions > 0 && (

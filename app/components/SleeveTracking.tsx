@@ -2,6 +2,7 @@
 
 import React, { useEffect, useMemo, useState } from "react";
 import { Sparkline } from "@/app/components/Sparkline";
+import { Explain } from "@/app/components/Explain";
 import type { PimPerformanceData, PimDailyReturn } from "@/app/lib/pim-types";
 import { BENCHMARKS, useBenchmarkHistory } from "@/app/lib/useBenchmarkHistory";
 
@@ -105,7 +106,7 @@ export function SleeveTracking() {
     <section className="panel">
       <div className="panel-h flex-wrap gap-y-1.5 py-1.5">
         <span className="t">Sleeves vs Core</span>
-        <span className="m">From the Positioning books · the same daily series as the Performance table</span>
+        <span className="m">From the Positioning books</span>
       </div>
       {perf === undefined ? (
         <p className="px-3.5 py-3 text-[12.5px] text-ink-3">Loading…</p>
@@ -127,10 +128,9 @@ export function SleeveTracking() {
                 <input type="date" value={custom.from} min={firstDate} onChange={(e) => setCustom((c) => ({ ...c, from: e.target.value }))} className="h-7 rounded-control border border-line bg-surface px-2 text-[12.5px] text-ink" />
                 to
                 <input type="date" value={custom.to} min={custom.from || undefined} onChange={(e) => setCustom((c) => ({ ...c, to: e.target.value }))} className="h-7 rounded-control border border-line bg-surface px-2 text-[12.5px] text-ink" />
-                <span className="text-ink-faint">(empty &quot;from&quot; = from the start, i.e. as of the &quot;to&quot; date; empty &quot;to&quot; = today)</span>
               </span>
             )}
-            <span className="text-[12px] text-ink-3">{coreR.base && coreR.end ? `From the ${coreR.base} close to the ${coreR.end} close` : "Not enough history for this period"}</span>
+            <span className="text-[12px] text-ink-3">{coreR.base && coreR.end ? `${coreR.base} to ${coreR.end}` : "Not enough history for this period"}</span>
           </div>
           <div className="tbl-wrap">
             <table className="data-table">
@@ -163,7 +163,7 @@ export function SleeveTracking() {
                         {b.profile === "core" ? "—" : vs == null ? (r.pct != null && coreR.pct != null ? <span className="text-[11px] text-ink-3">different start</span> : "—") : `${vs > 0 ? "+" : ""}${vs.toFixed(2)} pts`}
                       </td>
                       <td className="text-[12px]">
-                        {unitBooks.has(b.profile) ? <span className="text-ink-2">units (live weights)</span> : <span className="text-warn">model weights — add units on Positioning</span>}
+                        {unitBooks.has(b.profile) ? <span className="text-ink-2">units (live weights)</span> : <span className="text-warn">model weights — no units yet</span>}
                       </td>
                     </tr>
                   );
@@ -188,13 +188,22 @@ export function SleeveTracking() {
                       <td className={`n ${tone(vs)}`} title="Core minus this index over the same period">
                         {vs == null ? "—" : <span>Core {vs > 0 ? "+" : ""}{vs.toFixed(2)} pts</span>}
                       </td>
-                      <td className="text-[12px] text-ink-3">price index, no dividends</td>
+                      <td className="text-[12px] text-ink-3">price index</td>
                     </tr>
                   );
                 })}
               </tbody>
             </table>
           </div>
+          <Explain prefKey="explain.perf.sleeves" label="About these numbers" className="px-3.5 py-2.5">
+            <ul className="list-disc pl-4">
+              <li>Each book is the same daily series as the Performance table, measured close to close over the dates shown.</li>
+              <li>&quot;vs Core&quot; is only shown when a book and Core start on the same day; a book whose series starts later says so under its name.</li>
+              <li>The indexes are price indexes with no dividends, measured over the same days as Core; their &quot;vs Core&quot; column is Core minus the index.</li>
+              <li>A book on &quot;model weights&quot; has no units yet — add them on Positioning to track it on live weights.</li>
+              <li>Custom dates: an empty &quot;from&quot; means from the start; an empty &quot;to&quot; means today.</li>
+            </ul>
+          </Explain>
         </>
       )}
     </section>

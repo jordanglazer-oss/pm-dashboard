@@ -6,6 +6,7 @@ import { PERIOD_PRESETS, periodRange, type PeriodPreset } from "@/app/lib/period
 import type { RangeAttributionResponse } from "@/app/lib/range-attribution-load";
 import { ContributionView } from "@/app/components/ContributionPanel";
 import { CurrencyView, type CurrencyResp } from "@/app/components/CurrencyImpactPanel";
+import { Explain } from "@/app/components/Explain";
 
 /**
  * Where returns came from (Nov 2026) — ONE panel, one date range, three
@@ -131,7 +132,7 @@ export function ReturnSourcesPanel() {
     <section className="panel">
       <div className="panel-h flex-wrap gap-y-1.5 py-1.5">
         <span className="t">Where returns came from</span>
-        <span className="m">PIM equity book (All-Equity model) · one date range for the summary, the sleeves, the holdings and currency</span>
+        <span className="m">PIM equity book · All-Equity model</span>
       </div>
 
       <div className="flex flex-wrap items-center gap-2 px-3.5 pt-2.5">
@@ -162,18 +163,20 @@ export function ReturnSourcesPanel() {
       ) : summary ? (
         <div className={loading ? "opacity-60" : ""}>
           <div className="grid grid-cols-2 gap-x-4 gap-y-3 px-3.5 py-2.5 lg:grid-cols-4">
-            <Cell strong label="Recorded return" value={summary.recorded} note={`All-Equity model, ${cData.full.base} close to ${cData.full.end} close. The dashboard's own performance record.`} />
-            <Cell
-              label="Market"
-              value={summary.market}
-              note={summary.market == null ? "Benchmark history or the book's beta is not available." : `Beta ${summary.beta!.toFixed(2)} × a blend of the S&P 500 (${pts(summary.sp)}) and the TSX (${pts(summary.tsx)}) at ${summary.usMix!.toFixed(0)}% US. Estimate.`}
-            />
-            <Cell label="Currency" value={summary.currency} note={summary.currency == null ? "No USD/CAD history for this period." : "Unhedged US-dollar share × the USD/CAD move. Estimate; detail in section 3."} />
-            <Cell label="Selection" value={summary.selection} note={summary.selection == null ? "Needs the three figures beside it." : "What is left of the recorded return after market and currency: our stock and fund choices. Estimate."} />
+            <Cell strong label="Recorded return" value={summary.recorded} note={`${cData.full.base} to ${cData.full.end} · exact`} />
+            <Cell label="Market" value={summary.market} note={summary.market == null ? "Benchmark or beta not available" : `Beta ${summary.beta!.toFixed(2)} × S&P ${pts(summary.sp)} / TSX ${pts(summary.tsx)} · estimate`} />
+            <Cell label="Currency" value={summary.currency} note={summary.currency == null ? "No USD/CAD history" : "Unhedged US$ share × USD/CAD · estimate"} />
+            <Cell label="Selection" value={summary.selection} note={summary.selection == null ? "Needs the other three" : "Our stock and fund choices · estimate"} />
           </div>
-          <p className="px-3.5 pb-1 text-[11.5px] text-ink-3">
-            Recorded return = market + currency + selection. Only the recorded return is exact; the split uses today&apos;s beta, US / Canada mix and hedged list for the whole period.
-          </p>
+          <Explain prefKey="explain.perf.sources.summary" label="How the split is calculated" className="px-3.5 pb-2">
+            <ul className="list-disc pl-4">
+              <li>Recorded return = market + currency + selection. Only the recorded return is exact: it is the dashboard&apos;s own performance record for the All-Equity model, close to close.</li>
+              <li>Market = the book&apos;s beta{summary.beta != null ? ` (${summary.beta.toFixed(2)})` : ""} × a blend of the S&amp;P 500 in US$ and the TSX at the book&apos;s US / Canada mix{summary.usMix != null ? ` (${summary.usMix.toFixed(0)}% US)` : ""}.</li>
+              <li>Currency = the unhedged US-dollar share × the USD/CAD move; the detail is in section 3.</li>
+              <li>Selection = what is left of the recorded return after market and currency.</li>
+              <li>The split uses today&apos;s beta, US / Canada mix and hedged list for the whole period.</li>
+            </ul>
+          </Explain>
         </div>
       ) : null}
 

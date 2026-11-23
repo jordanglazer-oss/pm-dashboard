@@ -4,6 +4,7 @@ import React, { useEffect, useState } from "react";
 import { Sparkline } from "@/app/components/Sparkline";
 import { displayTicker } from "@/app/lib/ticker";
 import { usePersistedOpen } from "@/app/lib/useCollapsed";
+import { Explain } from "@/app/components/Explain";
 import { PERIOD_PRESETS, periodRange, type PeriodPreset } from "@/app/lib/period-presets";
 import type { CurrencyImpact, FxClass, FxRow } from "@/app/lib/currency-impact";
 
@@ -28,7 +29,6 @@ export type CurrencyResp = Resp;
  *  owns the range and the fetch (the merged "Where returns came from" panel). */
 export function CurrencyView({ data }: { data: Resp | null }) {
   const [showRows, toggleRows] = usePersistedOpen("aa.currencyImpact.rows", false);
-  const usd = data && data.fxPct != null ? (data.fxPct > 0 ? "rose" : data.fxPct < 0 ? "fell" : "was flat") : null;
   return (
     <>
     {!data ? (
@@ -39,40 +39,42 @@ export function CurrencyView({ data }: { data: Resp | null }) {
       <p className="px-3.5 py-3 text-[12.5px] text-ink-3">No USD/CAD history for this period.</p>
     ) : (
       <>
-        <div className="grid grid-cols-1 gap-3 px-3.5 py-3 sm:grid-cols-3">
+        <div className="grid grid-cols-2 gap-x-4 gap-y-3 px-3.5 py-3 lg:grid-cols-4">
           <div>
             <div className="text-[11px] uppercase tracking-[0.08em] text-ink-3">Currency contribution</div>
-            <div className={`text-[20px] font-semibold ${tone(data.contributionPct)}`}>{pts(data.contributionPct)}</div>
-            <div className="text-[12px] text-ink-3">
-              The US dollar {data.contributionPct != null && data.contributionPct < 0 ? "took" : "added"} about {Math.abs(data.contributionPct ?? 0).toFixed(2)} points {data.contributionPct != null && data.contributionPct < 0 ? "off" : "to"} the {PROFILE_LABEL[data.profile] ?? data.profile} return.
-            </div>
+            <div className={`text-[20px] font-semibold tabular-nums ${tone(data.contributionPct)}`}>{pts(data.contributionPct)}</div>
+            <div className="text-[12px] text-ink-3">points of the {PROFILE_LABEL[data.profile] ?? data.profile} return · estimate</div>
             <div className="mt-1">
               <Sparkline points={data.series} width={160} height={28} />
             </div>
           </div>
           <div>
             <div className="text-[11px] uppercase tracking-[0.08em] text-ink-3">US dollar vs Canadian</div>
-            <div className={`text-[20px] font-semibold ${tone(data.fxPct)}`}>{pts(data.fxPct)}</div>
-            <div className="text-[12px] text-ink-3">
-              The US dollar {usd} against the Canadian dollar{data.partial ? " (history starts after the chosen start)" : ""}.
-            </div>
+            <div className={`text-[20px] font-semibold tabular-nums ${tone(data.fxPct)}`}>{pts(data.fxPct)}</div>
+            <div className="text-[12px] text-ink-3">USD/CAD move{data.partial ? " · partial history" : ""}</div>
           </div>
           <div>
             <div className="text-[11px] uppercase tracking-[0.08em] text-ink-3">Unhedged US-dollar share</div>
-            <div className="text-[20px] font-semibold text-ink">{share(data.unhedgedWeight)}</div>
+            <div className="text-[20px] font-semibold tabular-nums text-ink">{share(data.unhedgedWeight)}</div>
             <div className="text-[12px] text-ink-3">
-              of the portfolio. CAD-hedged {share(data.hedgedWeight)}
-              {data.unclassifiedWeight > 0 ? ` · not classified ${share(data.unclassifiedWeight)}` : ""}.
+              CAD-hedged {share(data.hedgedWeight)}
+              {data.unclassifiedWeight > 0 ? ` · not classified ${share(data.unclassifiedWeight)}` : ""}
             </div>
           </div>
+          <div>
+            <div className="text-[11px] uppercase tracking-[0.08em] text-ink-3">Hedging effect</div>
+            <div className={`text-[20px] font-semibold tabular-nums ${tone(data.hedgingEffectPct)}`}>{pts(data.hedgingEffectPct)}</div>
+            <div className="text-[12px] text-ink-3">vs the same funds unhedged · estimate</div>
+          </div>
         </div>
-        <p className="px-3.5 pb-2 text-[12.5px] text-ink-2">
-          Hedging: the CAD-hedged holdings {data.hedgingEffectPct != null && data.hedgingEffectPct > 0 ? "saved" : data.hedgingEffectPct != null && data.hedgingEffectPct < 0 ? "gave up" : "made no difference of"}{" "}
-          <span className={tone(data.hedgingEffectPct)}>{Math.abs(data.hedgingEffectPct ?? 0).toFixed(2)} points</span> versus holding the same funds unhedged (before the cost of hedging).
-        </p>
-        <p className="px-3.5 pb-2 text-[11.5px] text-ink-3">
-          Estimate: today&apos;s model weights applied to the whole period. Hedged holdings: {data.hedgedList.join(", ")}. Fidelity Global Innovators is counted in full as unhedged. Separate from alpha, which is measured against the S&amp;P 500 in C$ and is already currency-neutral.
-        </p>
+        <Explain prefKey="explain.perf.currency" label="How currency is calculated" className="px-3.5 pb-2">
+          <ul className="list-disc pl-4">
+            <li>Currency contribution = the unhedged US-dollar share × the USD/CAD move, using today&apos;s model weights for the whole period.</li>
+            <li>Hedging effect = what the CAD-hedged holdings saved (+) or gave up (−) against holding the same funds unhedged, before the cost of hedging.</li>
+            <li>Hedged holdings: {data.hedgedList.join(", ")}. Fidelity Global Innovators is counted in full as unhedged.</li>
+            <li>Separate from alpha, which is measured against the S&amp;P 500 in C$ and is already currency-neutral.</li>
+          </ul>
+        </Explain>
         <button className="px-3.5 pb-2.5 text-[12.5px] text-accent" onClick={toggleRows}>
           {showRows ? "Hide" : "Show"} every holding ({data.rows.length})
         </button>
