@@ -48,6 +48,29 @@ const CANDIDATE_SETS: Record<string, { key: string; formula: string; note: strin
     { key: "segOpInc", formula: "FF_SEGMENT_OPER_INC(BUS,ANN,0)", note: "Business-segment operating income (profitability by segment)" },
     { key: "segNames", formula: "FF_SEGMENT_NAME(BUS,ANN,0)", note: "Business-segment names" },
   ],
+  // Option data through the FORMULA API (Nov 2026: CBOE's free option-chain
+  // feed started refusing automated requests, so the Hedging page needs a
+  // licensed source). Two questions, both answered by the error codes:
+  //   (1) does FactSet accept an OPTION CONTRACT as an id here?
+  //       ?candidates=options&id=SPY261218P00700000   (also try the -US form)
+  //   (2) does the underlying carry any option analytics?
+  //       ?candidates=options&id=SPY-US
+  // The formula names are best guesses — an unknown one just returns 107.
+  // NOTE: FactSet's full option chains live in a SEPARATE product (the FactSet
+  // Options API, /content/factset-options/v1/, POST), which the relay does not
+  // allow and which needs its own entitlement; this probe cannot reach it.
+  options: [
+    { key: "price", formula: "P_PRICE", note: "Last price of the id (works for any priced security)" },
+    { key: "bid", formula: "P_BID", note: "Bid" },
+    { key: "ask", formula: "P_ASK", note: "Ask" },
+    { key: "volume", formula: "P_VOLUME", note: "Volume" },
+    { key: "strike", formula: "P_OPT_STRIKE_PRICE", note: "Option strike (guess)" },
+    { key: "expiry", formula: "P_OPT_EXP_DATE", note: "Option expiry date (guess)" },
+    { key: "impliedVol", formula: "P_OPT_IMPLIED_VOL", note: "Option implied volatility (guess)" },
+    { key: "openInterest", formula: "P_OPT_OPEN_INTEREST", note: "Open interest (guess)" },
+    { key: "ivol30", formula: "P_IMPLIED_VOLATILITY(30)", note: "Underlying 30-day implied volatility (guess)" },
+    { key: "putCall", formula: "P_PUT_CALL_RATIO", note: "Underlying put/call ratio (guess)" },
+  ],
   // Round 3: FE_ESTIMATE(REPORT_DATE,...) + FE_GUIDANCE(...) are VALID (error 0)
   // but null for AAPL (no populated estimate report date; no formal guidance).
   // Re-probe on a name that reports on schedule AND guides (id=MSFT-US) to see
@@ -241,7 +264,8 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ ok: false, error: `Unknown set '${candSet}'. Use ${Object.keys(CANDIDATE_SETS).join(" | ")} | all.` });
     }
     try {
-      const diag = await crossSectionalDiagnostic(id, list.map((c) => c.formula));
+      // Encode the id so an option symbol with a space or "#" survives the trip; a plain id is unchanged.
+      const diag = await crossSectionalDiagnostic(encodeURIComponent(id), list.map((c) => c.formula));
       const results = list.map((c, i) => ({
         key: c.key,
         note: c.note,
