@@ -1,7 +1,8 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { getRedis } from "@/app/lib/redis";
 import { createLogger } from "@/app/lib/logger";
-import { isFundservCode } from "@/app/lib/factset-symbols";
+import { isFundservCode, resolveFactsetId } from "@/app/lib/factset-symbols";
+import { crossSectional } from "@/app/lib/factset";
 import { yahooClassShare } from "@/app/lib/yahoo-symbol";
 import { getCikForTicker, isCanadianTicker } from "@/app/lib/edgar";
 import { loadStreetTakeawaysFor, type StreetTakeaway } from "@/app/lib/street-takeaways";
@@ -180,10 +181,10 @@ export function classifyMove(movePct: number, beta: number, marketPct: number | 
 }
 
 /**
- * Same test against several industry ETFs (a tech name is set against XLK,
- * semis SMH and software IGV — a semis/AI sell-off like 2026-11-20, SMH
- * -10.6%, is a group move XLK alone hides). The ETF leaving the smallest
- * remainder is the one reported.
+ * Same test against several industry ETFs (a semis / hardware name is set
+ * against XLK and SMH — a semis/AI sell-off like 2026-11-20, SMH -10.6%, is
+ * a group move XLK alone hides). The ETF leaving the smallest remainder is
+ * the one reported.
  */
 export function classifyMoveAgainst(
   movePct: number,
@@ -204,12 +205,50 @@ export function classifyMoveAgainst(
   return { residual, class: cls, ...(best ? { symbol: best.symbol, pct: best.pct } : {}) };
 }
 
-/** The industry ETFs a holding is set against: its SPDR sector ETF, plus
- *  semis (SMH) and software (IGV) for technology names. */
-export function industryEtfs(sector: string | undefined): string[] {
+/** GICS industry → the narrower ETF that tracks it. Only technology
+ *  industries; everything else keeps its SPDR sector ETF alone. */
+export function industryEtf(gicsIndustry: string | null | undefined): string | undefined {
+  const s = (gicsIndustry ?? "").toLowerCase();
+  if (!s) return undefined;
+  if (s.includes("semiconductor") || s.includes("communications equipment") || s.includes("technology hardware") || s.includes("electronic equipment")) return "SMH";
+  if (s.includes("software") || s.includes("it services")) return "IGV";
+  return undefined;
+}
+
+/**
+ * The benchmarks a holding is set against: its SPDR sector ETF, plus — for a
+ * technology name whose GICS industry is KNOWN — semis/hardware (SMH) or
+ * software (IGV). Never both: picking the closer of the two would let a
+ * software name's own bad news hide behind a chip sell-off. Industry unknown
+ * (FactSet down, not covered) → the sector ETF only, the cautious default.
+ */
+export function industryEtfs(sector: string | undefined, gicsIndustry?: string | null): string[] {
   const base = sectorEtf(sector);
   if (!base) return [];
-  return base === "XLK" ? ["XLK", "SMH", "IGV"] : [base];
+  const narrow = base === "XLK" ? industryEtf(gicsIndustry) : undefined;
+  return narrow ? [base, narrow] : [base];
+}
+
+/** GICS industry per technology holding, one batched FactSet call. {} on any
+ *  failure — the watch then falls back to the sector ETF alone. */
+async function techIndustries(tickers: string[]): Promise<Map<string, string>> {
+  const out = new Map<string, string>();
+  const ids = new Map<string, string>();
+  for (const tk of tickers) {
+    const r = resolveFactsetId(tk);
+    if (r.source === "factset") ids.set(r.id, tk);
+  }
+  if (!ids.size) return out;
+  try {
+    const data = await crossSectional([...ids.keys()], ["FG_GICS_INDUSTRY"], 15_000);
+    for (const [id, tk] of ids) {
+      const v = data[id]?.FG_GICS_INDUSTRY;
+      if (typeof v === "string" && v.trim()) out.set(tk, v.trim());
+    }
+  } catch (e) {
+    log.warn("GICS industry lookup failed — tech names use XLK only today:", e instanceof Error ? e.message : e);
+  }
+  return out;
 }
 
 type StockLite = { ticker?: string; name?: string; bucket?: string; instrumentType?: string; sector?: string; beta?: number; healthData?: { earningsDate?: string } };
@@ -469,7 +508,9 @@ export async function runHoldingsWatch(opts: { force?: boolean } = {}): Promise<
   }
 
   // Quotes: holdings + the sector ETFs they need, 8 at a time.
-  const sectorSyms = [...new Set(holdings.flatMap((h) => industryEtfs(h.sector)))];
+  const gics = await techIndustries(holdings.filter((h) => sectorEtf(h.sector) === "XLK").map((h) => h.ticker!.trim().toUpperCase()));
+  const etfsFor = (h: StockLite) => industryEtfs(h.sector, gics.get(h.ticker!.trim().toUpperCase()));
+  const sectorSyms = [...new Set(holdings.flatMap(etfsFor))];
   const symbols = [...holdings.map((h) => yahooClassShare(toYahoo(h.ticker!.trim()))), ...sectorSyms];
   const quotes = new Map<string, Quote | null>();
   const queue = [...new Set(symbols)];
@@ -520,7 +561,7 @@ export async function runHoldingsWatch(opts: { force?: boolean } = {}): Promise<
     if (q.chg > MOVE_DOWN_PCT && q.chg < MOVE_UP_PCT) continue;
     const ca = isCanadian(tk);
     const mkt = ca ? tsx : spy;
-    const alts = industryEtfs(h.sector).map((symbol) => ({ symbol, pct: quotes.get(symbol)?.chg ?? null }));
+    const alts = etfsFor(h).map((symbol) => ({ symbol, pct: quotes.get(symbol)?.chg ?? null }));
     const beta = typeof h.beta === "number" && Number.isFinite(h.beta) && h.beta > 0 ? Math.min(h.beta, 3) : 1;
     const isFund = h.instrumentType === "etf";
     const c = classifyMoveAgainst(q.chg, beta, mkt?.chg ?? null, alts);
@@ -568,7 +609,7 @@ export async function runHoldingsWatch(opts: { force?: boolean } = {}): Promise<
     const thesis = theses[ev.ticker] ?? theses[ev.ticker.replace(/\.TO$|-T$/, "")];
     const header = [
       `=== THE MOVE (${today}) ===`,
-      `${ev.ticker}${ev.name ? ` (${ev.name})` : ""}: ${ev.movePct > 0 ? "+" : ""}${ev.movePct}% today. ${ev.marketSymbol} ${ev.marketPct ?? "?"}%, beta ${ev.beta}. Nasdaq (QQQ) ${qqq ? qqq.chg.toFixed(1) : "?"}%. Industry ETFs: ${industryEtfs(stock.sector).map((s) => `${s} ${quotes.get(s)?.chg?.toFixed(1) ?? "?"}%`).join(", ") || "none"}. Remainder after the closest benchmark about ${ev.residualPct > 0 ? "+" : ""}${ev.residualPct}%.`,
+      `${ev.ticker}${ev.name ? ` (${ev.name})` : ""}: ${ev.movePct > 0 ? "+" : ""}${ev.movePct}% today. ${ev.marketSymbol} ${ev.marketPct ?? "?"}%, beta ${ev.beta}. Nasdaq (QQQ) ${qqq ? qqq.chg.toFixed(1) : "?"}%. Industry ETFs: ${etfsFor(stock).map((s) => `${s} ${quotes.get(s)?.chg?.toFixed(1) ?? "?"}%`).join(", ") || "none"}. Remainder after the closest benchmark about ${ev.residualPct > 0 ? "+" : ""}${ev.residualPct}%.`,
       `PEERS: ${ev.peers?.length ? `other holdings in the same sector or theme that moved the same way today: ${ev.peers.join(", ")}` : "no related holding moved like this today"}. ${bookBig} of ${dayMoves.length} holdings fell ${Math.abs(MOVE_DOWN_PCT)}% or more today.`,
       "",
       `=== THESIS ===`,

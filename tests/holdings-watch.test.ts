@@ -4,10 +4,21 @@ import { vixBand } from "@/app/lib/agents/stance-watch";
 import { parseAgentJson } from "@/app/lib/agents/gateway";
 
 describe("holdings watch classification", () => {
-  it("sets tech names against XLK, semis and software", () => {
-    expect(industryEtfs("Information Technology")).toEqual(["XLK", "SMH", "IGV"]);
+  it("adds SMH or IGV only when the GICS industry is known", () => {
+    expect(industryEtfs("Information Technology", "Semiconductors & Semiconductor Equipment")).toEqual(["XLK", "SMH"]);
+    expect(industryEtfs("Information Technology", "Communications Equipment")).toEqual(["XLK", "SMH"]);
+    expect(industryEtfs("Technology", "Electronic Equipment, Instruments & Components")).toEqual(["XLK", "SMH"]);
+    expect(industryEtfs("Information Technology", "Software")).toEqual(["XLK", "IGV"]);
+    expect(industryEtfs("Information Technology", null)).toEqual(["XLK"]);
+    expect(industryEtfs("Communication Services", "Interactive Media & Services")).toEqual(["XLC"]);
     expect(industryEtfs("Financials")).toEqual(["XLF"]);
     expect(industryEtfs(undefined)).toEqual([]);
+  });
+
+  it("a software name's own drop is not hidden by a chip sell-off", () => {
+    // software name -10%, SPY -3.6%, XLK -7.3%, SMH -10.6% — only XLK + IGV apply
+    const r = classifyMoveAgainst(-12, 1.2, -3.6, [{ symbol: "XLK", pct: -7.3 }, { symbol: "IGV", pct: -4.6 }]);
+    expect(r.class).toBe("company");
   });
 
   it("explains a semis-led fall that XLK alone would call company-specific (2026-11-20)", () => {
@@ -16,7 +27,6 @@ describe("holdings watch classification", () => {
     const r = classifyMoveAgainst(-11.6, 1.3, -3.6, [
       { symbol: "XLK", pct: -7.3 },
       { symbol: "SMH", pct: -10.6 },
-      { symbol: "IGV", pct: -4.6 },
     ]);
     expect(r.class).toBe("sector");
     expect(r.symbol).toBe("SMH");
