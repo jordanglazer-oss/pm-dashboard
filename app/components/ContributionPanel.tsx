@@ -4,6 +4,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import { usePersistedOpen } from "@/app/lib/useCollapsed";
 import type { RangeAttributionResponse } from "@/app/lib/range-attribution-load";
 import type { HoldingContribution, Sleeve } from "@/app/lib/range-attribution";
+import { SiaLogControls } from "@/app/components/SiaLogControls";
 
 /**
  * Contribution by holding (Nov 2026) — what added and what detracted over ANY
@@ -119,7 +120,7 @@ function MonthTable({ rows }: { rows: Extract<RangeAttributionResponse, { ok: tr
   );
 }
 
-export function ContributionView({ data, loading }: { data: RangeAttributionResponse | null; loading: boolean }) {
+export function ContributionView({ data, loading, onSourceChanged }: { data: RangeAttributionResponse | null; loading: boolean; onSourceChanged?: () => void }) {
   const [sleeve, setSleeve] = useState<"all" | Sleeve>("all");
   const [showAll, toggleAll] = usePersistedOpen("perf.contribution.table", false);
   const [showNotes, toggleNotes] = usePersistedOpen("perf.contribution.notes", false);
@@ -146,6 +147,7 @@ export function ContributionView({ data, loading }: { data: RangeAttributionResp
         </div>
         {loading && <span className="text-[12px] text-ink-3">Loading prices…</span>}
       </div>
+      {onSourceChanged && <SiaLogControls source={data && data.ok ? data.source : "tradelog"} onChanged={onSourceChanged} />}
       {!data ? (
         <p className="px-3.5 py-3 text-[12.5px] text-ink-3">Loading…</p>
       ) : !data.ok ? (
@@ -154,7 +156,7 @@ export function ContributionView({ data, loading }: { data: RangeAttributionResp
         <div className={loading ? "opacity-60" : ""}>
           {data.detailFrom && (
             <div className="mx-3.5 mt-2.5 rounded-control border border-line bg-surface-2 px-3 py-2 text-[12.5px] text-ink-2">
-              <span className="font-semibold text-ink">Holding detail starts {data.detailFrom}.</span> The trade log begins that day, so what was held earlier is not on file. Everything in this section covers {data.range.base} to {data.range.end} ({data.range.days} trading days); the recorded return for that same stretch is <span className="font-medium">{pts(data.reconciliation.book.recordedPct)}</span>. The summary above covers the whole period.
+              <span className="font-semibold text-ink">Holding detail starts {data.detailFrom}.</span> {data.source === "sia" ? "The SIA log begins that day." : "The trade log begins that day, so what was held earlier is not on file."} Everything in this section covers {data.range.base} to {data.range.end} ({data.range.days} trading days); the recorded return for that same stretch is <span className="font-medium">{pts(data.reconciliation.book.recordedPct)}</span>. The summary above covers the whole period.
             </div>
           )}
           {(() => {
@@ -164,7 +166,7 @@ export function ContributionView({ data, loading }: { data: RangeAttributionResp
               <>
                 {off && (
                   <div className="mx-3.5 mt-2.5 rounded-control border border-warn-border bg-warn-soft px-3 py-2 text-[12.5px] text-ink">
-                    <span className="font-semibold">Treat the holding figures below with caution for this period.</span> They add up to {pts(data.estimatedReturnPct)}, but the recorded return is {pts(data.reconciliation.book.recordedPct)} — a gap of {Math.abs(gap!).toFixed(2)} points. The sleeve &quot;Recorded&quot; column is exact; the per-holding split is an estimate rebuilt from the trade log.
+                    <span className="font-semibold">{data.source === "sia" ? "The holdings and the recorded return do not agree for this period." : "Treat the holding figures below with caution for this period."}</span> They add up to {pts(data.estimatedReturnPct)}, but the recorded return is {pts(data.reconciliation.book.recordedPct)} — a gap of {Math.abs(gap!).toFixed(2)} points. {data.source === "sia" ? "The holdings here are the real ones from the SIA log; the recorded return comes from the dashboard's own position books, so a gap means the two differ over this period. The monthly table shows where." : "The sleeve \"Recorded\" column is exact; the per-holding split is an estimate rebuilt from the trade log."}
                     {data.byMonth.length > 1 && <MonthTable rows={data.byMonth} />}
                   </div>
                 )}

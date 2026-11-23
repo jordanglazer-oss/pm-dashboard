@@ -31,9 +31,9 @@ const parse = <T,>(raw: string | null, fallback: T): T => {
   }
 };
 /** Currency of a name that is no longer in the model, from its listing suffix. */
-const guessCurrency = (s: string): "CAD" | "USD" => (/\.U$/i.test(s) ? "USD" : /(-T|\.TO|\.NE|-NE|\.V)$/i.test(s) || /^[A-Z]{2,4}\d{2,5}$/i.test(s) ? "CAD" : "USD");
+export const guessCurrency = (s: string): "CAD" | "USD" => (/\.U$/i.test(s) ? "USD" : /(-T|\.TO|\.NE|-NE|\.V)$/i.test(s) || /^[A-Z]{2,4}\d{2,5}$/i.test(s) ? "CAD" : "USD");
 
-async function fxHistory(sinceIso: string): Promise<PriceSeries> {
+export async function fxHistory(sinceIso: string): Promise<PriceSeries> {
   try {
     const p1 = Math.floor(new Date(sinceIso).getTime() / 1000) - 10 * 86_400;
     const res = await fetch(`https://query2.finance.yahoo.com/v8/finance/chart/USDCAD%3DX?period1=${p1}&period2=${Math.floor(Date.now() / 1000)}&interval=1d`, { cache: "no-store", headers: { "User-Agent": UA } });
@@ -121,6 +121,12 @@ export type RangeAttributionResponse =
       detailFrom: string | null;
       /** Estimate vs record month by month — shows where a gap arises. */
       byMonth: MonthCheck[];
+      /** Where the holdings came from: the SIA transaction log (actual units) or the dashboard's trade log (model target weights). */
+      source: "sia" | "tradelog";
+      /** Set when the SIA log is the source. */
+      sia?: { first: string; through: string; importedAt: string; leftOut: string[] };
+      /** True when an SIA log is on file and switched on (so the panel can offer the switch). */
+      siaAvailable?: boolean;
       builtAt: string;
     } & Omit<RangeAttribution, "daily">);
 
@@ -257,6 +263,7 @@ export async function loadRangeAttribution(from: string | null, to: string): Pro
     logStartsOn: ctx.firstRebalance,
     full: { base, end, days: fullCalendar.length - 1, recordedPct: seriesReturnPct(series("allEquity"), base, end) },
     detailFrom: clamped ? logStart : null,
+    source: "tradelog",
     byMonth: checkByMonth(result.base, result.daily, (p) => new Map(series(p).map((e) => [e.date, e.value]))),
     builtAt: new Date().toISOString(),
     ...rest,

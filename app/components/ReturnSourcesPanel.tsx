@@ -65,6 +65,8 @@ export function ReturnSourcesPanel() {
   const [fx, setFx] = useState<{ key: string; data: CurrencyResp } | null>(null);
   const [indexes, setIndexes] = useState<IndexResp | null>(null);
   const [meta, setMeta] = useState<AttrMeta | null>(null);
+  // Bumped when the holdings source changes (an SIA log loaded or switched), to re-read.
+  const [nonce, setNonce] = useState(0);
 
   const range = periodRange(preset, custom);
   const from = range.from ?? "";
@@ -104,7 +106,7 @@ export function ReturnSourcesPanel() {
     return () => {
       live = false;
     };
-  }, [from, to, ready]);
+  }, [from, to, ready, nonce]);
 
   const cData = contrib?.data ?? null;
   const fData = fx?.data ?? null;
@@ -176,12 +178,8 @@ export function ReturnSourcesPanel() {
       ) : null}
 
       {/* ── 2 · By sleeve and holding ── */}
-      {(!cData || cData.ok) && (
-        <>
-          <div className="border-t border-line px-3.5 pt-3 text-[11px] font-semibold uppercase tracking-[0.08em] text-ink-3">2 · By sleeve and holding</div>
-          <ContributionView data={cData} loading={loading} />
-        </>
-      )}
+      <div className="border-t border-line px-3.5 pt-3 text-[11px] font-semibold uppercase tracking-[0.08em] text-ink-3">2 · By sleeve and holding</div>
+      <ContributionView data={cData} loading={loading} onSourceChanged={() => setNonce((n) => n + 1)} />
 
       {/* ── 3 · Currency detail ── */}
       <div className="border-t border-line px-3.5 py-2.5">

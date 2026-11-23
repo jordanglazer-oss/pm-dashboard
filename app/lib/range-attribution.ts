@@ -29,6 +29,8 @@ export type HoldingInput = {
   sleeve: Sleeve;
   currency: "CAD" | "USD";
   steps: WeightStep[];
+  /** When present, the ACTUAL weight for the return of calendar[t] at index t-1 (from real units); `steps` is then ignored. */
+  dailyWeights?: number[];
   prices: PriceSeries;
   /** Plain-language notes on how this holding's weights were derived. */
   notes?: string[];
@@ -272,7 +274,7 @@ export function computeRangeAttribution(calendar: string[], holdings: HoldingInp
     const sDay: Record<Sleeve, { w: number; wr: number }> = { core: { w: 0, wr: 0 }, thematic: { w: 0, wr: 0 }, stocks: { w: 0, wr: 0 } };
     const dayWr: number[] = [];
     holdings.forEach((h, i) => {
-      const w = weightAt(h.steps, prev);
+      const w = h.dailyWeights ? (h.dailyWeights[t - 1] ?? 0) : weightAt(h.steps, prev);
       if (!(w > 0)) {
         dayWr.push(0);
         return;
@@ -329,7 +331,7 @@ export function computeRangeAttribution(calendar: string[], holdings: HoldingInp
         daysHeld: a.days,
         heldFrom: a.first,
         heldTo: a.last,
-        status: (weightAt(h.steps, end) > 0 ? "held" : "closed") as "held" | "closed",
+        status: ((h.dailyWeights ? (h.dailyWeights[n - 1] ?? 0) : weightAt(h.steps, end)) > 0 ? "held" : "closed") as "held" | "closed",
         openedInRange: !!a.first && a.first !== calendar[1],
         missingPriceDays: a.missing,
         notes: [...(h.notes ?? []), ...(a.missing ? [`no price on ${a.missing} of ${a.days} day(s) — those days counted as 0%`] : [])],
