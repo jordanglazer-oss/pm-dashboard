@@ -14,6 +14,7 @@ import {
   type RankedRow,
   type RankedListRef,
 } from "@/app/lib/research-ranked";
+import { trackingFor, TOP_MIN_LISTS, CROWDED_MIN_LISTS, type RankedHistory, type RankedTracking } from "@/app/lib/ranked-source-history";
 import { displayTicker } from "@/app/lib/ticker";
 import TickerLink from "@/app/components/TickerLink";
 import { AppIcon } from "@/app/components/AppIcon";
@@ -34,6 +35,11 @@ const PREF_CCY = "research.ranked.ccy";
 const PREF_FELL_OFF = "research.ranked.fellOff";
 
 type MinLists = 1 | 2 | 3;
+
+/** Per-row tracking handed to the table (first appearance, top-since performance, flags). */
+type TopPerf = { since: string; baseline: boolean; priceThen: number | null; priceNow: number | null; pct: number | null };
+type RowExtra = { tr: RankedTracking; perf?: TopPerf; sectorGap: boolean; crowded: boolean };
+const shortDate = (iso: string) => new Date(`${iso}T12:00:00Z`).toLocaleDateString("en-CA", { month: "short", day: "numeric", timeZone: "UTC" });
 type Ccy = "Both" | "CAD" | "USD";
 
 /** One source citation — plain ink-2 text linking to the source pane. */
@@ -61,7 +67,10 @@ function RankedTable({
   adding,
   resolvedNames,
   showCountry = false,
+  extra,
 }: {
+  /** First-appearance tracking per row (absent until the log has loaded). */
+  extra?: (row: RankedRow) => RowExtra | undefined;
   title: string;
   /** Omitted for the combined (Both) table, where each row carries its own flag. */
   flag?: "flagCA" | "flagUS";
@@ -83,7 +92,7 @@ function RankedTable({
         <EmptyState className="!py-8" glyph={<AppIcon name="list" size={18} />} title="No names match" body="Nothing on these lists passes the current filters." />
       ) : (
         <div className="tbl-wrap">
-          <table className="data-table min-w-[760px]">
+          <table className="data-table min-w-[860px]">
             <thead>
               <tr>
                 <th className="n w-10 !pl-3.5">#</th>
@@ -91,6 +100,7 @@ function RankedTable({
                 <th>Name</th>
                 <th>Sector</th>
                 <th className="n" title="Number of bullish Research-tab lists the name is on">Lists</th>
+                <th title="When the name first appeared on a list it is still on, and how it has done since reaching the top of the ranking (3+ lists)">Tracked</th>
                 <th>Sources</th>
                 <th className="n !pr-3.5">Status</th>
               </tr>
@@ -99,6 +109,7 @@ function RankedTable({
               {rows.map((r, i) => {
                 const suggested = r.listCount >= SUGGESTED_MIN_LISTS;
                 const name = r.name || resolvedNames[r.ticker] || "";
+                const x = extra?.(r);
                 return (
                   <tr key={r.key} className={suggested ? "" : "text-ink-2"}>
                     <td className="n !pl-3.5 text-ink-3">{i + 1}</td>
@@ -114,11 +125,43 @@ function RankedTable({
                           Bearish
                         </span>
                       )}
+                      {x && x.tr.newOn.length > 0 && (
+                        <span className="ml-1.5 text-[11px] font-medium text-accent" title={`New in the last 7 days on: ${r.lists.filter((l) => x.tr.newOn.includes(l.key)).map((l) => l.label).join(", ")}`}>
+                          New
+                        </span>
+                      )}
+                      {x?.sectorGap && (
+                        <span className="ml-1.5 text-[11px] text-warn" title={`Sector gap: on ${r.listCount} lists, in a sector (${r.sector}) the portfolio does not hold`}>
+                          Sector gap
+                        </span>
+                      )}
+                      {x?.crowded && (
+                        <span className="ml-1.5 text-[11px] text-ink-3" title={`Crowded: on ${r.listCount} lists. Widely owned ideas tend to fall hardest in a sell-off.`}>
+                          Crowded
+                        </span>
+                      )}
                     </td>
                     <td className="max-w-[240px] truncate" title={name}>{name || "—"}</td>
                     <td className="text-ink-2">{r.sector || "—"}</td>
                     <td className={`n ${suggested ? "font-medium text-ink" : "text-ink-3"}`} title={suggested ? `On ${r.listCount} lists — qualifies for the Suggested Watchlist` : `On ${r.listCount} list`}>
                       {r.listCount}
+                    </td>
+                    <td>
+                      {x?.tr.since ? (
+                        <span className="text-[12px] text-ink-2" title={x.tr.sinceIsBaseline ? `On a list since at least ${x.tr.since} (when tracking began, or the list's own added date)` : `First appeared on a list it is still on: ${x.tr.since}`}>
+                          {x.tr.sinceIsBaseline ? "≤ " : ""}{shortDate(x.tr.since)}
+                          {x.tr.topSince && (
+                            <span className="text-ink-3" title={`On ${TOP_MIN_LISTS}+ lists since ${x.tr.topSince}${x.tr.topIsBaseline ? " (when tracking began)" : ""}${x.perf?.priceThen != null ? ` · price then ${x.perf.priceThen.toFixed(2)}, now ${x.perf.priceNow?.toFixed(2) ?? "?"}` : ""}`}>
+                              {" · top "}{shortDate(x.tr.topSince)}
+                              {x.perf?.pct != null && (
+                                <span className={`font-mono ${x.perf.pct >= 0 ? "text-pos" : "text-neg"}`}> {x.perf.pct >= 0 ? "+" : ""}{x.perf.pct.toFixed(1)}%</span>
+                              )}
+                            </span>
+                          )}
+                        </span>
+                      ) : (
+                        <span className="text-ink-3">—</span>
+                      )}
                     </td>
                     <td className="!whitespace-normal text-ink-2">
                       <span className="inline-flex flex-wrap items-center gap-x-1">
@@ -174,6 +217,24 @@ export default function RankedResearchPage() {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [adding, setAdding] = useState<string | null>(null);
   const [resolvedNames, setResolvedNames] = useState<Record<string, string>>({});
+  const [tracking, setTracking] = useState<{ history: RankedHistory; today: string; perf?: Record<string, TopPerf> } | null>(null);
+
+  // First-appearance log (read-only). The table renders without it; the
+  // top-since performance arrives in a second, slower request.
+  useEffect(() => {
+    let alive = true;
+    fetch("/api/ranked-source-history", { cache: "no-store" })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => {
+        if (!alive || !d?.history) return;
+        setTracking({ history: d.history, today: d.today });
+        return fetch("/api/ranked-source-history?perf=1", { cache: "no-store" })
+          .then((r) => (r.ok ? r.json() : null))
+          .then((p) => { if (alive && p?.perf) setTracking((t) => (t ? { ...t, perf: p.perf } : t)); });
+      })
+      .catch(() => {});
+    return () => { alive = false; };
+  }, []);
 
   useEffect(() => {
     let alive = true;
@@ -240,6 +301,19 @@ export default function RankedResearchPage() {
     held: allRows.filter((r) => r.held).length,
     listsLoaded: RANKED_LISTS.filter((l) => Array.isArray(research?.[l.key]) && (research?.[l.key] as unknown[]).length > 0).length,
   }), [allRows, research]);
+
+  /** Sectors the Portfolio already holds — for the sector-gap flag. */
+  const heldSectors = useMemo(() => new Set(stocks.filter((s) => s.bucket === "Portfolio" && s.sector).map((s) => s.sector!.trim().toLowerCase())), [stocks]);
+  const rowExtra = useCallback((row: RankedRow): RowExtra | undefined => {
+    if (!tracking) return undefined;
+    const sector = row.sector.trim().toLowerCase();
+    return {
+      tr: trackingFor(tracking.history, row, tracking.today),
+      perf: tracking.perf?.[row.key],
+      sectorGap: row.listCount >= TOP_MIN_LISTS && !!sector && heldSectors.size > 0 && !heldSectors.has(sector),
+      crowded: row.listCount >= CROWDED_MIN_LISTS,
+    };
+  }, [tracking, heldSectors]);
 
   const addToWatchlist = useCallback(async (row: RankedRow) => {
     if (row.held) return;
@@ -329,13 +403,13 @@ export default function RankedResearchPage() {
         )}
         {/* Both = ONE ranking, Canadian and US names together, each tagged. */}
         {ccy === "Both" && (
-          <RankedTable title="Canadian + US" showCountry rows={filtered} onWatch={addToWatchlist} adding={adding} resolvedNames={resolvedNames} />
+          <RankedTable title="Canadian + US" showCountry rows={filtered} extra={rowExtra} onWatch={addToWatchlist} adding={adding} resolvedNames={resolvedNames} />
         )}
         {ccy === "CAD" && (
-          <RankedTable title="Canadian" flag="flagCA" rows={cad} onWatch={addToWatchlist} adding={adding} resolvedNames={resolvedNames} />
+          <RankedTable title="Canadian" flag="flagCA" rows={cad} extra={rowExtra} onWatch={addToWatchlist} adding={adding} resolvedNames={resolvedNames} />
         )}
         {ccy === "USD" && (
-          <RankedTable title="US" flag="flagUS" rows={usd} onWatch={addToWatchlist} adding={adding} resolvedNames={resolvedNames} />
+          <RankedTable title="US" flag="flagUS" rows={usd} extra={rowExtra} onWatch={addToWatchlist} adding={adding} resolvedNames={resolvedNames} />
         )}
 
         {/* Fell off — persisted fold (default collapsed, same pref as before). */}

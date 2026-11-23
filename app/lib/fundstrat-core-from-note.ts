@@ -36,6 +36,7 @@ import { getRedis } from "./redis";
 import type { ResearchState } from "./defaults";
 import { applyResearchEntries, type ResearchMergeSummary } from "./research-merge";
 import { logResearchRemovals } from "./research-removals";
+import { recordRankedHistory } from "./ranked-source-history";
 import type { ScrapedRbcRow } from "@/app/api/research-scrape/route";
 
 export type CoreListKind = "largeCap" | "smid";
@@ -193,6 +194,7 @@ export async function syncCoreListsFromLeeNote(text: string): Promise<CoreListSy
 
   if (changed) {
     await redis.set("pm:research", JSON.stringify(state));
+    await recordRankedHistory(redis, state); // write-aside; never throws
     for (const r of removals) {
       await logResearchRemovals(redis, r.tickers, r.source).catch((err) =>
         console.error("[Core lists] removal log failed:", err),
