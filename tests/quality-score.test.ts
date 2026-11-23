@@ -2,7 +2,8 @@ import { describe, expect, it } from "vitest";
 import { percentileOf, winsorSort } from "@/app/lib/growth-score";
 import { buildQualityBands, computeQualityScore, deriveQualityInputs, MIN_GROUP_SIZE, QUALITY_TOP_MARK_FLOOR_PCT, type QualityBands, type RawQualityRow } from "@/app/lib/quality-score";
 
-const META = { calibratedAt: "2026-11-22T00:00:00.000Z", listVersion: "test" };
+// "now", not a fixed date: bands older than 450 days are refused by the runtime guard, and a fixed date would start failing the deploy gate in 2028.
+const META = { calibratedAt: new Date().toISOString(), listVersion: "test" };
 
 /** `n` companies in one group; company i has ROIC 2i, flat trend, margin 3i, flat trend. */
 function peers(group: string, sector: string, n: number) {

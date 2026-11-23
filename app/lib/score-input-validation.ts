@@ -58,6 +58,8 @@ export type MetricExpectation = {
   groupMedianRange: Range;
   /** Groups for which the metric is dropped by design (not counted as missing). */
   droppedFor?: string[];
+  /** When set, the metric applies ONLY to these groups (e.g. return on assets: banks). */
+  onlyFor?: string[];
 };
 
 const q = (sorted: number[], p: number): number | null => {
@@ -117,7 +119,7 @@ export function runCalibrationChecks(args: {
 
   const metrics: CalibrationReport["metrics"] = {};
   for (const [m, exp] of Object.entries(expectations)) {
-    const applies = rows.filter((r) => !(exp.droppedFor ?? []).includes(r.group));
+    const applies = rows.filter((r) => !(exp.droppedFor ?? []).includes(r.group) && (!exp.onlyFor || exp.onlyFor.includes(r.group)));
     const vals = applies.map((r) => r.values[m]).filter(isFiniteNumber).sort((a, b) => a - b);
     const exclusions: Record<string, number> = {};
     for (const r of applies) for (const e of r.excluded) if (e.metric === m) exclusions[reasonKey(e.reason)] = (exclusions[reasonKey(e.reason)] ?? 0) + 1;
