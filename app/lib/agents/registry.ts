@@ -44,6 +44,7 @@ export const WATCHERS: WatcherDef[] = [
   { id: "theme-review", label: "Theme review", phase: 5, defaultModel: "sonnet", what: "Reviews a theme and our exposure to it after a large move" },
   { id: "sunday-memo", label: "Sunday memo", phase: 5, defaultModel: "sonnet", what: "The weekly memo on the book, the stance and open threads" },
   { id: "portfolio-audit", label: "Portfolio audit", phase: 6, defaultModel: "haiku", what: "Plain rules, no AI cost: every held stock has a signed, current thesis, and nothing marked broken or tripped has been left sitting" },
+  { id: "devils-advocate", label: "Devil's advocate", phase: 6, defaultModel: "sonnet", what: "Once a month, the strongest case against every individual stock we hold, from what is on file, ready for the first-Monday review" },
   { id: "watchlist-watch", label: "Watchlist watch", phase: 6, defaultModel: "haiku", shadow: "sonnet", what: "Flags watchlist names whose long-term case has strengthened, with a buy case" },
 ];
 
