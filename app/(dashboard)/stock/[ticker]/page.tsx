@@ -23,6 +23,7 @@ import ScoreHistory from "@/app/components/ScoreHistory";
 import ThesisTile from "@/app/components/ThesisTile";
 import { ThesisRequiredBanner } from "@/app/components/ThesisRequiredBanner";
 import StreetTakeawaysTile from "@/app/components/StreetTakeawaysTile";
+import AnalystTrendTile from "@/app/components/AnalystTrendTile";
 import { StockSynthesisTile } from "@/app/components/StockSynthesisTile";
 import { LaneTile } from "@/app/components/LaneTile";
 import { StockSummaryCard } from "@/app/components/StockSummaryCard";
@@ -2586,6 +2587,9 @@ export default function StockDetailPage() {
         <div className="flex min-w-0 flex-col gap-3.5">
           {/* Street takeaways — the post-earnings street read. */}
           {scoreable && <StreetTakeawaysTile ticker={stock.ticker} />}
+
+          {/* Analyst trend — consensus over time (read-only, not scored). */}
+          {scoreable && <AnalystTrendTile ticker={stock.ticker} />}
 
           {/* ── Risk & factors: three label/value reads, each with its full
               content one persisted click away (inside the sub-components). ── */}
