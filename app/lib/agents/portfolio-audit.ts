@@ -2,10 +2,13 @@ import { getRedis } from "@/app/lib/redis";
 import { createLogger } from "@/app/lib/logger";
 import { bucketTests, type BucketStock } from "@/app/lib/sleeve-targets";
 import { sameSymbol } from "@/app/lib/model-staging";
-import type { PimModelData } from "@/app/lib/pim-types";
+import type { EquityBucket, PimModelData, PimPortfolioPositions } from "@/app/lib/pim-types";
 import type { KillCondition, ThesisPillar } from "@/app/lib/kill-conditions";
-import { listFlags, raiseFlag, type AgentFlag, type FlagPriority } from "./flags";
+import { fetchLivePriceSnapshot } from "@/app/lib/live-prices";
+import { ANALYST_HISTORY_KEY, type AnalystHistory } from "@/app/lib/analyst-history";
+import { listFlags, raiseFlag, type AgentFlag } from "./flags";
 import { readAgentSettings, isWatcherOn } from "./settings";
+import { AUDIT_RULES, MAIN_PROFILES, analystFindings, constructionFindings, driftFindings, driftRows, type AuditFinding, type SectorStock } from "./portfolio-audit-rules";
 
 /**
  * Portfolio audit (Nov 2026) — plain rules, no model call, $0. The first of
@@ -16,8 +19,13 @@ import { readAgentSettings, isWatcherOn } from "./settings";
  * Deliberately built on RAW facts (thesis dates, pillar statuses, tripped
  * breakers) — not the composite score, which the team is not relying on.
  *
+ * Also (app/lib/agents/portfolio-audit-rules.ts): position drift vs the
+ * model (live prices), how the stock sleeve is constructed, and the
+ * sell-side trend from the nightly consensus log.
+ *
  * Held stocks = the PIM model's equity holdings outside Core and Managed
- * Alpha. Reads pm:pim-models, pm:stocks and pm:position-theses READ-ONLY.
+ * Alpha. Reads pm:pim-models, pm:stocks, pm:position-theses,
+ * pm:pim-positions and pm:analyst-history READ-ONLY.
  * Writes only flags (through raiseFlag) and its own last-run record
  * pm:agent-state:portfolio-audit (overwritten each run; safe to nuke).
  *
@@ -31,19 +39,8 @@ const log = createLogger("Portfolio-audit");
 const STATE_KEY = "pm:agent-state:portfolio-audit";
 export const WATCHER = "portfolio-audit";
 
-/** Defaults — proposed to the PM for approval; change here only. */
-export const AUDIT_RULES = {
-  /** A thesis signed longer ago than this is "stale". */
-  thesisStaleDays: 180,
-  /** A pillar marked broken this long with the name still held. */
-  brokenPillarDays: 14,
-  /** A breaker tripped this long with the name still held. */
-  trippedDays: 14,
-  /** Two or more pillars on "watch" for this long. */
-  watchPillarDays: 60,
-};
-
-export type AuditFinding = { rule: string; priority: FlagPriority; ticker?: string; title: string; detail: string; suggestion: string; dedupeKey: string; names?: string[] };
+// Thresholds and the finding shape live with the pure rules.
+export { AUDIT_RULES, type AuditFinding };
 export type AuditResult = { ok: boolean; skipped?: string; error?: string; date: string; held: string[]; findings: AuditFinding[]; raised: string[]; alreadyOnFile: string[] };
 
 type Thesis = { why?: string; pillars?: ThesisPillar[]; killConditions?: KillCondition[]; underwrittenAt?: string };
@@ -111,7 +108,7 @@ export function auditFindings(models: PimModelData | null, stocks: BucketStock[]
     }
   }
 
-  const list = (rule: string, priority: FlagPriority, names: string[], title: string, detail: string, suggestion: string) => {
+  const list = (rule: string, priority: AuditFinding["priority"], names: string[], title: string, detail: string, suggestion: string) => {
     if (names.length) out.push({ rule, priority, title, detail: `${detail} ${names.join(", ")}.`, suggestion, dedupeKey: `audit-${rule}-${month}`, names });
   };
   list("no-signed-thesis", "medium", unsigned, `${unsigned.length} held stock${unsigned.length === 1 ? " has" : "s have"} no signed thesis`, `We own these with no signed thesis on file, so nothing states why we hold them or what would make us sell:`, "Underwrite each one on the Thesis desk (Draft with AI, then sign), or decide it should not be held.");
@@ -124,17 +121,70 @@ export function auditFindings(models: PimModelData | null, stocks: BucketStock[]
 
 async function load() {
   const redis = await getRedis();
-  const [modelsRaw, stocksRaw, thesesRaw] = await Promise.all([redis.get("pm:pim-models"), redis.get("pm:stocks"), redis.get("pm:position-theses")]);
+  const [modelsRaw, stocksRaw, thesesRaw, positionsRaw, analystRaw] = await Promise.all([redis.get("pm:pim-models"), redis.get("pm:stocks"), redis.get("pm:position-theses"), redis.get("pm:pim-positions"), redis.get(ANALYST_HISTORY_KEY)]);
   const stocksParsed = parse<unknown>(stocksRaw, []);
-  const stocks = (Array.isArray(stocksParsed) ? stocksParsed : ((stocksParsed as { stocks?: unknown[] })?.stocks ?? [])) as BucketStock[];
-  return { models: parse<PimModelData | null>(modelsRaw, null), stocks, theses: parse<Record<string, Thesis>>(thesesRaw, {}), ok: !!modelsRaw && !!thesesRaw };
+  const stocks = (Array.isArray(stocksParsed) ? stocksParsed : ((stocksParsed as { stocks?: unknown[] })?.stocks ?? [])) as (BucketStock & SectorStock)[];
+  const books = parse<{ portfolios?: PimPortfolioPositions[] } | null>(positionsRaw, null)?.portfolios;
+  const analyst = parse<AnalystHistory | null>(analystRaw, null);
+  return {
+    models: parse<PimModelData | null>(modelsRaw, null),
+    stocks,
+    theses: parse<Record<string, Thesis>>(thesesRaw, {}),
+    books: Array.isArray(books) ? books : [],
+    analyst: analyst && typeof analyst === "object" && !Array.isArray(analyst) ? analyst : {},
+    ok: !!modelsRaw && !!thesesRaw,
+  };
+}
+
+const ccyOf = (symbol: string): "CAD" | "USD" => {
+  const t = symbol.toUpperCase();
+  if (t.endsWith(".U")) return "USD";
+  return t.endsWith("-T") || t.endsWith(".TO") || t.endsWith(".NE") || /^[A-Z]{2,4}\d{2,5}$/.test(t) ? "CAD" : "USD";
+};
+
+/**
+ * The rules beyond the thesis store: construction, the analyst trend and
+ * drift. Drift needs live prices — the same snapshot helper the daily-value
+ * job uses (Yahoo incl. class shares, FUNDSERV NAVs, USD→CAD). Read-only.
+ * A price that cannot be fetched leaves its book out; a failed fetch leaves
+ * drift out altogether — missing data never becomes a finding.
+ */
+async function extraFindings(models: PimModelData | null, stocks: (BucketStock & SectorStock)[], books: PimPortfolioPositions[], analyst: AnalystHistory, held: string[], today: string): Promise<AuditFinding[]> {
+  const pim = models?.groups?.find((g) => g.id === "pim");
+  if (!pim || !models) return [];
+  const tests = bucketTests(stocks, models);
+  const bucket = (sym: string): EquityBucket => (tests.isCore(sym) ? "core" : tests.isThematic(sym) ? "thematic" : "alpha");
+  const out: AuditFinding[] = [...constructionFindings(pim, bucket, stocks, today), ...analystFindings(held, analyst, today)];
+  try {
+    const main = books.filter((b) => b.groupId === "pim" && MAIN_PROFILES.includes(b.profile));
+    const symbols = [...new Set(main.flatMap((b) => (b.positions ?? []).filter((p) => p.units > 0).map((p) => p.symbol)))];
+    if (symbols.length) {
+      const prices: Record<string, number | null> = {};
+      const all = [...symbols, "USDCAD=X"];
+      for (let i = 0; i < all.length; i += 50) Object.assign(prices, (await fetchLivePriceSnapshot(all.slice(i, i + 50))).prices);
+      const fx = prices["USDCAD=X"];
+      const currency = (sym: string) => pim.holdings.find((h) => sameSymbol(h.symbol, sym))?.currency ?? ccyOf(sym);
+      const priceCad = (sym: string) => {
+        const p = prices[sym];
+        if (p == null || !(p > 0)) return null;
+        if (currency(sym) !== "USD") return p;
+        return fx != null && fx > 0 ? p * fx : null;
+      };
+      out.push(...driftFindings(driftRows(pim, bucket, main, priceCad), today));
+    }
+  } catch (e) {
+    log.warn("drift check skipped (prices):", e);
+  }
+  return out;
 }
 
 /** What the audit finds right now. Read-only — raises nothing. */
 export async function previewPortfolioAudit(): Promise<AuditResult> {
   const today = etDay();
-  const { models, stocks, theses } = await load();
-  const { held, findings } = auditFindings(models, stocks, theses, today);
+  const { models, stocks, theses, books, analyst } = await load();
+  const first = auditFindings(models, stocks, theses, today);
+  const held = first.held;
+  const findings = [...first.findings, ...(await extraFindings(models, stocks, books, analyst, held, today))];
   const flags = await listFlags();
   const onFile = (f: AuditFinding) => flags.some((x: AgentFlag) => x.dedupeKey === f.dedupeKey);
   return { ok: true, date: today, held, findings, raised: [], alreadyOnFile: findings.filter(onFile).map((f) => f.dedupeKey) };
@@ -146,10 +196,12 @@ export async function runPortfolioAudit(): Promise<AuditResult> {
   const base: AuditResult = { ok: false, date: today, held: [], findings: [], raised: [], alreadyOnFile: [] };
   try {
     if (!isWatcherOn(WATCHER, await readAgentSettings())) return { ...base, ok: true, skipped: "switched off" };
-    const { models, stocks, theses, ok } = await load();
+    const { models, stocks, theses, books, analyst, ok } = await load();
     // A missing model or thesis store is a read problem, not "nothing is underwritten".
     if (!ok) return { ...base, ok: true, skipped: "pm:pim-models or pm:position-theses could not be read — nothing flagged" };
-    const { held, findings } = auditFindings(models, stocks, theses, today);
+    const first = auditFindings(models, stocks, theses, today);
+    const held = first.held;
+    const findings = [...first.findings, ...(await extraFindings(models, stocks, books, analyst, held, today))];
     const flags = await listFlags();
     const raised: string[] = [];
     const alreadyOnFile: string[] = [];
