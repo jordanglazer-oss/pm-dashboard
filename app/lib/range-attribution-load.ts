@@ -190,7 +190,9 @@ export async function loadRangeAttribution(from: string | null, to: string): Pro
       const { steps, notes } = scheduleWithLog(events, { currentWeight: held?.weightInClass ?? null, heldAtTrackingStart }, ctx);
       const sleeve: Sleeve = tests.isCore(symbol) ? "core" : tests.isThematic(symbol) ? "thematic" : "stocks";
       const name = held?.name ?? stocks.find((s) => s.ticker && sameSymbol(s.ticker, symbol))?.name;
-      return { symbol, name, sleeve, currency: (held?.currency ?? guessCurrency(symbol)) as "CAD" | "USD", steps, notes };
+      // A note about the time BEFORE a name's first trade is noise when the detail starts on or after that trade.
+      const relevant = notes.filter((n) => !(n.startsWith("held before its first trade on file") && firstDate != null && calendar[0] >= firstDate));
+      return { symbol, name, sleeve, currency: (held?.currency ?? guessCurrency(symbol)) as "CAD" | "USD", steps, notes: relevant };
     })
     // Only names with a weight on at least one day of the range need prices.
     .filter((h) => calendar.slice(0, -1).some((d) => weightAt(h.steps, d) > 0));

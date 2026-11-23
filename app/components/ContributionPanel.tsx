@@ -78,6 +78,47 @@ function MoverList({ title, rows, empty }: { title: string; rows: HoldingContrib
 /** Everything below the date controls: sleeve filter, summary sentence, top 5 /
  *  bottom 5, sleeve table, full table, caveats. Presentational — the caller
  *  owns the date range and the fetch (so a merged panel can load it once). */
+function MonthTable({ rows }: { rows: Extract<RangeAttributionResponse, { ok: true }>["byMonth"] }) {
+  return (
+    <div className="mt-2 overflow-x-auto">
+      <div className="mb-1 text-[11px] font-semibold uppercase tracking-[0.08em] text-ink-3">Estimate vs record, month by month</div>
+      <table className="w-full min-w-[560px] text-[12px] tabular-nums">
+        <thead>
+          <tr className="text-left text-[11px] text-ink-3">
+            <th className="font-normal">Month</th>
+            <th className="text-right font-normal">Book est.</th>
+            <th className="text-right font-normal">Book rec.</th>
+            <th className="text-right font-normal">Core est.</th>
+            <th className="text-right font-normal">Core rec.</th>
+            <th className="text-right font-normal">Total Alpha est.</th>
+            <th className="text-right font-normal">Total Alpha rec.</th>
+            <th className="text-right font-normal">Book gap</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((m) => {
+            const g = m.book.rec != null ? m.book.est - m.book.rec : null;
+            return (
+              <tr key={m.month}>
+                <td>{m.month}</td>
+                <td className="text-right">{pts(m.book.est)}</td>
+                <td className="text-right">{pts(m.book.rec)}</td>
+                <td className="text-right">{pts(m.core.est)}</td>
+                <td className="text-right">{pts(m.core.rec)}</td>
+                <td className="text-right">{pts(m.nonCore.est)}</td>
+                <td className="text-right">{pts(m.nonCore.rec)}</td>
+                <td className="text-right">
+                  <span className={g != null && Math.abs(g) >= 1 ? "font-semibold text-neg" : "text-ink-3"}>{g == null ? "—" : `${g > 0 ? "+" : ""}${g.toFixed(2)} pts`}</span>
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
 export function ContributionView({ data, loading }: { data: RangeAttributionResponse | null; loading: boolean }) {
   const [sleeve, setSleeve] = useState<"all" | Sleeve>("all");
   const [showAll, toggleAll] = usePersistedOpen("perf.contribution.table", false);
@@ -124,44 +165,7 @@ export function ContributionView({ data, loading }: { data: RangeAttributionResp
                 {off && (
                   <div className="mx-3.5 mt-2.5 rounded-control border border-warn-border bg-warn-soft px-3 py-2 text-[12.5px] text-ink">
                     <span className="font-semibold">Treat the holding figures below with caution for this period.</span> They add up to {pts(data.estimatedReturnPct)}, but the recorded return is {pts(data.reconciliation.book.recordedPct)} — a gap of {Math.abs(gap!).toFixed(2)} points. The sleeve &quot;Recorded&quot; column is exact; the per-holding split is an estimate rebuilt from the trade log.
-                    {data.byMonth.length > 1 && (
-                      <div className="mt-2 overflow-x-auto">
-                        <div className="mb-1 text-[11px] font-semibold uppercase tracking-[0.08em] text-ink-3">Where the gap arises · estimate vs record, month by month</div>
-                        <table className="w-full min-w-[560px] text-[12px] tabular-nums">
-                          <thead>
-                            <tr className="text-left text-[11px] text-ink-3">
-                              <th className="font-normal">Month</th>
-                              <th className="text-right font-normal">Book est.</th>
-                              <th className="text-right font-normal">Book rec.</th>
-                              <th className="text-right font-normal">Core est.</th>
-                              <th className="text-right font-normal">Core rec.</th>
-                              <th className="text-right font-normal">Total Alpha est.</th>
-                              <th className="text-right font-normal">Total Alpha rec.</th>
-                              <th className="text-right font-normal">Alpha gap</th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {data.byMonth.map((m) => {
-                              const g = m.nonCore.est != null && m.nonCore.rec != null ? m.nonCore.est - m.nonCore.rec : null;
-                              return (
-                                <tr key={m.month}>
-                                  <td>{m.month}</td>
-                                  <td className="text-right">{pts(m.book.est)}</td>
-                                  <td className="text-right">{pts(m.book.rec)}</td>
-                                  <td className="text-right">{pts(m.core.est)}</td>
-                                  <td className="text-right">{pts(m.core.rec)}</td>
-                                  <td className="text-right">{pts(m.nonCore.est)}</td>
-                                  <td className="text-right">{pts(m.nonCore.rec)}</td>
-                                  <td className="text-right">
-                                    <span className={g != null && Math.abs(g) >= 2 ? "font-semibold text-neg" : "text-ink-3"}>{g == null ? "—" : `${g > 0 ? "+" : ""}${g.toFixed(2)} pts`}</span>
-                                  </td>
-                                </tr>
-                              );
-                            })}
-                          </tbody>
-                        </table>
-                      </div>
-                    )}
+                    {data.byMonth.length > 1 && <MonthTable rows={data.byMonth} />}
                   </div>
                 )}
                 <p className="px-3.5 pt-2.5 text-[12.5px] text-ink-3">
@@ -265,11 +269,11 @@ export function ContributionView({ data, loading }: { data: RangeAttributionResp
                         {r.name ? <span className="text-[11.5px] text-ink-3"> · {r.name}</span> : null}
                         {r.notes.length > 0 && <div className="text-[11px] text-warn">Assumption: {r.notes.join("; ")}</div>}
                       </td>
-                      <td className="text-[12px]">{SLEEVE_LABEL[r.sleeve]}</td>
+                      <td className="whitespace-nowrap text-[12px]">{SLEEVE_LABEL[r.sleeve]}</td>
                       <td className={`n ${tone(r.contributionPct)}`}>{pts(r.contributionPct)}</td>
                       <td className={`n ${tone(r.returnPct)}`}>{pts(r.returnPct)}</td>
                       <td className="n">{r.avgWeightPct.toFixed(2)}%</td>
-                      <td className="text-[12px] text-ink-3">
+                      <td className="whitespace-nowrap text-[12px] text-ink-3">
                         {r.status === "closed" ? `sold · held to ${r.heldTo}` : r.openedInRange ? `bought · from ${r.heldFrom}` : "whole period"}
                         {` · ${r.daysHeld}d`}
                       </td>
@@ -285,11 +289,14 @@ export function ContributionView({ data, loading }: { data: RangeAttributionResp
               {showNotes ? "Hide how this is calculated" : `How this is calculated (${data.caveats.length} notes)`}
             </button>
             {showNotes && (
-              <ul className="mt-1.5 list-disc pl-4 text-[11.5px] leading-snug text-ink-3">
-                {data.caveats.map((c, i) => (
-                  <li key={i}>{c}</li>
-                ))}
-              </ul>
+              <>
+                <ul className="mt-1.5 list-disc pl-4 text-[11.5px] leading-snug text-ink-3">
+                  {data.caveats.map((c, i) => (
+                    <li key={i}>{c}</li>
+                  ))}
+                </ul>
+                {data.byMonth.length > 1 && <MonthTable rows={data.byMonth} />}
+              </>
             )}
           </div>
         </div>
