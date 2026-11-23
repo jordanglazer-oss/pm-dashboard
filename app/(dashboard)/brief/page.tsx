@@ -5,6 +5,7 @@ import { useStocks } from "@/app/lib/StockContext";
 import { MorningBrief } from "@/app/components/MorningBrief";
 import { DailySummaryView } from "@/app/components/brief/DailySummaryView";
 import { TooltipLayer } from "@/app/components/ui/TooltipLayer";
+import { MorningNotePanel } from "@/app/components/brief/MorningNotePanel";
 
 export default function BriefPage() {
   const { stocks, scoredStocks, marketData, brief, offensiveExposure, setBrief, updateMarketData } = useStocks();
@@ -15,6 +16,7 @@ export default function BriefPage() {
     // own toolbar (date · generated · daily-input meta · actions).
     <main className="text-ink">
       <TooltipLayer className="flex flex-col gap-3.5">
+      <MorningNotePanel />
       <MorningBrief
         marketData={marketData}
         offensiveExposure={offensiveExposure}
