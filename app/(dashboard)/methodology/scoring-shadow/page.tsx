@@ -11,6 +11,7 @@
 
 import React, { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import { ScoreVerificationPanel } from "@/app/components/ScoreVerificationPanel";
 
 type ShiftRow = { label: string; names: number; avgCurrent: number; avgShadow: number; avgShift: number; up: number; down: number };
 type Component = { metric: string; label: string; value: number; percentile: number; weight: number; groupMedian: number | null };
@@ -129,6 +130,7 @@ export default function ScoringShadowPage() {
           : <span className="text-warn">Peer-ranked quality is not included yet: the quality bands have not been calibrated. The other three fixes are shown.</span>}
         {" "}{data.compositeCheck}.{data.liveNote ? ` ${data.liveNote}` : ""}
       </p>
+      {data.qualityBands && <div className="mt-4"><ScoreVerificationPanel score="quality" /></div>}
 
       {data.summary && (
         <>

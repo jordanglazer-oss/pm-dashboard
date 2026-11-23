@@ -32,6 +32,7 @@
  */
 
 import { percentileOf, quantile, winsorSort, MIN_GROUP_SIZE } from "./growth-score";
+import { bandsHealth, checkValue, type MetricExpectation, type SelfChecks } from "./score-input-validation";
 
 export { MIN_GROUP_SIZE };
 
@@ -85,6 +86,18 @@ export const QUALITY_MIN_COMPONENTS = 2;
 /** Values outside these are treated as a data error and dropped, with a reason
  *  (a 4,000% ROE is a near-zero equity base, not a great business). */
 export const QUALITY_SANITY = { returns: [-200, 300], roa: [-100, 100], operMargin: [-300, 100] } as const;
+const FINANCIAL_GROUPS = ["Banks", "Insurance", "Capital Markets / Diversified Financials"];
+const PARKED_GROUPS = ["REITs / Real Estate"];
+/** What a healthy calibration looks like, per measure — drives the calibration
+ *  self-checks (score-input-validation `runCalibrationChecks`). Levels are in
+ *  %, the two "change" measures in percentage points. */
+export const QUALITY_EXPECTATIONS: Record<"returns" | "returnsTrend" | "roa" | "operMargin" | "marginTrend", MetricExpectation> = {
+  returns: { label: "Returns on capital (%)", medianRange: [3, 35], minSpread: 5, groupMedianRange: [-5, 60], droppedFor: PARKED_GROUPS },
+  returnsTrend: { label: "Returns on capital, two-year change (points)", medianRange: [-6, 6], minSpread: 2, groupMedianRange: [-15, 15], droppedFor: PARKED_GROUPS },
+  roa: { label: "Return on assets (%)", medianRange: [0.2, 4], minSpread: 0.2, groupMedianRange: [0, 5], onlyFor: ["Banks"] },
+  operMargin: { label: "Operating margin (%)", medianRange: [5, 35], minSpread: 8, groupMedianRange: [-10, 60], droppedFor: [...FINANCIAL_GROUPS, ...PARKED_GROUPS] },
+  marginTrend: { label: "Operating margin, two-year change (points)", medianRange: [-5, 5], minSpread: 2, groupMedianRange: [-15, 15], droppedFor: [...FINANCIAL_GROUPS, ...PARKED_GROUPS] },
+};
 
 /** Per-playbook handling. `returnsFrom` picks the returns measure; `drop`
  *  removes measures that do not mean what they say for that business model;
@@ -100,7 +113,8 @@ export type QualityInputs = Partial<Record<QualityMetricKey, number>>;
 export type QualityExclusion = { metric: QualityMetricKey; reason: string };
 
 const num = (v: unknown): v is number => typeof v === "number" && isFinite(v);
-const within = (v: number, [lo, hi]: readonly [number, number]) => v >= lo && v <= hi;
+// One shared range check (score-input-validation) — the same one growth uses.
+const within = (v: number, range: readonly [number, number]) => checkValue("value", v, range).ok;
 
 /** Raw FactSet fields → the quality measures, with a reason for each one that could not be formed. */
 export function deriveQualityInputs(raw: RawQualityRow, group: string | null): { inputs: QualityInputs; excluded: QualityExclusion[]; parked: string | null; returnsBasis: "ROIC" | "ROE" } {
@@ -151,6 +165,8 @@ export type QualityBands = {
   listVersion: string;
   groups: Record<string, QualityGroup>;
   sectors: Record<string, QualityGroup>;
+  /** Result of the calibration self-checks (absent on bands stored before they existed). */
+  selfChecks?: SelfChecks;
 };
 
 export type QualityDetailRow = {
@@ -185,6 +201,8 @@ export type QualityWorking = {
   /** Why the score is null, in words. */
   gapReason: string | null;
   calibratedAt: string;
+  /** Health of the bands this was ranked against. */
+  bands?: { ageDays: number | null; warning: string | null; selfChecked: boolean | null };
 };
 
 /**
@@ -194,8 +212,9 @@ export type QualityWorking = {
  * or above the group median (direction alone cannot earn the top mark) AND
  * returns ≥ QUALITY_TOP_MARK_FLOOR_PCT. Negative returns on capital → 0.
  */
-export function computeQualityScore(args: { raw: RawQualityRow; playbookGroup: string | null; sector: string | null; bands: QualityBands }): QualityWorking {
+export function computeQualityScore(args: { raw: RawQualityRow; playbookGroup: string | null; sector: string | null; bands: QualityBands; now?: Date }): QualityWorking {
   const { raw, playbookGroup, sector, bands } = args;
+  const health = bandsHealth(bands, args.now);
   const pg = playbookGroup ? bands.groups[playbookGroup] : undefined;
   const sg = sector ? bands.sectors[sector] : undefined;
   // A group with its OWN measure rules (financials) must never fold into a
@@ -214,7 +233,10 @@ export function computeQualityScore(args: { raw: RawQualityRow; playbookGroup: s
     returnsBasis, components: [], excluded, parked,
     blendedPercentile: null, topMark: null, computedScore: null, gapReason: null,
     calibratedAt: bands.calibratedAt,
+    bands: { ageDays: health.ageDays, warning: health.warning, selfChecked: health.selfChecked },
   };
+  // Runtime guard: bands that are too old, undated, or failed their own checks are not used.
+  if (!health.usable) return { ...base, gapReason: health.reason };
   if (parked) return { ...base, gapReason: parked };
   if (!dist) return { ...base, gapReason: hasOwnRule ? `the ${playbookGroup} peer group has fewer than ${MIN_GROUP_SIZE} names and cannot be folded into a sector ranked on different measures` : "no peer group on file for this company" };
 
@@ -260,7 +282,7 @@ export const QUALITY_METRICS = Object.keys(QUALITY_WEIGHTS) as QualityMetricKey[
  * margin). A bank's ROE never enters a sector distribution, so a small
  * group folded into "Financials" is still compared ROIC with ROIC.
  */
-export function buildQualityBands(rows: Pick<QualityDetailRow, "group" | "sector" | "values" | "parked">[], meta: { calibratedAt: string; listVersion: string }): QualityBands {
+export function buildQualityBands(rows: Pick<QualityDetailRow, "group" | "sector" | "values" | "parked">[], meta: { calibratedAt: string; listVersion: string; selfChecks?: SelfChecks }): QualityBands {
   type R = (typeof rows)[number];
   const byGroup = new Map<string, R[]>();
   const bySector = new Map<string, R[]>();
@@ -283,5 +305,6 @@ export function buildQualityBands(rows: Pick<QualityDetailRow, "group" | "sector
     listVersion: meta.listVersion,
     groups: Object.fromEntries([...byGroup].map(([g, rs]) => [g, build(g, rs)])),
     sectors: Object.fromEntries([...bySector].map(([g, rs]) => [g, build(g, rs)])),
+    ...(meta.selfChecks ? { selfChecks: meta.selfChecks } : {}),
   };
 }

@@ -4,12 +4,13 @@ import { getRedis } from "@/app/lib/redis";
 import { crossSectional, factsetConfigured, relayRetry, type FactsetValue } from "@/app/lib/factset";
 import { resolveFactsetId } from "@/app/lib/factset-symbols";
 import { normalizeFactsetSector } from "@/app/lib/factset-fundamentals";
-import { universeTickers, LIST_VERSION } from "@/app/lib/factor-constituents";
+import { universeTickers, LIST_VERSION, TSX60 } from "@/app/lib/factor-constituents";
+import { runCalibrationChecks } from "@/app/lib/score-input-validation";
 import { pickPlaybook } from "@/app/lib/sector-playbook";
 import { quantile } from "@/app/lib/growth-score";
 import {
   buildQualityBands, deriveQualityInputs, QUALITY_BANDS_KEY, QUALITY_CUTS, QUALITY_DETAIL_KEY, QUALITY_GROUP_RULES, QUALITY_METRICS,
-  QUALITY_SANITY, QUALITY_SOURCE_FIELDS, QUALITY_TOP_MARK_FLOOR_PCT, QUALITY_WEIGHTS, MIN_GROUP_SIZE,
+  QUALITY_EXPECTATIONS, QUALITY_SANITY, QUALITY_SOURCE_FIELDS, QUALITY_TOP_MARK_FLOOR_PCT, QUALITY_WEIGHTS, MIN_GROUP_SIZE,
   type QualityDetail, type QualityDetailRow, type QualityGroup, type RawQualityRow,
 } from "@/app/lib/quality-score";
 
@@ -51,7 +52,7 @@ const F = {
 } as const;
 const CHUNK = 40;
 const PARALLEL = 3;
-const CANADIAN_RE = /(\.TO|\.V|\.NE|\.CN|-T)$/i;
+const CANADIAN = new Set(TSX60.map((t) => t.toUpperCase()));
 
 export async function GET(req: NextRequest) {
   const url = new URL(req.url);
@@ -101,14 +102,16 @@ export async function GET(req: NextRequest) {
     const { inputs, excluded, parked } = deriveQualityInputs(raw, group);
     constituents.push({
       ticker, sector, industry, group,
-      country: CANADIAN_RE.test(ticker) ? "CA" : "US",
+      country: CANADIAN.has(ticker.toUpperCase()) ? "CA" : "US",
       marketCap: n("mktVal"),
       raw,
       values: Object.fromEntries(Object.entries(inputs).map(([k, v]) => [k, round(v as number)])),
       excluded, parked,
     });
   }
-  const bands = buildQualityBands(constituents, { calibratedAt: new Date().toISOString(), listVersion: LIST_VERSION });
+  // Self-checks run on EVERY call; a hard failure blocks the store (score-input-validation).
+  const report = runCalibrationChecks({ rows: constituents, expectations: QUALITY_EXPECTATIONS, requested: ids.length, failedChunks: failedChunks.length, unmatched: unclassified });
+  const bands = buildQualityBands(constituents, { calibratedAt: new Date().toISOString(), listVersion: LIST_VERSION, selfChecks: report.selfChecks });
 
   // ── Readable summary ────────────────────────────────────────────────────
   const cuts = (g: QualityGroup) => Object.fromEntries(QUALITY_METRICS.map((m) => {
@@ -133,8 +136,11 @@ export async function GET(req: NextRequest) {
 
   let stored = false, stashedTo: string | null = null;
   if (confirm) {
-    if (constituents.length < 300 || failedChunks.length > 0) {
-      return NextResponse.json({ error: `Refusing to store: only ${constituents.length} constituents priced and ${failedChunks.length} chunk(s) failed. Re-run when the relay is healthy.` }, { status: 409 });
+    if (!report.selfChecks.passed) {
+      return NextResponse.json({
+        error: `Refusing to store: ${report.selfChecks.hardFailures.length} check(s) failed. Nothing was written; the bands on file are unchanged.`,
+        failed: report.selfChecks.hardFailures, warnings: report.selfChecks.warnings, checks: report.checks,
+      }, { status: 409 });
     }
     const ts = Date.now();
     const prev = await redis.get(QUALITY_BANDS_KEY);
@@ -152,7 +158,11 @@ export async function GET(req: NextRequest) {
     mode: confirm ? "STORED (shadow only — no live score reads these bands)" : "DRY RUN — nothing written. Add ?confirm=YES to store these bands.",
     stored, stashedTo,
     calibratedAt: bands.calibratedAt,
+    selfChecks: report.selfChecks,
+    checks: report.checks,
+    metricSummary: report.metrics,
     readThisFirst: [
+      report.selfChecks.passed ? "All hard checks passed. Warnings (if any) are under selfChecks.warnings — read them before storing." : "ONE OR MORE HARD CHECKS FAILED — ?confirm=YES will refuse to store these bands. See selfChecks.hardFailures.",
       "The peer universe is the S&P 500 + TSX 60 — LARGE CAPS ONLY. A small or mid cap in the book is ranked against large-cap peers, which usually earn higher and steadier returns on capital; a smaller company will tend to rank LOWER on quality than it would against companies its own size. That is a known limit of this universe, not a property of the company.",
       "Every group MIXES US and Canadian constituents (see each group's makeUp). Canadian names are a small minority of most groups; a group is never split by country.",
       "The cut points, weights and the top-mark floor are STARTING VALUES. Check the distribution of scores this dry run implies before trusting them.",

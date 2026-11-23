@@ -16,6 +16,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { usePersistedOpen } from "@/app/lib/useCollapsed";
+import { ScoreVerificationPanel } from "@/app/components/ScoreVerificationPanel";
 
 type MetricKey = "fwdSales" | "fwdEps" | "ltg" | "delivered";
 type Metric = { value: number; percentile: number; weight: number; groupMedian: number | null };
@@ -155,6 +156,9 @@ export default function GrowthDataPage() {
         The figures below are recomputed by the same code the scoring uses, so this page cannot drift from what a rescore does. Pick any company to see its arithmetic; download the table to check figures against your terminal.
       </p>
       {data.inSync === false && <p className="mt-2 text-warn">The stored bands and this company data come from different calibration runs. Re-run the calibration to bring them back in step.</p>}
+
+      {/* Health of the bands + the human spot check against a FactSet terminal */}
+      <div className="mt-6"><ScoreVerificationPanel score="growth" /></div>
 
       {/* Where it comes from */}
       <section className="mt-6 rounded border border-line bg-surface">

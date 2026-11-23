@@ -179,6 +179,8 @@ export type ScoreCategoryExplanation = {
   /** Growth only (rubric rev 7): the full working behind the computed growth
    *  score, so the stock page can show the math. Absent on older scores. */
   growthCalc?: import("./growth-score").GrowthWorking & { modelScore: number; modelAdjustment: number; clampedFrom?: number };
+  /** Set when growth was judged by the model because nothing could be computed (no FactSet data). */
+  growthBasis?: string;
 };
 
 /**

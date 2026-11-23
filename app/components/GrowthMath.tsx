@@ -10,7 +10,7 @@
  * hand from this panel alone. Open state persists (pm:ui-prefs).
  */
 
-import React from "react";
+import React, { useEffect, useState } from "react";
 import { usePersistedOpen } from "@/app/lib/useCollapsed";
 import { GROWTH_CUTS, GROWTH_METRIC_LABEL, TOP_MARK_FLOOR_PCT, type GrowthWorking } from "@/app/lib/growth-score";
 
@@ -23,6 +23,14 @@ const Test = ({ ok, children }: { ok: boolean; children: React.ReactNode }) => (
 
 export function GrowthMath({ calc }: { calc: Calc }) {
   const [open, toggle] = usePersistedOpen("stock.growthMath.open", false);
+  // Has a person checked the FactSet inputs against a terminal? (read-only)
+  const [verified, setVerified] = useState<{ verified: boolean; text: string } | null>(null);
+  useEffect(() => {
+    if (!open) return;
+    let live = true;
+    fetch("/api/scoring-verification").then((r) => r.json()).then((d: { growth?: { verified: boolean; text: string } }) => { if (live && d.growth) setVerified(d.growth); }).catch(() => {});
+    return () => { live = false; };
+  }, [open]);
   return (
     <div className="rounded border border-line bg-surface">
       <button type="button" onClick={toggle} className="flex w-full items-center justify-between gap-2 px-3 py-2 text-left text-[12px] font-medium text-ink hover:bg-surface-hover">
@@ -37,6 +45,10 @@ export function GrowthMath({ calc }: { calc: Calc }) {
             The peer universe is the S&amp;P 500 and TSX 60, so a smaller company is being compared with large caps.
           </p>
           {calc.groupNote && <p className="text-ink-3">{calc.groupNote}</p>}
+          {calc.size?.note && <p className="text-warn">{calc.size.note}</p>}
+          {calc.bands?.warning && <p className="text-warn">Note on the peer bands: {calc.bands.warning}.</p>}
+          {calc.salesBasis === "as-reported" && <p className="text-warn">Forward sales growth was measured from as-reported trailing sales because the analysts&apos;-basis figure was missing. The two can differ (net versus gross revenue, or currency) — treat that line with care.</p>}
+          {verified && <p className={verified.verified ? "text-ink-3" : "text-warn"}>FactSet inputs: {verified.text} <a href="/methodology/growth-data" className="text-accent hover:underline">Check them</a></p>}
 
           <div className="overflow-x-auto">
             <table className="w-full text-[12px]">
@@ -65,7 +77,7 @@ export function GrowthMath({ calc }: { calc: Calc }) {
           </div>
 
           {calc.computedScore == null ? (
-            <p className="text-warn">Fewer than two usable metrics, so no score could be computed. Growth is parked as a data gap and left out of the composite.</p>
+            <p className="text-warn">No growth score was computed: {calc.gapReason ?? "fewer than two usable metrics"}. Growth is parked as a data gap and left out of the composite.</p>
           ) : (
             <>
               <p>
@@ -91,6 +103,7 @@ export function GrowthMath({ calc }: { calc: Calc }) {
                   </tbody>
                 </table>
               </div>
+              {calc.negativeForwardRule && <p className="text-ink-3">The base score is 0 because forward growth is negative ({pct(calc.topMark!.primaryForwardGrowth)}); that rule applies whatever the percentile.</p>}
               {calc.clampedFrom != null && <p className="text-warn">The model returned {calc.clampedFrom}, more than one point from the computed score, so the app held it to {calc.modelScore}.</p>}
             </>
           )}
