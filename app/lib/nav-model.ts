@@ -57,6 +57,7 @@ export const NAV_GROUPS: NavGroup[] = [
     items: [
       { key: "synthesis", label: "Synthesis", href: "/synthesis", icon: "spark" },
       { key: "pipeline", label: "Pipeline", href: "/funnel", icon: "branch", match: (p) => p === "/conviction" },
+      { key: "watchlist", label: "Watchlist", href: "/watchlist", icon: "eye" },
     ],
   },
   {

@@ -25,6 +25,7 @@ const ALIASES: Record<string, Hub> = {
   "/funnel": "Ideas",
   "/conviction": "Ideas",
   "/screener": "Ideas",
+  "/watchlist": "Ideas",
   // Research segments
   "/research": "Research",
   "/research/sources": "Research",

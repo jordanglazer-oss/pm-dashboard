@@ -12,6 +12,7 @@ const SEGMENTS: { label: string; href: string }[] = [
   { label: "Synthesis", href: "/synthesis" },
   { label: "Pipeline", href: "/conviction" },
   { label: "Screener", href: "/screener" },
+  { label: "Watchlist", href: "/watchlist" },
 ];
 
 export function IdeasTabs() {

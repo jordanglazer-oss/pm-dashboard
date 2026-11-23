@@ -39,6 +39,8 @@ const EXCLUDE_PATTERNS = [
   /^pm:edgar-/,              // edgar-facts / -submissions / -form4 / -ticker-map (~110MB)
   /^pm:market-regime$/,
   /^pm:market-drivers$/,     // daily FactSet contributors pull (rebuilds nightly)
+  /^pm:favour-monitor$/,     // in / out of favour price read (12h cache, rebuilds on open)
+  /^pm:morning-note-lock$/,  // 5-minute run lock
   /^pm:earnings-dates$/,     // Yahoo next-earnings for non-held names (24h TTL)
   /^pm:catalyst-calendar$/,  // Phase 01 cache (rebuilds from pm:stocks + FRED)
   /^pm:thesis-health$/,      // Phase 03 cache (rebuilds from score-history + snapshots)
