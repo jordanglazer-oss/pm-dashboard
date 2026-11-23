@@ -62,7 +62,16 @@ const ANNUAL_METRICS: { base: string; formula: string; label: string; years: num
 // FIXED year: we fetch the three candidate years and pick the one whose NOW
 // value equals the rolling FY+1 (see forwardGrowthLine).
 const CURRENT_YEAR = new Date().getUTCFullYear();
-const FIXED_FY_CANDIDATES = [CURRENT_YEAR, CURRENT_YEAR + 1, CURRENT_YEAR + 2];
+// The PREVIOUS calendar year is a candidate too (Nov 2026 audit): between
+// 1 January and the day a December-year-end company reports its fourth
+// quarter, its first unreported fiscal year (FY+1) is still LAST year. Without
+// it the revision read silently came back "n/a" for most of the book every
+// January–March, and the ±1 revision adjustment to growth was never applied.
+export const FIXED_FY_CANDIDATES = [CURRENT_YEAR - 1, CURRENT_YEAR, CURRENT_YEAR + 1, CURRENT_YEAR + 2];
+/** A consensus smaller than this (per share, absolute) three months ago is too
+ *  small a base to measure a % revision from: 0.02 → 0.03 is a one-cent change,
+ *  not a +50% revision. Same floor as the growth score's EPS base (MIN_EPS_BASE). */
+export const MIN_REVISION_BASE = 0.1;
 const FIXED_FY_METRICS: ScoringFormula[] = FIXED_FY_CANDIDATES.flatMap((y) => [
   { key: `epsFy${y}Now`, formula: `FE_ESTIMATE(EPS,MEAN,ANN,${y},NOW,'')`, note: `FY${y} EPS consensus today (fixed year)` },
   { key: `epsFy${y}Ago3m`, formula: `FE_ESTIMATE(EPS,MEAN,ANN,${y},-3M,'')`, note: `FY${y} EPS consensus 3 months ago (fixed year)` },
@@ -288,8 +297,10 @@ export function fy1RevisionPct(v: Record<string, number | null>): number | null 
   for (const y of FIXED_FY_CANDIDATES) {
     const now = v[`epsFy${y}Now`];
     const ago = v[`epsFy${y}Ago3m`];
-    if (typeof now === "number" && Math.abs(now - fy1) < 1e-6) {
-      return typeof ago === "number" && ago !== 0 ? ((now - ago) / Math.abs(ago)) * 100 : null;
+    if (typeof now === "number" && Number.isFinite(now) && Math.abs(now - fy1) < 1e-6) {
+      // No reading three months ago, or a base too small to take a % of → not measurable.
+      if (typeof ago !== "number" || !Number.isFinite(ago) || Math.abs(ago) < MIN_REVISION_BASE) return null;
+      return ((now - ago) / Math.abs(ago)) * 100;
     }
   }
   return null;
@@ -311,7 +322,10 @@ function forwardGrowthLine(v: Record<string, number | null>): string {
       const ago = v[`epsFy${y}Ago3m`];
       if (typeof now === "number" && Math.abs(now - fy1) < 1e-6) {
         fyLabel = `FY${y}`;
-        rev = typeof ago === "number" && ago !== 0 ? `${(((now - ago) / Math.abs(ago)) * 100).toFixed(1)}% (${fmt(ago, 2)} → ${fmt(now, 2)})` : "n/a";
+        // Same test as fy1RevisionPct, so the prompt and the computed adjustment can never disagree.
+        rev = typeof ago !== "number" ? "n/a"
+          : Math.abs(ago) < MIN_REVISION_BASE ? `n/a (${fmt(ago, 2)} → ${fmt(now, 2)}: the base is too small to measure a % change)`
+          : `${(((now - ago) / Math.abs(ago)) * 100).toFixed(1)}% (${fmt(ago, 2)} → ${fmt(now, 2)})`;
         break;
       }
     }

@@ -20,7 +20,15 @@
  *
  * The weights / cuts / floor below are STARTING VALUES, set against real data
  * at the calibration check-in (/api/admin/growth-band-calibration).
+ *
+ * Nov 2026 audit: every derived metric now passes a believable-range check
+ * (GROWTH_PLAUSIBLE) before it may be ranked — a failed check drops that
+ * metric with a reason, it is never ranked and never becomes a zero; the
+ * working carries the age and health of the bands it was ranked against and
+ * how the company's size compares with its peer group.
  */
+
+import { bandsHealth, checkValue, type MetricExpectation, type Range, type SelfChecks } from "./score-input-validation";
 
 /** Redis key holding the calibrated peer-group distributions (regenerable cache). */
 export const GROWTH_BANDS_KEY = "pm:growth-bands";
@@ -90,6 +98,26 @@ export const BASIS_BREAK_SALES_PCT = -10;
 export const REVISION_TRIGGER_PCT = 3;
 /** Forward EPS growth is undefined off a tiny or negative base. */
 export const MIN_EPS_BASE = 0.1;
+/** Believable range (%) for each DERIVED metric. A value outside it is a data
+ *  problem (a near-zero base, a unit or currency mix-up, a merger), not a
+ *  growth rate: the metric is dropped with a reason instead of being ranked at
+ *  the top or bottom of its group. The floors are deliberately loose — a real
+ *  collapse must still count against a company; the ceilings are where the
+ *  silent errors live (EPS of 0.12 "growing" to 1.20 is not +900% growth). */
+export const GROWTH_PLAUSIBLE: Record<"fwdSales" | "fwdEps" | "ltg" | "delivered", Range> = {
+  fwdSales: [-95, 300],
+  fwdEps: [-1000, 400],
+  ltg: [-75, 100],
+  delivered: [-80, 150],
+};
+/** What a healthy calibration looks like, per metric — drives the calibration
+ *  self-checks (score-input-validation `runCalibrationChecks`). */
+export const GROWTH_EXPECTATIONS: Record<"fwdSales" | "fwdEps" | "ltg" | "delivered", MetricExpectation> = {
+  fwdSales: { label: "Forward sales growth (%)", medianRange: [0.5, 25], minSpread: 3, groupMedianRange: [-15, 40], droppedFor: ["Banks", "Insurance"] },
+  fwdEps: { label: "Forward EPS growth (%)", medianRange: [1, 40], minSpread: 5, groupMedianRange: [-25, 70], droppedFor: ["REITs / Real Estate"] },
+  ltg: { label: "Long-term growth estimate (% a year)", medianRange: [2, 30], minSpread: 3, groupMedianRange: [-5, 45], droppedFor: ["REITs / Real Estate"] },
+  delivered: { label: "Delivered 3-year growth (% a year)", medianRange: [0.5, 25], minSpread: 3, groupMedianRange: [-15, 40] },
+};
 
 /** Per-playbook metric handling. `drop` = not meaningful for this business
  *  model (weights re-normalise over what is left). `deliveredFrom` swaps the
@@ -114,22 +142,30 @@ export type RawGrowthRow = {
 
 export type GrowthInputs = Partial<Record<GrowthMetricKey, number>>;
 export type GrowthExclusion = { metric: GrowthMetricKey; reason: string };
+/** Which trailing-sales figure the forward sales growth was measured from. */
+export type SalesBasis = "estimates" | "as-reported";
 
 const num = (v: unknown): v is number => typeof v === "number" && isFinite(v);
+const GROWTH_SHORT_LABEL: Record<GrowthMetricKey, string> = { fwdSales: "forward sales growth", fwdEps: "forward EPS growth", ltg: "long-term growth estimate", delivered: "delivered 3-year growth" };
 const cagr3 = (now: number, then: number): number => (Math.pow(now / then, 1 / 3) - 1) * 100;
 
 /** Raw FactSet fields → the four growth metrics (in %), with a reason for each one that could not be formed. */
-export function deriveGrowthInputs(raw: RawGrowthRow, group: string | null): { inputs: GrowthInputs; excluded: GrowthExclusion[] } {
+export function deriveGrowthInputs(raw: RawGrowthRow, group: string | null): { inputs: GrowthInputs; excluded: GrowthExclusion[]; salesBasis: SalesBasis | null } {
   const rule = group ? GROUP_METRIC_RULES[group] : undefined;
   const dropped = new Set(rule?.drop ?? []);
   const inputs: GrowthInputs = {};
   const excluded: GrowthExclusion[] = [];
   const skip = (metric: GrowthMetricKey, reason: string) => excluded.push({ metric, reason });
 
-  const salesBase = num(raw.salesLtmA) && raw.salesLtmA > 0 ? raw.salesLtmA : raw.salesLtm;
+  const onEstimatesBasis = num(raw.salesLtmA) && raw.salesLtmA > 0;
+  const salesBase = onEstimatesBasis ? raw.salesLtmA : raw.salesLtm;
+  let salesBasis: SalesBasis | null = null;
   if (dropped.has("fwdSales")) skip("fwdSales", "not meaningful for this business model");
-  else if (num(raw.salesNtm) && num(salesBase) && salesBase > 0) inputs.fwdSales = ((raw.salesNtm - salesBase) / salesBase) * 100;
-  else skip("fwdSales", "no next-12-month sales consensus or no trailing sales");
+  else if (num(raw.salesNtm) && raw.salesNtm <= 0) skip("fwdSales", "next-12-month sales consensus is zero or negative — not a usable figure");
+  else if (num(raw.salesNtm) && num(salesBase) && salesBase > 0) {
+    inputs.fwdSales = ((raw.salesNtm - salesBase) / salesBase) * 100;
+    salesBasis = onEstimatesBasis ? "estimates" : "as-reported";
+  } else skip("fwdSales", "no next-12-month sales consensus or no trailing sales");
 
   if (dropped.has("fwdEps")) skip("fwdEps", "not meaningful for this business model");
   else if (num(raw.epsNtm) && num(raw.epsLtmA)) {
@@ -154,11 +190,29 @@ export function deriveGrowthInputs(raw: RawGrowthRow, group: string | null): { i
   } else if (num(raw.salesAnn0) && num(raw.salesAnn3) && raw.salesAnn0 > 0 && raw.salesAnn3 > 0) inputs.delivered = cagr3(raw.salesAnn0, raw.salesAnn3);
   else skip("delivered", "no 3-year revenue history");
 
-  return { inputs, excluded };
+  // Believable-range check on every metric that was formed. Runs LAST so the
+  // basis-break rule above still sees the raw forward figures.
+  for (const metric of Object.keys(GROWTH_PLAUSIBLE) as GrowthMetricKey[]) {
+    if (inputs[metric] == null) continue;
+    const c = checkValue(GROWTH_SHORT_LABEL[metric], inputs[metric], GROWTH_PLAUSIBLE[metric]);
+    if (!c.ok) {
+      delete inputs[metric];
+      skip(metric, metric === "fwdEps" && num(raw.epsLtmA) && num(raw.epsNtm) && raw.epsNtm > raw.epsLtmA
+        ? `${c.reason}: trailing EPS of ${raw.epsLtmA.toFixed(2)} is too small a base for next-year EPS of ${raw.epsNtm.toFixed(2)}`
+        : c.reason);
+    }
+  }
+  if (inputs.fwdSales == null) salesBasis = null;
+
+  return { inputs, excluded, salesBasis };
 }
 
 /** One peer group's distributions: each metric's values, sorted ascending, winsorised at the 2nd / 98th percentile. */
-export type GrowthGroup = { group: string; n: number; metrics: Partial<Record<GrowthMetricKey, number[]>> };
+export type GrowthGroup = {
+  group: string; n: number; metrics: Partial<Record<GrowthMetricKey, number[]>>;
+  /** Who is in the group (added Nov 2026; absent on bands calibrated earlier). Market cap in millions, as FactSet returns it. */
+  makeUp?: { us: number; canada: number; medianMarketCapM: number | null; p10MarketCapM: number | null };
+};
 export type GrowthBands = {
   calibratedAt: string;
   universeSize: number;
@@ -166,7 +220,54 @@ export type GrowthBands = {
   /** Playbook-level groups and GICS-sector groups (the fold-in target). */
   groups: Record<string, GrowthGroup>;
   sectors: Record<string, GrowthGroup>;
+  /** Result of the calibration self-checks (absent on bands calibrated before Nov 2026). */
+  selfChecks?: SelfChecks;
 };
+
+/** The peer universe every company is ranked against, in words. */
+export const GROWTH_PEER_UNIVERSE = "S&P 500 + TSX 60 constituents (large caps)";
+
+/** One company's row going into the bands. */
+export type GrowthBandRow = { group: string; sector: string | null; values: Partial<Record<GrowthMetricKey, number>>; country?: "CA" | "US"; marketCap?: number | null };
+
+/**
+ * Build the peer-group distributions from the per-company rows. Pure, so the
+ * calibration route and the tests share it.
+ *
+ * SECTOR groups are the fold-in target for a playbook group too small to rank
+ * in. Banks and insurers measure delivered growth on BOOK VALUE per share, not
+ * sales, so their delivered figures are left OUT of the sector distribution: a
+ * small group folded into "Financials" is then compared sales growth with
+ * sales growth, never with a bank's book-value growth.
+ */
+export function buildGrowthBands(rows: GrowthBandRow[], meta: { calibratedAt: string; listVersion: string; selfChecks?: SelfChecks }): GrowthBands {
+  const byGroup = new Map<string, GrowthBandRow[]>();
+  const bySector = new Map<string, GrowthBandRow[]>();
+  for (const r of rows) {
+    byGroup.set(r.group, [...(byGroup.get(r.group) ?? []), r]);
+    if (r.sector) bySector.set(r.sector, [...(bySector.get(r.sector) ?? []), r]);
+  }
+  const build = (name: string, rs: GrowthBandRow[], isSector: boolean): GrowthGroup => {
+    const metrics: GrowthGroup["metrics"] = {};
+    for (const m of Object.keys(GROWTH_WEIGHTS) as GrowthMetricKey[]) {
+      const vals = rs
+        .filter((r) => !(isSector && m === "delivered" && GROUP_METRIC_RULES[r.group]?.deliveredFrom === "bookValue"))
+        .map((r) => r.values[m])
+        .filter((v): v is number => num(v));
+      if (vals.length) metrics[m] = winsorSort(vals);
+    }
+    const caps = rs.map((r) => r.marketCap).filter((v): v is number => num(v) && v > 0).sort((a, b) => a - b);
+    return { group: name, n: rs.length, metrics, makeUp: { us: rs.filter((r) => r.country === "US").length, canada: rs.filter((r) => r.country === "CA").length, medianMarketCapM: quantile(caps, 50), p10MarketCapM: quantile(caps, 10) } };
+  };
+  return {
+    calibratedAt: meta.calibratedAt,
+    universeSize: rows.length,
+    listVersion: meta.listVersion,
+    groups: Object.fromEntries([...byGroup].map(([g, rs]) => [g, build(g, rs, false)])),
+    sectors: Object.fromEntries([...bySector].map(([g, rs]) => [g, build(g, rs, true)])),
+    ...(meta.selfChecks ? { selfChecks: meta.selfChecks } : {}),
+  };
+}
 
 export function quantile(sorted: number[], p: number): number | null {
   if (sorted.length === 0) return null;
@@ -214,6 +315,19 @@ export type GrowthWorking = {
   /** Base score + revision adjustment, held to 0–3. null → too few metrics: DATA GAP. */
   computedScore: number | null;
   calibratedAt: string;
+  // ── Added by the Nov 2026 audit (all optional: older stored workings lack them) ──
+  /** Why no score was computed, in words (computedScore null). */
+  gapReason?: string | null;
+  /** Health of the bands this was ranked against. */
+  bands?: { ageDays: number | null; warning: string | null; selfChecked: boolean | null };
+  /** The universe the peer group is drawn from. */
+  peerUniverse?: string;
+  /** How the company's size compares with its peer group (market cap, millions). */
+  size?: { companyMarketCapM: number | null; groupMedianMarketCapM: number | null; smallerThanPeers: boolean; note: string | null };
+  /** Which trailing sales figure forward sales growth was measured from. */
+  salesBasis?: SalesBasis | null;
+  /** True when the "negative forward growth scores 0" rule set the base score. */
+  negativeForwardRule?: boolean;
 };
 
 /**
@@ -226,13 +340,26 @@ export function computeGrowthScore(args: {
   sector: string | null;
   bands: GrowthBands;
   revisionPct: number | null;
+  /** The company's market cap in millions (FG_MKT_VALUE), for the size note. */
+  marketCapM?: number | null;
+  now?: Date;
 }): GrowthWorking {
   const { raw, playbookGroup, sector, bands, revisionPct } = args;
+  const health = bandsHealth(bands, args.now);
   const pg = playbookGroup ? bands.groups[playbookGroup] : undefined;
   const sg = sector ? bands.sectors[sector] : undefined;
   const usePlaybook = !!pg && pg.n >= MIN_GROUP_SIZE;
   const dist = usePlaybook ? pg : sg ?? pg;
-  const { inputs, excluded } = deriveGrowthInputs(raw, playbookGroup);
+  const { inputs, excluded, salesBasis } = deriveGrowthInputs(raw, playbookGroup);
+
+  const cap = num(args.marketCapM) && args.marketCapM > 0 ? args.marketCapM : null;
+  const groupMedianCap = dist?.makeUp?.medianMarketCapM ?? null;
+  const groupP10Cap = dist?.makeUp?.p10MarketCapM ?? null;
+  const smallerThanPeers = cap != null && groupP10Cap != null && cap < groupP10Cap;
+  const size: GrowthWorking["size"] = {
+    companyMarketCapM: cap, groupMedianMarketCapM: groupMedianCap, smallerThanPeers,
+    note: smallerThanPeers ? "This company is smaller than 90% of the peer group it is ranked against. Smaller companies usually grow faster than large caps, so its percentiles may flatter it." : null,
+  };
 
   const components: GrowthComponent[] = [];
   for (const metric of Object.keys(GROWTH_WEIGHTS) as GrowthMetricKey[]) {
@@ -256,8 +383,15 @@ export function computeGrowthScore(args: {
     revision: { pct: revisionPct, adjustment: revAdj },
     computedScore: null,
     calibratedAt: bands.calibratedAt,
+    gapReason: null,
+    bands: { ageDays: health.ageDays, warning: health.warning, selfChecked: health.selfChecked },
+    peerUniverse: GROWTH_PEER_UNIVERSE,
+    size, salesBasis,
+    negativeForwardRule: false,
   };
-  if (components.length < 2) return base; // too little to rank on → DATA GAP flow
+  // Runtime guard: bands that are too old, undated, or failed their own checks are not used.
+  if (!health.usable) return { ...base, components: [], gapReason: health.reason };
+  if (components.length < 2) return { ...base, gapReason: "fewer than two of the four growth metrics could be formed and ranked" }; // too little to rank on → DATA GAP
 
   const blended = components.reduce((s, c) => s + c.percentile * c.weight, 0);
   // Primary forward metric: sales where it is used, else EPS.
@@ -266,7 +400,8 @@ export function computeGrowthScore(args: {
   const noMetricBelowMedian = components.every((c) => c.percentile >= 50);
   const clearsFloor = primary != null && primary >= TOP_MARK_FLOOR_PCT;
   let score: number;
-  if (primary != null && primary < 0) score = 0;
+  const negativeForwardRule = primary != null && primary < 0;
+  if (negativeForwardRule) score = 0;
   else if (blended < GROWTH_CUTS.one) score = 0;
   else if (blended < GROWTH_CUTS.two) score = 1;
   else if (inTopBand && noMetricBelowMedian && clearsFloor) score = 3;
@@ -274,6 +409,7 @@ export function computeGrowthScore(args: {
 
   return {
     ...base,
+    negativeForwardRule,
     blendedPercentile: Math.round(blended * 10) / 10,
     baseScore: score,
     topMark: { inTopBand, noMetricBelowMedian, clearsFloor, primaryForwardGrowth: primary },
@@ -285,6 +421,36 @@ export function computeGrowthScore(args: {
       return adjusted === 3 && score < 3 && !(noMetricBelowMedian && clearsFloor) ? 2 : adjusted;
     })(),
   };
+}
+
+/**
+ * What the growth category's final score is, given the computed score and
+ * what the model returned. Pure — the score route applies the result.
+ *
+ *   parked   — no computed score for a reason that makes ANY growth score
+ *              untrustworthy (bands missing / stale / failed checks, too few
+ *              metrics). Growth is a data gap; the model's number is ignored.
+ *   computed — the computed score, moved by the model by at most ONE point.
+ *              A model value that is missing or not a number is "no
+ *              adjustment" (it used to read as 0 and silently cost a point).
+ *   model    — nothing was computed and nothing says to park (no FactSet
+ *              data): the model's read stands under the DATA GAP rule.
+ */
+export type GrowthResolution =
+  | { kind: "parked"; reason: string; placeholder: number }
+  | { kind: "computed"; score: number; adjustment: number; modelUsed: boolean; clampedFrom: number | null }
+  | { kind: "model" };
+
+export function resolveGrowthScore(args: { computedScore: number | null; parkReason: string | null; modelRaw: unknown; modelReturned: boolean }): GrowthResolution {
+  const { computedScore, parkReason, modelRaw, modelReturned } = args;
+  // Same placeholder the route gives any parked category: mid-scale, excluded from the composite.
+  if (parkReason) return { kind: "parked", reason: parkReason, placeholder: 1 };
+  if (computedScore == null) return { kind: "model" };
+  const modelOk = modelReturned && typeof modelRaw === "number" && Number.isFinite(modelRaw);
+  if (!modelOk) return { kind: "computed", score: computedScore, adjustment: 0, modelUsed: false, clampedFrom: null };
+  const model = Math.max(0, Math.min(3, Math.round(modelRaw as number)));
+  const final = Math.max(0, Math.min(3, Math.max(computedScore - 1, Math.min(computedScore + 1, model))));
+  return { kind: "computed", score: final, adjustment: final - computedScore, modelUsed: true, clampedFrom: final !== model ? model : null };
 }
 
 /** The named reasons the model may use for its single one-point adjustment. */

@@ -4,11 +4,12 @@ import { getRedis } from "@/app/lib/redis";
 import { crossSectional, factsetConfigured, relayRetry, type FactsetValue } from "@/app/lib/factset";
 import { resolveFactsetId } from "@/app/lib/factset-symbols";
 import { normalizeFactsetSector } from "@/app/lib/factset-fundamentals";
-import { universeTickers, LIST_VERSION } from "@/app/lib/factor-constituents";
+import { universeTickers, LIST_VERSION, TSX60 } from "@/app/lib/factor-constituents";
+import { runCalibrationChecks } from "@/app/lib/score-input-validation";
 import { pickPlaybook } from "@/app/lib/sector-playbook";
 import {
-  deriveGrowthInputs, winsorSort, quantile, GROWTH_CUTS, GROWTH_WEIGHTS, MIN_GROUP_SIZE, TOP_MARK_FLOOR_PCT,
-  GROUP_METRIC_RULES, GROWTH_BANDS_KEY, GROWTH_DETAIL_KEY, GROWTH_SOURCE_FIELDS, type GrowthBands, type GrowthDetail, type GrowthGroup, type GrowthMetricKey, type RawGrowthRow,
+  deriveGrowthInputs, buildGrowthBands, quantile, GROWTH_CUTS, GROWTH_WEIGHTS, MIN_GROUP_SIZE, TOP_MARK_FLOOR_PCT, GROWTH_PLAUSIBLE, GROWTH_EXPECTATIONS, GROWTH_PEER_UNIVERSE,
+  GROUP_METRIC_RULES, GROWTH_BANDS_KEY, GROWTH_DETAIL_KEY, GROWTH_SOURCE_FIELDS, type GrowthDetail, type GrowthGroup, type GrowthMetricKey, type RawGrowthRow,
 } from "@/app/lib/growth-score";
 
 /**
@@ -31,6 +32,14 @@ import {
  * It is written ONLY with ?confirm=YES, and the previous value is stashed at
  * pm:growth-bands.pre-<ts> first so a bad calibration can be rolled back.
  * No other key is read or written.
+ *
+ * SELF-CHECKS (Nov 2026 audit, app/lib/score-input-validation.ts): every run
+ * — dry run and confirm — checks the pull before anything is stored: enough
+ * companies and no failed batch, no duplicate, each metric present for enough
+ * of the universe, and each metric's universe median and spread consistent
+ * with its unit (a percent column that is really a ratio fails here). The
+ * result is returned as `selfChecks` / `checks` and stored ON the bands.
+ * ?confirm=YES REFUSES to store when a hard check fails and says which.
  */
 
 export const maxDuration = 300;
@@ -44,7 +53,9 @@ const F = {
   ...(Object.fromEntries(GROWTH_SOURCE_FIELDS.map((f) => [f.key, f.formula])) as Record<(typeof GROWTH_SOURCE_FIELDS)[number]["key"], string>),
   sector: "FG_GICS_SECTOR",
   industry: "FG_GICS_INDUSTRY",
+  mktVal: "FG_MKT_VALUE",
 } as const;
+const CANADIAN = new Set(TSX60.map((t) => t.toUpperCase()));
 const CHUNK = 40;
 const PARALLEL = 3;
 const METRICS: GrowthMetricKey[] = ["fwdSales", "fwdEps", "ltg", "delivered"];
@@ -80,10 +91,8 @@ export async function GET(req: NextRequest) {
   }
 
   // ── Derive + group ──────────────────────────────────────────────────────
-  type Constituent = { ticker: string; sector: string | null; industry: string | null; group: string; raw: RawGrowthRow; values: Partial<Record<GrowthMetricKey, number>>; excluded: { metric: string; reason: string }[] };
+  type Constituent = { ticker: string; sector: string | null; industry: string | null; group: string; country: "CA" | "US"; marketCap: number | null; salesBasis: "estimates" | "as-reported" | null; raw: RawGrowthRow; values: Partial<Record<GrowthMetricKey, number>>; excluded: { metric: string; reason: string }[] };
   const constituents: Constituent[] = [];
-  const byGroup = new Map<string, Constituent[]>();
-  const bySector = new Map<string, Constituent[]>();
   const unclassified: string[] = [];
   let salesBasisFallback = 0;
   for (const [id, ticker] of idToTicker) {
@@ -99,28 +108,15 @@ export async function GET(req: NextRequest) {
     const sector = normalizeFactsetSector(gicsSector) ?? gicsSector;
     const group = pickPlaybook(gicsSector, industry, ticker)?.label ?? `${sector ?? "Unclassified"} (no playbook)`;
     const raw: RawGrowthRow = { salesNtm: n("salesNtm"), salesLtm: n("salesLtm"), salesLtmA: n("salesLtmA"), epsNtm: n("epsNtm"), epsLtmA: n("epsLtmA"), ltg: n("ltg"), salesAnn0: n("salesAnn0"), salesAnn3: n("salesAnn3"), bpsAnn0: n("bpsAnn0"), bpsAnn3: n("bpsAnn3") };
-    const { inputs, excluded } = deriveGrowthInputs(raw, group);
+    const { inputs, excluded, salesBasis } = deriveGrowthInputs(raw, group);
     const round = (v: number) => Math.round(v * 10) / 10;
-    const c: Constituent = { ticker, sector, industry, group, raw, values: Object.fromEntries(Object.entries(inputs).map(([k, v]) => [k, round(v as number)])), excluded };
-    constituents.push(c);
-    byGroup.set(group, [...(byGroup.get(group) ?? []), c]);
-    if (sector) bySector.set(sector, [...(bySector.get(sector) ?? []), c]);
+    constituents.push({ ticker, sector, industry, group, country: CANADIAN.has(ticker.toUpperCase()) ? "CA" : "US", marketCap: n("mktVal"), salesBasis, raw, values: Object.fromEntries(Object.entries(inputs).map(([k, v]) => [k, round(v as number)])), excluded });
   }
-  const build = (name: string, cs: Constituent[]): GrowthGroup => {
-    const metrics: GrowthGroup["metrics"] = {};
-    for (const m of METRICS) {
-      const vals = cs.map((c) => c.values[m]).filter((v): v is number => typeof v === "number");
-      if (vals.length) metrics[m] = winsorSort(vals);
-    }
-    return { group: name, n: cs.length, metrics };
-  };
-  const bands: GrowthBands = {
-    calibratedAt: new Date().toISOString(),
-    universeSize: constituents.length,
-    listVersion: LIST_VERSION,
-    groups: Object.fromEntries([...byGroup].map(([g, cs]) => [g, build(g, cs)])),
-    sectors: Object.fromEntries([...bySector].map(([g, cs]) => [g, build(g, cs)])),
-  };
+
+  // ── Self-checks (run on EVERY call; a hard failure blocks the store) ─────
+  const report = runCalibrationChecks({ rows: constituents, expectations: GROWTH_EXPECTATIONS, requested: ids.length, failedChunks: failedChunks.length, unmatched: unclassified });
+  const outOfRange = constituents.flatMap((c) => c.excluded.filter((e) => /believable range/.test(e.reason)).map((e) => ({ ticker: c.ticker, metric: e.metric, reason: e.reason })));
+  const bands = buildGrowthBands(constituents, { calibratedAt: new Date().toISOString(), listVersion: LIST_VERSION, selfChecks: report.selfChecks });
 
   // ── Readable summary ────────────────────────────────────────────────────
   const cuts = (g: GrowthGroup) => Object.fromEntries(METRICS.map((m) => {
@@ -137,8 +133,13 @@ export async function GET(req: NextRequest) {
 
   let stored = false, stashedTo: string | null = null;
   if (confirm) {
-    if (constituents.length < 300 || failedChunks.length > 0) {
-      return NextResponse.json({ error: `Refusing to store: only ${constituents.length} constituents priced and ${failedChunks.length} chunk(s) failed. Re-run when the relay is healthy.` }, { status: 409 });
+    if (!report.selfChecks.passed) {
+      return NextResponse.json({
+        error: `Refusing to store: ${report.selfChecks.hardFailures.length} check(s) failed. Nothing was written; the bands on file are unchanged.`,
+        failed: report.selfChecks.hardFailures,
+        warnings: report.selfChecks.warnings,
+        checks: report.checks,
+      }, { status: 409 });
     }
     const prev = await redis.get(GROWTH_BANDS_KEY);
     if (prev) { stashedTo = `${GROWTH_BANDS_KEY}.pre-${Date.now()}`; await redis.set(stashedTo, prev); }
@@ -158,8 +159,25 @@ export async function GET(req: NextRequest) {
     mode: confirm ? "STORED" : "DRY RUN — nothing written. Add ?confirm=YES to store these bands.",
     stored, stashedTo,
     calibratedAt: bands.calibratedAt,
-    universe: { requested: ids.length, priced: constituents.length, failedChunks, listVersion: LIST_VERSION, droppedNoSector: unclassified, salesOnAsReportedBasis: salesBasisFallback },
-    method: { weights: GROWTH_WEIGHTS, blendedPercentileCuts: GROWTH_CUTS, topMarkFloorPct: TOP_MARK_FLOOR_PCT, minGroupSize: MIN_GROUP_SIZE, winsorised: "2nd / 98th percentile within each group" },
+    selfChecks: report.selfChecks,
+    checks: report.checks,
+    readThisFirst: [
+      report.selfChecks.passed ? "All hard checks passed. Warnings (if any) are listed under selfChecks.warnings — read them before storing." : "ONE OR MORE HARD CHECKS FAILED — ?confirm=YES will refuse to store these bands. See selfChecks.hardFailures.",
+      `The peer universe is the ${GROWTH_PEER_UNIVERSE}. A small or mid cap in the book is ranked against large-cap peers; smaller companies usually grow faster, so they tend to rank HIGHER on growth than they would against companies their own size. The stock page flags any name smaller than 90% of its group.`,
+      "The checks prove the numbers are internally consistent. They CANNOT prove a FactSet formula returns what its name says — spot-check the names under /methodology/growth-data against a FactSet terminal and record the result there.",
+    ],
+    universe: {
+      requested: ids.length, priced: constituents.length, failedChunks, listVersion: LIST_VERSION, droppedNoSector: unclassified,
+      us: constituents.filter((c) => c.country === "US").length, canada: constituents.filter((c) => c.country === "CA").length,
+      // Forward sales measured from AS-REPORTED trailing sales because the estimates-basis figure was missing.
+      // The two can be on different bases (net vs gross revenue, or a different currency) — look at these names.
+      salesOnAsReportedBasis: salesBasisFallback,
+      salesOnAsReportedBasisNames: constituents.filter((c) => c.salesBasis === "as-reported").map((c) => c.ticker),
+      valuesOutsideBelievableRange: outOfRange,
+    },
+    metricSummary: report.metrics,
+    groupMakeUp: report.groups,
+    method: { weights: GROWTH_WEIGHTS, blendedPercentileCuts: GROWTH_CUTS, topMarkFloorPct: TOP_MARK_FLOOR_PCT, minGroupSize: MIN_GROUP_SIZE, believableRanges: GROWTH_PLAUSIBLE, winsorised: "2nd / 98th percentile within each group", sectorDelivered: "sector distributions leave out the delivered growth of banks and insurers (book value per share, not sales)" },
     groups: groupTable,
     sectors: sectorTable,
     constituents: constituents.sort((a, b) => a.group.localeCompare(b.group) || a.ticker.localeCompare(b.ticker)),

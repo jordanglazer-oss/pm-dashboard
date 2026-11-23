@@ -16,7 +16,8 @@ import { readStockPool, findInPool } from "@/app/lib/stock-pool";
 import { resolveFactsetId } from "@/app/lib/factset-symbols";
 import { factsetConfigured, relayRetry } from "@/app/lib/factset";
 import { sectorPlaybookBlock, pickPlaybook, historyBandFormula } from "@/app/lib/sector-playbook";
-import { computeGrowthScore, GROWTH_BANDS_KEY, GROWTH_METRIC_LABEL, type GrowthBands, type GrowthWorking } from "@/app/lib/growth-score";
+import { computeGrowthScore, resolveGrowthScore, GROWTH_BANDS_KEY, GROWTH_METRIC_LABEL, type GrowthBands, type GrowthWorking } from "@/app/lib/growth-score";
+import { bandsHealth } from "@/app/lib/score-input-validation";
 import { loadStreetTakeawaysFor, formatStreetTakeawaysForPrompt } from "@/app/lib/street-takeaways";
 import { companySnapshot, formatSnapshotForPrompt, factsetPeerBlock, namesMatch, normalizeFactsetSector, fy1RevisionPct, type CompanySnapshot } from "@/app/lib/factset-fundamentals";
 import { parseModelJson } from "@/app/lib/json-repair";
@@ -588,6 +589,14 @@ export async function POST(request: NextRequest) {
     let hadAdverseFlags = false;
     // Rubric rev 7: the app computes the growth score; the model may move it one point.
     let growthWorking: GrowthWorking | null = null;
+    // Nov 2026 audit — runtime guard. Set when the computed growth score could
+    // NOT be produced for a reason that makes any growth score untrustworthy
+    // (bands missing / too old / failed their own checks, or too few metrics).
+    // Growth is then PARKED as a data gap in code below; the model's own number
+    // is not used. (The prompt alone used to ask for this and nothing enforced it.)
+    let growthParkReason: string | null = null;
+    // Growth was judged by the model because FactSet supplied nothing to compute from.
+    let growthModelJudgedReason: string | null = null;
     // Which dated-event feeds exist for this name (catalysts evidence ceiling).
     const evidence = { guidance: false, alerts: false, report: false, form4: false };
 
@@ -815,14 +824,21 @@ export async function POST(request: NextRequest) {
         }
         if (!factsetUsed || !factsetSnap) {
           growthBlock += ": FactSet did not supply this company's estimates. Apply the DATA GAP rule to growth.";
+          growthModelJudgedReason = "FactSet did not supply this company's estimates, so the growth score could not be computed";
         } else {
           let bands: GrowthBands | null = null;
           try {
             const rawBands = await (await getRedis()).get(GROWTH_BANDS_KEY);
             bands = rawBands ? (JSON.parse(rawBands) as GrowthBands) : null;
           } catch { /* bands stay null */ }
+          const health = bandsHealth(bands);
           if (!bands) {
             growthBlock += ": the peer-group growth bands have not been calibrated yet. Apply the DATA GAP rule to growth.";
+            growthParkReason = "the peer-group growth bands have not been calibrated";
+          } else if (!health.usable) {
+            growthBlock += `: ${health.reason}. Apply the DATA GAP rule to growth.`;
+            growthParkReason = health.reason;
+            console.warn(`[Score] ${upperTicker}: growth parked — ${health.reason}`);
           } else {
             const v = factsetSnap.values;
             const group = pickPlaybook(factsetSnap.sector ?? null, factsetSnap.industry ?? null, upperTicker)?.label ?? null;
@@ -832,6 +848,7 @@ export async function POST(request: NextRequest) {
               sector: normalizeFactsetSector(factsetSnap.sector),
               bands,
               revisionPct: fy1RevisionPct(v),
+              marketCapM: v.mktVal,
             });
             const w = growthWorking;
             const f1 = (n: number) => `${n >= 0 ? "+" : ""}${n.toFixed(1)}%`;
@@ -839,11 +856,13 @@ export async function POST(request: NextRequest) {
               "=== COMPUTED GROWTH SCORE ===",
               `Ranked in: ${w.rankedIn} (${w.groupSize} names)${w.foldedFrom ? ` — the ${w.foldedFrom} group is too small to rank in, so its GICS sector is used` : ""}. Bands calibrated ${w.calibratedAt.slice(0, 10)}.`,
               ...(w.groupNote ? [`Group rule: ${w.groupNote}`] : []),
+              ...(w.size?.note ? [`Size: ${w.size.note}`] : []),
               ...w.components.map((c) => `- ${GROWTH_METRIC_LABEL[c.metric]}: ${f1(c.value)} → ${c.percentile.toFixed(0)}th percentile (group median ${c.groupMedian != null ? f1(c.groupMedian) : "n/a"}); weight ${(c.weight * 100).toFixed(0)}%`),
               ...w.excluded.map((e) => `- ${GROWTH_METRIC_LABEL[e.metric]}: not used — ${e.reason}`),
             ];
             if (w.computedScore == null) {
               lines.push("Fewer than two usable metrics — the score could NOT be computed. Apply the DATA GAP rule to growth.");
+              growthParkReason = w.gapReason ?? "fewer than two of the four growth metrics could be formed and ranked";
             } else {
               lines.push(
                 `Blended percentile: ${w.blendedPercentile} → base score ${w.baseScore}/3.`,
@@ -1483,18 +1502,39 @@ export async function POST(request: NextRequest) {
     }
 
     // ── Computed growth: enforce the one-point rule and attach the working ──
-    if (growthWorking && activeAiKeys.includes("growth")) {
-      const g = explanations.growth;
-      const rich = g && !Array.isArray(g) ? g : null;
-      if (growthWorking.computedScore == null) {
-        if (rich) rich.growthCalc = { ...growthWorking, modelScore: scores.growth ?? 0, modelAdjustment: 0 };
-      } else {
-        const model = scores.growth ?? growthWorking.computedScore;
-        const bounded = Math.max(growthWorking.computedScore - 1, Math.min(growthWorking.computedScore + 1, model));
-        const final = Math.max(0, Math.min(3, bounded));
-        if (final !== model) console.warn(`[Score] ${upperTicker}: growth ${model} was more than one point from the computed ${growthWorking.computedScore} — held to ${final}`);
-        scores.growth = final;
-        if (rich) rich.growthCalc = { ...growthWorking, modelScore: final, modelAdjustment: final - growthWorking.computedScore, ...(final !== model ? { clampedFrom: model } : {}) };
+    if (activeAiKeys.includes("growth")) {
+      const resolved = resolveGrowthScore({
+        computedScore: growthWorking?.computedScore ?? null,
+        parkReason: growthParkReason,
+        modelRaw: parsed.scores?.growth,
+        // A model that parked growth as a DATA GAP while a computed score exists
+        // is treated as "no adjustment": the computed score stands, it does not
+        // drop out of the composite on the model's say-so.
+        modelReturned: !notReturned.has("growth") && !(() => { const e = explanations.growth; return !!e && !Array.isArray(e) && /^\s*DATA GAP/i.test(e.summary); })(),
+      });
+      if (resolved.kind === "parked") {
+        // Runtime guard: no computed score → growth is a data gap, whatever the model said.
+        if (typeof parsed.scores?.growth === "number") console.warn(`[Score] ${upperTicker}: growth parked (${resolved.reason}); the model's ${parsed.scores.growth} was not used`);
+        scores.growth = resolved.placeholder;
+        explanations.growth = {
+          summary: `DATA GAP: the growth score was not computed — ${resolved.reason}. Growth is left out of the composite until it can be computed.`,
+          dataPoints: [], confidence: "low",
+          ...(growthWorking ? { growthCalc: { ...growthWorking, modelScore: resolved.placeholder, modelAdjustment: 0 } } : {}),
+        };
+      } else if (resolved.kind === "computed" && growthWorking) {
+        if (resolved.clampedFrom != null) console.warn(`[Score] ${upperTicker}: growth ${resolved.clampedFrom} was more than one point from the computed ${growthWorking.computedScore} — held to ${resolved.score}`);
+        scores.growth = resolved.score;
+        const g = explanations.growth;
+        const calc = { ...growthWorking, modelScore: resolved.score, modelAdjustment: resolved.adjustment, ...(resolved.clampedFrom != null ? { clampedFrom: resolved.clampedFrom } : {}) };
+        if (!resolved.modelUsed) {
+          // The model's growth entry was missing or not a number: the computed score stands on its own.
+          explanations.growth = { summary: "Computed by the app from FactSet data (see the calculation below). The model's commentary on growth was not returned on this run, so no adjustment was applied.", dataPoints: [], confidence: "medium", growthCalc: calc };
+        } else if (g && !Array.isArray(g)) g.growthCalc = calc;
+      } else if (growthModelJudgedReason) {
+        // No FactSet data to compute from: the model's read stands (DATA GAP rule,
+        // fill-first), but it is LABELLED so it can never pass for a computed score.
+        const g = explanations.growth;
+        if (g && !Array.isArray(g) && !/^\s*DATA GAP/i.test(g.summary)) g.growthBasis = `Judged by the model, not computed: ${growthModelJudgedReason}.`;
       }
     }
 
