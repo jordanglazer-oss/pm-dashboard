@@ -12,6 +12,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { ScoreVerificationPanel } from "@/app/components/ScoreVerificationPanel";
+import { Explain } from "@/app/components/Explain";
 
 type ShiftRow = { label: string; names: number; avgCurrent: number; avgShadow: number; avgShift: number; up: number; down: number };
 type Component = { metric: string; label: string; value: number; percentile: number; weight: number; groupMedian: number | null };
@@ -122,14 +123,22 @@ export default function ScoringShadowPage() {
       <p className="text-[12px]"><Link href="/methodology" className="text-accent hover:underline">← Methodology</Link></p>
       <h1 className="mt-1 text-2xl font-semibold">Scoring shadow</h1>
       <p className="mt-2 max-w-[80ch] text-[14px] leading-relaxed text-ink-2">
-        The proposed fixes for the large-cap and US bias, worked out beside today&apos;s score for {data.names} stocks. <b className="font-medium text-ink">Nothing here changes a live score.</b> Scores are the 33-point conviction score before the regime adjustment, which is the same in both columns.
+        The proposed bias fixes beside today&apos;s score for {data.names} stocks. <b className="font-medium text-ink">Shadow only — no live score changes.</b>
       </p>
-      <p className="mt-2 max-w-[80ch] text-[13px] text-ink-2">
-        {data.qualityBands
-          ? <>Peer-ranked quality uses bands calibrated {data.qualityBands.calibratedAt.slice(0, 10)} on {data.qualityBands.universeSize} companies (S&amp;P 500 and TSX 60 — large caps only, so a smaller company is ranked against larger peers).</>
-          : <span className="text-warn">Peer-ranked quality is not included yet: the quality bands have not been calibrated. The other three fixes are shown.</span>}
-        {" "}{data.compositeCheck}.{data.liveNote ? ` ${data.liveNote}` : ""}
-      </p>
+      {!data.qualityBands && <p className="mt-1 max-w-[80ch] text-[13px] text-warn">Peer-ranked quality is not included yet (bands not calibrated). The other three fixes are shown.</p>}
+      <Explain className="mt-1.5 max-w-[80ch]" prefKey="explain.scoringShadow.intro" label="What is being compared">
+        <p>Scores are the 33-point conviction score before the regime adjustment, which is the same in both columns.</p>
+        {data.qualityBands && (
+          <p className="mt-1">
+            Peer-ranked quality uses bands calibrated {data.qualityBands.calibratedAt.slice(0, 10)} on {data.qualityBands.universeSize} companies (S&amp;P 500 and TSX 60 — large caps only, so a smaller company is ranked against larger peers).
+          </p>
+        )}
+        <p className="mt-1">
+          {data.compositeCheck}.{data.liveNote ? ` ${data.liveNote}` : ""}
+        </p>
+        {data.summary && <p className="mt-1">{data.summary.note}</p>}
+        <p className="mt-1">The four right-hand columns of the table show what each fix does on its own.</p>
+      </Explain>
       {data.qualityBands && <div className="mt-4"><ScoreVerificationPanel score="quality" /></div>}
 
       {data.summary && (
@@ -139,7 +148,6 @@ export default function ScoringShadowPage() {
             <SummaryTable title="By size" rows={data.summary.bySize} />
           </div>
           <div className="mt-3"><SummaryTable title="By market and size" rows={data.summary.byCountryAndSize} /></div>
-          <p className="mt-1.5 text-[12px] text-ink-3">{data.summary.note}</p>
         </>
       )}
 
@@ -167,11 +175,13 @@ export default function ScoringShadowPage() {
           </tbody>
         </table>
       </div>
-      <p className="mt-1.5 text-[12px] text-ink-3">Click a row for the working. The four right-hand columns show what each fix does on its own.</p>
+      <p className="mt-1.5 text-[12px] text-ink-3">Click a row for the working.</p>
       {selected && <div className="mt-3"><Detail r={selected} /></div>}
 
       {data.notComputed && (
-        <p className="mt-5 max-w-[80ch] text-[12.5px] leading-relaxed text-ink-2"><b className="font-medium text-ink">Not included — thin coverage.</b> {data.notComputed.thinCoverage}</p>
+        <Explain className="mt-5 max-w-[80ch]" prefKey="explain.scoringShadow.thinCoverage" label="Not included: the thin-coverage fix">
+          {data.notComputed.thinCoverage}
+        </Explain>
       )}
     </div>
   );

@@ -17,6 +17,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { usePersistedOpen } from "@/app/lib/useCollapsed";
 import { ScoreVerificationPanel } from "@/app/components/ScoreVerificationPanel";
+import { Explain } from "@/app/components/Explain";
 
 type MetricKey = "fwdSales" | "fwdEps" | "ltg" | "delivered";
 type Metric = { value: number; percentile: number; weight: number; groupMedian: number | null };
@@ -151,10 +152,11 @@ export default function GrowthDataPage() {
       <p className="text-[12px]"><Link href="/methodology#growth-score" className="text-accent hover:underline">← Methodology</Link></p>
       <h1 className="mt-1 text-2xl font-semibold">Growth score data</h1>
       <p className="mt-2 max-w-[78ch] text-[14px] leading-relaxed text-ink-2">
-        Every number behind the growth score: where it comes from, how it is turned into the four measures, and where each company ranks.
-        Pulled from FactSet on <b className="font-medium text-ink">{data.calibratedAt?.slice(0, 10)}</b> for <b className="font-medium text-ink">{data.universeSize}</b> companies (S&amp;P 500 and TSX 60).
-        The figures below are recomputed by the same code the scoring uses, so this page cannot drift from what a rescore does. Pick any company to see its arithmetic; download the table to check figures against your terminal.
+        Every number behind the growth score. Pulled from FactSet on <b className="font-medium text-ink">{data.calibratedAt?.slice(0, 10)}</b> for <b className="font-medium text-ink">{data.universeSize}</b> companies (S&amp;P 500 and TSX 60).
       </p>
+      <Explain className="mt-1.5 max-w-[78ch]" prefKey="explain.growthData.intro" label="How to use this page">
+        It shows where each figure comes from, how it becomes the four measures, and where each company ranks. The figures are recomputed by the same code the scoring uses, so this page cannot drift from what a rescore does. Click a row to see that company&apos;s arithmetic (&ldquo;Not used&rdquo; shows its reason on hover and in the worked example); download the table to check figures against your terminal. Base score is before the live estimate-revision step.
+      </Explain>
       {data.inSync === false && <p className="mt-2 text-warn">The stored bands and this company data come from different calibration runs. Re-run the calibration to bring them back in step.</p>}
 
       {/* Health of the bands + the human spot check against a FactSet terminal */}
@@ -232,7 +234,7 @@ export default function GrowthDataPage() {
           </tbody>
         </table>
       </div>
-      <p className="mt-2 text-[12px] text-ink-3">Click a row to see that company&apos;s arithmetic. “Not used” shows its reason on hover and in the worked example. Base score is before the live estimate-revision step.</p>
+      <p className="mt-2 text-[12px] text-ink-3">Click a row for that company&apos;s arithmetic.</p>
     </div>
   );
 }

@@ -2,6 +2,7 @@
 
 import React, { useEffect, useState } from "react";
 import { CollapsibleSection } from "@/app/components/CollapsibleSection";
+import { Explain } from "@/app/components/Explain";
 import type { ContrarianLabel, ContrarianRead, ContrarianStatus } from "@/app/lib/contrarian";
 
 /**
@@ -38,43 +39,40 @@ export default function ContrarianTile({ ticker }: { ticker: string }) {
   if (data === undefined || data === null) return null; // loading, or not an individual stock in the book
 
   return (
-    <CollapsibleSection prefKey="stock.contrarian" title="Contrarian setup" subtitle="Signs of a possible contrarian pick · not part of the score">
-      <div className="flex flex-col gap-2.5 text-[12.5px]">
-        <div>
-          <div className="text-[15px] font-medium">
-            <span className={labelTone(data.label)}>{data.label}</span>
-            <span className="ml-2 text-[12.5px] font-normal text-ink-3">
-              {data.score} of {data.of} test{data.of === 1 ? "" : "s"} with data
-            </span>
-          </div>
-          <p className="text-ink-2">{data.why}</p>
+    <CollapsibleSection prefKey="stock.contrarian" title="Contrarian setup" subtitle="Not part of the score">
+      <div className="flex flex-col gap-2 text-[12.5px]">
+        <div className="text-[15px] font-medium">
+          <span className={labelTone(data.label)}>{data.label}</span>
+          <span className="ml-2 text-[12.5px] font-normal text-ink-3">
+            {data.score} of {data.of} test{data.of === 1 ? "" : "s"} with data
+          </span>
         </div>
-        <div className="flex flex-col gap-2">
-          {data.tests.map((t) => (
-            <div key={t.id} className="border-t border-line pt-2">
-              <div className="flex items-baseline justify-between gap-3">
-                <span className="font-medium text-ink">{t.title}</span>
-                <span className="shrink-0 text-[12px]">
+        {/* One tight row per test: label · yes / no / no data · the numbers. */}
+        <table className="w-full">
+          <tbody>
+            {data.tests.map((t) => (
+              <tr key={t.id} className="border-t border-line align-baseline" title={t.summary}>
+                <td className="py-1 pr-3 font-medium text-ink">{t.title}</td>
+                <td className="whitespace-nowrap py-1 pr-3 text-[12px]">
                   <span className={statusTone(t.status)}>{STATUS_WORD[t.status]}</span>
-                </span>
-              </div>
-              <p className="text-ink-2">{t.summary}</p>
-              {t.numbers.length > 0 && (
-                <table className="mt-1 w-full tabular-nums">
-                  <tbody>
-                    {t.numbers.map((n) => (
-                      <tr key={n.label}>
-                        <td className="py-0.5 pr-3 text-[11.5px] text-ink-3">{n.label}</td>
-                        <td className="py-0.5 text-right text-[12px]">{n.value}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              )}
-            </div>
-          ))}
-        </div>
-        <p className="border-t border-line pt-2 text-[11px] text-ink-3">{data.caution}</p>
+                </td>
+                <td className="py-1 text-right text-[12px] tabular-nums text-ink-2">{t.numbers.length ? t.numbers.map((n) => `${n.label} ${n.value}`).join(" · ") : "—"}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+        <p className="text-[11.5px] text-ink-3">A prompt to look, not a buy signal.</p>
+        <Explain prefKey="explain.stock.contrarian" label="What each test found">
+          <p>{data.why}</p>
+          <ul className="mt-1 list-disc pl-4">
+            {data.tests.map((t) => (
+              <li key={t.id}>
+                <span className="text-ink-2">{t.title}:</span> {t.summary}
+              </li>
+            ))}
+          </ul>
+          <p className="mt-1">{data.caution}</p>
+        </Explain>
       </div>
     </CollapsibleSection>
   );

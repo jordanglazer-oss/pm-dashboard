@@ -131,7 +131,7 @@ export default function ThemesPage() {
 
       {data && data.themes.length === 0 && !editing && (
         <p className="panel px-3.5 py-3 text-[12.5px] text-ink-3">
-          No themes yet. When a thesis is drafted with AI it names the themes the company belongs to; those names collect below as “Themes found in your theses”. Draft one with AI to give it pillars and bellwethers.
+          No themes yet. They appear here once a thesis drafted with AI names one.
         </p>
       )}
 
@@ -155,7 +155,7 @@ export default function ThemesPage() {
           <div className="panel-h">
             <span className="t-mark bg-hub-portfolio" aria-hidden />
             <span className="t">Themes found in your theses</span>
-            <span className="m">not yet a theme — draft one, or it may be a variant of an existing theme (a redraft adds it as an alias)</span>
+            <span className="m" title="Draft one, or it may be a variant of an existing theme (a redraft adds it as an alias).">named in theses, not yet a theme</span>
           </div>
           {data.detected.map((d) => (
             <div key={d.name} className="flex flex-wrap items-center gap-2 border-t border-line-soft px-3.5 py-2 text-[12.5px]">

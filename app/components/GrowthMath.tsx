@@ -12,6 +12,7 @@
 
 import React, { useEffect, useState } from "react";
 import { usePersistedOpen } from "@/app/lib/useCollapsed";
+import { Explain } from "@/app/components/Explain";
 import { GROWTH_CUTS, GROWTH_METRIC_LABEL, TOP_MARK_FLOOR_PCT, type GrowthWorking } from "@/app/lib/growth-score";
 
 type Calc = GrowthWorking & { modelScore: number; modelAdjustment: number; clampedFrom?: number };
@@ -34,15 +35,14 @@ export function GrowthMath({ calc }: { calc: Calc }) {
   return (
     <div className="rounded border border-line bg-surface">
       <button type="button" onClick={toggle} className="flex w-full items-center justify-between gap-2 px-3 py-2 text-left text-[12px] font-medium text-ink hover:bg-surface-hover">
-        <span>Show the math — how this growth score was calculated</span>
+        <span>Growth score: the working</span>
         <span className="font-mono text-[11px] text-ink-3">{open ? "hide" : "show"}</span>
       </button>
       {open && (
         <div className="flex flex-col gap-3 border-t border-line px-3 py-3 text-[12px] leading-relaxed text-ink-2">
           <p>
             Ranked against <span className="font-medium text-ink">{calc.rankedIn}</span> ({calc.groupSize} companies
-            {calc.foldedFrom ? `; the ${calc.foldedFrom} group is too small to rank in, so its sector is used` : ""}). Peer bands calibrated {calc.calibratedAt.slice(0, 10)}.
-            The peer universe is the S&amp;P 500 and TSX 60, so a smaller company is being compared with large caps.
+            {calc.foldedFrom ? `; ${calc.foldedFrom} is too small a group, so its sector is used` : ""}). Bands calibrated {calc.calibratedAt.slice(0, 10)}.
           </p>
           {calc.groupNote && <p className="text-ink-3">{calc.groupNote}</p>}
           {calc.size?.note && <p className="text-warn">{calc.size.note}</p>}
@@ -81,8 +81,7 @@ export function GrowthMath({ calc }: { calc: Calc }) {
           ) : (
             <>
               <p>
-                <span className="font-medium text-ink">Blended percentile: {calc.blendedPercentile}</span> (the contributions above, added up). Below {GROWTH_CUTS.one} scores 0, below {GROWTH_CUTS.two} scores 1, below {GROWTH_CUTS.three} scores 2.
-                At {GROWTH_CUTS.three} or above, a 3 also has to pass all three tests below; otherwise it stays a 2. Negative forward growth scores 0 outright.
+                <span className="font-medium text-ink">Blended percentile: {calc.blendedPercentile}</span> · a 3 needs all three tests:
               </p>
               <ul className="flex flex-col gap-0.5">
                 <Test ok={calc.topMark!.inTopBand}>Blended percentile of {GROWTH_CUTS.three} or higher (top ~15% of the group)</Test>
@@ -107,7 +106,15 @@ export function GrowthMath({ calc }: { calc: Calc }) {
               {calc.clampedFrom != null && <p className="text-warn">The model returned {calc.clampedFrom}, more than one point from the computed score, so the app held it to {calc.modelScore}.</p>}
             </>
           )}
-          <p className="text-ink-3">The full method, and every peer group&apos;s cut points, are on the <a href="/methodology#growth-score" className="text-accent hover:underline">Methodology page</a>. The raw FactSet inputs, the exact formulas and every peer&apos;s figures are on the <a href="/methodology/growth-data" className="text-accent hover:underline">growth data page</a>.</p>
+          <Explain prefKey="explain.stock.growthMath" label="How the score is derived">
+            <p>
+              The blended percentile is the contributions in the table added up. Below {GROWTH_CUTS.one} scores 0, below {GROWTH_CUTS.two} scores 1, below {GROWTH_CUTS.three} scores 2. At {GROWTH_CUTS.three} or above, a 3 also has to pass all three tests; otherwise it stays a 2. Negative forward growth scores 0 outright.
+            </p>
+            <p className="mt-1">The peer universe is the S&amp;P 500 and TSX 60, so a smaller company is being compared with large caps.</p>
+            <p className="mt-1">
+              The full method and every peer group&apos;s cut points are on the <a href="/methodology#growth-score" className="text-accent hover:underline">Methodology page</a>; the raw FactSet inputs, exact formulas and every peer&apos;s figures are on the <a href="/methodology/growth-data" className="text-accent hover:underline">growth data page</a>.
+            </p>
+          </Explain>
         </div>
       )}
     </div>

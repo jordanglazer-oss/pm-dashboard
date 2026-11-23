@@ -2,6 +2,7 @@
 
 import React, { useEffect, useState } from "react";
 import { CollapsibleSection } from "@/app/components/CollapsibleSection";
+import { Explain } from "@/app/components/Explain";
 import type { AnalystReading, AnalystTrend } from "@/app/lib/analyst-history";
 
 /**
@@ -43,9 +44,9 @@ export default function AnalystTrendTile({ ticker }: { ticker: string }) {
   const streak = data?.trend.targetStreak ?? null;
 
   return (
-    <CollapsibleSection prefKey="stock.analystTrend" title="Analyst trend" subtitle="FactSet consensus over time · not part of the score">
+    <CollapsibleSection prefKey="stock.analystTrend" title="Analyst trend" subtitle="Not part of the score">
       {!latest ? (
-        <p className="text-[12.5px] text-ink-3">No readings logged for this name yet. Recording began 19 Nov 2026 and adds a line each night a value changes.</p>
+        <p className="text-[12.5px] text-ink-3">No readings logged yet (recording began 19 Nov 2026).</p>
       ) : (
         <div className="flex flex-col gap-2.5 text-[12.5px]">
           <div className="grid grid-cols-3 gap-3">
@@ -114,7 +115,9 @@ export default function AnalystTrendTile({ ticker }: { ticker: string }) {
               </tbody>
             </table>
           )}
-          <p className="text-[11px] text-ink-3">A line is added only on a night a value changed. Since {fmtDay(entries[0]?.date ?? latest.date)}.</p>
+          <Explain prefKey="explain.stock.analystTrend" label="About these readings">
+            FactSet consensus (average target, analyst count, 30-day estimate revisions), logged since {fmtDay(entries[0]?.date ?? latest.date)}. A line is added only on a night a value changed.
+          </Explain>
         </div>
       )}
     </CollapsibleSection>

@@ -2,6 +2,7 @@
 
 import React, { useCallback, useEffect, useState } from "react";
 import type { DaAdhocRecord, DaVerdict } from "@/app/lib/agents/devils-advocate-shared";
+import { Explain } from "@/app/components/Explain";
 
 /**
  * On-demand devil's advocate for ONE book name we do not hold — the case
@@ -55,7 +56,7 @@ export default function DevilsAdvocateAdhoc({ ticker }: { ticker: string }) {
         <button className={BTN} disabled={busy || record === undefined} onClick={generate}>
           {busy ? "Writing… (up to a minute)" : record ? "Regenerate" : "Generate devil's advocate"}
         </button>
-        <span className="text-ink-3">The strongest case against buying this today, from what is on file only (no web search). A few cents.</span>
+        <span className="text-ink-3">A few cents per run.</span>
       </div>
       {msg && <p className="text-ink-2">{msg}</p>}
       {record && (
@@ -90,7 +91,10 @@ export default function DevilsAdvocateAdhoc({ ticker }: { ticker: string }) {
           )}
         </div>
       )}
-      {record === null && !msg && <p className="text-ink-3">None written for this name yet.</p>}
+      {record === null && !msg && <p className="text-ink-3">None written yet.</p>}
+      <Explain prefKey="explain.stock.devilsAdvocate" label="About this write-up">
+        The strongest case against buying this name today, argued only from what is on file (thesis, FactSet alerts, analyst trend) with no web search. Names we already hold get theirs in the monthly run on the Monitor page.
+      </Explain>
     </div>
   );
 }

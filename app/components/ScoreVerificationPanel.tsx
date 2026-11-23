@@ -17,6 +17,7 @@
 
 import React, { useCallback, useEffect, useState } from "react";
 import { usePersistedOpen } from "@/app/lib/useCollapsed";
+import { Explain } from "@/app/components/Explain";
 
 type Card = { ticker: string; group: string; why: string; fields: { label: string; formula: string; unit: string; value: number | null }[]; arithmetic: { metric: string; used: boolean; text: string }[] };
 type Resp = {
@@ -31,6 +32,8 @@ const fmt = (v: number | null) => (v == null ? "missing" : Math.abs(v) >= 1000 ?
 
 export function ScoreVerificationPanel({ score }: { score: "growth" | "quality" }) {
   const [open, toggle] = usePersistedOpen(`methodology.verify.${score}.open`, true);
+  // The dozen company cards are long: one persisted expander, open until a check is on file.
+  const [cardsOpen, toggleCards] = usePersistedOpen(`methodology.verify.${score}.cards`, true);
   const [data, setData] = useState<Resp | null>(null);
   const [who, setWho] = useState("");
   const [notes, setNotes] = useState("");
@@ -67,10 +70,6 @@ export function ScoreVerificationPanel({ score }: { score: "growth" | "quality" 
             <p>The calibration has not been stored yet, so there is nothing to check.</p>
           ) : (
             <>
-              <p>
-                The app checks its own arithmetic. It cannot check that each FactSet formula returns what its name says — only a person at a FactSet terminal can.
-                Compare the companies below with the terminal, then record the result. Until someone does, treat the {score} score as unverified.
-              </p>
               <ul className="flex flex-col gap-0.5">
                 <li><span className={v?.verified ? "text-pos" : "text-warn"}>{v?.text}</span></li>
                 <li>
@@ -89,12 +88,27 @@ export function ScoreVerificationPanel({ score }: { score: "growth" | "quality" 
                 <ul className="list-disc pl-4 text-ink-3">{data.selfChecks.warnings.map((w, i) => <li key={i}>{w}</li>)}</ul>
               ) : null}
 
+              <Explain prefKey={`explain.verify.${score}.steps`} label="How to do the spot check" defaultOpen={!v?.verified}>
+                <ol className="list-decimal pl-4">
+                  <li>Download the spot-check sheet below.</li>
+                  <li>At a FactSet terminal, type each formula shown against the ticker and compare it with &ldquo;Value we stored&rdquo;.</li>
+                  <li>Add one company that reported its fourth quarter in the last few weeks; the app cannot pick that one.</li>
+                  <li>Record the result at the bottom: every figure matched, or what did not (company and figure).</li>
+                </ol>
+                <p className="mt-1">
+                  The app checks its own arithmetic; only a person at a terminal can check that each FactSet formula returns what its name says. Entries are kept permanently and cannot be edited. A check applies to the calibration it was made against, so after a re-calibration the score reads &ldquo;not verified&rdquo; until re-checked.
+                </p>
+              </Explain>
+
               <div className="flex flex-wrap items-center gap-2">
                 <a href={`/api/${score}-bands/detail?spot=csv`} className="rounded border border-line px-2.5 py-1 text-[12px] !text-accent-ink hover:bg-surface-hover">Download the spot-check sheet (CSV)</a>
-                <span className="text-ink-3">{data.spotCheck?.length ?? 0} companies. {data.spotCheckNote}</span>
+                <span className="text-ink-3" title={data.spotCheckNote}>{data.spotCheck?.length ?? 0} companies</span>
+                <button type="button" onClick={toggleCards} className="text-[12px] font-medium text-ink-3 underline decoration-line underline-offset-2">
+                  {cardsOpen ? "Hide the companies" : "Show the companies"}
+                </button>
               </div>
 
-              <div className="flex flex-col gap-2">
+              {cardsOpen && <div className="flex flex-col gap-2">
                 {data.spotCheck?.map((c) => (
                   <div key={c.ticker} className="rounded border border-line p-2">
                     <div><span className="font-medium text-ink">{c.ticker}</span> · {c.group} <span className="text-ink-3">— {c.why}</span></div>
@@ -117,7 +131,7 @@ export function ScoreVerificationPanel({ score }: { score: "growth" | "quality" 
                     </ul>
                   </div>
                 ))}
-              </div>
+              </div>}
 
               <div className="flex flex-col gap-2 rounded border border-line p-2">
                 <div className="font-medium text-ink">Record the result</div>
@@ -130,7 +144,6 @@ export function ScoreVerificationPanel({ score }: { score: "growth" | "quality" 
                   <button type="button" disabled={busy || !who.trim() || !notes.trim()} onClick={() => record("mismatched")} className="rounded border border-line px-2.5 py-1 text-[12px] disabled:opacity-50"><span className="text-neg">Something did not match</span></button>
                   {msg && <span className="text-ink-3">{msg}</span>}
                 </div>
-                <p className="text-[11.5px] text-ink-3">Entries are kept permanently and cannot be edited. A check applies to the calibration it was made against; after a re-calibration the score reads &quot;not verified&quot; again until re-checked.</p>
               </div>
             </>
           )}

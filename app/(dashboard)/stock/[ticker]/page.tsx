@@ -2601,7 +2601,7 @@ export default function StockDetailPage() {
           {scoreable && <ContrarianTile ticker={stock.ticker} />}
           {/* Devil's advocate on demand — a watchlist name only (holdings get the monthly one on Monitor). */}
           {stock.bucket === "Watchlist" && (
-            <CollapsibleSection prefKey="stock.devilsAdvocate" title="Devil's advocate" subtitle="The case against buying it today · on demand">
+            <CollapsibleSection prefKey="stock.devilsAdvocate" title="Devil's advocate" subtitle="Case against buying · on demand">
               <DevilsAdvocateAdhoc ticker={stock.ticker} />
             </CollapsibleSection>
           )}
