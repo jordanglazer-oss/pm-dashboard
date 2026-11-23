@@ -1,5 +1,4 @@
-import { agentCall, AgentGatewayError } from "./gateway";
-import { parseModelJson } from "../json-repair";
+import { agentCall, AgentGatewayError, parseAgentJson } from "./gateway";
 import { createLogger } from "../logger";
 
 /**
@@ -48,7 +47,7 @@ export async function factCheck(finding: string, sources: string, note: string):
       system: SYSTEM,
       messages: [{ role: "user", content: `=== FINDING ===\n${finding.slice(0, 6000)}\n\n=== SOURCES ===\n${sources.slice(0, 24000)}` }],
     });
-    const parsed = parseModelJson<{ verdict?: unknown; problems?: unknown }>(r.text);
+    const parsed = parseAgentJson<{ verdict?: unknown; problems?: unknown }>(r);
     if (!parsed.ok) return { verdict: "skipped", problems: [], model: r.model, usd: r.usd, at, note: `unparseable: ${parsed.error}` };
     const v = parsed.value.verdict;
     const verdict = v === "supported" || v === "partly" || v === "unsupported" ? v : "skipped";

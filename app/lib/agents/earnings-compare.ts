@@ -181,16 +181,29 @@ function normalise(raw: Record<string, unknown>): CompareResult {
 
 async function ask(tier: AgentModelTier, prompt: string, note: string): Promise<CompareAnswer> {
   try {
-    const r = await agentCall(WATCHER, {
-      tier,
-      note,
-      max_tokens: 1500,
-      system: SYSTEM,
-      messages: [{ role: "user", content: prompt }],
-    });
+    // A long recap (many lines) can outrun the token cap. A cut-off answer is
+    // never parsed: JSON repair would close the open string and the flag
+    // would carry half a title and no detail. Retry once with more room.
+    let usd = 0;
+    let r: Awaited<ReturnType<typeof agentCall>> | null = null;
+    for (const max_tokens of [3000, 6000]) {
+      r = await agentCall(WATCHER, {
+        tier,
+        note: max_tokens > 3000 ? `${note} (retry, longer answer)` : note,
+        max_tokens,
+        system: SYSTEM,
+        messages: [{ role: "user", content: prompt }],
+      });
+      usd += r.usd;
+      if (!r.truncated) break;
+    }
+    if (!r) return { tier, model: tier, usd, error: "no answer" };
+    if (r.truncated) return { tier, model: r.model, usd, error: "answer was cut off twice (too long) — not flagged" };
     const parsed = parseModelJson<Record<string, unknown>>(r.text);
-    if (!parsed.ok) return { tier, model: r.model, usd: r.usd, error: `unparseable answer: ${parsed.error}` };
-    return { tier, model: r.model, usd: r.usd, result: normalise(parsed.value) };
+    if (!parsed.ok) return { tier, model: r.model, usd, error: `unparseable answer: ${parsed.error}` };
+    const result = normalise(parsed.value);
+    if (result.flag && !result.detail) return { tier, model: r.model, usd, error: "answer had no detail — not flagged" };
+    return { tier, model: r.model, usd, result };
   } catch (e) {
     if (e instanceof AgentGatewayError) throw e;
     return { tier, model: tier, usd: 0, error: e instanceof Error ? e.message : String(e) };

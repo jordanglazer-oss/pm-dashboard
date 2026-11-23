@@ -1,11 +1,10 @@
 import { getRedis } from "@/app/lib/redis";
 import { createLogger } from "@/app/lib/logger";
-import { parseModelJson } from "@/app/lib/json-repair";
 import { holdingBucket, type BucketStock } from "@/app/lib/sleeve-targets";
 import { tickersEqual } from "@/app/lib/ticker";
 import type { FundData, FundPerformance } from "@/app/lib/types";
 import type { PimModelData } from "@/app/lib/pim-types";
-import { agentCall, AgentGatewayError } from "./gateway";
+import { agentCall, AgentGatewayError, parseAgentJson } from "./gateway";
 import { POLICY_TEXT } from "./policy";
 import { raiseFlag } from "./flags";
 import { readAgentSettings, isWatcherOn } from "./settings";
@@ -196,7 +195,7 @@ export async function runManagerWatch(opts: { force?: boolean } = {}): Promise<M
         const a = await agentCall("manager-watch", { note: `${r.symbol} ${quarter}`, max_tokens: 600, system: SYSTEM, messages: [{ role: "user", content: `=== FUND (${quarter}) ===\n${block}` }] });
         usd += a.usd;
         model = a.model;
-        const p = parseModelJson<{ title?: string; detail?: string; suggestion?: string }>(a.text);
+        const p = parseAgentJson<{ title?: string; detail?: string; suggestion?: string }>(a);
         if (p.ok && p.value.title && p.value.detail) {
           title = p.value.title.slice(0, 120);
           detail = `${p.value.detail.slice(0, 800)} (Rules: ${r.findings.join("; ")}.)`;

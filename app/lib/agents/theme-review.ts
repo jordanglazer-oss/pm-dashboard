@@ -1,11 +1,10 @@
 import { getRedis } from "@/app/lib/redis";
 import { createLogger } from "@/app/lib/logger";
-import { parseModelJson } from "@/app/lib/json-repair";
 import { yahooClassShare } from "@/app/lib/yahoo-symbol";
 import { loadThemeViews, loadThemeEvidence, type ThemeView } from "@/app/lib/themes";
 import { loadHedges, isActiveHedge, describeHedge } from "@/app/lib/hedges";
 import { easternToday } from "@/app/lib/date-eastern";
-import { agentCall, AgentGatewayError } from "./gateway";
+import { agentCall, AgentGatewayError, parseAgentJson } from "./gateway";
 import { POLICY_TEXT } from "./policy";
 import { raiseFlag, getFlag, updateFlag, type AgentFlag, type FlagPriority } from "./flags";
 
@@ -198,7 +197,7 @@ export async function reviewTheme(themeId: string, trigger: string): Promise<The
       system: `${SYSTEM}\n\n${FIRST_SHAPE}`,
       messages: [{ role: "user", content: `=== CONTEXT ===\n${ctx.text}` }],
     });
-    const p = parseModelJson<Record<string, unknown>>(r.text);
+    const p = parseAgentJson<Record<string, unknown>>(r);
     if (!p.ok) return { ok: false, error: `unparseable answer: ${p.error}` };
     const v = p.value;
     const s = (x: unknown, max = 900) => (typeof x === "string" ? x.trim().slice(0, max) : "");
@@ -256,7 +255,7 @@ export async function replyToConversation(flagId: string, note: string): Promise
       system: `${SYSTEM}\n\n${REPLY_SHAPE}`,
       messages: [{ role: "user", content: `=== CONTEXT (refreshed now) ===\n${ctx.text}\n\n=== THREAD ===\n${thread.slice(-12000)}` }],
     });
-    const p = parseModelJson<{ reply?: unknown; suggestion?: unknown; question?: unknown }>(r.text);
+    const p = parseAgentJson<{ reply?: unknown; suggestion?: unknown; question?: unknown }>(r);
     const reply = p.ok && typeof p.value.reply === "string" ? p.value.reply.trim().slice(0, 1500) : r.text.slice(0, 1500);
     const q = p.ok && typeof p.value.question === "string" ? p.value.question.trim().slice(0, 300) : "";
     const sug = p.ok && typeof p.value.suggestion === "string" ? p.value.suggestion.trim().slice(0, 400) : "";

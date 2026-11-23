@@ -6,8 +6,7 @@ import { readRegimeCache, refreshMarketRegime } from "@/app/lib/market-regime-re
 import type { MarketRegimeData } from "@/app/lib/market-regime";
 import { loadHedges, isActiveHedge, describeHedge } from "@/app/lib/hedges";
 import { easternToday } from "@/app/lib/date-eastern";
-import { agentCall } from "./gateway";
-import { parseModelJson } from "@/app/lib/json-repair";
+import { agentCall, parseAgentJson } from "./gateway";
 import { POLICY_TEXT } from "./policy";
 import { raiseFlag } from "./flags";
 import { readAgentSettings, isWatcherOn } from "./settings";
@@ -139,8 +138,13 @@ export function hedgeWindowFrom(checklist: HedgeChecklist, regime: MarketRegimeD
   return { window, tests, ...(contract ? { contract } : {}), activeHedges };
 }
 
-function vixBand(v: number | null | undefined): string {
+/** VIX band with a 2-point buffer on the way out, so a VIX hovering around
+ *  25 (25.5 → 24.6 → 28.4 this week) doesn't flip the band — and raise a
+ *  stance flag — every day. */
+export function vixBand(v: number | null | undefined, prev?: string): string {
   if (typeof v !== "number") return "unknown";
+  if (prev === "high" && v >= 23) return "high";
+  if (prev === "complacent" && v <= 18) return "complacent";
   return v >= 25 ? "high" : v <= 16 ? "complacent" : "normal";
 }
 
@@ -165,9 +169,11 @@ export async function runStanceWatch(opts: { force?: boolean } = {}): Promise<St
   const prev = parse<StanceState>(await redis.get(STATE_KEY));
   if (prev?.date === today && !opts.force) return { ok: true, skipped: `already ran today (${prev.at})`, state: prev };
 
-  // Regime: refresh a cache older than 6h through its own module.
+  // Regime: refresh a cache older than 30 min through its own module. This
+  // runs after the close, so the readings (VIX above all) must be the CLOSE —
+  // a 6h-old cache used to hand the flag a midday VIX.
   let regime = await readRegimeCache();
-  if (!regime || Date.now() - new Date(regime.computedAt).getTime() > 6 * 3_600_000) {
+  if (!regime || Date.now() - new Date(regime.computedAt).getTime() > 30 * 60_000) {
     try {
       regime = await refreshMarketRegime();
     } catch (e) {
@@ -189,8 +195,8 @@ export async function runStanceWatch(opts: { force?: boolean } = {}): Promise<St
   signals.regimePending = pend ? pend.label : "none";
   text.regimePending = pend ? `Regime reading ${pend.label} for ${pend.days} of the ${pend.needed} sessions needed to flip` : "No regime flip pending";
   const vix = regime?.crossAsset?.vix?.price ?? null;
-  signals.vix = vixBand(vix);
-  text.vix = vix == null ? "VIX unavailable" : `VIX ${vix.toFixed(1)} (${signals.vix})`;
+  signals.vix = vixBand(vix, prev?.signals?.vix);
+  text.vix = vix == null ? "VIX unavailable" : `VIX ${vix.toFixed(1)} (${signals.vix}, Yahoo as of ${regime?.computedAt ? new Date(regime.computedAt).toLocaleString("en-US", { timeZone: "America/New_York", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }) + " ET" : today})`;
   const b = market.breadthOverride;
   const breadthFresh = b?.date && daysBetween(b.date, today) <= 6 && typeof b.above200 === "number";
   signals.breadth = !breadthFresh ? "not entered" : b!.above200! < 25 ? "washed out" : b!.above200! > 75 ? "extended" : "normal";
@@ -267,7 +273,7 @@ export async function runStanceWatch(opts: { force?: boolean } = {}): Promise<St
     let model: string | undefined;
     try {
       const r = await agentCall("stance-watch", { note: `stance ${today}: ${changes.join(",")}`, max_tokens: 700, system: STANCE_SYSTEM, messages: [{ role: "user", content: `=== READINGS (${today}) ===\n${readings}` }] });
-      const p = parseModelJson<{ title?: string; detail?: string; suggestion?: string; priority?: string }>(r.text);
+      const p = parseAgentJson<{ title?: string; detail?: string; suggestion?: string; priority?: string }>(r);
       const j = p.ok ? p.value : null;
       if (j?.title && j?.detail) {
         title = j.title.slice(0, 120);

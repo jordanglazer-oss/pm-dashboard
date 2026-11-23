@@ -1,5 +1,6 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { createLogger } from "@/app/lib/logger";
+import { parseModelJson, type ModelJsonResult } from "@/app/lib/json-repair";
 import { AGENT_MODEL_IDS, watcherDef, type AgentModelTier } from "./registry";
 import { readAgentSettings, modelFor } from "./settings";
 import { STOP_USD, costOfUsage, monthSpend, recordSpend, worstCaseCost } from "./spend";
@@ -70,6 +71,10 @@ export type AgentCallResult = {
   text: string;
   model: string;
   usd: number;
+  /** The answer hit max_tokens and is cut off. JSON "repair" would close the
+   *  open string and hand back a half-sentence (the "NVDA beat and" flag), so
+   *  callers that parse JSON must treat a truncated answer as a failure. */
+  truncated: boolean;
 };
 
 function promptChars(p: AgentCallParams): number {
@@ -119,10 +124,19 @@ export async function agentCall(watcher: string, params: AgentCallParams): Promi
     note,
   });
   if (message.stop_reason === "refusal") log.warn(watcher, "refusal from", model);
+  const truncated = message.stop_reason === "max_tokens";
+  if (truncated) log.warn(watcher, `answer cut off at max_tokens (${body.max_tokens})${note ? ` — ${note}` : ""}`);
   const text = message.content
     .filter((b): b is Anthropic.TextBlock => b.type === "text")
     .map((b) => b.text)
     .join("\n")
     .trim();
-  return { message, text, model, usd };
+  return { message, text, model, usd, truncated };
+}
+
+/** Parse a watcher's JSON answer, refusing one that was cut off at
+ *  max_tokens (repair would turn it into a half-sentence that reads as real). */
+export function parseAgentJson<T = unknown>(r: { text: string; truncated?: boolean }): ModelJsonResult<T> {
+  if (r.truncated) return { ok: false, error: "answer was cut off (max_tokens) — not used" };
+  return parseModelJson<T>(r.text);
 }
