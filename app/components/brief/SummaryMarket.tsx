@@ -5,6 +5,7 @@ import Link from "next/link";
 import type { DailySummary } from "@/app/lib/daily-summary";
 import type { DriverRow } from "@/app/lib/market-drivers";
 import { useStocks } from "@/app/lib/StockContext";
+import { usePersistedOpen } from "@/app/lib/useCollapsed";
 import { BenchmarkStrip } from "./SummaryTop";
 import { Card, CardHeader, Empty, IconButton, Pct, TickerLink, timeAgo } from "./summary-ui";
 
@@ -197,6 +198,8 @@ export function DriversCard({ s, onRefresh, refreshing }: { s: DailySummary; onR
   const d = s.drivers;
   const [idx, setIdx] = useState<"spx" | "tsx">("spx");
   const [win, setWin] = useState<"1d" | "1w">("1d");
+  // Collapse state persists (pm:ui-prefs) — the Brief rule for every section.
+  const [open, toggle] = usePersistedOpen("brief.marketDrivers.open", true);
   const index = d?.indexes.find((i) => i.key === idx) ?? null;
   const top = index ? (win === "1d" ? index.top1d : index.top1w) : [];
   const bottom = index ? (win === "1d" ? index.bottom1d : index.bottom1w) : [];
@@ -211,12 +214,19 @@ export function DriversCard({ s, onRefresh, refreshing }: { s: DailySummary; onR
         sub={d ? `cap-weighted contribution · ${timeAgo(d.builtAt)}${d.error ? " · stale" : ""}` : "loading"}
         right={
           <>
-            <Toggle value={idx} options={[["spx", "S&P"], ["tsx", "TSX"]]} onChange={setIdx} />
-            <Toggle value={win} options={[["1d", "1d"], ["1w", "1w"]]} onChange={setWin} />
-            <IconButton onClick={onRefresh} disabled={refreshing} spin={refreshing} title="Rebuild from FactSet" icon="refresh" />
+            {open && (
+              <>
+                <Toggle value={idx} options={[["spx", "S&P"], ["tsx", "TSX"]]} onChange={setIdx} />
+                <Toggle value={win} options={[["1d", "1d"], ["1w", "1w"]]} onChange={setWin} />
+                <IconButton onClick={onRefresh} disabled={refreshing} spin={refreshing} title="Rebuild from FactSet" icon="refresh" />
+              </>
+            )}
+            <button type="button" onClick={toggle} aria-expanded={open} className="text-[11.5px] font-medium text-ink-3 underline decoration-line underline-offset-2">{open ? "Hide" : "Show"}</button>
           </>
         }
       />
+      {open && (
+        <>
       {!index || index.namesPriced === 0 ? (
         <Empty>{d?.error ?? "No driver data yet — the nightly job builds it, or use the refresh control."}</Empty>
       ) : (
@@ -286,6 +296,8 @@ export function DriversCard({ s, onRefresh, refreshing }: { s: DailySummary; onR
               </tbody>
             </table>
           </div>
+        </>
+      )}
         </>
       )}
     </Card>
@@ -366,9 +378,13 @@ export function SectorMapCard({ s }: { s: DailySummary }) {
   const sectors = rows.filter((r) => r.kind === "sector").sort((a, b) => (b.ret1m ?? -99) - (a.ret1m ?? -99));
   const industries = rows.filter((r) => r.kind === "industry").sort((a, b) => (b.ret1m ?? -99) - (a.ret1m ?? -99));
   const label = s.regime?.composite?.label;
+  // Collapse state persists (pm:ui-prefs) — the Brief rule for every section.
+  const [open, toggle] = usePersistedOpen("brief.sectorMap.open", true);
   return (
     <Card className="animate-panel-in">
-      <CardHeader mark="bg-hub-research" title="Sector map" sub={label ? `leadership under ${label} · book vs S&P weight` : "leadership"} />
+      <CardHeader mark="bg-hub-research" title="Sector map" sub={label ? `leadership under ${label} · book vs S&P weight` : "leadership"} right={<button type="button" onClick={toggle} aria-expanded={open} className="text-[11.5px] font-medium text-ink-3 underline decoration-line underline-offset-2">{open ? "Hide" : "Show"}</button>} />
+      {open && (
+        <>
       {rows.length === 0 ? (
         <Empty>Needs the market-drivers build.</Empty>
       ) : (
@@ -424,6 +440,8 @@ export function SectorMapCard({ s }: { s: DailySummary }) {
             </tbody>
           </table>
         </div>
+      )}
+        </>
       )}
     </Card>
   );

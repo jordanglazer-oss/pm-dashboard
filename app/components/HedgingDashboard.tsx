@@ -83,6 +83,46 @@ function fmtFetchedAt(iso: string): string {
   }
 }
 
+const SHORT_MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+/**
+ * When the live option chain cannot be fetched, show the newest SAVED
+ * snapshot instead of an empty page (pm:hedging-history, read-only here).
+ * Same shape the live view uses; percentages are premium / that day's spot.
+ * Expiries already past are dropped. Never written back.
+ */
+function fromSnapshot(snap: HedgingSnapshot): HedgingLiveData {
+  const today = new Date().toISOString().slice(0, 10);
+  const pct = (v: number | null | undefined) => (v == null || !(snap.spotPrice > 0) ? null : (v / snap.spotPrice) * 100);
+  const label = (iso: string) => {
+    const [y, m, d] = iso.split("-").map((x) => parseInt(x, 10));
+    return SHORT_MONTHS[(m || 1) - 1] + " " + d + ", " + y;
+  };
+  const days = (iso: string) => Math.max(0, Math.round((new Date(iso).getTime() - new Date(today).getTime()) / 86400000));
+  const quotes: HedgingQuote[] = snap.quotes
+    .filter((q) => q.expiry > today)
+    .map((q) => ({
+      expiry: q.expiry,
+      expiryLabel: label(q.expiry),
+      daysToExpiry: days(q.expiry),
+      atmStrike: q.atmStrike,
+      atmPremium: q.atmPremium,
+      atmPctOfSpot: pct(q.atmPremium),
+      otm5Strike: q.otm5Strike,
+      otm5Premium: q.otm5Premium,
+      otm5PctOfSpot: pct(q.otm5Premium),
+      otm10Strike: q.otm10Strike,
+      otm10Premium: q.otm10Premium,
+      otm10PctOfSpot: pct(q.otm10Premium),
+    }));
+  const keep = new Set(quotes.map((q) => q.expiry));
+  const customRows: CustomStrikeRow[] = (snap.customRows ?? []).map((r) => ({
+    strike: r.strike,
+    quotes: r.quotes.filter((q) => keep.has(q.expiry)).map((q) => ({ expiry: q.expiry, premium: q.premium, pctOfSpot: pct(q.premium) })),
+  }));
+  return { fetchedAt: snap.fetchedAt ?? snap.date, spotPrice: snap.spotPrice, quotes, customRows };
+}
+
 type ViewMode = "current" | "wow" | "mom";
 
 export default function HedgingDashboard() {
@@ -93,6 +133,8 @@ export default function HedgingDashboard() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Set when the live chain failed and the page is showing a saved snapshot: that snapshot's date.
+  const [savedAsOf, setSavedAsOf] = useState<string | null>(null);
   const [view, setView] = useState<ViewMode>("current");
   const { priceRefreshNonce } = useStocks();
 
@@ -111,9 +153,23 @@ export default function HedgingDashboard() {
     ];
 
     try {
-      const [live, hist] = (await Promise.all(pending)) as [HedgingLiveData, HedgingHistory];
-      setData(live);
+      // The two reads are independent: a failed live fetch must not hide the saved history.
+      const settled = await Promise.allSettled(pending);
+      const hist = (settled[1].status === "fulfilled" ? settled[1].value : { snapshots: [], lastUpdated: null }) as HedgingHistory;
       setHistory(hist.snapshots || []);
+      if (settled[0].status !== "fulfilled") {
+        const newest = [...(hist.snapshots || [])].sort((a, b) => a.date.localeCompare(b.date)).pop();
+        const fallback = newest ? fromSnapshot(newest) : null;
+        if (fallback && fallback.quotes.length > 0) {
+          setData(fallback);
+          setSavedAsOf(newest!.date);
+          return;
+        }
+        throw settled[0].reason;
+      }
+      const live = settled[0].value as HedgingLiveData;
+      setSavedAsOf(null);
+      setData(live);
 
       // Persist today's snapshot (includes custom strike premiums for WoW/MoM)
       if (persist && live && live.quotes.length > 0) {
@@ -298,6 +354,11 @@ export default function HedgingDashboard() {
       )}
 
       {error && <div className="panel px-3.5 py-2.5 text-[12.5px] text-neg">{error}</div>}
+      {savedAsOf && (
+        <div className="panel border-warn-border bg-warn-soft px-3.5 py-2.5 text-[12.5px] text-ink">
+          <span className="font-semibold">Live option prices are unavailable.</span> Showing the last saved prices, from {savedAsOf}. Premiums and SPY spot are as of that day, not now.
+        </div>
+      )}
 
       {loading ? (
         <div className="panel py-10 text-center text-[12.5px] text-ink-3">Loading SPY option chain…</div>
