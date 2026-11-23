@@ -14,7 +14,7 @@ import {
 import type { AnalystRating } from "@/app/lib/analyst-snapshots";
 
 /**
- * Bank reports over time — every RBC / JPM / Morningstar report on file for
+ * Analyst Report History — every RBC / JPM / Morningstar report on file for
  * one name, from pm:analyst-report-history (read-only). Shows each report's
  * rating and target with the change from the bank's previous report; the
  * thesis and risks of the most recent reports sit behind one persisted
@@ -134,7 +134,7 @@ export default function AnalystReportHistoryTile({ ticker }: { ticker: string })
     .sort((x, y) => ((y.e.asOf ?? y.e.recordedAt) > (x.e.asOf ?? x.e.recordedAt) ? 1 : -1));
 
   return (
-    <CollapsibleSection prefKey="stock.reportHistory" title="Bank reports over time" subtitle="Not part of the score">
+    <CollapsibleSection prefKey="stock.reportHistory" title="Analyst Report History" subtitle="Not part of the score">
       {banks.length === 0 ? (
         <p className="text-[12.5px] text-ink-3">No bank reports recorded yet.</p>
       ) : (

@@ -2598,7 +2598,7 @@ export default function StockDetailPage() {
           {/* Analyst trend — consensus over time (read-only, not scored). */}
           {scoreable && <AnalystTrendTile ticker={stock.ticker} />}
 
-          {/* Bank reports over time — RBC / JPM / Morningstar history (read-only, not scored). */}
+          {/* Analyst Report History — RBC / JPM / Morningstar history (read-only, not scored). */}
           {scoreable && <AnalystReportHistoryTile ticker={stock.ticker} />}
 
           {/* Contrarian setup — signs of a contrarian pick (read-only, not scored). */}
