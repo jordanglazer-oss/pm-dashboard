@@ -111,6 +111,11 @@ export function ContributionView({ data, loading }: { data: RangeAttributionResp
         <p className="px-3.5 py-3 text-[12.5px] text-ink-3">{data.error}</p>
       ) : view ? (
         <div className={loading ? "opacity-60" : ""}>
+          {data.detailFrom && (
+            <div className="mx-3.5 mt-2.5 rounded-control border border-line bg-surface-2 px-3 py-2 text-[12.5px] text-ink-2">
+              <span className="font-semibold text-ink">Holding detail starts {data.detailFrom}.</span> The trade log begins that day, so what was held earlier is not on file. Everything in this section covers {data.range.base} to {data.range.end} ({data.range.days} trading days); the recorded return for that same stretch is <span className="font-medium">{pts(data.reconciliation.book.recordedPct)}</span>. The summary above covers the whole period.
+            </div>
+          )}
           {(() => {
             const gap = data.reconciliation.book.differencePts;
             const off = gap != null && Math.abs(gap) >= GAP_WARN_PTS;
@@ -231,7 +236,7 @@ export function ContributionView({ data, loading }: { data: RangeAttributionResp
           <p className="px-3.5 pt-1.5 text-[11.5px] text-ink-3">
             &quot;Recorded return&quot; is the dashboard&apos;s own performance record for the same days and is exact. The &quot;Est.&quot; columns are rebuilt from model weights and prices; the last column is how far that rebuild is from the record.
             {data.reconciliation.sleevesRecordedFrom && data.range.base < data.reconciliation.sleevesRecordedFrom && <> Managed Alpha and Individual Stocks have been recorded separately only since {data.reconciliation.sleevesRecordedFrom}; before that they were recorded together, so for this period compare them on the Total Alpha row.</>}
-            {data.logStartsOn && data.range.base < data.logStartsOn && <> The trade log starts on {data.logStartsOn}: holdings before that date are assumed to be the ones held that day.</>}
+
           </p>
 
           <div className="px-3.5 py-2.5">

@@ -112,12 +112,13 @@ export function ReturnSourcesPanel() {
 
   const summary = useMemo(() => {
     if (!cData || !cData.ok) return null;
-    const recorded = cData.reconciliation.book.recordedPct;
+    // The summary always covers the WHOLE requested range (from the recorded series).
+    const recorded = cData.full.recordedPct;
     const currency = fData && !fData.error && fData.fxAvailable ? fData.contributionPct : null;
     const beta = meta?.equityBeta;
     const usMix = meta?.usdEquityFractionPct;
-    const sp = retBetween(indexes?.indexes.find((i) => i.key === "sp500")?.history, cData.range.base, cData.range.end);
-    const tsx = retBetween(indexes?.indexes.find((i) => i.key === "tsx")?.history, cData.range.base, cData.range.end);
+    const sp = retBetween(indexes?.indexes.find((i) => i.key === "sp500")?.history, cData.full.base, cData.full.end);
+    const tsx = retBetween(indexes?.indexes.find((i) => i.key === "tsx")?.history, cData.full.base, cData.full.end);
     const blend = sp != null && tsx != null && usMix != null ? (usMix / 100) * sp + (1 - usMix / 100) * tsx : null;
     const market = blend != null && beta != null && Number.isFinite(beta) ? beta * blend : null;
     const selection = recorded != null && market != null && currency != null ? recorded - market - currency : null;
@@ -159,7 +160,7 @@ export function ReturnSourcesPanel() {
       ) : summary ? (
         <div className={loading ? "opacity-60" : ""}>
           <div className="grid grid-cols-2 gap-x-4 gap-y-3 px-3.5 py-2.5 lg:grid-cols-4">
-            <Cell strong label="Recorded return" value={summary.recorded} note={`All-Equity model, ${cData.range.base} close to ${cData.range.end} close. The dashboard's own performance record.`} />
+            <Cell strong label="Recorded return" value={summary.recorded} note={`All-Equity model, ${cData.full.base} close to ${cData.full.end} close. The dashboard's own performance record.`} />
             <Cell
               label="Market"
               value={summary.market}

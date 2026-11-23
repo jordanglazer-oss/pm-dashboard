@@ -196,11 +196,12 @@ export type LogContext = {
  * scheduleFromTrades plus three facts only the whole log can supply (Nov 2026,
  * after the first real-data check showed the estimate +4.5 pts off):
  *
- *  1. A name in the log's FIRST rebalance was already held before it, whatever
- *     the row's direction — "buy" there is a top-up of a laggard, "sell" a
- *     trim of a winner. Reading "buy" as a new purchase dropped every
- *     topped-up name (the laggards, and two Core ETFs) from the months before
- *     the log starts and biased the estimate upward.
+ *  1. (WITHDRAWN) An earlier version treated every name in the log's first
+ *     rebalance as held before it. The PM confirmed that is wrong: a "buy"
+ *     there was a real first purchase (TPL, PWR), so the row's direction
+ *     stands — "sell" = held before, "buy" = bought that day. What was held
+ *     BEFORE the log starts is simply not on file, so the loader does not
+ *     estimate holdings for those days at all.
  *  2. A switch buy logged with no weight takes that day's usual switch weight.
  *  3. A rebalance lists every holding, so a name that is ABSENT from a later
  *     rebalance had left by then: if its last row is a sale, that sale was a
@@ -219,10 +220,9 @@ export function scheduleWithLog(events: TradeEvent[], opts: { currentWeight: num
     }
     return e;
   });
-  const inFirst = !!ctx.firstRebalance && ev.some((e) => e.kind === "rebalance" && e.date === ctx.firstRebalance);
-  const base = scheduleFromTrades(ev, { currentWeight: opts.currentWeight, heldAtTrackingStart: opts.heldAtTrackingStart || inFirst });
+  const base = scheduleFromTrades(ev, { currentWeight: opts.currentWeight, heldAtTrackingStart: opts.heldAtTrackingStart });
   const steps = base.steps.map((x) => ({ ...x }));
-  const notes = base.notes.map((n) => (inFirst && n.startsWith("held before its first trade on file") ? `the trade log starts on ${ctx.firstRebalance} — its weight that day is assumed for the time before` : n));
+  const notes = [...base.notes];
   const held = !!opts.currentWeight && opts.currentWeight > 0;
   const sorted = [...ev].sort((a, b) => a.date.localeCompare(b.date));
   const last = sorted[sorted.length - 1];

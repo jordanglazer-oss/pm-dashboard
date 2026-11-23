@@ -160,14 +160,13 @@ describe("scheduleWithLog", () => {
   const reb = (date: string, direction: "buy" | "sell", weight: number): TradeEvent => ({ date, kind: "rebalance", direction, weight });
   const sw = (date: string, direction: "buy" | "sell", moved: number): TradeEvent => ({ date, kind: "trade", direction, moved });
 
-  it("a name TOPPED UP in the log's first rebalance was already held before it", () => {
-    const laggard = scheduleWithLog([reb("2026-04-13", "buy", 0.01818), reb("2026-10-21", "sell", 0.01667)], { currentWeight: 0.01667, heldAtTrackingStart: false }, ctx);
-    const winner = scheduleWithLog([reb("2026-04-13", "sell", 0.01818), reb("2026-10-21", "sell", 0.01667)], { currentWeight: 0.01667, heldAtTrackingStart: false }, ctx);
-    for (const s of [laggard, winner]) {
-      expect(weightAt(s.steps, "2026-01-05")).toBeCloseTo(0.01818, 6);
-      expect(weightAt(s.steps, "2026-11-02")).toBeCloseTo(0.01667, 6);
-    }
-    expect(laggard.notes.join(" ")).toMatch(/trade log starts on 2026-04-13/);
+  it("the first rebalance's direction stands: a 'buy' is a first purchase, a 'sell' was held before (PM-confirmed)", () => {
+    const bought = scheduleWithLog([reb("2026-04-13", "buy", 0.01818), reb("2026-10-21", "sell", 0.01667)], { currentWeight: 0.01667, heldAtTrackingStart: false }, ctx);
+    const trimmed = scheduleWithLog([reb("2026-04-13", "sell", 0.01818), reb("2026-10-21", "sell", 0.01667)], { currentWeight: 0.01667, heldAtTrackingStart: false }, ctx);
+    expect(weightAt(bought.steps, "2026-04-10")).toBe(0);
+    expect(weightAt(bought.steps, "2026-04-13")).toBeCloseTo(0.01818, 6);
+    expect(weightAt(trimmed.steps, "2026-04-10")).toBeCloseTo(0.01818, 6);
+    for (const x of [bought, trimmed]) expect(weightAt(x.steps, "2026-11-02")).toBeCloseTo(0.01667, 6);
   });
 
   it("a name first bought in a LATER rebalance is zero before it", () => {

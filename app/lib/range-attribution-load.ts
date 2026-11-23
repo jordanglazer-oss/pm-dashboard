@@ -113,8 +113,12 @@ export type RangeAttributionResponse =
         /** Managed Alpha and Individual Stocks have their OWN record only from this date; before it they were recorded together. */
         sleevesRecordedFrom: string | null;
       };
-      /** First day of the trade log; before it the holdings are assumed. */
+      /** First day of the trade log; holdings before it are not on file. */
       logStartsOn: string | null;
+      /** The whole requested range, from the RECORDED All-Equity series (the holding detail may start later — see `detailFrom`). */
+      full: { base: string; end: string; days: number; recordedPct: number | null };
+      /** Set when the holding detail starts later than the requested range (at the trade log's first day). */
+      detailFrom: string | null;
       /** Estimate vs record month by month — shows where a gap arises. */
       byMonth: MonthCheck[];
       builtAt: string;
@@ -140,8 +144,8 @@ export async function loadRangeAttribution(from: string | null, to: string): Pro
   const before = from ? [...dates].reverse().find((d) => d < from) : undefined;
   const base = before ?? dates[0];
   const partial = !!from && !before;
-  const calendar = dates.filter((d) => d >= base && d <= end);
-  if (calendar.length < 2) return { ok: false, error: "Not enough trading days in that range." };
+  const fullCalendar = dates.filter((d) => d >= base && d <= end);
+  if (fullCalendar.length < 2) return { ok: false, error: "Not enough trading days in that range." };
 
   const gs = state?.groupStates?.find((g) => g.groupId === "pim");
   const tsDate = gs?.trackingStart?.date ? etDay(gs.trackingStart.date) : null;
@@ -163,6 +167,15 @@ export async function loadRangeAttribution(from: string | null, to: string): Pro
   for (const g of groups) if (!symbols.some((s) => sameSymbol(s, g.symbol)) && !nonEquity.some((h) => sameSymbol(h.symbol, g.symbol))) symbols.push(g.symbol);
 
   const ctx = logContext(gs?.transactions ?? []);
+  // What was held BEFORE the trade log starts is not on file (a name bought in
+  // the first rebalance was a real purchase; whatever it replaced was never
+  // logged). So the holding-level rebuild starts at the log's first day — the
+  // close of that rebalance — and the earlier part of the range is reported
+  // from the recorded series only.
+  const logStart = ctx.firstRebalance;
+  const clamped = !!logStart && base < logStart && dates.includes(logStart) && logStart < end;
+  const calendar = clamped ? fullCalendar.filter((d) => d >= logStart!) : fullCalendar;
+  if (calendar.length < 2) return { ok: false, error: "Not enough trading days in that range." };
   const tests = bucketTests(stocks, models);
   const caveats: string[] = [];
   const scaled = new Set<string>();
@@ -201,7 +214,8 @@ export async function loadRangeAttribution(from: string | null, to: string): Pro
 
   const result = computeRangeAttribution(calendar, inputs, fx);
 
-  if (ctx.firstRebalance && result.base < ctx.firstRebalance) caveats.push(`The trade log starts on ${ctx.firstRebalance}. For the days before it, the holdings and weights of that day are assumed — any name bought or sold earlier is not on file, so figures for that stretch are the least reliable.`);
+  if (clamped) caveats.push(`The trade log starts on ${logStart}. What was held before that day is not on file, so the holding-by-holding figures cover ${logStart} onward only; the recorded returns cover the whole period.`);
+  else if (logStart && result.base < logStart) caveats.push(`The trade log starts on ${logStart}; holdings before that day are not on file.`);
   caveats.push("Weights are the model targets on file, changed on the day a trade changed them and held constant in between — they do not drift with prices day to day, so this is an estimate, not the recorded return.");
   if (result.avgWeightCoveredPct < 99 || result.avgWeightCoveredPct > 101) caveats.push(`The weights on file add up to ${result.avgWeightCoveredPct.toFixed(1)}% of the equity book on average over this range (100% would be fully accounted for).`);
   if (scaled.size) caveats.push(`Some rebalances were only logged for the ${[...scaled].join(" / ")} model; those weights were scaled up to the equity book.`);
@@ -239,6 +253,8 @@ export async function loadRangeAttribution(from: string | null, to: string): Pro
       sleevesRecordedFrom,
     },
     logStartsOn: ctx.firstRebalance,
+    full: { base, end, days: fullCalendar.length - 1, recordedPct: seriesReturnPct(series("allEquity"), base, end) },
+    detailFrom: clamped ? logStart : null,
     byMonth: checkByMonth(result.base, result.daily, (p) => new Map(series(p).map((e) => [e.date, e.value]))),
     builtAt: new Date().toISOString(),
     ...rest,
