@@ -160,7 +160,7 @@ export function ContributionView({ data, loading }: { data: RangeAttributionResp
                         <span className="font-medium">{s.label}</span>
                         <span className="text-[11.5px] text-ink-3"> · {s.holdings} holding{s.holdings === 1 ? "" : "s"}</span>
                       </td>
-                      <td className={`n font-medium ${tone(rec?.recordedPct)}`}>{rec?.recordedPct == null ? <span className="text-[11.5px] font-normal text-ink-3">not recorded for the whole period</span> : pts(rec.recordedPct)}</td>
+                      <td className={`n font-medium ${tone(rec?.recordedPct)}`}>{rec?.recordedPct == null ? <span className="text-[11.5px] font-normal text-ink-3">{s.sleeve === "core" ? "not recorded" : "within Total Alpha"}</span> : pts(rec.recordedPct)}</td>
                       <td className="n">{s.avgWeightPct.toFixed(1)}%</td>
                       <td className={`n ${tone(s.contributionPct)}`}>{pts(s.contributionPct)}</td>
                       <td className={`n ${tone(s.returnPct)}`}>{pts(s.returnPct)}</td>
@@ -168,6 +168,17 @@ export function ContributionView({ data, loading }: { data: RangeAttributionResp
                     </tr>
                   );
                 })}
+                <tr>
+                  <td className="pl-3.5">
+                    <span className="font-medium">Total Alpha</span>
+                    <span className="text-[11.5px] text-ink-3"> · Managed Alpha + Individual Stocks</span>
+                  </td>
+                  <td className={`n font-medium ${tone(data.reconciliation.nonCore.recordedPct)}`}>{pts(data.reconciliation.nonCore.recordedPct)}</td>
+                  <td className="n">{data.nonCore.avgWeightPct.toFixed(1)}%</td>
+                  <td className={`n ${tone(data.nonCore.contributionPct)}`}>{pts(data.nonCore.contributionPct)}</td>
+                  <td className={`n ${tone(data.nonCore.returnPct)}`}>{pts(data.nonCore.returnPct)}</td>
+                  <td className="n text-ink-3">{data.reconciliation.nonCore.differencePts == null ? "—" : `${data.reconciliation.nonCore.differencePts > 0 ? "+" : ""}${data.reconciliation.nonCore.differencePts.toFixed(2)} pts`}</td>
+                </tr>
                 <tr>
                   <td className="pl-3.5 font-medium">Equity book</td>
                   <td className={`n font-medium ${tone(data.reconciliation.book.recordedPct)}`}>{pts(data.reconciliation.book.recordedPct)}</td>
@@ -181,6 +192,8 @@ export function ContributionView({ data, loading }: { data: RangeAttributionResp
           </div>
           <p className="px-3.5 pt-1.5 text-[11.5px] text-ink-3">
             &quot;Recorded return&quot; is the dashboard&apos;s own performance record for the same days and is exact. The &quot;Est.&quot; columns are rebuilt from model weights and prices; the last column is how far that rebuild is from the record.
+            {data.reconciliation.sleevesRecordedFrom && data.range.base < data.reconciliation.sleevesRecordedFrom && <> Managed Alpha and Individual Stocks have been recorded separately only since {data.reconciliation.sleevesRecordedFrom}; before that they were recorded together, so for this period compare them on the Total Alpha row.</>}
+            {data.logStartsOn && data.range.base < data.logStartsOn && <> The trade log starts on {data.logStartsOn}: holdings before that date are assumed to be the ones held that day.</>}
           </p>
 
           <div className="px-3.5 py-2.5">

@@ -3,7 +3,7 @@ import { history } from "./holding-history";
 import { sameSymbol } from "./model-staging";
 import { bucketTests, type BucketStock } from "./sleeve-targets";
 import type { PimModelData, PimPerformanceData, PimPortfolioState, PimProfileType, PimTransaction } from "./pim-types";
-import { computeRangeAttribution, scheduleFromTrades, seriesReturnPct, weightAt, SLEEVE_LABELS, type HoldingInput, type PriceSeries, type RangeAttribution, type Sleeve, type TradeEvent } from "./range-attribution";
+import { computeRangeAttribution, scheduleWithLog, seriesReturnPct, weightAt, SLEEVE_LABELS, type HoldingInput, type LogContext, type PriceSeries, type RangeAttribution, type Sleeve, type TradeEvent } from "./range-attribution";
 
 /**
  * Loader for "Contribution by holding" (Nov 2026) — READ-ONLY. Reads
@@ -79,6 +79,25 @@ export function eventsFromTransactions(txns: PimTransaction[], equityShare: (p: 
   return { events, scaledFrom: [...scaledFrom] };
 }
 
+/** Facts about the whole PIM trade log that one symbol's rows cannot give. */
+export function logContext(txns: PimTransaction[]): LogContext {
+  const rebalanceDates = [...new Set(txns.filter((t) => t.type === "rebalance" && !!t.profile && MAIN.includes(t.profile)).map((t) => etDay(t.date)))].sort();
+  const byDay = new Map<string, number[]>();
+  for (const t of txns) {
+    if (t.type === "rebalance" || !(t.targetWeight > 0)) continue;
+    const d = etDay(t.date);
+    byDay.set(d, [...(byDay.get(d) ?? []), t.targetWeight]);
+  }
+  return {
+    firstRebalance: rebalanceDates[0] ?? null,
+    rebalanceDates,
+    switchWeightOn: (date) => {
+      const v = [...(byDay.get(date) ?? [])].sort((a, b) => a - b);
+      return v.length ? v[Math.floor((v.length - 1) / 2)] : null;
+    },
+  };
+}
+
 export type RangeAttributionResponse =
   | { ok: false; error: string }
   | ({
@@ -89,7 +108,13 @@ export type RangeAttributionResponse =
       reconciliation: {
         book: { label: string; estimatedPct: number; recordedPct: number | null; differencePts: number | null };
         sleeves: { sleeve: Sleeve; label: string; estimatedPct: number | null; recordedPct: number | null; differencePts: number | null }[];
+        /** Managed Alpha + Individual Stocks against the recorded Total Alpha book. */
+        nonCore: { label: string; estimatedPct: number | null; recordedPct: number | null; differencePts: number | null };
+        /** Managed Alpha and Individual Stocks have their OWN record only from this date; before it they were recorded together. */
+        sleevesRecordedFrom: string | null;
       };
+      /** First day of the trade log; before it the holdings are assumed. */
+      logStartsOn: string | null;
       builtAt: string;
     } & RangeAttribution);
 
@@ -135,6 +160,7 @@ export async function loadRangeAttribution(from: string | null, to: string): Pro
   const symbols: string[] = current.filter((h) => h.assetClass === "equity").map((h) => h.symbol);
   for (const g of groups) if (!symbols.some((s) => sameSymbol(s, g.symbol)) && !nonEquity.some((h) => sameSymbol(h.symbol, g.symbol))) symbols.push(g.symbol);
 
+  const ctx = logContext(gs?.transactions ?? []);
   const tests = bucketTests(stocks, models);
   const caveats: string[] = [];
   const scaled = new Set<string>();
@@ -146,7 +172,7 @@ export async function loadRangeAttribution(from: string | null, to: string): Pro
       scaledFrom.forEach((p) => scaled.add(p));
       const firstDate = events[0]?.date ?? null;
       const heldAtTrackingStart = !!tsDate && tsSymbols.some((s) => sameSymbol(s, symbol)) && (!firstDate || firstDate > tsDate);
-      const { steps, notes } = scheduleFromTrades(events, { currentWeight: held?.weightInClass ?? null, heldAtTrackingStart });
+      const { steps, notes } = scheduleWithLog(events, { currentWeight: held?.weightInClass ?? null, heldAtTrackingStart }, ctx);
       const sleeve: Sleeve = tests.isCore(symbol) ? "core" : tests.isThematic(symbol) ? "thematic" : "stocks";
       const name = held?.name ?? stocks.find((s) => s.ticker && sameSymbol(s.ticker, symbol))?.name;
       return { symbol, name, sleeve, currency: (held?.currency ?? guessCurrency(symbol)) as "CAD" | "USD", steps, notes };
@@ -173,6 +199,7 @@ export async function loadRangeAttribution(from: string | null, to: string): Pro
 
   const result = computeRangeAttribution(calendar, inputs, fx);
 
+  if (ctx.firstRebalance && result.base < ctx.firstRebalance) caveats.push(`The trade log starts on ${ctx.firstRebalance}. For the days before it, the holdings and weights of that day are assumed — any name bought or sold earlier is not on file, so figures for that stretch are the least reliable.`);
   caveats.push("Weights are the model targets on file, changed on the day a trade changed them and held constant in between — they do not drift with prices day to day, so this is an estimate, not the recorded return.");
   if (result.avgWeightCoveredPct < 99 || result.avgWeightCoveredPct > 101) caveats.push(`The weights on file add up to ${result.avgWeightCoveredPct.toFixed(1)}% of the equity book on average over this range (100% would be fully accounted for).`);
   if (scaled.size) caveats.push(`Some rebalances were only logged for the ${[...scaled].join(" / ")} model; those weights were scaled up to the equity book.`);
@@ -185,7 +212,14 @@ export async function loadRangeAttribution(from: string | null, to: string): Pro
 
   const rec = (p: string) => seriesReturnPct(series(p), result.base, result.end);
   const bookRec = rec("allEquity");
+  // Managed Alpha has its own record only from its series' first day; before
+  // that the funds and the stocks were recorded together in the Alpha book
+  // (which the Stocks series was seeded from), so a sleeve-by-sleeve
+  // comparison is only like-for-like for a range that starts on or after it.
+  const sleevesRecordedFrom = series("thematic")[0]?.date ?? null;
+  const split = !!sleevesRecordedFrom && result.base >= sleevesRecordedFrom;
   const sleeveSeries: Record<Sleeve, string> = { core: "core", thematic: "thematic", stocks: "stocks" };
+  const ncRec = rec("alpha");
   return {
     ok: true,
     range: { from, to, base: result.base, end: result.end, days: result.days, partial },
@@ -194,10 +228,13 @@ export async function loadRangeAttribution(from: string | null, to: string): Pro
     reconciliation: {
       book: { label: "PIM equity book (All-Equity model)", estimatedPct: result.estimatedReturnPct, recordedPct: bookRec, differencePts: bookRec == null ? null : r4(result.estimatedReturnPct - bookRec) },
       sleeves: result.sleeves.map((s) => {
-        const recorded = rec(sleeveSeries[s.sleeve]);
+        const recorded = s.sleeve === "core" || split ? rec(sleeveSeries[s.sleeve]) : null;
         return { sleeve: s.sleeve, label: SLEEVE_LABELS[s.sleeve], estimatedPct: s.returnPct, recordedPct: recorded, differencePts: s.returnPct == null || recorded == null ? null : r4(s.returnPct - recorded) };
       }),
+      nonCore: { label: "Total Alpha (Managed Alpha + Individual Stocks)", estimatedPct: result.nonCore.returnPct, recordedPct: ncRec, differencePts: result.nonCore.returnPct == null || ncRec == null ? null : r4(result.nonCore.returnPct - ncRec) },
+      sleevesRecordedFrom,
     },
+    logStartsOn: ctx.firstRebalance,
     builtAt: new Date().toISOString(),
     ...result,
   };

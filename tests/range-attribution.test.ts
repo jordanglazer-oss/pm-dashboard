@@ -149,3 +149,74 @@ describe("eventsFromTransactions", () => {
     expect(e.events).toEqual([{ date: "2026-11-05", kind: "trade", direction: "sell", moved: 0.018 }]);
   });
 });
+
+// ── Rules that need the WHOLE log (found on real data, Nov 2026): the first
+// version dropped every name that was TOPPED UP in the log's first rebalance.
+import { scheduleWithLog, type LogContext, type TradeEvent } from "@/app/lib/range-attribution";
+import { logContext } from "@/app/lib/range-attribution-load";
+
+describe("scheduleWithLog", () => {
+  const ctx: LogContext = { firstRebalance: "2026-04-13", rebalanceDates: ["2026-04-13", "2026-10-21"], switchWeightOn: (d) => (d === "2026-04-24" ? 0.01818 : null) };
+  const reb = (date: string, direction: "buy" | "sell", weight: number): TradeEvent => ({ date, kind: "rebalance", direction, weight });
+  const sw = (date: string, direction: "buy" | "sell", moved: number): TradeEvent => ({ date, kind: "trade", direction, moved });
+
+  it("a name TOPPED UP in the log's first rebalance was already held before it", () => {
+    const laggard = scheduleWithLog([reb("2026-04-13", "buy", 0.01818), reb("2026-10-21", "sell", 0.01667)], { currentWeight: 0.01667, heldAtTrackingStart: false }, ctx);
+    const winner = scheduleWithLog([reb("2026-04-13", "sell", 0.01818), reb("2026-10-21", "sell", 0.01667)], { currentWeight: 0.01667, heldAtTrackingStart: false }, ctx);
+    for (const s of [laggard, winner]) {
+      expect(weightAt(s.steps, "2026-01-05")).toBeCloseTo(0.01818, 6);
+      expect(weightAt(s.steps, "2026-11-02")).toBeCloseTo(0.01667, 6);
+    }
+    expect(laggard.notes.join(" ")).toMatch(/trade log starts on 2026-04-13/);
+  });
+
+  it("a name first bought in a LATER rebalance is zero before it", () => {
+    const s = scheduleWithLog([reb("2026-10-21", "buy", 0.05)], { currentWeight: 0.05, heldAtTrackingStart: false }, ctx);
+    expect(weightAt(s.steps, "2026-10-20")).toBe(0);
+    expect(weightAt(s.steps, "2026-10-21")).toBeCloseTo(0.05, 6);
+  });
+
+  it("a switch buy with no weight on file takes that day's usual switch weight, then exits at its zero rebalance row", () => {
+    const s = scheduleWithLog([sw("2026-04-24", "buy", 0), reb("2026-10-21", "sell", 0)], { currentWeight: null, heldAtTrackingStart: false }, ctx);
+    expect(weightAt(s.steps, "2026-04-23")).toBe(0);
+    expect(weightAt(s.steps, "2026-05-01")).toBeCloseTo(0.01818, 6);
+    expect(weightAt(s.steps, "2026-10-21")).toBe(0);
+    expect(s.notes.join(" ")).toMatch(/usual switch weight/);
+  });
+
+  it("a partial-looking sale is a FULL sale when the name is absent from the next rebalance", () => {
+    const s = scheduleWithLog([reb("2026-04-13", "sell", 0.01818), sw("2026-04-24", "sell", 0.012)], { currentWeight: null, heldAtTrackingStart: false }, ctx);
+    expect(weightAt(s.steps, "2026-04-20")).toBeCloseTo(0.01818, 6);
+    expect(weightAt(s.steps, "2026-04-24")).toBe(0);
+    expect(s.notes.join(" ")).toMatch(/full sale/);
+  });
+
+  it("a fund trimmed by a switch and still held keeps the remainder (not a full sale)", () => {
+    const s = scheduleWithLog([reb("2026-04-13", "sell", 0.05), sw("2026-08-19", "sell", 0.01818), reb("2026-10-21", "buy", 0.05)], { currentWeight: 0.05, heldAtTrackingStart: false }, ctx);
+    expect(weightAt(s.steps, "2026-09-01")).toBeCloseTo(0.03182, 6);
+    expect(weightAt(s.steps, "2026-11-02")).toBeCloseTo(0.05, 6);
+  });
+
+  it("a name never sold on file but absent from the next rebalance is counted until that rebalance", () => {
+    const s = scheduleWithLog([reb("2026-04-13", "buy", 0.01818)], { currentWeight: null, heldAtTrackingStart: false }, ctx);
+    expect(weightAt(s.steps, "2026-08-01")).toBeCloseTo(0.01818, 6);
+    expect(weightAt(s.steps, "2026-10-21")).toBe(0);
+    expect(s.notes.join(" ")).toMatch(/no sale on file/);
+  });
+
+  it("logContext finds the full-rebalance days and a day's usual switch weight", () => {
+    const t = (o: Partial<PimTransaction>): PimTransaction => ({ id: "x", date: "2026-04-13T20:00:00.000Z", groupId: "pim", type: "rebalance", symbol: "A", direction: "buy", price: 1, targetWeight: 0.01, ...o });
+    const c = logContext([
+      t({ profile: "allEquity" }),
+      t({ profile: "alpha" }),
+      t({ date: "2026-10-21T20:00:00.000Z", profile: "balanced" }),
+      t({ date: "2026-04-24T15:00:00.000Z", type: "switch", targetWeight: 0.01818 }),
+      t({ date: "2026-04-24T15:00:00.000Z", type: "switch", targetWeight: 0 }),
+      t({ date: "2026-04-24T15:00:00.000Z", type: "switch", targetWeight: 0.01818 }),
+    ]);
+    expect(c.rebalanceDates).toEqual(["2026-04-13", "2026-10-21"]);
+    expect(c.firstRebalance).toBe("2026-04-13");
+    expect(c.switchWeightOn("2026-04-24")).toBeCloseTo(0.01818, 6);
+    expect(c.switchWeightOn("2026-05-01")).toBeNull();
+  });
+});

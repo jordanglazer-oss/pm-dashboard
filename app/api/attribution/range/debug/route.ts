@@ -1,8 +1,8 @@
 import { NextResponse } from "next/server";
 import { getRedis } from "@/app/lib/redis";
 import { sameSymbol } from "@/app/lib/model-staging";
-import { eventsFromTransactions } from "@/app/lib/range-attribution-load";
-import { scheduleFromTrades } from "@/app/lib/range-attribution";
+import { eventsFromTransactions, logContext } from "@/app/lib/range-attribution-load";
+import { scheduleWithLog } from "@/app/lib/range-attribution";
 import type { PimModelData, PimPerformanceData, PimPortfolioState, PimProfileType, PimTransaction } from "@/app/lib/pim-types";
 
 /**
@@ -47,6 +47,7 @@ export async function GET() {
     const symbols = [...pim.holdings.filter((h) => h.assetClass === "equity" && h.weightInClass > 0).map((h) => h.symbol)];
     for (const g of groups) if (!symbols.some((s) => sameSymbol(s, g.symbol))) symbols.push(g.symbol);
 
+    const ctx = logContext(gs?.transactions ?? []);
     const typeCounts: Record<string, number> = {};
     for (const t of gs?.transactions ?? []) {
       const k = `${t.type}|${t.profile ?? "no-profile"}`;
@@ -59,7 +60,7 @@ export async function GET() {
       const { events } = eventsFromTransactions(txns, equityShare);
       const firstDate = events[0]?.date ?? null;
       const heldAtTrackingStart = !!tsDate && tsSymbols.some((s) => sameSymbol(s, symbol)) && (!firstDate || firstDate > tsDate);
-      const { steps, notes } = scheduleFromTrades(events, { currentWeight: held?.weightInClass ?? null, heldAtTrackingStart });
+      const { steps, notes } = scheduleWithLog(events, { currentWeight: held?.weightInClass ?? null, heldAtTrackingStart }, ctx);
       return {
         symbol,
         assetClass: held?.assetClass ?? null,
@@ -73,12 +74,32 @@ export async function GET() {
       };
     });
 
+    // Sum of equity-book weights the rebuild holds just after each key date (should be ~1.0).
+    const nonEquity = pim.holdings.filter((h) => h.assetClass !== "equity");
+    const keyDates = ["0000-00-00", ...new Set(holdings.flatMap((h) => h.steps.map((x) => String(x[0]))).filter((d) => d !== "0000-00-00"))].sort();
+    const coverage = keyDates.map((d) => {
+      let total = 0;
+      let names = 0;
+      for (const h of holdings) {
+        if (nonEquity.some((x) => sameSymbol(x.symbol, h.symbol))) continue;
+        let w = 0;
+        for (const st of h.steps) if (String(st[0]) <= d) w = Number(st[1]);
+        if (w > 0) {
+          total += w;
+          names++;
+        }
+      }
+      return { after: d === "0000-00-00" ? "before the log starts" : d, totalWeight: r5(total), names };
+    });
+
     const series = (perf?.models ?? []).filter((m) => m.groupId === "pim").map((m) => ({ profile: m.profile, entries: m.history.length, first: m.history[0]?.date ?? null, last: m.history[m.history.length - 1]?.date ?? null, firstValue: m.history[0]?.value ?? null, lastValue: m.history[m.history.length - 1]?.value ?? null }));
 
     return NextResponse.json({
       mode: "DIAGNOSTIC — read-only, nothing written",
       trackingStart: { date: tsDate, symbols: tsSymbols },
       equityShareByProfile: Object.fromEntries((["conservative", "balanced", "growth", "allEquity"] as PimProfileType[]).map((p) => [p, equityShare(p)])),
+      coverage,
+      log: { firstRebalance: ctx.firstRebalance, rebalanceDates: ctx.rebalanceDates },
       transactionCount: gs?.transactions?.length ?? 0,
       rowsByTypeAndProfile: typeCounts,
       series,

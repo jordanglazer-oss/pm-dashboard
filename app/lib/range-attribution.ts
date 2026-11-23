@@ -68,6 +68,8 @@ export type RangeAttribution = {
   avgWeightCoveredPct: number;
   holdings: HoldingContribution[];
   sleeves: SleeveTotal[];
+  /** Managed Alpha + Individual Stocks together (= the recorded Total Alpha book). */
+  nonCore: { contributionPct: number; avgWeightPct: number; returnPct: number | null };
   top: HoldingContribution[];
   bottom: HoldingContribution[];
 };
@@ -178,6 +180,66 @@ export function scheduleFromTrades(events: TradeEvent[], opts: { currentWeight: 
   return { steps, notes };
 }
 
+/** What the WHOLE trade log tells us, beyond one symbol's own rows. */
+export type LogContext = {
+  /** The first full rebalance in the log — the earliest day the book is known. */
+  firstRebalance: string | null;
+  /** Every full-rebalance day, ascending. A rebalance lists EVERY holding. */
+  rebalanceDates: string[];
+  /** The usual weight of a one-for-one switch that day (null when none carries one). */
+  switchWeightOn: (date: string) => number | null;
+};
+
+/**
+ * scheduleFromTrades plus three facts only the whole log can supply (Nov 2026,
+ * after the first real-data check showed the estimate +4.5 pts off):
+ *
+ *  1. A name in the log's FIRST rebalance was already held before it, whatever
+ *     the row's direction — "buy" there is a top-up of a laggard, "sell" a
+ *     trim of a winner. Reading "buy" as a new purchase dropped every
+ *     topped-up name (the laggards, and two Core ETFs) from the months before
+ *     the log starts and biased the estimate upward.
+ *  2. A switch buy logged with no weight takes that day's usual switch weight.
+ *  3. A rebalance lists every holding, so a name that is ABSENT from a later
+ *     rebalance had left by then: if its last row is a sale, that sale was a
+ *     full one; if it was never sold on file, it is counted until that
+ *     rebalance — noted either way.
+ */
+export function scheduleWithLog(events: TradeEvent[], opts: { currentWeight: number | null; heldAtTrackingStart: boolean }, ctx: LogContext): { steps: WeightStep[]; notes: string[] } {
+  const extra: string[] = [];
+  const ev = events.map((e) => {
+    if (e.kind === "trade" && e.direction === "buy" && !(e.moved > 0)) {
+      const w = ctx.switchWeightOn(e.date);
+      if (w && w > 0) {
+        extra.push(`bought on ${e.date} with no weight on file — that day's usual switch weight (${(w * 100).toFixed(2)}%) is used`);
+        return { ...e, moved: w };
+      }
+    }
+    return e;
+  });
+  const inFirst = !!ctx.firstRebalance && ev.some((e) => e.kind === "rebalance" && e.date === ctx.firstRebalance);
+  const base = scheduleFromTrades(ev, { currentWeight: opts.currentWeight, heldAtTrackingStart: opts.heldAtTrackingStart || inFirst });
+  const steps = base.steps.map((x) => ({ ...x }));
+  const notes = base.notes.map((n) => (inFirst && n.startsWith("held before its first trade on file") ? `the trade log starts on ${ctx.firstRebalance} — its weight that day is assumed for the time before` : n));
+  const held = !!opts.currentWeight && opts.currentWeight > 0;
+  const sorted = [...ev].sort((a, b) => a.date.localeCompare(b.date));
+  const last = sorted[sorted.length - 1];
+  if (!held && last && steps.length) {
+    const lastStep = steps[steps.length - 1];
+    const nextReb = ctx.rebalanceDates.find((d) => d > last.date);
+    if (nextReb && lastStep.weight > 0) {
+      if (last.kind === "trade" && last.direction === "sell") {
+        lastStep.weight = 0;
+        extra.push(`the sale on ${last.date} is treated as a full sale — the name is absent from the ${nextReb} rebalance`);
+      } else {
+        steps.push({ from: nextReb, weight: 0 });
+        extra.push(`left the model before the ${nextReb} rebalance with no sale on file — counted until then`);
+      }
+    }
+  }
+  return { steps, notes: [...notes, ...extra] };
+}
+
 /**
  * @param calendar trading days, ascending; calendar[0] is the BASE close and
  *                 every later date is a day whose return is attributed.
@@ -195,6 +257,7 @@ export function computeRangeAttribution(calendar: string[], holdings: HoldingInp
   const acc = holdings.map(() => ({ contrib: 0, wSum: 0, days: 0, growth: 1, first: null as string | null, last: null as string | null, missing: 0 }));
   const sleeves: Sleeve[] = ["core", "thematic", "stocks"];
   const sAcc: Record<Sleeve, { growth: number; wSum: number; days: number }> = { core: { growth: 1, wSum: 0, days: 0 }, thematic: { growth: 1, wSum: 0, days: 0 }, stocks: { growth: 1, wSum: 0, days: 0 } };
+  const nc = { growth: 1, wSum: 0, days: 0 };
   let G = 1;
   let covered = 0;
 
@@ -236,6 +299,12 @@ export function computeRangeAttribution(calendar: string[], holdings: HoldingInp
         sAcc[s].wSum += sDay[s].w;
         sAcc[s].days++;
       }
+    }
+    const ncW = sDay.thematic.w + sDay.stocks.w;
+    if (ncW > 0) {
+      nc.growth *= 1 + (sDay.thematic.wr + sDay.stocks.wr) / ncW;
+      nc.wSum += ncW;
+      nc.days++;
     }
     G *= 1 + R;
     covered += wTotal;
@@ -285,6 +354,11 @@ export function computeRangeAttribution(calendar: string[], holdings: HoldingInp
     avgWeightCoveredPct: n > 0 ? r4((covered / n) * 100) : 0,
     holdings: rows,
     sleeves: sleeveTotals,
+    nonCore: {
+      contributionPct: r4(rows.filter((r) => r.sleeve !== "core").reduce((x, r) => x + r.contributionPct, 0)),
+      avgWeightPct: n > 0 ? r4((nc.wSum / n) * 100) : 0,
+      returnPct: nc.days ? r4((nc.growth - 1) * 100) : null,
+    },
     top: rows.filter((r) => r.contributionPct > 0).slice(0, 5),
     bottom: rows.filter((r) => r.contributionPct < 0).slice(-5).reverse(),
   };
