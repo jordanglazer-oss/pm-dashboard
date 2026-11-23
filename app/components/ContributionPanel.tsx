@@ -28,6 +28,8 @@ const SLEEVES: { key: "all" | Sleeve; label: string }[] = [
   { key: "thematic", label: "Managed Alpha" },
   { key: "stocks", label: "Individual Stocks" },
 ];
+/** Above this many points between the rebuilt estimate and the recorded return, the holding split is flagged. */
+const GAP_WARN_PTS = 1.5;
 const SLEEVE_LABEL: Record<Sleeve, string> = { core: "Core", thematic: "Managed Alpha", stocks: "Individual Stocks" };
 
 const iso = (d: Date) => d.toISOString().slice(0, 10);
@@ -79,6 +81,7 @@ function MoverList({ title, rows, empty }: { title: string; rows: HoldingContrib
 export function ContributionView({ data, loading }: { data: RangeAttributionResponse | null; loading: boolean }) {
   const [sleeve, setSleeve] = useState<"all" | Sleeve>("all");
   const [showAll, toggleAll] = usePersistedOpen("perf.contribution.table", false);
+  const [showNotes, toggleNotes] = usePersistedOpen("perf.contribution.notes", false);
   const view = useMemo(() => {
     if (!data || !data.ok) return null;
     const rows = sleeve === "all" ? data.holdings : data.holdings.filter((h) => h.sleeve === sleeve);
@@ -108,25 +111,28 @@ export function ContributionView({ data, loading }: { data: RangeAttributionResp
         <p className="px-3.5 py-3 text-[12.5px] text-ink-3">{data.error}</p>
       ) : view ? (
         <div className={loading ? "opacity-60" : ""}>
-          <p className="px-3.5 pt-2.5 text-[13px] text-ink-2">
-            From the {data.range.base} close to the {data.range.end} close ({data.range.days} trading day{data.range.days === 1 ? "" : "s"}):{" "}
-            {sleeve === "all" ? (
+          {(() => {
+            const gap = data.reconciliation.book.differencePts;
+            const off = gap != null && Math.abs(gap) >= GAP_WARN_PTS;
+            return (
               <>
-                the equity book is an estimated <span className={`font-semibold ${tone(data.estimatedReturnPct)}`}>{pts(data.estimatedReturnPct)}</span>
-                {data.reconciliation.book.recordedPct != null && (
-                  <>
-                    {" "}
-                    against a recorded <span className="font-medium">{pts(data.reconciliation.book.recordedPct)}</span> for the All-Equity model (the estimate is {pts(data.reconciliation.book.differencePts)} off)
-                  </>
+                {off && (
+                  <div className="mx-3.5 mt-2.5 rounded-control border border-warn-border bg-warn-soft px-3 py-2 text-[12.5px] text-ink">
+                    <span className="font-semibold">Treat the holding figures below with caution for this period.</span> They add up to {pts(data.estimatedReturnPct)}, but the recorded return is {pts(data.reconciliation.book.recordedPct)} — a gap of {Math.abs(gap!).toFixed(2)} points. The sleeve &quot;Recorded&quot; column is exact; the per-holding split is an estimate rebuilt from the trade log.
+                  </div>
                 )}
-                .
+                <p className="px-3.5 pt-2.5 text-[12.5px] text-ink-3">
+                  {data.range.base} close to {data.range.end} close · {data.range.days} trading day{data.range.days === 1 ? "" : "s"}
+                  {sleeve !== "all" && (
+                    <>
+                      {" "}· {SLEEVE_LABEL[sleeve]} contributed an estimated <span className={`font-medium ${tone(view.total)}`}>{pts(view.total)}</span>
+                    </>
+                  )}
+                  {!off && gap != null && <> · holdings add up to {pts(data.estimatedReturnPct)} vs {pts(data.reconciliation.book.recordedPct)} recorded</>}
+                </p>
               </>
-            ) : (
-              <>
-                {SLEEVE_LABEL[sleeve]} contributed an estimated <span className={`font-semibold ${tone(view.total)}`}>{pts(view.total)}</span> of the equity book&apos;s {pts(data.estimatedReturnPct)}.
-              </>
-            )}
-          </p>
+            );
+          })()}
 
           <div className="flex flex-col gap-4 px-3.5 py-3 sm:flex-row sm:gap-8">
             <MoverList title="Top 5 contributors" rows={view.top} empty="Nothing added over this period." />
@@ -138,11 +144,11 @@ export function ContributionView({ data, loading }: { data: RangeAttributionResp
               <thead>
                 <tr>
                   <th className="pl-3.5">Sleeve</th>
-                  <th className="n">Contribution</th>
-                  <th className="n">Avg weight</th>
-                  <th className="n">Est. return</th>
                   <th className="n">Recorded return</th>
-                  <th className="n">Gap</th>
+                  <th className="n">Avg weight</th>
+                  <th className="n">Est. contribution</th>
+                  <th className="n">Est. return</th>
+                  <th className="n">Est. vs recorded</th>
                 </tr>
               </thead>
               <tbody>
@@ -154,27 +160,27 @@ export function ContributionView({ data, loading }: { data: RangeAttributionResp
                         <span className="font-medium">{s.label}</span>
                         <span className="text-[11.5px] text-ink-3"> · {s.holdings} holding{s.holdings === 1 ? "" : "s"}</span>
                       </td>
-                      <td className={`n ${tone(s.contributionPct)}`}>{pts(s.contributionPct)}</td>
+                      <td className={`n font-medium ${tone(rec?.recordedPct)}`}>{rec?.recordedPct == null ? <span className="text-[11.5px] font-normal text-ink-3">not recorded for the whole period</span> : pts(rec.recordedPct)}</td>
                       <td className="n">{s.avgWeightPct.toFixed(1)}%</td>
+                      <td className={`n ${tone(s.contributionPct)}`}>{pts(s.contributionPct)}</td>
                       <td className={`n ${tone(s.returnPct)}`}>{pts(s.returnPct)}</td>
-                      <td className="n">{pts(rec?.recordedPct)}</td>
                       <td className="n text-ink-3">{rec?.differencePts == null ? "—" : `${rec.differencePts > 0 ? "+" : ""}${rec.differencePts.toFixed(2)} pts`}</td>
                     </tr>
                   );
                 })}
                 <tr>
                   <td className="pl-3.5 font-medium">Equity book</td>
-                  <td className={`n font-medium ${tone(data.estimatedReturnPct)}`}>{pts(data.estimatedReturnPct)}</td>
+                  <td className={`n font-medium ${tone(data.reconciliation.book.recordedPct)}`}>{pts(data.reconciliation.book.recordedPct)}</td>
                   <td className="n">{data.avgWeightCoveredPct.toFixed(1)}%</td>
                   <td className={`n ${tone(data.estimatedReturnPct)}`}>{pts(data.estimatedReturnPct)}</td>
-                  <td className="n">{pts(data.reconciliation.book.recordedPct)}</td>
+                  <td className={`n ${tone(data.estimatedReturnPct)}`}>{pts(data.estimatedReturnPct)}</td>
                   <td className="n text-ink-3">{data.reconciliation.book.differencePts == null ? "—" : `${data.reconciliation.book.differencePts > 0 ? "+" : ""}${data.reconciliation.book.differencePts.toFixed(2)} pts`}</td>
                 </tr>
               </tbody>
             </table>
           </div>
           <p className="px-3.5 pt-1.5 text-[11.5px] text-ink-3">
-            &quot;Recorded return&quot; is the dashboard&apos;s own performance series for the same days; &quot;Gap&quot; is how far this estimate is from it. A sleeve with no recorded series for the whole range shows a dash.
+            &quot;Recorded return&quot; is the dashboard&apos;s own performance record for the same days and is exact. The &quot;Est.&quot; columns are rebuilt from model weights and prices; the last column is how far that rebuild is from the record.
           </p>
 
           <div className="px-3.5 py-2.5">
@@ -218,13 +224,17 @@ export function ContributionView({ data, loading }: { data: RangeAttributionResp
             </div>
           )}
 
-          <div className="px-3.5 pb-3 pt-2">
-            <div className="text-[11px] font-semibold uppercase tracking-[0.08em] text-ink-3">How to read this</div>
-            <ul className="mt-1 list-disc pl-4 text-[11.5px] leading-snug text-ink-3">
-              {data.caveats.map((c, i) => (
-                <li key={i}>{c}</li>
-              ))}
-            </ul>
+          <div className="px-3.5 pb-3 pt-1">
+            <button onClick={toggleNotes} className="text-[12.5px] font-medium text-ink-2 underline decoration-line underline-offset-2">
+              {showNotes ? "Hide how this is calculated" : `How this is calculated (${data.caveats.length} notes)`}
+            </button>
+            {showNotes && (
+              <ul className="mt-1.5 list-disc pl-4 text-[11.5px] leading-snug text-ink-3">
+                {data.caveats.map((c, i) => (
+                  <li key={i}>{c}</li>
+                ))}
+              </ul>
+            )}
           </div>
         </div>
       ) : null}

@@ -76,7 +76,8 @@ export function ReturnSourcesPanel() {
   useEffect(() => {
     let live = true;
     fetch("/api/index-history?extended=1").then((r) => r.json()).then((d: IndexResp) => live && setIndexes(d)).catch(() => {});
-    fetch("/api/attribution").then((r) => (r.ok ? r.json() : null)).then((d: AttrMeta | null) => live && setMeta(d ?? {})).catch(() => live && setMeta({}));
+    // The route wraps its payload: { attribution: { equityBeta, usdEquityFractionPct, … } }.
+    fetch("/api/attribution").then((r) => (r.ok ? r.json() : null)).then((d: { attribution?: AttrMeta | null } | null) => live && setMeta(d?.attribution ?? {})).catch(() => live && setMeta({}));
     return () => {
       live = false;
     };
