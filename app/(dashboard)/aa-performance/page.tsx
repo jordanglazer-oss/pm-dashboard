@@ -972,12 +972,12 @@ export default function AAPerformancePage() {
 
   return (
     <main className="flex flex-col gap-3.5 text-ink">
-      <PageHeading lede="How every model, risk profile and reference index has done, with asset allocation and what drove the returns." />
+      <PageHeading lede="Returns, what drove them, and asset allocation." />
       {/* ── Performance — the table comes first: it is what the page is for ── */}
       <section className="panel">
         <div className="panel-h flex-wrap py-1.5">
           <span className="t">Performance</span>
-          <span className="m">Models, profiles and reference indices · 1Y and longer are annualized</span>
+          <span className="m">1Y and longer are annualized</span>
           {(pimLoading || indexLoading) && <span className="m ml-auto animate-pulse">refreshing…</span>}
         </div>
         <div className="max-w-full tbl-wrap">
@@ -1064,7 +1064,7 @@ export default function AAPerformancePage() {
           The route still exists; this page is now the single Performance
           surface (allocation + performance + attribution). ── */}
       <div id="attribution" className="scroll-mt-24">
-        <CollapsibleSection prefKey="perf.attributionByModel" defaultCollapsed title="Market, currency and selection for every model" subtitle="Reference · fixed periods (MTD / QTD / YTD / 1 year) for Conservative through All-Equity; the panel above covers the equity book over any dates">
+        <CollapsibleSection prefKey="perf.attributionByModel" defaultCollapsed title="Market, currency and selection for every model" subtitle="Reference · fixed periods">
           <Attribution />
         </CollapsibleSection>
       </div>
