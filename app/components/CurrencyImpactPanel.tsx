@@ -22,9 +22,101 @@ const pts = (v: number | null | undefined) => (v == null ? "—" : `${v > 0 ? "+
 const share = (v: number) => `${(v * 100).toFixed(1)}%`;
 const tone = (v: number | null | undefined) => (v == null ? "text-ink-3" : v > 0 ? "text-pos" : v < 0 ? "text-neg" : "text-ink-2");
 
+export type CurrencyResp = Resp;
+
+/** The currency read-out without its own header or date controls — the caller
+ *  owns the range and the fetch (the merged "Where returns came from" panel). */
+export function CurrencyView({ data }: { data: Resp | null }) {
+  const [showRows, toggleRows] = usePersistedOpen("aa.currencyImpact.rows", false);
+  const usd = data && data.fxPct != null ? (data.fxPct > 0 ? "rose" : data.fxPct < 0 ? "fell" : "was flat") : null;
+  return (
+    <>
+    {!data ? (
+      <p className="px-3.5 py-3 text-[12.5px] text-ink-3">Loading…</p>
+    ) : data.error ? (
+      <p className="px-3.5 py-3 text-[12.5px] text-neg">{data.error}</p>
+    ) : !data.fxAvailable || data.fxPct == null ? (
+      <p className="px-3.5 py-3 text-[12.5px] text-ink-3">No USD/CAD history for this period.</p>
+    ) : (
+      <>
+        <div className="grid grid-cols-1 gap-3 px-3.5 py-3 sm:grid-cols-3">
+          <div>
+            <div className="text-[11px] uppercase tracking-[0.08em] text-ink-3">Currency contribution</div>
+            <div className={`text-[20px] font-semibold ${tone(data.contributionPct)}`}>{pts(data.contributionPct)}</div>
+            <div className="text-[12px] text-ink-3">
+              The US dollar {data.contributionPct != null && data.contributionPct < 0 ? "took" : "added"} about {Math.abs(data.contributionPct ?? 0).toFixed(2)} points {data.contributionPct != null && data.contributionPct < 0 ? "off" : "to"} the {PROFILE_LABEL[data.profile] ?? data.profile} return.
+            </div>
+            <div className="mt-1">
+              <Sparkline points={data.series} width={160} height={28} />
+            </div>
+          </div>
+          <div>
+            <div className="text-[11px] uppercase tracking-[0.08em] text-ink-3">US dollar vs Canadian</div>
+            <div className={`text-[20px] font-semibold ${tone(data.fxPct)}`}>{pts(data.fxPct)}</div>
+            <div className="text-[12px] text-ink-3">
+              The US dollar {usd} against the Canadian dollar{data.partial ? " (history starts after the chosen start)" : ""}.
+            </div>
+          </div>
+          <div>
+            <div className="text-[11px] uppercase tracking-[0.08em] text-ink-3">Unhedged US-dollar share</div>
+            <div className="text-[20px] font-semibold text-ink">{share(data.unhedgedWeight)}</div>
+            <div className="text-[12px] text-ink-3">
+              of the portfolio. CAD-hedged {share(data.hedgedWeight)}
+              {data.unclassifiedWeight > 0 ? ` · not classified ${share(data.unclassifiedWeight)}` : ""}.
+            </div>
+          </div>
+        </div>
+        <p className="px-3.5 pb-2 text-[12.5px] text-ink-2">
+          Hedging: the CAD-hedged holdings {data.hedgingEffectPct != null && data.hedgingEffectPct > 0 ? "saved" : data.hedgingEffectPct != null && data.hedgingEffectPct < 0 ? "gave up" : "made no difference of"}{" "}
+          <span className={tone(data.hedgingEffectPct)}>{Math.abs(data.hedgingEffectPct ?? 0).toFixed(2)} points</span> versus holding the same funds unhedged (before the cost of hedging).
+        </p>
+        <p className="px-3.5 pb-2 text-[11.5px] text-ink-3">
+          Estimate: today&apos;s model weights applied to the whole period. Hedged holdings: {data.hedgedList.join(", ")}. Fidelity Global Innovators is counted in full as unhedged. Separate from alpha, which is measured against the S&amp;P 500 in C$ and is already currency-neutral.
+        </p>
+        <button className="px-3.5 pb-2.5 text-[12.5px] text-accent" onClick={toggleRows}>
+          {showRows ? "Hide" : "Show"} every holding ({data.rows.length})
+        </button>
+        {showRows && (
+          <div className="tbl-wrap">
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th className="pl-3.5">Holding</th>
+                  <th>Priced in</th>
+                  <th className="n">Share of portfolio</th>
+                  <th>Counted as</th>
+                  <th>Why</th>
+                </tr>
+              </thead>
+              <tbody>
+                {data.rows.map((r) => (
+                  <tr key={r.symbol}>
+                    <td className="pl-3.5">
+                      <span className="font-medium">{displayTicker(r.symbol)}</span>
+                      <div className="text-[11px] text-ink-3">{r.name}</div>
+                    </td>
+                    <td>{r.currency}</td>
+                    <td className="n">{(r.weight * 100).toFixed(2)}%</td>
+                    <td>
+                      <span className={r.cls === "unclassified" ? "text-warn" : "text-ink-2"}>{CLASS_LABEL[r.cls]}</span>
+                    </td>
+                    <td>
+                      <span className="text-[12px] text-ink-3">{r.reason}</span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </>
+    )}
+    </>
+  );
+}
+
 export function CurrencyImpactPanel() {
   const [open, toggle] = usePersistedOpen("aa.currencyImpact.open", true);
-  const [showRows, toggleRows] = usePersistedOpen("aa.currencyImpact.rows", false);
   const [preset, setPreset] = useState<PeriodPreset>("ytd");
   const [custom, setCustom] = useState({ from: "", to: "" });
   const [profile, setProfile] = useState("balanced");
@@ -53,8 +145,6 @@ export function CurrencyImpactPanel() {
   // The last answer stays on screen while a new period loads.
   const data = loaded?.data ?? null;
   const loading = open && loaded?.key !== key;
-
-  const usd = data && data.fxPct != null ? (data.fxPct > 0 ? "rose" : data.fxPct < 0 ? "fell" : "was flat") : null;
 
   return (
     <section className="panel">
@@ -94,86 +184,7 @@ export function CurrencyImpactPanel() {
             </span>
           </div>
 
-          {!data ? (
-            <p className="px-3.5 py-3 text-[12.5px] text-ink-3">Loading…</p>
-          ) : data.error ? (
-            <p className="px-3.5 py-3 text-[12.5px] text-neg">{data.error}</p>
-          ) : !data.fxAvailable || data.fxPct == null ? (
-            <p className="px-3.5 py-3 text-[12.5px] text-ink-3">No USD/CAD history for this period.</p>
-          ) : (
-            <>
-              <div className="grid grid-cols-1 gap-3 px-3.5 py-3 sm:grid-cols-3">
-                <div>
-                  <div className="text-[11px] uppercase tracking-[0.08em] text-ink-3">Currency contribution</div>
-                  <div className={`text-[20px] font-semibold ${tone(data.contributionPct)}`}>{pts(data.contributionPct)}</div>
-                  <div className="text-[12px] text-ink-3">
-                    The US dollar {data.contributionPct != null && data.contributionPct < 0 ? "took" : "added"} about {Math.abs(data.contributionPct ?? 0).toFixed(2)} points {data.contributionPct != null && data.contributionPct < 0 ? "off" : "to"} the {PROFILE_LABEL[data.profile] ?? data.profile} return.
-                  </div>
-                  <div className="mt-1">
-                    <Sparkline points={data.series} width={160} height={28} />
-                  </div>
-                </div>
-                <div>
-                  <div className="text-[11px] uppercase tracking-[0.08em] text-ink-3">US dollar vs Canadian</div>
-                  <div className={`text-[20px] font-semibold ${tone(data.fxPct)}`}>{pts(data.fxPct)}</div>
-                  <div className="text-[12px] text-ink-3">
-                    The US dollar {usd} against the Canadian dollar{data.partial ? " (history starts after the chosen start)" : ""}.
-                  </div>
-                </div>
-                <div>
-                  <div className="text-[11px] uppercase tracking-[0.08em] text-ink-3">Unhedged US-dollar share</div>
-                  <div className="text-[20px] font-semibold text-ink">{share(data.unhedgedWeight)}</div>
-                  <div className="text-[12px] text-ink-3">
-                    of the portfolio. CAD-hedged {share(data.hedgedWeight)}
-                    {data.unclassifiedWeight > 0 ? ` · not classified ${share(data.unclassifiedWeight)}` : ""}.
-                  </div>
-                </div>
-              </div>
-              <p className="px-3.5 pb-2 text-[12.5px] text-ink-2">
-                Hedging: the CAD-hedged holdings {data.hedgingEffectPct != null && data.hedgingEffectPct > 0 ? "saved" : data.hedgingEffectPct != null && data.hedgingEffectPct < 0 ? "gave up" : "made no difference of"}{" "}
-                <span className={tone(data.hedgingEffectPct)}>{Math.abs(data.hedgingEffectPct ?? 0).toFixed(2)} points</span> versus holding the same funds unhedged (before the cost of hedging).
-              </p>
-              <p className="px-3.5 pb-2 text-[11.5px] text-ink-3">
-                Estimate: today&apos;s model weights applied to the whole period. Hedged holdings: {data.hedgedList.join(", ")}. Fidelity Global Innovators is counted in full as unhedged. Separate from alpha, which is measured against the S&amp;P 500 in C$ and is already currency-neutral.
-              </p>
-              <button className="px-3.5 pb-2.5 text-[12.5px] text-accent" onClick={toggleRows}>
-                {showRows ? "Hide" : "Show"} every holding ({data.rows.length})
-              </button>
-              {showRows && (
-                <div className="tbl-wrap">
-                  <table className="data-table">
-                    <thead>
-                      <tr>
-                        <th className="pl-3.5">Holding</th>
-                        <th>Priced in</th>
-                        <th className="n">Share of portfolio</th>
-                        <th>Counted as</th>
-                        <th>Why</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {data.rows.map((r) => (
-                        <tr key={r.symbol}>
-                          <td className="pl-3.5">
-                            <span className="font-medium">{displayTicker(r.symbol)}</span>
-                            <div className="text-[11px] text-ink-3">{r.name}</div>
-                          </td>
-                          <td>{r.currency}</td>
-                          <td className="n">{(r.weight * 100).toFixed(2)}%</td>
-                          <td>
-                            <span className={r.cls === "unclassified" ? "text-warn" : "text-ink-2"}>{CLASS_LABEL[r.cls]}</span>
-                          </td>
-                          <td>
-                            <span className="text-[12px] text-ink-3">{r.reason}</span>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-            </>
-          )}
+          <CurrencyView data={data} />
         </>
       )}
     </section>

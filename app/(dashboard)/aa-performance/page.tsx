@@ -12,11 +12,11 @@ import type { AppendixData, PimPerformanceData, PimProfileWeights } from "@/app/
 import { useLiveTodayReturn } from "@/app/lib/useLiveTodayReturn";
 import { getTodayET } from "@/app/lib/market-hours";
 import { PageHeading } from "@/app/components/PageHeading";
+import { CollapsibleSection } from "@/app/components/CollapsibleSection";
 import { SleeveTracking } from "@/app/components/SleeveTracking";
 import { HoldingHistoryPanel } from "@/app/components/HoldingHistoryPanel";
-import { CurrencyImpactPanel } from "@/app/components/CurrencyImpactPanel";
 import { RealizedGainsPanel } from "@/app/components/RealizedGainsPanel";
-import { ContributionPanel } from "@/app/components/ContributionPanel";
+import { ReturnSourcesPanel } from "@/app/components/ReturnSourcesPanel";
 
 /* ─── Types ─── */
 type AllocationRow = {
@@ -1015,11 +1015,11 @@ export default function AAPerformancePage() {
 
       <SleeveTracking />
 
-      <ContributionPanel />
+      {/* Where returns came from: summary → sleeves and holdings → currency, one date range. */}
+      <ReturnSourcesPanel />
 
+      {/* What we did. */}
       <HoldingHistoryPanel />
-
-      <CurrencyImpactPanel />
 
       <RealizedGainsPanel />
 
@@ -1064,7 +1064,9 @@ export default function AAPerformancePage() {
           The route still exists; this page is now the single Performance
           surface (allocation + performance + attribution). ── */}
       <div id="attribution" className="scroll-mt-24">
-        <Attribution />
+        <CollapsibleSection prefKey="perf.attributionByModel" defaultCollapsed title="Market, currency and selection for every model" subtitle="Reference · fixed periods (MTD / QTD / YTD / 1 year) for Conservative through All-Equity; the panel above covers the equity book over any dates">
+          <Attribution />
+        </CollapsibleSection>
       </div>
     </main>
   );

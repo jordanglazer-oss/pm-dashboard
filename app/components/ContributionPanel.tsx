@@ -73,40 +73,12 @@ function MoverList({ title, rows, empty }: { title: string; rows: HoldingContrib
   );
 }
 
-export function ContributionPanel() {
-  const [preset, setPreset] = useState<Preset>("mtd");
-  const [custom, setCustom] = useState({ from: "", to: "" });
+/** Everything below the date controls: sleeve filter, summary sentence, top 5 /
+ *  bottom 5, sleeve table, full table, caveats. Presentational — the caller
+ *  owns the date range and the fetch (so a merged panel can load it once). */
+export function ContributionView({ data, loading }: { data: RangeAttributionResponse | null; loading: boolean }) {
   const [sleeve, setSleeve] = useState<"all" | Sleeve>("all");
-  // The last answer, tagged with the range it is for: "loading" is simply
-  // "the answer on screen is for a different range than the one selected".
-  const [res, setRes] = useState<{ key: string; data: RangeAttributionResponse } | null>(null);
   const [showAll, toggleAll] = usePersistedOpen("perf.contribution.table", false);
-
-  const range = rangeFor(preset, custom);
-  const ready = preset !== "custom" || !custom.from || !custom.to || custom.from <= custom.to;
-  const key = `${range.from}|${range.to}`;
-  useEffect(() => {
-    if (!ready) return;
-    let stop = false;
-    const q = new URLSearchParams();
-    if (range.from) q.set("from", range.from);
-    if (range.to) q.set("to", range.to);
-    const tag = `${range.from}|${range.to}`;
-    fetch(`/api/attribution/range?${q.toString()}`)
-      .then((r) => r.json())
-      .then((j: RangeAttributionResponse) => {
-        if (!stop) setRes({ key: tag, data: j });
-      })
-      .catch(() => {
-        if (!stop) setRes({ key: tag, data: { ok: false, error: "Could not load the contribution data." } });
-      });
-    return () => {
-      stop = true;
-    };
-  }, [range.from, range.to, ready]);
-  const data = res?.data ?? null;
-  const loading = ready && res?.key !== key;
-
   const view = useMemo(() => {
     if (!data || !data.ok) return null;
     const rows = sleeve === "all" ? data.holdings : data.holdings.filter((h) => h.sleeve === sleeve);
@@ -119,28 +91,8 @@ export function ContributionPanel() {
   }, [data, sleeve]);
 
   return (
-    <section className="panel">
-      <div className="panel-h flex-wrap gap-y-1.5 py-1.5">
-        <span className="t">Contribution by holding</span>
-        <span className="m">Model-level estimate · PIM equity book · weight × C$ total return, names sold in the period included</span>
-      </div>
+    <>
       <div className="flex flex-wrap items-center gap-2 px-3.5 pt-2.5">
-        <div className="seg">
-          {PRESETS.map((p) => (
-            <button key={p.key} className={preset === p.key ? "on" : ""} onClick={() => setPreset(p.key)}>
-              {p.label}
-            </button>
-          ))}
-        </div>
-        {preset === "custom" && (
-          <span className="flex flex-wrap items-center gap-1.5 text-[12.5px] text-ink-3">
-            From
-            <input type="date" value={custom.from} onChange={(e) => setCustom((c) => ({ ...c, from: e.target.value }))} className="h-7 rounded-control border border-line bg-surface px-2 text-[12.5px] text-ink" />
-            to
-            <input type="date" value={custom.to} min={custom.from || undefined} onChange={(e) => setCustom((c) => ({ ...c, to: e.target.value }))} className="h-7 rounded-control border border-line bg-surface px-2 text-[12.5px] text-ink" />
-            <span className="text-ink-faint">(empty &quot;from&quot; = from the start; empty &quot;to&quot; = today)</span>
-          </span>
-        )}
         <div className="seg">
           {SLEEVES.map((s) => (
             <button key={s.key} className={sleeve === s.key ? "on" : ""} onClick={() => setSleeve(s.key)}>
@@ -150,7 +102,6 @@ export function ContributionPanel() {
         </div>
         {loading && <span className="text-[12px] text-ink-3">Loading prices…</span>}
       </div>
-
       {!data ? (
         <p className="px-3.5 py-3 text-[12.5px] text-ink-3">Loading…</p>
       ) : !data.ok ? (
@@ -277,6 +228,67 @@ export function ContributionPanel() {
           </div>
         </div>
       ) : null}
+    </>
+  );
+}
+
+export function ContributionPanel() {
+  const [preset, setPreset] = useState<Preset>("mtd");
+  const [custom, setCustom] = useState({ from: "", to: "" });
+  // The last answer, tagged with the range it is for: "loading" is simply
+  // "the answer on screen is for a different range than the one selected".
+  const [res, setRes] = useState<{ key: string; data: RangeAttributionResponse } | null>(null);
+
+  const range = rangeFor(preset, custom);
+  const ready = preset !== "custom" || !custom.from || !custom.to || custom.from <= custom.to;
+  const key = `${range.from}|${range.to}`;
+  useEffect(() => {
+    if (!ready) return;
+    let stop = false;
+    const q = new URLSearchParams();
+    if (range.from) q.set("from", range.from);
+    if (range.to) q.set("to", range.to);
+    const tag = `${range.from}|${range.to}`;
+    fetch(`/api/attribution/range?${q.toString()}`)
+      .then((r) => r.json())
+      .then((j: RangeAttributionResponse) => {
+        if (!stop) setRes({ key: tag, data: j });
+      })
+      .catch(() => {
+        if (!stop) setRes({ key: tag, data: { ok: false, error: "Could not load the contribution data." } });
+      });
+    return () => {
+      stop = true;
+    };
+  }, [range.from, range.to, ready]);
+  const data = res?.data ?? null;
+  const loading = ready && res?.key !== key;
+
+  return (
+    <section className="panel">
+      <div className="panel-h flex-wrap gap-y-1.5 py-1.5">
+        <span className="t">Contribution by holding</span>
+        <span className="m">Model-level estimate · PIM equity book · weight × C$ total return, names sold in the period included</span>
+      </div>
+      <div className="flex flex-wrap items-center gap-2 px-3.5 pt-2.5">
+        <div className="seg">
+          {PRESETS.map((p) => (
+            <button key={p.key} className={preset === p.key ? "on" : ""} onClick={() => setPreset(p.key)}>
+              {p.label}
+            </button>
+          ))}
+        </div>
+        {preset === "custom" && (
+          <span className="flex flex-wrap items-center gap-1.5 text-[12.5px] text-ink-3">
+            From
+            <input type="date" value={custom.from} onChange={(e) => setCustom((c) => ({ ...c, from: e.target.value }))} className="h-7 rounded-control border border-line bg-surface px-2 text-[12.5px] text-ink" />
+            to
+            <input type="date" value={custom.to} min={custom.from || undefined} onChange={(e) => setCustom((c) => ({ ...c, to: e.target.value }))} className="h-7 rounded-control border border-line bg-surface px-2 text-[12.5px] text-ink" />
+            <span className="text-ink-faint">(empty &quot;from&quot; = from the start; empty &quot;to&quot; = today)</span>
+          </span>
+        )}
+      </div>
+      <ContributionView data={data} loading={loading} />
     </section>
   );
 }
