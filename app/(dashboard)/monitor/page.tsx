@@ -15,6 +15,7 @@ import type { HoldingsDay, HoldingsEvent } from "@/app/lib/agents/holdings-watch
 import type { StanceState } from "@/app/lib/agents/stance-watch";
 import type { ManagerState } from "@/app/lib/agents/manager-watch";
 import type { Memo } from "@/app/lib/agents/sunday-memo";
+import type { DaMonthView, DaResult, DaRunResult } from "@/app/lib/agents/devils-advocate-shared";
 
 /**
  * /monitor — the watchers' desk. What they flagged (Act / Dismiss / note),
@@ -472,6 +473,110 @@ function ManagerSection() {
   );
 }
 
+const DA_TONE: Record<DaResult["verdict"], string> = {
+  "would not buy today": "text-neg",
+  "hold, would not add": "text-ink-2",
+  "would buy today": "text-pos",
+};
+
+/** Monthly devil's advocate — the case against every individual stock held,
+ *  for the first-Monday review. Read-only apart from "Run now / continue". */
+function DevilsAdvocateSection() {
+  const [view, setView] = useState<DaMonthView | null | undefined>(undefined);
+  const [open, toggle] = usePersistedOpen("monitor.advocate.open", true);
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState<string | null>(null);
+
+  const load = useCallback(async () => {
+    try {
+      const d = (await fetch("/api/agents/devils-advocate").then((r) => r.json())) as DaMonthView & { error?: string };
+      setView(d?.error || !d?.month ? null : d);
+    } catch {
+      setView(null);
+    }
+  }, []);
+  useEffect(() => {
+    void Promise.resolve().then(load);
+  }, [load]);
+
+  const runNow = async () => {
+    setBusy(true);
+    setMsg(null);
+    try {
+      const d = (await fetch("/api/agents/devils-advocate", { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" }).then((r) => r.json())) as DaRunResult;
+      const bits = [`${d.written?.length ?? 0} written`, d.pending?.length ? `${d.pending.length} still to do — press again to continue` : "all stocks done"];
+      if (d.failed?.length) bits.push(`${d.failed.length} not written (${d.failed[0].reason})`);
+      setMsg(d.error ?? (d.skipped && !d.written?.length ? d.skipped : bits.join(" · ")));
+      await load();
+    } catch {
+      setMsg("Could not run.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const results = view?.results ?? [];
+  const total = view?.held.length ?? 0;
+  const done = total - (view?.pending.length ?? 0);
+  const wouldNot = results.filter((r) => r.verdict === "would not buy today").length;
+  return (
+    <section className="panel">
+      <button className="panel-h w-full text-left" onClick={toggle}>
+        <span className="t">Devil&apos;s advocate</span>
+        <span className="m">
+          {view ? `review ${view.reviewOn} · ${done} of ${total} stocks done${results.length ? ` · ${wouldNot} would not buy today` : ""}` : view === null ? "could not load" : "…"} · {open ? "hide" : "show"}
+        </span>
+      </button>
+      {open && (
+        <div className="flex flex-col gap-2.5 px-3.5 py-3">
+          <p className="text-[12.5px] leading-relaxed text-ink-3">
+            Once a month, the strongest case against every individual stock we hold, for the first-Monday review. It argues against each position on purpose, using only what is on file (thesis, pillar statuses, FactSet alerts, analyst consensus) and no web search. It
+            runs by itself in the evenings from {view?.startsOn ?? "the Wednesday before"}; a stock already written this month is not rewritten.
+          </p>
+          <div className="flex flex-wrap items-center gap-2">
+            <button className={BTN} disabled={busy} onClick={runNow}>
+              {busy ? "Writing… (up to 90 seconds)" : done > 0 && done < total ? "Continue" : "Run now"}
+            </button>
+            {msg && <span className="text-[12.5px] text-ink-2">{msg}</span>}
+            {view && view.usd > 0 && <span className="text-[12px] text-ink-faint">Cost so far this month: ${view.usd.toFixed(2)}</span>}
+          </div>
+          {view && view.pending.length > 0 && results.length > 0 && <p className="text-[12.5px] text-ink-3">Still to do: {view.pending.map(displayTicker).join(", ")}</p>}
+        </div>
+      )}
+      {open &&
+        results.map((r) => (
+          <div key={r.ticker} className="border-t border-line px-3.5 py-3">
+            <div className="flex flex-wrap items-baseline gap-x-2.5 gap-y-1">
+              <span className="font-mono text-[13.5px] font-semibold text-ink">{displayTicker(r.ticker)}</span>
+              {r.name && <span className="text-[12.5px] text-ink-3">{r.name}</span>}
+              <span className={`text-[12.5px] font-semibold ${DA_TONE[r.verdict] ?? "text-ink-2"}`}>{r.verdict.charAt(0).toUpperCase() + r.verdict.slice(1)}</span>
+              <span className="text-[12px] text-ink-faint">
+                confidence {r.confidence} · written {r.at.slice(0, 10)}
+                {!r.onFile.thesis ? " · no signed thesis on file" : ""}
+                {view?.noLongerHeld.includes(r.ticker) ? " · no longer held" : ""}
+              </span>
+            </div>
+            <ul className="mt-1.5 list-disc pl-5 text-[13px] leading-relaxed text-ink-2">
+              {r.strongestCaseAgainst.map((p, i) => (
+                <li key={i}>{p}</li>
+              ))}
+            </ul>
+            {r.weakestPillar && (
+              <p className="mt-1.5 text-[12.5px] text-ink-3">
+                <span className="font-semibold text-ink-2">Weakest pillar:</span> {r.weakestPillar}
+              </p>
+            )}
+            {r.whatWouldChangeMind && (
+              <p className="mt-1 text-[12.5px] text-ink-3">
+                <span className="font-semibold text-ink-2">What would change this:</span> {r.whatWouldChangeMind}
+              </p>
+            )}
+          </div>
+        ))}
+    </section>
+  );
+}
+
 function MemoSection() {
   const [memos, setMemos] = useState<Memo[] | null>(null);
   const [open, toggle] = usePersistedOpen("monitor.memo.open", true);
@@ -780,6 +885,7 @@ export default function MonitorPage() {
       <StanceSection />
       <HoldingsWatchSection />
       <ManagerSection />
+      <DevilsAdvocateSection />
       <MemoSection />
       <EarningsCompareSection />
 

@@ -3,6 +3,7 @@ import { runStanceWatch } from "@/app/lib/agents/stance-watch";
 import { runManagerWatch } from "@/app/lib/agents/manager-watch";
 import { listFlags } from "@/app/lib/agents/flags";
 import { runPortfolioAudit } from "@/app/lib/agents/portfolio-audit";
+import { runDevilsAdvocateIfDue } from "@/app/lib/agents/devils-advocate";
 import { sendAuditEmail } from "@/app/lib/agents/flag-mail";
 
 /**
@@ -39,6 +40,9 @@ export async function GET(req: NextRequest) {
     // Rule audits ($0) run before the email so tonight's email carries them.
     const audit = await runPortfolioAudit();
     console.log(`[cron/stance-watch] portfolio audit: ${audit.skipped ?? audit.error ?? `${audit.findings.length} findings, ${audit.raised.length} new`}`);
+    // Monthly devil's advocate: a batch each evening from the Wednesday before the first Monday (never throws).
+    const advocate = await runDevilsAdvocateIfDue();
+    console.log(`[cron/stance-watch] devil's advocate: ${"written" in advocate ? `${advocate.written.length} written, ${advocate.pending.length} pending` : advocate.skipped}`);
     const mail = await sendAuditEmail(await listFlags());
     console.log(`[cron/stance-watch] audit email: ${mail.queued ? "queued" : mail.reason ?? "not queued"}`);
     return NextResponse.json({ ...out, manager, portfolioAudit: { ok: audit.ok, skipped: audit.skipped, error: audit.error, findings: audit.findings.length, raised: audit.raised.length }, auditEmail: { ok: mail.ok, queued: mail.queued, reason: mail.reason, newCount: mail.email?.newCount } });
