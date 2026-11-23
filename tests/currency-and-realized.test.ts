@@ -22,7 +22,9 @@ describe("currency impact — classification", () => {
     expect(classifyFx({ symbol: "XIC-T", name: "iShares Core S&P/TSX Capped Composite", currency: "CAD", instrumentType: "etf", known: true }).cls).toBe("cad");
     expect(classifyFx({ symbol: "VFV-T", name: "Vanguard S&P 500 Index ETF", currency: "CAD", instrumentType: "etf", known: true }).cls).toBe("usd-unhedged");
     // A global fund holds some US dollars, but how much is not on file → not guessed.
-    expect(classifyFx({ symbol: "FID5982", name: "Fidelity Global Innovators Class F", currency: "CAD", instrumentType: "mutual-fund", known: true }).cls).toBe("unclassified");
+    // PM-confirmed (2026-11-22): Fidelity Global Innovators is unhedged, in any listing form.
+    expect(classifyFx({ symbol: "FID5982", name: "Fidelity Global Innovators Class F", currency: "CAD", instrumentType: "mutual-fund", known: true }).cls).toBe("usd-unhedged");
+    expect(classifyFx({ symbol: "FID5982-T", currency: "CAD" }).cls).toBe("usd-unhedged");
     expect(classifyFx({ symbol: "MYSTERY-T", currency: "CAD" }).cls).toBe("unclassified");
     // "US" inside a word is not a match.
     expect(classifyFx({ symbol: "BUS-T", name: "Industrial Focus Fund", currency: "CAD", instrumentType: "etf", known: true }).cls).toBe("unclassified");

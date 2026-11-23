@@ -134,7 +134,7 @@ export function CurrencyImpactPanel() {
                 <span className={tone(data.hedgingEffectPct)}>{Math.abs(data.hedgingEffectPct ?? 0).toFixed(2)} points</span> versus holding the same funds unhedged (before the cost of hedging).
               </p>
               <p className="px-3.5 pb-2 text-[11.5px] text-ink-3">
-                Estimate: today&apos;s model weights applied to the whole period. The hedged list ({data.hedgedList.join(", ")}) is proposed, not yet confirmed. Separate from alpha, which is measured against the S&amp;P 500 in C$ and is already currency-neutral.
+                Estimate: today&apos;s model weights applied to the whole period. Hedged holdings: {data.hedgedList.join(", ")}. Fidelity Global Innovators is counted in full as unhedged. Separate from alpha, which is measured against the S&amp;P 500 in C$ and is already currency-neutral.
               </p>
               <button className="px-3.5 pb-2.5 text-[12.5px] text-accent" onClick={toggleRows}>
                 {showRows ? "Hide" : "Show"} every holding ({data.rows.length})

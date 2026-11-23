@@ -19,12 +19,20 @@ import type { PimHolding, PimModelGroup, PimProfileType, PimProfileWeights } fro
  */
 
 /**
- * CAD-HEDGED holdings. PROPOSED LIST — NOT YET CONFIRMED BY THE PM (Nov 2026).
- * There is no stored hedged / unhedged flag, so this constant is the only
- * source besides a fund whose own name says "hedged". Any listing suffix
- * (-T, .TO) matches. Edit here once the PM confirms.
+ * CAD-HEDGED holdings — CONFIRMED by the PM on 2026-11-22. There is no stored
+ * hedged / unhedged flag, so this constant is the only source besides a fund
+ * whose own name says "hedged". Any listing suffix (-T, .TO) matches.
  */
 export const CAD_HEDGED_SYMBOLS = ["XSP", "XUH", "XSU", "QQC.F"];
+
+/**
+ * Funds the PM has told us are UNHEDGED (2026-11-22) and whose name alone does
+ * not say so. Fidelity Global Innovators is a global fund priced in C$; its
+ * whole weight is counted as unhedged US-dollar exposure. That slightly
+ * overstates the US-dollar share (some of the fund is in other currencies) —
+ * the panel says so through the row's reason.
+ */
+export const UNHEDGED_USD_SYMBOLS = ["FID5982"];
 
 export type FxClass = "usd-unhedged" | "hedged" | "cad" | "unclassified";
 export type FxClassification = { cls: FxClass; reason: string };
@@ -39,6 +47,7 @@ export function baseSymbol(raw: string): string {
 }
 
 export const isOnHedgedList = (symbol: string) => CAD_HEDGED_SYMBOLS.some((s) => baseSymbol(s) === baseSymbol(symbol));
+export const isOnUnhedgedList = (symbol: string) => UNHEDGED_USD_SYMBOLS.some((s) => baseSymbol(s) === baseSymbol(symbol));
 
 const SAYS_HEDGED = /hedged/i;
 const SAYS_UNHEDGED = /un-?hedged|non-?hedged/i;
@@ -65,6 +74,7 @@ export type FxHoldingInput = {
 export function classifyFx(h: FxHoldingInput): FxClassification {
   const text = `${h.name ?? ""} ${h.category ?? ""}`;
   if (isOnHedgedList(h.symbol)) return { cls: "hedged", reason: "on the CAD-hedged list" };
+  if (isOnUnhedgedList(h.symbol)) return { cls: "usd-unhedged", reason: "confirmed unhedged by the PM (global fund, counted in full as US-dollar exposure)" };
   if (SAYS_HEDGED.test(text) && !SAYS_UNHEDGED.test(text)) return { cls: "hedged", reason: "its name says CAD-hedged" };
   if (h.currency === "USD") return { cls: "usd-unhedged", reason: "priced in US dollars" };
   if (h.known && (!h.instrumentType || h.instrumentType === "stock")) return { cls: "cad", reason: "Canadian-dollar stock" };

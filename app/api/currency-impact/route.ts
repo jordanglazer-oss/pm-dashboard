@@ -84,7 +84,7 @@ export async function GET(req: NextRequest) {
       fxAvailable: fx.length > 1,
       notes: [
         "Estimate: today's model target weights are applied to the whole period.",
-        "The CAD-hedged list is proposed and not yet confirmed.",
+        "Fidelity Global Innovators is counted in full as unhedged US-dollar exposure (PM-confirmed); some of the fund is in other currencies, so the US-dollar share is slightly overstated.",
         "Hedging effect ignores the cost of hedging (carry).",
         "Separate from alpha, which is measured against the S&P 500 in C$ and is already currency-neutral.",
       ],
