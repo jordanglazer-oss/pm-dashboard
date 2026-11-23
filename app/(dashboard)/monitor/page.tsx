@@ -479,8 +479,9 @@ const DA_TONE: Record<DaResult["verdict"], string> = {
   "would buy today": "text-pos",
 };
 
-/** Monthly devil's advocate — the case against every individual stock held,
- *  for the first-Monday review. Read-only apart from "Run now / continue". */
+/** Monthly devil's advocate — the case against every individual holding we own
+ *  (stocks and Managed Alpha funds; not Core, bonds or alternatives), for the
+ *  first-Monday review. Read-only apart from "Run now / continue". */
 function DevilsAdvocateSection() {
   const [view, setView] = useState<DaMonthView | null | undefined>(undefined);
   const [open, toggle] = usePersistedOpen("monitor.advocate.open", true);
@@ -504,7 +505,7 @@ function DevilsAdvocateSection() {
     setMsg(null);
     try {
       const d = (await fetch("/api/agents/devils-advocate", { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" }).then((r) => r.json())) as DaRunResult;
-      const bits = [`${d.written?.length ?? 0} written`, d.pending?.length ? `${d.pending.length} still to do — press again to continue` : "all stocks done"];
+      const bits = [`${d.written?.length ?? 0} written`, d.pending?.length ? `${d.pending.length} still to do — press again to continue` : "all holdings done"];
       if (d.failed?.length) bits.push(`${d.failed.length} not written (${d.failed[0].reason})`);
       setMsg(d.error ?? (d.skipped && !d.written?.length ? d.skipped : bits.join(" · ")));
       await load();
@@ -524,18 +525,19 @@ function DevilsAdvocateSection() {
       <button className="panel-h w-full text-left" onClick={toggle}>
         <span className="t">Devil&apos;s advocate</span>
         <span className="m">
-          {view ? `review ${view.reviewOn} · ${done} of ${total} stocks done${results.length ? ` · ${wouldNot} would not buy today` : ""}` : view === null ? "could not load" : "…"} · {open ? "hide" : "show"}
+          {view ? `review ${view.reviewOn} · ${done} of ${total} holdings done${results.length ? ` · ${wouldNot} would not buy today` : ""}` : view === null ? "could not load" : "…"} · {open ? "hide" : "show"}
         </span>
       </button>
       {open && (
         <div className="flex flex-col gap-2.5 px-3.5 py-3">
           <p className="text-[12.5px] leading-relaxed text-ink-3">
-            Once a month, the strongest case against every individual stock we hold, for the first-Monday review. It argues against each position on purpose, using only what is on file (thesis, pillar statuses, FactSet alerts, analyst consensus) and no web search. It
-            runs by itself in the evenings from {view?.startsOn ?? "the Wednesday before"}; a stock already written this month is not rewritten.
+            Once a month, the strongest case against every individual stock and Managed Alpha fund we hold (not the Core ETFs, bonds or alternatives), for the first-Monday review. It argues against each position on purpose, using only what is on file and no web
+            search: for a stock, the thesis, pillar statuses, FactSet alerts and analyst consensus; for a fund, our signed one-pager, its record against its category and the manager watch. It runs by itself in the evenings from{" "}
+            {view?.startsOn ?? "the Wednesday before"}; a holding already written this month is not rewritten. For a name we do not own yet, generate one from the Watchlist page.
           </p>
           <div className="flex flex-wrap items-center gap-2">
             <button className={BTN} disabled={busy} onClick={runNow}>
-              {busy ? "Writing… (up to 90 seconds)" : done > 0 && done < total ? "Continue" : "Run now"}
+              {busy ? "Writing… (up to 2 minutes)" : done > 0 && done < total ? "Continue" : "Run now"}
             </button>
             {msg && <span className="text-[12.5px] text-ink-2">{msg}</span>}
             {view && view.usd > 0 && <span className="text-[12px] text-ink-faint">Cost so far this month: ${view.usd.toFixed(2)}</span>}
@@ -549,10 +551,11 @@ function DevilsAdvocateSection() {
             <div className="flex flex-wrap items-baseline gap-x-2.5 gap-y-1">
               <span className="font-mono text-[13.5px] font-semibold text-ink">{displayTicker(r.ticker)}</span>
               {r.name && <span className="text-[12.5px] text-ink-3">{r.name}</span>}
+              {r.kind === "fund" && <span className="text-[12px] text-ink-3">Managed Alpha fund</span>}
               <span className={`text-[12.5px] font-semibold ${DA_TONE[r.verdict] ?? "text-ink-2"}`}>{r.verdict.charAt(0).toUpperCase() + r.verdict.slice(1)}</span>
               <span className="text-[12px] text-ink-faint">
                 confidence {r.confidence} · written {r.at.slice(0, 10)}
-                {!r.onFile.thesis ? " · no signed thesis on file" : ""}
+                {r.kind === "fund" ? (!r.onFile.onePager ? " · no signed one-pager on file" : "") : !r.onFile.thesis ? " · no signed thesis on file" : ""}
                 {view?.noLongerHeld.includes(r.ticker) ? " · no longer held" : ""}
               </span>
             </div>
@@ -563,7 +566,7 @@ function DevilsAdvocateSection() {
             </ul>
             {r.weakestPillar && (
               <p className="mt-1.5 text-[12.5px] text-ink-3">
-                <span className="font-semibold text-ink-2">Weakest pillar:</span> {r.weakestPillar}
+                <span className="font-semibold text-ink-2">Weakest {r.kind === "fund" ? "point" : "pillar"}:</span> {r.weakestPillar}
               </p>
             )}
             {r.whatWouldChangeMind && (

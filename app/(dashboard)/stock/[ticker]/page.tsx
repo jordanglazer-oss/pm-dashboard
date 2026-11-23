@@ -24,6 +24,7 @@ import ThesisTile from "@/app/components/ThesisTile";
 import { ThesisRequiredBanner } from "@/app/components/ThesisRequiredBanner";
 import StreetTakeawaysTile from "@/app/components/StreetTakeawaysTile";
 import AnalystTrendTile from "@/app/components/AnalystTrendTile";
+import DevilsAdvocateAdhoc from "@/app/components/DevilsAdvocateAdhoc";
 import { StockSynthesisTile } from "@/app/components/StockSynthesisTile";
 import { LaneTile } from "@/app/components/LaneTile";
 import { StockSummaryCard } from "@/app/components/StockSummaryCard";
@@ -2590,6 +2591,13 @@ export default function StockDetailPage() {
 
           {/* Analyst trend — consensus over time (read-only, not scored). */}
           {scoreable && <AnalystTrendTile ticker={stock.ticker} />}
+
+          {/* Devil's advocate on demand — a watchlist name only (holdings get the monthly one on Monitor). */}
+          {stock.bucket === "Watchlist" && (
+            <CollapsibleSection prefKey="stock.devilsAdvocate" title="Devil's advocate" subtitle="The case against buying it today · on demand">
+              <DevilsAdvocateAdhoc ticker={stock.ticker} />
+            </CollapsibleSection>
+          )}
 
           {/* ── Risk & factors: three label/value reads, each with its full
               content one persisted click away (inside the sub-components). ── */}

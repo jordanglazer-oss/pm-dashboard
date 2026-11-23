@@ -22,7 +22,7 @@ import { sendAuditEmail } from "@/app/lib/agents/flag-mail";
  */
 
 export const dynamic = "force-dynamic";
-export const maxDuration = 120;
+export const maxDuration = 300; // the monthly devil's advocate batch can use ~2 minutes of it
 
 export async function GET(req: NextRequest) {
   const cronSecret = process.env.CRON_SECRET;
