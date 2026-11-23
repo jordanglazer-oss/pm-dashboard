@@ -8,6 +8,7 @@ import { EmptyState } from "@/app/components/EmptyState";
 import { AppIcon } from "@/app/components/AppIcon";
 import TickerLink from "@/app/components/TickerLink";
 import FavourMonitor from "@/app/components/FavourMonitor";
+import { ContrarianChip, useContrarianBook } from "@/app/components/ContrarianTile";
 import { displayTicker } from "@/app/lib/ticker";
 import { addedByOptions, watchRows, type WatchlistPlan, type WatchRow } from "@/app/lib/watchlist-plan";
 
@@ -101,6 +102,7 @@ export default function WatchlistPage() {
   const { stocks, updateStockFields } = useStocks();
   const [prices, setPrices] = useState<Record<string, number | null>>({});
   const [editing, setEditing] = useState<string | null>(null);
+  const contrarian = useContrarianBook(); // read-only contrarian read-out; never part of the score
 
   const tickers = useMemo(() => stocks.filter((s) => s.bucket === "Watchlist").map((s) => s.ticker), [stocks]);
   const tickerKey = tickers.join(",");
@@ -163,6 +165,7 @@ export default function WatchlistPage() {
                         <td className="!pl-3.5">
                           <TickerLink ticker={r.ticker} className="font-mono font-medium text-ink hover:text-accent hover:underline">{displayTicker(r.ticker)}</TickerLink>
                           {r.atTarget && <span className="ml-1.5 text-[11px] font-medium text-pos" title="Trading at or below the target buy price">At target</span>}
+                          <ContrarianChip ticker={r.ticker} rows={contrarian} />
                         </td>
                         <td className="max-w-[200px] truncate" title={r.name}>{r.name || "—"}</td>
                         <td className="n font-mono">{fmt(r.price)}</td>
