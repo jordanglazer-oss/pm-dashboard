@@ -181,6 +181,28 @@ Two traps that have already bitten:
 - Don't gate already-collapsible prose behind a second "Show more". `ClampText`
   used to; it now always renders the full text.
 
+## Site rule: numbers first, explanations behind `Explain`
+
+Pages had filled up with method notes, caveats and instructions (Nov 2026
+declutter, at the PM's request). The rule for every panel and tile:
+
+- **Visible with no click:** every number, table, chart, verdict, status,
+  button, the dates covered, a one-word `estimate` tag, and ANY warning that a
+  figure is unreliable, unverified, partial or disagrees with the record.
+- **Behind `<Explain prefKey="explain.<page>.<panel>" label="…">`**
+  (`app/components/Explain.tsx`, closed by default, persisted in pm:ui-prefs):
+  how a figure is calculated, caveat lists, assumptions, definitions, "how to
+  read this", instructions, footers. ONE per panel.
+- Panel subtitle (`.m`) ≤ ~8 words; a helper line under a headline number is
+  a short label, not a sentence; empty states are one line; prefer label +
+  number over prose; say a thing once.
+- Never put a number the reader needs, or a warning, behind `Explain`; never
+  nest a second "show more" inside something already collapsible.
+- Monitor: open flags first and in full; reference material (watchers and
+  settings, past runs) starts collapsed. The devil's advocate shows verdict +
+  first point per holding, the rest behind one persisted "Show full write-ups"
+  (`monitor.advocate.full`).
+
 ## Common Commands
 
 ```bash
