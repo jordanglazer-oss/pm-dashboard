@@ -39,6 +39,14 @@ export type Fact = {
   missing: boolean;
   /** On the short "key facts" list for the main screen. */
   key?: boolean;
+  /** The fact's own recent history (oldest first), when the source keeps one. */
+  spark?: number[];
+  /** Change over 1 week / 1 month / 3 months, formatted; "" when not available. */
+  d1w?: string;
+  d1m?: string;
+  d3m?: string;
+  /** Where today sits in its recent range, 0–100 (0 = the low, 100 = the high). */
+  rangePct?: number | null;
 };
 
 const n = (v: number | null | undefined, d: number, unit = "") => (v == null || !Number.isFinite(v) ? "—" : `${v.toLocaleString("en-US", { minimumFractionDigits: d, maximumFractionDigits: d })}${unit}`);
@@ -67,6 +75,11 @@ function fromPoint(p: ForwardPointBundle | undefined, o: PtOpts): Fact {
     manual: Boolean(o.manual),
     missing: value == null,
     key: o.key,
+    spark: (p?.history ?? []).map((h) => h.value).filter((v) => Number.isFinite(v)),
+    d1w: s(t?.delta1w, o.digits, o.changeUnit ?? o.unit ?? ""),
+    d1m: s(t?.delta1m, o.digits, o.changeUnit ?? o.unit ?? ""),
+    d3m: s(t?.delta3m, o.digits, o.changeUnit ?? o.unit ?? ""),
+    rangePct: t && Number.isFinite(t.percentile) ? t.percentile : null,
   };
 }
 
@@ -89,7 +102,7 @@ function fromRatio(r: RatioReadout | null | undefined, o: { id: string; label: s
   };
 }
 
-export function buildFacts(f: ForwardLookingBundle | null, r: MarketRegimeData | null): Fact[] {
+export function buildFacts(f: ForwardLookingBundle | null, r: MarketRegimeData | null, m?: MarketData | null): Fact[] {
   const out: Fact[] = [];
   const rAt = r?.computedAt ?? null;
 
@@ -132,6 +145,22 @@ export function buildFacts(f: ForwardLookingBundle | null, r: MarketRegimeData |
   out.push(fromPoint(f?.spyForwardPE, { id: "fwdPE", group: "structural", label: "S&P 500 forward P/E", digits: 1, unit: "×", priorLabel: "prior reading", key: true }));
   out.push(fromPoint(f?.spyTrailingPE, { id: "trlPE", group: "structural", label: "S&P 500 trailing P/E", digits: 1, unit: "×", priorLabel: "prior reading" }));
   out.push(fromPoint(f?.spxYtd, { id: "spxYtd", group: "structural", label: "S&P 500 year to date", digits: 1, unit: "%", changeUnit: " pts", priorLabel: "prior reading" }));
+
+  // Put/call and the oscillator: when the dated history has nothing (or is
+  // older than the number on file), show the number saved in pm:market with
+  // its own date stamp — a dated entry is never shown as "not entered".
+  for (const [id, key, digits] of [["putCall", "putCall", 2], ["oscillator", "spOscillator", 1]] as const) {
+    const fact = out.find((x) => x.id === id);
+    const v = m?.[key];
+    const stamp = m?.manualEditedAt?.[key] ?? null;
+    // Only a DATED entry is used: an undated number could be a leftover default.
+    if (!fact || typeof v !== "number" || !Number.isFinite(v) || !stamp) continue;
+    if (fact.missing || !fact.asOf || fact.asOf.slice(0, 10) < stamp.slice(0, 10)) {
+      fact.value = n(v, digits);
+      fact.asOf = stamp;
+      fact.missing = false;
+    }
+  }
 
   return out;
 }

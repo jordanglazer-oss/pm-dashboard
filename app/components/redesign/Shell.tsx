@@ -18,8 +18,17 @@ import StockView, { STOCK_OPTIONS } from "./StockView";
 import Portfolio, { PORTFOLIO_OPTIONS } from "./Portfolio";
 import ThesisView, { THESIS_OPTIONS } from "./Thesis";
 import Inventory from "./Inventory";
-import { PerfTable } from "./Perf";
+import { PerfGrid, PerfTable } from "./Perf";
+import { ReturnSourcesPanel } from "@/app/components/ReturnSourcesPanel";
+import { HoldingHistoryPanel } from "@/app/components/HoldingHistoryPanel";
+import { RealizedGainsPanel } from "@/app/components/RealizedGainsPanel";
 import { BTN, Bullets, Card, OptionSwitch, Page, Table, Tag, TD, type OptionDef } from "./ui";
+
+const PERF_OPTIONS: OptionDef[] = [
+  { id: "a", label: "One table", blurb: "Models and the two main indices for one period at a time, with a custom start date. Sleeves and other indices open on request." },
+  { id: "b", label: "All periods", level: "Medium", blurb: "Every model, sleeve and index with one day, one week, one month, three months and year to date side by side, then where the returns came from." },
+  { id: "c", label: "Full review", level: "Medium", blurb: "All periods, where returns came from, each holding since we first bought it, and realized gains. The current page, in a calmer order, without the allocation editors." },
+];
 
 type Section = { id: string; label: string; options: OptionDef[]; what: string; writes?: string };
 
@@ -30,7 +39,7 @@ export const SECTIONS: Section[] = [
   { id: "watch", label: "Watch list", options: WATCH_OPTIONS, what: "Target buy prices typed straight into the table; yellow and green zones.", writes: "Saves the target price you type" },
   { id: "stock", label: "Stock page", options: STOCK_OPTIONS, what: "The essentials first; the other fifteen-odd tiles open on request." },
   { id: "portfolio", label: "Portfolio", options: PORTFOLIO_OPTIONS, what: "Models vs Positioning: merged into one table, or two clearly labelled tabs." },
-  { id: "performance", label: "Performance", options: [], what: "Models and indices over any period, in one table." },
+  { id: "performance", label: "Performance", options: PERF_OPTIONS, what: "Models and indices over any period; medium versions add every period side by side and where returns came from." },
   { id: "thesis", label: "Thesis", options: THESIS_OPTIONS, what: "Rework to one plain-language sentence per stock, or cut the section." },
   { id: "inventory", label: "Inventory", options: [], what: "Every screen today, fact or opinion, and a starting suggestion. Includes the session schedule." },
 ];
@@ -67,7 +76,8 @@ function Index() {
       <Card title="How to use this">
         <Bullets
           items={[
-            "Each section below has one to three options. Open it and use the A / B / C buttons at the top.",
+            "Each section below has several options. Open it and use the lettered buttons at the top.",
+            "Simple options show only the essentials. Medium options show more at once — between the simple versions and the current screens.",
             "Same data as today, shown more simply: the most important things visible, the rest behind a \"Show …\" line.",
             "Facts only on these pages: no risk-on / risk-off label, no AI calls. Every number shows its date and source.",
             "Nothing has been removed. Every current screen is still in the menu, exactly as it was.",
@@ -115,9 +125,29 @@ function Index() {
   );
 }
 
-function Performance() {
+function Performance({ opt }: { opt: string }) {
+  const right = <Link href="/aa-performance" className={BTN}>Current Performance page</Link>;
+  if (opt === "b" || opt === "c") {
+    return (
+      <Page title="Performance" lede="Models, sleeves and indices, every period." right={right}>
+        <Card title="Returns" sub="recorded daily values" pad={false}>
+          <PerfGrid />
+        </Card>
+        <ReturnSourcesPanel />
+        {opt === "c" && (
+          <>
+            <HoldingHistoryPanel />
+            <RealizedGainsPanel />
+          </>
+        )}
+        <Card title="Still on the current Performance page">
+          <Bullets items={opt === "c" ? ["Asset allocation targets and ranges", "Market, currency and selection for every model"] : ["Holdings since first purchase", "Realized gains and losses", "Asset allocation targets and ranges"]} />
+        </Card>
+      </Page>
+    );
+  }
   return (
-    <Page title="Performance" lede="Models and indices, any period." right={<Link href="/aa-performance" className={BTN}>Current Performance page</Link>}>
+    <Page title="Performance" lede="Models and indices, any period." right={right}>
       <Card title="Returns" sub="recorded daily values, close to close" pad={false}>
         <PerfTable prefKey="redesign.performance.more" />
       </Card>
@@ -149,7 +179,7 @@ export default function RedesignShell({ slug }: { slug: string[] }) {
     : section.id === "watch" ? <WatchList opt={opt} />
     : section.id === "stock" ? <StockView opt={opt} ticker={rest} />
     : section.id === "portfolio" ? <Portfolio opt={opt} />
-    : section.id === "performance" ? <Performance />
+    : section.id === "performance" ? <Performance opt={opt} />
     : section.id === "thesis" ? <ThesisView opt={opt} />
     : <Inventory />;
   return (

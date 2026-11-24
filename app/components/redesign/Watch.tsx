@@ -18,12 +18,15 @@ import { useStocks } from "@/app/lib/StockContext";
 import TickerLink from "@/app/components/TickerLink";
 import { displayTicker } from "@/app/lib/ticker";
 import { watchRows, type WatchRow } from "@/app/lib/watchlist-plan";
+import FavourMonitor from "@/app/components/FavourMonitor";
 import { usePrices } from "./data";
-import { AsOf, BTN, Bullets, Card, Empty, fmtNum, fmtSigned, Figure, More, Page, Table, Tag, TD, TDN, type OptionDef } from "./ui";
+import { AsOf, BTN, Bullets, Card, Empty, fmtNum, fmtSigned, Figure, More, Page, Table, Tag, TD, TDN, tone, type OptionDef } from "./ui";
 
 export const WATCH_OPTIONS: OptionDef[] = [
   { id: "a", label: "One table", blurb: "Every watch list name in one table, closest to its target first. Type a target price straight into the row." },
   { id: "b", label: "Zone boards", blurb: "Three boards: in the green zone, in the yellow zone, and everything else. The names that need a decision are impossible to miss." },
+  { id: "c", label: "Table with the plan", level: "Medium", blurb: "The table, plus how each name has done since it was added, who added it and when, and why we would own it. The in / out of favour monitor sits underneath." },
+  { id: "d", label: "One card per name", level: "Medium", blurb: "Each name gets a card: price, target, zone, why we would own it and what would make us drop it. Names in a zone come first." },
 ];
 
 export const YELLOW_PCT = 5;
@@ -125,6 +128,80 @@ const HEAD = [
   { label: "Zone" },
 ];
 
+// ── Medium options ──
+
+const HEAD_PLAN = [
+  { label: "Name" },
+  { label: "Price", right: true },
+  { label: "Target buy", right: true, title: "Type a price and press Enter" },
+  { label: "To target", right: true },
+  { label: "Zone" },
+  { label: "Since added", right: true, title: "Change since the price on the day it was added" },
+  { label: "Added" },
+  { label: "Why we would own it" },
+];
+
+function PlanRow({ r, onSave }: { r: WatchRow; onSave: (v: number | undefined) => void }) {
+  const z = zoneOf(r);
+  const tint = z === "green" ? "bg-pos-soft/50" : z === "yellow" ? "bg-warn-soft/60" : "";
+  return (
+    <tr className={tint}>
+      <td className={TD}>
+        <TickerLink ticker={r.ticker} className="text-[16px] font-bold text-ink hover:text-accent hover:underline">{displayTicker(r.ticker)}</TickerLink>
+        <div className="max-w-[200px] truncate text-[13px] text-ink-3">{r.name || "—"}</div>
+      </td>
+      <td className={`${TDN} text-[16px] font-semibold`}>{fmtNum(r.price)}</td>
+      <td className={TDN}><TargetInput row={r} onSave={onSave} /></td>
+      <td className={TDN}>{r.aboveTargetPct == null ? "—" : fmtSigned(r.aboveTargetPct)}</td>
+      <td className={TD}><ZoneTag z={z} /></td>
+      <td className={`${TDN} ${tone(r.sinceAddPct)}`}>{r.sinceAddPct == null ? "—" : fmtSigned(r.sinceAddPct)}</td>
+      <td className={`${TD} whitespace-nowrap text-[13.5px] text-ink-2`}>
+        {r.plan.addedOn ?? "—"}
+        {r.plan.addedBy ? <div className="text-ink-3">{r.plan.addedBy}</div> : null}
+      </td>
+      <td className={`${TD} min-w-[240px] max-w-[340px] text-[14px] leading-snug text-ink-2`}>
+        {r.plan.thesis || <span className="text-ink-3">—</span>}
+        {r.plan.breakers ? <div className="mt-0.5 text-[13px] text-ink-3">Drop it if: {r.plan.breakers}</div> : null}
+      </td>
+    </tr>
+  );
+}
+
+function NameCard({ r, onSave }: { r: WatchRow; onSave: (v: number | undefined) => void }) {
+  const z = zoneOf(r);
+  const edge = z === "green" ? "border-pos-border" : z === "yellow" ? "border-warn-border" : "border-line-soft";
+  return (
+    <section className={`flex flex-col gap-3 rounded-card border bg-surface px-5 py-4 shadow-[var(--shadow-card)] ${edge}`}>
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+        <TickerLink ticker={r.ticker} className="text-[19px] font-bold text-ink hover:text-accent hover:underline">{displayTicker(r.ticker)}</TickerLink>
+        <ZoneTag z={z} />
+        <span className="min-w-0 truncate text-[14px] text-ink-3">{r.name}</span>
+      </div>
+      <div className="grid grid-cols-3 items-end gap-4">
+        <div>
+          <div className="text-[13px] text-ink-3">Price</div>
+          <div className="figure text-[22px] leading-tight">{fmtNum(r.price)}</div>
+        </div>
+        <div>
+          <div className="text-[13px] text-ink-3">Target buy</div>
+          <TargetInput row={r} onSave={onSave} />
+        </div>
+        <div>
+          <div className="text-[13px] text-ink-3">To target</div>
+          <div className="figure text-[22px] leading-tight">{r.aboveTargetPct == null ? "—" : fmtSigned(r.aboveTargetPct)}</div>
+        </div>
+      </div>
+      <Bullets
+        items={[
+          r.plan.thesis ? <>Why own it: {r.plan.thesis}</> : <span className="text-ink-3">No reason written yet.</span>,
+          r.plan.breakers ? <>Drop it if: {r.plan.breakers}</> : null,
+          r.plan.addedOn ? <>Added {r.plan.addedOn}{r.plan.addedBy ? ` by ${r.plan.addedBy}` : ""}{r.sinceAddPct != null ? <> · <span className={tone(r.sinceAddPct)}>{fmtSigned(r.sinceAddPct)}</span> since</> : null}</> : null,
+        ].filter(Boolean) as React.ReactNode[]}
+      />
+    </section>
+  );
+}
+
 function PlanDetails({ rows }: { rows: WatchRow[] }) {
   const withPlan = rows.filter((r) => r.plan.thesis || r.plan.breakers || r.plan.addedOn);
   if (!withPlan.length) return <Empty>No notes on file yet.</Empty>;
@@ -173,6 +250,19 @@ export default function WatchList({ opt }: { opt: string }) {
 
       {rows.length === 0 ? (
         <Card><Empty>Nothing on the watch list.</Empty></Card>
+      ) : opt === "c" ? (
+        <>
+          <Card title="Watch list" sub={<AsOf at={at} source="Yahoo Finance prices, each stock's own currency" />} pad={false}>
+            <Table head={HEAD_PLAN} minWidth={1080}>
+              {rows.map((r) => <PlanRow key={r.ticker} r={r} onSave={(v) => setTarget(r, v)} />)}
+            </Table>
+          </Card>
+          <FavourMonitor />
+        </>
+      ) : opt === "d" ? (
+        <div className="grid gap-4 lg:grid-cols-2">
+          {[...green, ...yellow, ...rest].map((r) => <NameCard key={r.ticker} r={r} onSave={(v) => setTarget(r, v)} />)}
+        </div>
       ) : opt === "b" ? (
         <>
           <Card title="Green zone" sub="at or below the price we set" pad={false} className="border-pos-border">
@@ -193,11 +283,13 @@ export default function WatchList({ opt }: { opt: string }) {
         </Card>
       )}
 
+      {opt !== "c" && opt !== "d" && (
       <Card title="Notes on each name" pad={false}>
         <More prefKey="redesign.watch.notes" label="why we would own each name" count={rows.filter((r) => r.plan.thesis || r.plan.breakers || r.plan.addedOn).length}>
           <PlanDetails rows={rows} />
         </More>
       </Card>
+      )}
       <p className="px-1 text-[13px] text-ink-3">
         Type a target and press Enter to save; clear the box to remove it. Green = at or below target. Yellow = within {YELLOW_PCT}% above it.
       </p>

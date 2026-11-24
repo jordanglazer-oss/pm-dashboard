@@ -11,6 +11,7 @@ import type { ForwardLookingBundle } from "@/app/lib/types";
 import type { MarketRegimeData } from "@/app/lib/market-regime";
 import type { DailySummary } from "@/app/lib/daily-summary";
 import type { PimPerformanceData } from "@/app/lib/pim-types";
+import { useStocks } from "@/app/lib/StockContext";
 import { buildFacts, type Fact } from "./facts";
 
 type State<T> = { data: T | null; loading: boolean };
@@ -43,7 +44,8 @@ const pickForward = (raw: unknown) => ((raw as { error?: string })?.error ? null
 export function useFacts(): { facts: Fact[]; loading: boolean; fetchedAt: string | null } {
   const fwd = useGet<ForwardLookingBundle>("/api/forward-looking", pickForward);
   const reg = useGet<MarketRegimeData>("/api/market-regime", pickRegime);
-  const facts = useMemo(() => buildFacts(fwd.data, reg.data), [fwd.data, reg.data]);
+  const { marketData } = useStocks();
+  const facts = useMemo(() => buildFacts(fwd.data, reg.data, marketData), [fwd.data, reg.data, marketData]);
   return { facts, loading: fwd.loading || reg.loading, fetchedAt: fwd.data?.fetchedAt ?? reg.data?.computedAt ?? null };
 }
 

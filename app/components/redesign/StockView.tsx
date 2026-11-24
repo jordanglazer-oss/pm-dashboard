@@ -30,11 +30,13 @@ import StockHealthMonitor from "@/app/components/StockHealthMonitor";
 import ScoreHistory from "@/app/components/ScoreHistory";
 import { useGet } from "./data";
 import { zoneOf, ZoneTag } from "./Watch";
-import { AsOf, BTN, Bullets, Card, Empty, fmtAsOf, fmtNum, fmtSigned, More, Page, Tag, tone, type OptionDef } from "./ui";
+import { AsOf, BTN, Bullets, Card, Empty, fmtAsOf, fmtNum, fmtSigned, More, Page, Table, Tag, TD, TDN, tone, type OptionDef } from "./ui";
 
 export const STOCK_OPTIONS: OptionDef[] = [
   { id: "a", label: "Fact sheet", blurb: "One column: key facts, our thesis, the chart, then everything else in sections you open when you need them." },
   { id: "b", label: "Chart beside facts", blurb: "The chart on the left, the key facts and the Street on the right, thesis underneath. More on screen at once; better on a wide display." },
+  { id: "c", label: "Fact sheet plus the Street", level: "Medium", blurb: "The fact sheet, with more showing by default: every analyst's rating and target in a table, the latest Street alerts, and the technical read. The remainder still opens on request." },
+  { id: "d", label: "Tabs", level: "Medium", blurb: "Everything on the current stock page, sorted into four tabs: Overview, Street and analysts, Financials and technicals, Our score. Nothing is hidden, nothing is stacked." },
 ];
 
 type Pillar = { title?: string; claim?: string; status?: "intact" | "watch" | "broken"; statusNote?: string; statusBy?: string };
@@ -128,12 +130,56 @@ function ThesisBlock({ stock }: { stock: ScoredStock }) {
   );
 }
 
-function Sections({ stock }: { stock: ScoredStock }) {
+function AnalystTable({ stock }: { stock: ScoredStock }) {
+  const { getAnalystSnapshot } = useStocks();
+  const snap = getAnalystSnapshot(stock.ticker);
+  const price = stock.price ?? stock.healthData?.currentPrice ?? null;
+  const up = (t: number | undefined) => (t != null && price ? (t / price - 1) * 100 : null);
+  const rows: { who: string; rating: string; target?: number; at?: string }[] = [];
+  if (snap?.factset?.averageTarget != null) rows.push({ who: `Street average${snap.factset.analystCount != null ? ` (${snap.factset.analystCount} analysts)` : ""}`, rating: "—", target: snap.factset.averageTarget, at: snap.factset.asOf ?? snap.factset.lastUpdated });
+  if (snap?.rbc?.rating) rows.push({ who: "RBC", rating: String(snap.rbc.rating), target: snap.rbc.target, at: snap.rbc.asOf ?? snap.rbc.lastUpdated });
+  if (snap?.jpm?.rating) rows.push({ who: "JPMorgan", rating: String(snap.jpm.rating), target: snap.jpm.target, at: snap.jpm.asOf ?? snap.jpm.lastUpdated });
+  if (snap?.morningstar?.stars != null) rows.push({ who: "Morningstar", rating: `${snap.morningstar.stars} of 5 stars`, target: snap.morningstar.fairValue, at: snap.morningstar.asOf ?? snap.morningstar.lastUpdated });
+  if (!rows.length) return <Empty>No analyst ratings on file.</Empty>;
+  return (
+    <div className="-mx-5 -my-4">
+      <Table head={[{ label: "Source" }, { label: "Rating" }, { label: "Target", right: true }, { label: "vs price", right: true }, { label: "As of" }]} minWidth={440}>
+        {rows.map((r) => (
+          <tr key={r.who}>
+            <td className={`${TD} font-semibold`}>{r.who}</td>
+            <td className={TD}>{r.rating}</td>
+            <td className={TDN}>{fmtNum(r.target)}</td>
+            <td className={`${TDN} ${tone(up(r.target))}`}>{fmtSigned(up(r.target))}</td>
+            <td className={`${TD} whitespace-nowrap text-[13px] text-ink-3`}>{fmtAsOf(r.at)}</td>
+          </tr>
+        ))}
+      </Table>
+    </div>
+  );
+}
+
+function ScoreBlock({ stock }: { stock: ScoredStock }) {
+  if (!stock.lastScored) return <Empty>Not scored yet. Score it on the current stock page.</Empty>;
+  return (
+    <div className="flex flex-col gap-3">
+      <div className="flex flex-wrap items-baseline gap-x-4 gap-y-1">
+        <span className="figure text-[26px]">{Number(stock.adjusted.toFixed(1))}<span className="text-ink-3"> / {MAX_SCORE}</span></span>
+        <span className="text-[15px] text-ink-2">{stock.ratingLabel || stock.rating}</span>
+        <AsOf at={stock.lastScored} source="scored with AI help — an opinion, not a fact" />
+      </div>
+      {stock.companySummary && <p className="max-w-[80ch] text-[15px] leading-relaxed"><span className="font-semibold">What it does: </span>{stock.companySummary}</p>}
+      {stock.bearCase && <p className="max-w-[80ch] text-[15px] leading-relaxed"><span className="font-semibold">Risks to watch: </span>{stock.bearCase}</p>}
+      <ScoreHistory ticker={stock.ticker} currentTotal={stock.adjusted} currentRaw={stock.raw} />
+    </div>
+  );
+}
+
+function Sections({ stock, skip = [] }: { stock: ScoredStock; skip?: string[] }) {
   const scoreable = !stock.instrumentType || stock.instrumentType === "stock";
   const k = "redesign.stock";
   return (
     <Card pad={false} title="More on this name" sub="open what you need">
-      {scoreable && (
+      {scoreable && !skip.includes("street") && (
         <More prefKey={`${k}.street`} label="what the Street is saying (FactSet alerts, results, news)">
           <StreetTakeawaysTile ticker={stock.ticker} />
         </More>
@@ -146,7 +192,7 @@ function Sections({ stock }: { stock: ScoredStock }) {
           </div>
         </More>
       )}
-      {(stock.riskAlert || stock.healthData) && (
+      {(stock.riskAlert || stock.healthData) && !skip.includes("risk") && (
         <More prefKey={`${k}.risk`} label="technicals, valuation and financial detail">
           <div className="flex flex-col gap-3">
             {stock.riskAlert && stock.technicals && <RiskAlertPanel riskAlert={stock.riskAlert} technicals={stock.technicals} />}
@@ -156,16 +202,7 @@ function Sections({ stock }: { stock: ScoredStock }) {
       )}
       {scoreable && (
         <More prefKey={`${k}.score`} label="our score and the write-up behind it">
-          <div className="flex flex-col gap-3">
-            <div className="flex flex-wrap items-baseline gap-x-4 gap-y-1">
-              <span className="figure text-[26px]">{Number(stock.adjusted.toFixed(1))}<span className="text-ink-3"> / {MAX_SCORE}</span></span>
-              <span className="text-[15px] text-ink-2">{stock.ratingLabel || stock.rating}</span>
-              <AsOf at={stock.lastScored} source="scored with AI help — an opinion, not a fact" />
-            </div>
-            {stock.companySummary && <p className="max-w-[80ch] text-[15px] leading-relaxed"><span className="font-semibold">What it does: </span>{stock.companySummary}</p>}
-            {stock.bearCase && <p className="max-w-[80ch] text-[15px] leading-relaxed"><span className="font-semibold">Risks to watch: </span>{stock.bearCase}</p>}
-            <ScoreHistory ticker={stock.ticker} currentTotal={stock.adjusted} currentRaw={stock.raw} />
-          </div>
+          <ScoreBlock stock={stock} />
         </More>
       )}
       {scoreable && (
@@ -204,7 +241,7 @@ function Picker({ opt, current }: { opt: string; current?: string }) {
   );
 }
 
-function Header({ stock, dayChange }: { stock: ScoredStock; dayChange: number | null }) {
+function Header({ stock, dayChange, showScore = false }: { stock: ScoredStock; dayChange: number | null; showScore?: boolean }) {
   const price = stock.price ?? stock.healthData?.currentPrice ?? null;
   const target = stock.watch?.targetBuyPrice;
   const above = price != null && target ? (price / target - 1) * 100 : null;
@@ -230,6 +267,12 @@ function Header({ stock, dayChange }: { stock: ScoredStock; dayChange: number | 
           <div>
             <div className="figure text-[24px] leading-none">{stock.weights.portfolio}%</div>
             <div className="mt-1 text-[13px] text-ink-3">of the portfolio</div>
+          </div>
+        )}
+        {showScore && (!stock.instrumentType || stock.instrumentType === "stock") && (
+          <div title="Scored with AI help — an opinion, not a fact">
+            <div className="figure text-[24px] leading-none">{stock.lastScored ? <>{Number(stock.adjusted.toFixed(1))}<span className="text-ink-3"> / {MAX_SCORE}</span></> : "—"}</div>
+            <div className="mt-1 text-[13px] text-ink-3">{stock.lastScored ? `our score · ${stock.ratingLabel || stock.rating}` : "not scored yet"}</div>
           </div>
         )}
         {target != null && (
@@ -275,6 +318,77 @@ function Body({ stock, opt, dayChange, setDayChange }: { stock: ScoredStock; opt
       <StockChart ticker={stock.ticker} technicals={stock.technicals} onDayChange={setDayChange} />
     </div>
   ) : null;
+  const scoreable = !stock.instrumentType || stock.instrumentType === "stock";
+  const [tab, setTab] = useState<"overview" | "street" | "numbers" | "score">("overview");
+  if (opt === "c") {
+    return (
+      <>
+        <Header stock={stock} dayChange={dayChange} showScore />
+        <Card title="Key facts"><FactGrid facts={facts} cols="grid-cols-2 md:grid-cols-4" /></Card>
+        <div className="grid items-start gap-4 lg:grid-cols-2">
+          <Card title="Why we own it"><ThesisBlock stock={stock} /></Card>
+          <Card title="Analysts" sub="ratings and targets on file"><AnalystTable stock={stock} /></Card>
+        </div>
+        {chart}
+        {scoreable && <StreetTakeawaysTile ticker={stock.ticker} />}
+        {stock.riskAlert && stock.technicals && (
+          <Card title="Technical read" sub="rule-based, from Yahoo prices"><RiskAlertPanel riskAlert={stock.riskAlert} technicals={stock.technicals} /></Card>
+        )}
+        <Sections stock={stock} skip={["street"]} />
+        <Picker opt={opt} current={stock.ticker} />
+      </>
+    );
+  }
+  if (opt === "d") {
+    const tabs: { id: typeof tab; label: string }[] = [
+      { id: "overview", label: "Overview" },
+      ...(scoreable ? [{ id: "street" as const, label: "Street and analysts" }] : []),
+      { id: "numbers", label: "Financials and technicals" },
+      ...(scoreable ? [{ id: "score" as const, label: "Our score" }] : []),
+    ];
+    return (
+      <>
+        <Header stock={stock} dayChange={dayChange} showScore />
+        <div className="flex flex-wrap gap-2" role="tablist">
+          {tabs.map((t) => (
+            <button key={t.id} type="button" role="tab" aria-selected={tab === t.id} onClick={() => setTab(t.id)} className={`h-10 rounded-control border px-4 text-[15px] font-semibold ${tab === t.id ? "border-ink bg-ink text-white" : "border-line bg-surface text-ink-2 hover:bg-surface-hover"}`}>
+              {t.label}
+            </button>
+          ))}
+        </div>
+        {tab === "overview" && (
+          <>
+            <Card title="Key facts"><FactGrid facts={facts} cols="grid-cols-2 md:grid-cols-4" /></Card>
+            <Card title="Why we own it"><ThesisBlock stock={stock} /></Card>
+            {chart}
+          </>
+        )}
+        {tab === "street" && (
+          <>
+            <Card title="Analysts" sub="ratings and targets on file"><AnalystTable stock={stock} /></Card>
+            <StreetTakeawaysTile ticker={stock.ticker} />
+            <AnalystTrendTile ticker={stock.ticker} />
+            <AnalystReportHistoryTile ticker={stock.ticker} />
+          </>
+        )}
+        {tab === "numbers" && (
+          <Card title="Financials and technicals" sub="Yahoo Finance and FactSet">
+            <div className="flex flex-col gap-3">
+              {stock.riskAlert && stock.technicals && <RiskAlertPanel riskAlert={stock.riskAlert} technicals={stock.technicals} />}
+              {stock.healthData ? <StockHealthMonitor healthData={stock.healthData} technicals={stock.technicals} /> : <Empty>No financial data on file. Refresh data on the current stock page.</Empty>}
+            </div>
+          </Card>
+        )}
+        {tab === "score" && (
+          <>
+            <Card title="Our score" sub="an opinion, scored with AI help"><ScoreBlock stock={stock} /></Card>
+            <ContrarianTile ticker={stock.ticker} />
+          </>
+        )}
+        <Picker opt={opt} current={stock.ticker} />
+      </>
+    );
+  }
   return (
     <>
       <Header stock={stock} dayChange={dayChange} />

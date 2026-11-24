@@ -29,6 +29,8 @@ import { AsOf, BTN, Card, Empty, fmtNum, fmtSigned, Loading, More, Page, Table, 
 export const PORTFOLIO_OPTIONS: OptionDef[] = [
   { id: "a", label: "Merged", blurb: "One page instead of two: every holding with its Model weight (what goes into Client Link) beside its Live weight, and the gap between them." },
   { id: "b", label: "Two clear tabs", blurb: "Keep them separate, but say what each is: a Model tab (targets only, ready to enter in Client Link) and a Live portfolio tab (where we actually are)." },
+  { id: "c", label: "One full table", level: "Medium", blurb: "Merged, with every holding showing: grouped by part of the portfolio, with price, model weight, live weight and a bar for the gap. No clicking to open groups." },
+  { id: "d", label: "A card per bucket", level: "Medium", blurb: "Core, Managed Alpha, individual stocks and fixed income each get their own card with their holdings, model beside live, plus the largest gaps at the top." },
 ];
 
 const PROFILES: { id: PimProfileType; label: string }[] = [
@@ -47,7 +49,7 @@ const GROUPS: { id: GroupId; label: string }[] = [
   { id: "alternative", label: "Alternatives" },
 ];
 
-type Row = { h: PimHolding; group: GroupId; model: number; live: number | null; drift: number | null };
+type Row = { h: PimHolding; group: GroupId; model: number; live: number | null; drift: number | null; price: number | null };
 
 const toPriceTicker = (s: string) => {
   if (/^[A-Z]{2,4}\d{2,5}(-T)?$/i.test(s)) return s.replace(/-T$/i, "");
@@ -128,7 +130,7 @@ function useBook(profile: PimProfileType) {
         const model = h.weightInClass * alloc(h.assetClass) * 100;
         const live = liveOk ? ((values.get(h.symbol) ?? 0) / total) * 100 : null;
         const g: GroupId = h.assetClass === "equity" ? holdingBucket(h, stocks) : h.assetClass;
-        return { h, group: g, model, live, drift: live == null ? null : live - model };
+        return { h, group: g, model, live, drift: live == null ? null : live - model, price: px.prices[h.symbol] ?? null };
       })
       .filter((r) => r.model > 0.0001 || (r.live ?? 0) > 0.0001);
     return { rows, ready: !pos.loading, liveOk, missing, cashModel: mix.cash * 100, cashLive: liveOk ? ((book?.cashBalance ?? 0) / total) * 100 : null, at: px.at, hasBook: Boolean(book) };
@@ -215,6 +217,104 @@ function ByGroup({ rows, show, prefix }: { rows: Row[]; show: "both" | "model" |
   );
 }
 
+// ── Medium options ──
+
+function DriftBar({ v, max }: { v: number | null; max: number }) {
+  if (v == null) return <span className="text-ink-3">—</span>;
+  const w = Math.min(50, (Math.abs(v) / Math.max(max, 0.01)) * 50);
+  return (
+    <span className="relative inline-block h-[10px] w-[120px] rounded-full bg-line-soft align-middle" aria-hidden="true">
+      <span className="absolute left-1/2 top-[-2px] h-[14px] w-px bg-ink-3" />
+      <span className={`absolute top-0 h-[10px] rounded-full ${v >= 0 ? "bg-pos" : "bg-neg"}`} style={v >= 0 ? { left: "50%", width: `${w}%` } : { right: "50%", width: `${w}%` }} />
+    </span>
+  );
+}
+
+const FULL_HEAD = [
+  { label: "Holding" },
+  { label: "Price", right: true, title: "Latest price, in the holding's own currency" },
+  { label: "Model", right: true, title: "Target weight — what goes into Client Link" },
+  { label: "Live", right: true, title: "Weight today, after prices moved" },
+  { label: "Drift", right: true, title: "Live minus Model, in percentage points" },
+  { label: "Under / over model" },
+];
+
+function FullRows({ rows, max }: { rows: Row[]; max: number }) {
+  return (
+    <>
+      {rows.map((r) => (
+        <tr key={r.h.symbol}>
+          <td className={TD}>
+            <span className="font-semibold">{r.h.symbol}</span>
+            <span className="ml-2 text-[13.5px] text-ink-3">{r.h.name}</span>
+          </td>
+          <td className={`${TDN} text-ink-2`}>{r.price == null ? "—" : `${fmtNum(r.price)} ${r.h.currency === "USD" ? "US$" : "C$"}`}</td>
+          <td className={TDN}>{pctText(r.model)}</td>
+          <td className={`${TDN} font-semibold`}>{pctText(r.live)}</td>
+          <td className={`${TDN} ${tone(r.drift)}`}>{driftText(r.drift)}</td>
+          <td className={TD}><DriftBar v={r.drift} max={max} /></td>
+        </tr>
+      ))}
+    </>
+  );
+}
+
+function FullTable({ rows, cashModel, cashLive }: { rows: Row[]; cashModel: number; cashLive: number | null }) {
+  const max = Math.max(0.5, ...rows.map((r) => Math.abs(r.drift ?? 0)));
+  const liveOk = rows.some((r) => r.live != null);
+  return (
+    <Table head={FULL_HEAD} minWidth={820}>
+      {GROUPS.map((g) => {
+        const rs = rows.filter((r) => r.group === g.id).sort((a, b) => b.model - a.model);
+        if (!rs.length) return null;
+        const m = sum(rs, (r) => r.model);
+        const l = liveOk ? sum(rs, (r) => r.live) : null;
+        return (
+          <React.Fragment key={g.id}>
+            <tr className="bg-accent-soft">
+              <td className={`${TD} text-[13px] font-bold uppercase tracking-wide text-accent`} colSpan={2}>{g.label}</td>
+              <td className={`${TDN} font-bold`}>{pctText(m)}</td>
+              <td className={`${TDN} font-bold`}>{pctText(l)}</td>
+              <td className={`${TDN} font-bold ${tone(l == null ? null : l - m)}`}>{driftText(l == null ? null : l - m)}</td>
+              <td className={TD} />
+            </tr>
+            <FullRows rows={rs} max={max} />
+          </React.Fragment>
+        );
+      })}
+      <tr className="bg-accent-soft">
+        <td className={`${TD} text-[13px] font-bold uppercase tracking-wide text-accent`} colSpan={2}>Cash</td>
+        <td className={`${TDN} font-bold`}>{pctText(cashModel)}</td>
+        <td className={`${TDN} font-bold`}>{pctText(cashLive)}</td>
+        <td className={`${TDN} font-bold ${tone(cashLive == null ? null : cashLive - cashModel)}`}>{driftText(cashLive == null ? null : cashLive - cashModel)}</td>
+        <td className={TD} />
+      </tr>
+    </Table>
+  );
+}
+
+function BucketCards({ rows }: { rows: Row[] }) {
+  const max = Math.max(0.5, ...rows.map((r) => Math.abs(r.drift ?? 0)));
+  const liveOk = rows.some((r) => r.live != null);
+  return (
+    <div className="grid items-start gap-4 lg:grid-cols-2">
+      {GROUPS.map((g) => {
+        const rs = rows.filter((r) => r.group === g.id).sort((a, b) => b.model - a.model);
+        if (!rs.length) return null;
+        const m = sum(rs, (r) => r.model);
+        const l = liveOk ? sum(rs, (r) => r.live) : null;
+        return (
+          <Card key={g.id} title={g.label} sub={`model ${pctText(m)} · live ${pctText(l)}`} right={<span className={`font-semibold ${tone(l == null ? null : l - m)}`}>{driftText(l == null ? null : l - m)}</span>} pad={false} className={g.id === "alpha" ? "lg:col-span-2" : ""}>
+            <Table head={FULL_HEAD} minWidth={g.id === "alpha" ? 820 : 620}>
+              <FullRows rows={rs} max={max} />
+            </Table>
+          </Card>
+        );
+      })}
+    </div>
+  );
+}
+
 export default function Portfolio({ opt }: { opt: string }) {
   const [profile, setProfile] = useState<PimProfileType>("balanced");
   const [tab, setTab] = useState<"model" | "live">("model");
@@ -260,6 +360,25 @@ export default function Portfolio({ opt }: { opt: string }) {
               </span>
             </div>
           )}
+          {opt === "c" && (
+            <Card title="Model and live, every holding" sub={<AsOf at={b.at} source="Positioning units × Yahoo Finance prices" />} pad={false}>
+              <FullTable rows={b.rows} cashModel={b.cashModel} cashLive={b.cashLive} />
+            </Card>
+          )}
+          {opt === "d" && (
+            <>
+              {drifts.length > 0 && (
+                <Card title="Furthest from model" sub={<AsOf at={b.at} source="Positioning units × Yahoo Finance prices" />} pad={false}>
+                  <HoldingsTable rows={drifts} show="both" />
+                </Card>
+              )}
+              <Card title="By part of the portfolio" pad={false}>
+                <Summary rows={b.rows} cashModel={b.cashModel} cashLive={b.cashLive} show="both" />
+              </Card>
+              <BucketCards rows={b.rows} />
+            </>
+          )}
+          {opt !== "c" && opt !== "d" && (
           <Card
             title={show === "model" ? "Model targets" : show === "live" ? "Live portfolio" : "Model and live"}
             sub={show === "model" ? "enter these in Client Link" : <AsOf at={b.at} source="Positioning units × Yahoo Finance prices" />}
@@ -268,7 +387,8 @@ export default function Portfolio({ opt }: { opt: string }) {
             <Summary rows={b.rows} cashModel={b.cashModel} cashLive={b.cashLive} show={show} />
             <ByGroup rows={b.rows} show={show} prefix={`redesign.portfolio.${opt}.${show}`} />
           </Card>
-          {show !== "model" && drifts.length > 0 && (
+          )}
+          {opt !== "c" && opt !== "d" && show !== "model" && drifts.length > 0 && (
             <Card title="Furthest from model" sub="largest gaps, either way" pad={false}>
               <HoldingsTable rows={drifts} show="both" />
             </Card>

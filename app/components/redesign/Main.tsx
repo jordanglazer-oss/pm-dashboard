@@ -22,15 +22,20 @@ import type { DailySummary } from "@/app/lib/daily-summary";
 import type { WatchRow } from "@/app/lib/watchlist-plan";
 import { useFacts, useSummary } from "./data";
 import type { Fact } from "./facts";
-import { FactRow, StaleBanner } from "./Market";
+import { FactCard, FactRow, StaleBanner } from "./Market";
+import { PerformancePanel } from "@/app/components/brief/PerformancePanel";
+import { EarningsCard, EconCard } from "@/app/components/brief/SummaryCalendar";
+import { MoversCard } from "@/app/components/brief/SummaryMarket";
 import { PerfTable } from "./Perf";
 import { useWatch, zoneOf, ZoneTag } from "./Watch";
-import { AsOf, Bullets, Card, Empty, fmtAsOf, fmtNum, fmtSigned, Loading, More, Page, Tag, tone, type OptionDef } from "./ui";
+import { AsOf, Bullets, Card, Empty, fmtAsOf, fmtNum, fmtSigned, Loading, More, Page, Spark, Table, Tag, TD, TDN, tone, type OptionDef } from "./ui";
 
 export const MAIN_OPTIONS: OptionDef[] = [
   { id: "a", label: "Top to bottom", blurb: "One column in order of urgency: anything stale, names at their buy price, performance, market facts, this week. Nothing to hunt for." },
   { id: "b", label: "Dashboard grid", blurb: "Everything on one screen in tiles: performance on the left, alerts and the week on the right, market facts across the bottom." },
   { id: "c", label: "Three questions", blurb: "The page answers three questions in large type: How are we doing? What is the market doing? What needs us this week? Detail opens underneath." },
+  { id: "d", label: "Morning briefing", level: "Medium", blurb: "Everything a morning needs on one scroll: all models and sleeves by period, buy-zone alerts, the week, eight key facts with trend lines, the earnings and economic calendars, and what moved the index." },
+  { id: "e", label: "Two-column desk", level: "Medium", blurb: "Numbers on the left (full performance table, key market facts with one-week and one-month change), things to act on down the right (alerts, the week, earnings, movers)." },
 ];
 
 // ── Shared blocks ──
@@ -263,10 +268,106 @@ function OptionC() {
   );
 }
 
+// ── Medium options: more on the page, still facts only ──
+// These reuse the existing Brief panels that are pure facts (performance by
+// period, earnings and economic calendars, index movers). The regime dial,
+// the cash and hedging calls and the AI narrative are deliberately left out.
+
+const signTone = (t: string | undefined) => (!t ? "text-ink-3" : t.startsWith("+") ? "text-pos" : t.startsWith("−") ? "text-neg" : "text-ink-2");
+
+function KeyTrendTable({ facts, loading }: { facts: Fact[]; loading: boolean }) {
+  const key = facts.filter((f) => f.key);
+  if (loading && !key.some((f) => !f.missing)) return <div className="px-5"><Loading what="Loading market facts" /></div>;
+  return (
+    <Table minWidth={560} head={[{ label: "Fact" }, { label: "Now", right: true }, { label: "1 week", right: true }, { label: "1 month", right: true }, { label: "Trend" }]}>
+      {key.map((f) => (
+        <tr key={f.id}>
+          <td className={TD}>
+            <div className="font-medium">{f.label}</div>
+            <AsOf at={f.asOf} source={f.source} />
+          </td>
+          <td className={`${TDN} text-[17px] font-semibold`}>{f.value}</td>
+          <td className={`${TDN} ${signTone(f.d1w || f.change)}`}>{f.d1w || f.change || "—"}</td>
+          <td className={`${TDN} ${signTone(f.d1m)}`}>{f.d1m || "—"}</td>
+          <td className={TD}><Spark points={f.spark ?? []} /></td>
+        </tr>
+      ))}
+    </Table>
+  );
+}
+
+function OptionD() {
+  const { rows, at } = useWatch();
+  const { facts, loading } = useFacts();
+  const s = useSummary();
+  const z = zoneCount(rows);
+  const key = facts.filter((f) => f.key);
+  return (
+    <>
+      <StaleBanner />
+      {s.data ? <PerformancePanel s={s.data} /> : <Card title="Performance"><Loading what="Loading performance" /></Card>}
+      <div className="grid gap-4 lg:grid-cols-2">
+        <Card title="Buy-zone alerts" sub={`${z.green} green · ${z.yellow} yellow`} right={watchLink}>
+          <ZoneAlerts rows={rows} at={at} />
+        </Card>
+        <Card title="This week">
+          <ThisWeek s={s.data} />
+        </Card>
+      </div>
+      <Card title="Key market facts" right={factsLink}>
+        {loading && !key.some((f) => !f.missing) ? (
+          <Loading what="Loading market facts" />
+        ) : (
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">{key.map((f) => <FactCard key={f.id} f={f} />)}</div>
+        )}
+      </Card>
+      {s.data && (
+        <>
+          <div className="grid gap-4 lg:grid-cols-2">
+            <EarningsCard s={s.data} />
+            <EconCard s={s.data} />
+          </div>
+          {s.data.drivers && <MoversCard s={s.data} win="1d" />}
+        </>
+      )}
+    </>
+  );
+}
+
+function OptionE() {
+  const { rows, at } = useWatch();
+  const { facts, loading } = useFacts();
+  const s = useSummary();
+  const z = zoneCount(rows);
+  return (
+    <>
+      <StaleBanner />
+      <div className="grid items-start gap-4 lg:grid-cols-[minmax(0,1.45fr)_minmax(0,1fr)]">
+        <div className="flex min-w-0 flex-col gap-4">
+          {s.data ? <PerformancePanel s={s.data} /> : <Card title="Performance"><Loading what="Loading performance" /></Card>}
+          <Card title="Key market facts" right={factsLink} pad={false}>
+            <KeyTrendTable facts={facts} loading={loading} />
+          </Card>
+        </div>
+        <div className="flex min-w-0 flex-col gap-4">
+          <Card title="Buy-zone alerts" sub={`${z.green} green · ${z.yellow} yellow`} right={watchLink}>
+            <ZoneAlerts rows={rows} at={at} />
+          </Card>
+          <Card title="This week">
+            <ThisWeek s={s.data} limit={6} />
+          </Card>
+          {s.data && <EarningsCard s={s.data} />}
+          {s.data?.drivers && <MoversCard s={s.data} win="1d" />}
+        </div>
+      </div>
+    </>
+  );
+}
+
 export default function MainScreen({ opt }: { opt: string }) {
   return (
     <Page title="Main screen" lede="What matters today, as facts.">
-      {opt === "b" ? <OptionB /> : opt === "c" ? <OptionC /> : <OptionA />}
+      {opt === "b" ? <OptionB /> : opt === "c" ? <OptionC /> : opt === "d" ? <OptionD /> : opt === "e" ? <OptionE /> : <OptionA />}
     </Page>
   );
 }

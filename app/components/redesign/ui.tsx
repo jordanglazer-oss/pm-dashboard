@@ -19,7 +19,7 @@ import React from "react";
 import Link from "next/link";
 import { usePersistedOpen } from "@/app/lib/useCollapsed";
 
-export type OptionDef = { id: string; label: string; blurb: string };
+export type OptionDef = { id: string; label: string; blurb: string; /** How much is on the page. Default "Simple". */ level?: "Simple" | "Medium" };
 
 export const fmtNum = (v: number | null | undefined, digits = 2) => (v == null || !Number.isFinite(v) ? "—" : v.toLocaleString("en-US", { minimumFractionDigits: digits, maximumFractionDigits: digits }));
 export const fmtSigned = (v: number | null | undefined, digits = 1, unit = "%") => (v == null || !Number.isFinite(v) ? "—" : `${v >= 0 ? "+" : "−"}${Math.abs(v).toFixed(digits)}${unit}`);
@@ -71,26 +71,45 @@ export function Page({ title, lede, right, children }: { title: string; lede?: s
   );
 }
 
-/** The A / B / C switch at the top of a section. Links, so an option can be shared. */
+/** The A / B / C switch at the top of a section, grouped by how much is on
+ *  the page (Simple / Medium). Links, so an option can be shared. */
 export function OptionSwitch({ base, options, current, suffix = "" }: { base: string; options: OptionDef[]; current: string; suffix?: string }) {
   if (options.length < 2) return null;
   const cur = options.find((o) => o.id === current) ?? options[0];
+  const levels = (["Simple", "Medium"] as const).filter((l) => options.some((o) => (o.level ?? "Simple") === l));
   return (
     <div className="rounded-card border border-brass/40 bg-brass-soft px-4 py-3">
-      <div className="flex flex-wrap items-center gap-2">
-        <span className="text-[13px] font-semibold uppercase tracking-wide text-brass-ink">Design options</span>
-        {options.map((o) => (
-          <Link
-            key={o.id}
-            href={`${base}/${o.id}${suffix}`}
-            className={`inline-flex h-9 items-center rounded-control border px-3.5 text-[14px] font-semibold ${o.id === cur.id ? "border-accent bg-accent !text-white" : "border-line bg-surface !text-ink-2 hover:bg-surface-hover"}`}
-          >
-            {o.id.toUpperCase()} · {o.label}
-          </Link>
+      <div className="flex flex-wrap items-center gap-x-5 gap-y-2">
+        {levels.map((l) => (
+          <div key={l} className="flex flex-wrap items-center gap-2">
+            <span className="text-[13px] font-semibold uppercase tracking-wide text-brass-ink">{l}</span>
+            {options.filter((o) => (o.level ?? "Simple") === l).map((o) => (
+              <Link
+                key={o.id}
+                href={`${base}/${o.id}${suffix}`}
+                className={`inline-flex h-9 items-center rounded-control border px-3.5 text-[14px] font-semibold ${o.id === cur.id ? "border-accent bg-accent !text-white" : "border-line bg-surface !text-ink-2 hover:bg-surface-hover"}`}
+              >
+                {o.id.toUpperCase()} · {o.label}
+              </Link>
+            ))}
+          </div>
         ))}
       </div>
       <p className="mt-1.5 text-[14px] text-ink-2">{cur.blurb}</p>
     </div>
+  );
+}
+
+/** Tiny trend line for a fact's own history. Decorative: the numbers beside it carry the meaning. */
+export function Spark({ points, width = 96, height = 28 }: { points: number[]; width?: number; height?: number }) {
+  if (points.length < 3) return <span className="inline-block text-[12.5px] text-ink-3" style={{ width }}>no history</span>;
+  const lo = Math.min(...points), hi = Math.max(...points);
+  const span = hi - lo || 1;
+  const d = points.map((v, i) => `${i === 0 ? "M" : "L"}${((i / (points.length - 1)) * (width - 2) + 1).toFixed(1)},${(height - 2 - ((v - lo) / span) * (height - 4)).toFixed(1)}`).join(" ");
+  return (
+    <svg width={width} height={height} viewBox={`0 0 ${width} ${height}`} aria-hidden="true" className="shrink-0">
+      <path d={d} fill="none" stroke="var(--color-accent)" strokeWidth="1.5" strokeLinejoin="round" strokeLinecap="round" />
+    </svg>
   );
 }
 

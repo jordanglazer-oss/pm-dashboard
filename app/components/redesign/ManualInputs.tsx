@@ -74,7 +74,7 @@ export default function ManualInputs() {
   const status = (r: ManualStatus) => {
     if (r.value == null) return <Tag kind="red">Not entered</Tag>;
     if (r.today) return <Tag kind="green">Updated today</Tag>;
-    return <Tag kind="yellow">Last updated {fmtAsOf(r.editedAt)}</Tag>;
+    return r.editedAt ? <Tag kind="yellow">Last updated {fmtAsOf(r.editedAt)}</Tag> : <Tag kind="yellow" title="Entered before dates were recorded for this number">Date not recorded</Tag>;
   };
 
   return (

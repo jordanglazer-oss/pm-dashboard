@@ -2548,6 +2548,36 @@ export default function ClientReportPage() {
         </details>
       </div>
 
+      {/* Landscape: the same four risk figures the portrait page lets the PM
+          type over, editable here too so there is no switching back and
+          forth. Screen only (print:hidden) and OUTSIDE the slides, so the
+          generated slides are unchanged; saves to the same
+          pm:client-portfolio.metricsOverrides entry as the portrait inputs. */}
+      {layout === "landscape" && data && (
+        <div className="print:hidden mx-auto mt-4 max-w-4xl px-4">
+          <div className="rounded border border-slate-200 bg-white p-3">
+            <div className="mb-2 text-[11px] font-semibold text-slate-700">
+              Risk figures on slide 1 <span className="font-normal text-slate-500">· Retrieve from SIA · not shown on the report</span>
+            </div>
+            <div className="grid grid-cols-2 gap-2 text-[11px] sm:grid-cols-4">
+              {(() => {
+                const key = `${groupId}::${profile}`;
+                const o = metricsOverrides[key] ?? {};
+                const set = (patch: Partial<MetricsOverride>) => setMetricsOverrides((prev) => ({ ...prev, [key]: { ...(prev[key] ?? {}), ...patch } }));
+                return (
+                  <>
+                    <OverridableStat label="Std Dev — Portfolio (ann.)" auto={data.performance.volatility} override={o.stdDev} fraction onChange={(v) => set({ stdDev: v })} />
+                    <OverridableStat label="Std Dev — S&P 500 (ann.)" auto={data.performance.benchmarkVolatility} override={o.benchmarkStdDev} fraction onChange={(v) => set({ benchmarkStdDev: v })} />
+                    <OverridableStat label="Upside Capture" auto={data.performance.upsideCapture} override={o.upsideCapture} onChange={(v) => set({ upsideCapture: v })} />
+                    <OverridableStat label="Downside Capture" auto={data.performance.downsideCapture} override={o.downsideCapture} onChange={(v) => set({ downsideCapture: v })} />
+                  </>
+                );
+              })()}
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Landscape: 16:9 slides for Prezi. */}
       {layout === "landscape" && (
         <SlideDeck
@@ -5067,10 +5097,11 @@ function OverridableStat({
         <input
           type="number"
           step="0.1"
-          placeholder={
+          placeholder="Retrieve from SIA"
+          title={
             auto != null
-              ? `auto: ${(fraction ? auto * 100 : auto).toFixed(1)}%`
-              : "override %"
+              ? `Type the figure from SIA. Left empty, the calculated ${(fraction ? auto * 100 : auto).toFixed(1)}% is used.`
+              : "Type the figure from SIA"
           }
           value={inputStr}
           onChange={(e) => {

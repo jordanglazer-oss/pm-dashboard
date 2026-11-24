@@ -124,3 +124,57 @@ export function PerfTable({ prefKey, compact = false }: { prefKey: string; compa
     </div>
   );
 }
+
+/** Medium: every model, sleeve and index with ALL periods side by side. */
+export function PerfGrid() {
+  const { data: perf, loading } = usePerformance();
+  const bench = useBenchmarkHistory();
+  const [from, setFrom] = useState("");
+  const groups = useMemo(() => {
+    const idx = (k: BenchKey): ValuePoint[] => normalizeSeries(bench?.[k] ?? []);
+    return [
+      { label: "Client models", rows: MODELS.map((m) => ({ label: m.label, series: seriesOf(perf, m.profile) })) },
+      { label: "Sleeves", rows: SLEEVES.map((m) => ({ label: m.label, series: seriesOf(perf, m.profile) })) },
+      { label: "Indices", rows: INDICES.map((i) => ({ label: i.label, series: idx(i.key), index: true })) },
+    ] as { label: string; rows: Row[] }[];
+  }, [perf, bench]);
+  if (loading && !perf) return <div className="px-5"><Loading what="Loading performance" /></div>;
+  if (!perf) return <div className="px-5"><Empty>Performance is not available right now.</Empty></div>;
+  const head = [{ label: "" }, ...PRESETS.map((p) => ({ label: p.label, right: true })), ...(from ? [{ label: `Since ${from}`, right: true }] : []), { label: "As of" }];
+  return (
+    <div>
+      <div className="flex flex-wrap items-center gap-2 px-5 py-3">
+        <span className="text-[13.5px] text-ink-3">Returns close to close on the recorded daily values.</span>
+        <label className="ml-auto flex items-center gap-2 text-[13.5px] text-ink-3">
+          Add a column: since
+          <input type="date" value={from} onChange={(e) => setFrom(e.target.value)} className="h-9 rounded-control border border-line bg-surface px-2 text-[14px] text-ink" />
+        </label>
+      </div>
+      <Table head={head} minWidth={860}>
+        {groups.map((g) => (
+          <React.Fragment key={g.label}>
+            <tr>
+              <td colSpan={head.length} className="border-b border-line-soft bg-accent-soft px-5 py-2 text-[13px] font-bold uppercase tracking-wide text-accent">{g.label}</td>
+            </tr>
+            {g.rows.map((r) => {
+              const pr = r.series.length > 1 ? periodReturns(r.series) : null;
+              const since = from && r.series.length > 1 ? returnSince(r.series, from) : null;
+              const last = r.series.length ? r.series[r.series.length - 1].date : null;
+              return (
+                <tr key={r.label}>
+                  <td className={`${TD} ${r.index ? "text-ink-2" : "font-semibold"}`}>{r.label}</td>
+                  {PRESETS.map((p) => {
+                    const v = pr ? pr[p.id] : null;
+                    return <td key={p.id} className={`${TDN} ${tone(v)}`}>{fmtSigned(v, 2)}</td>;
+                  })}
+                  {from && <td className={`${TDN} font-semibold ${tone(since)}`}>{fmtSigned(since, 2)}</td>}
+                  <td className={`${TD} whitespace-nowrap`}><AsOf at={last} /></td>
+                </tr>
+              );
+            })}
+          </React.Fragment>
+        ))}
+      </Table>
+    </div>
+  );
+}

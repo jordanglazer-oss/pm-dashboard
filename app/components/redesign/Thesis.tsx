@@ -26,10 +26,13 @@ import { BTN, Bullets, Card, Empty, Figure, fmtAsOf, Loading, More, Page, Table,
 export const THESIS_OPTIONS: OptionDef[] = [
   { id: "a", label: "One sentence each", blurb: "Keep the section, simplified: one plain-language statement per holding. Theses that started as AI drafts are marked." },
   { id: "b", label: "Cut the section", blurb: "No thesis page. The statement lives on each stock page; this becomes a short checklist of which holdings have one written by the team." },
+  { id: "c", label: "Statement and pillars", level: "Medium", blurb: "Each holding shows its statement and the two to four things the case rests on, each marked intact, watch or broken with its note. Conditions are counted, not listed." },
+  { id: "d", label: "One table", level: "Medium", blurb: "All holdings in a single table: the statement, how many pillars are intact, on watch or broken, how many conditions have tripped, and when it was last updated." },
 ];
 
 type Pillar = { title?: string; claim?: string; status?: "intact" | "watch" | "broken"; statusNote?: string };
-type Thesis = { why?: string; updatedAt?: string; aiDrafted?: boolean; pillars?: Pillar[] };
+type Condition = { kind?: string; note?: string; trippedAt?: string | null };
+type Thesis = { why?: string; updatedAt?: string; aiDrafted?: boolean; pillars?: Pillar[]; killConditions?: Condition[]; underwrittenAt?: string; reUnderwriteBy?: string };
 type Status = "team" | "draft" | "none";
 type Row = { s: ScoredStock; t: Thesis | undefined; status: Status; sentence: string };
 
@@ -176,6 +179,97 @@ function OptionB({ rows }: { rows: Row[] }) {
   );
 }
 
+// ── Medium options ──
+
+const PILLAR_KIND: Record<string, "green" | "yellow" | "red"> = { intact: "green", watch: "yellow", broken: "red" };
+const cap = (t: string) => t.charAt(0).toUpperCase() + t.slice(1);
+
+/** Only conditions that can trip are counted: metric guards and custom breakers. */
+function conditionCounts(t: Thesis | undefined) {
+  const live = (t?.killConditions ?? []).filter((c) => c.kind === "metric" || c.kind === "custom");
+  return { total: live.length, tripped: live.filter((c) => c.trippedAt).length };
+}
+function pillarCounts(t: Thesis | undefined) {
+  const ps = (t?.pillars ?? []).filter((p) => p.title || p.claim);
+  const n = (st: string) => ps.filter((p) => p.status === st).length;
+  return { total: ps.length, intact: n("intact"), watch: n("watch"), broken: n("broken"), unset: ps.filter((p) => !p.status).length };
+}
+
+function OptionC({ rows }: { rows: Row[] }) {
+  return (
+    <div className="grid items-start gap-4 lg:grid-cols-2">
+      {rows.map((r) => {
+        const pillars = (r.t?.pillars ?? []).filter((p) => p.title || p.claim);
+        const c = conditionCounts(r.t);
+        return (
+          <section key={r.s.ticker} className="flex flex-col gap-2.5 rounded-card border border-line-soft bg-surface px-5 py-4 shadow-[var(--shadow-card)]">
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+              <Link href={stockHref(r.s.ticker)} className="text-[18px] font-bold !text-ink hover:underline">{displayTicker(r.s.ticker)}</Link>
+              <span className="min-w-0 truncate text-[14px] text-ink-3">{r.s.name}</span>
+              <StatusTag st={r.status} />
+            </div>
+            <p className="text-[15.5px] leading-relaxed">{r.sentence || <span className="text-ink-3">No statement yet.</span>}</p>
+            {pillars.length > 0 && (
+              <div className="flex flex-col gap-2 border-t border-line-soft pt-2.5">
+                {pillars.map((p, i) => (
+                  <div key={i} className="flex items-start gap-2.5">
+                    <span className="mt-0.5 shrink-0">{p.status && PILLAR_KIND[p.status] ? <Tag kind={PILLAR_KIND[p.status]}>{cap(p.status)}</Tag> : <Tag>Not assessed</Tag>}</span>
+                    <span className="min-w-0 text-[14.5px] leading-snug">
+                      <span className="font-semibold">{p.title || p.claim}</span>
+                      {p.statusNote ? <span className="text-ink-2"> — {p.statusNote}</span> : null}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
+            <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[13px] text-ink-3">
+              {c.total > 0 && <span className={c.tripped ? "font-semibold text-neg" : ""}>{c.tripped} of {c.total} conditions tripped</span>}
+              {r.t?.updatedAt && <span>updated {fmtAsOf(r.t.updatedAt)}</span>}
+              {r.t?.reUnderwriteBy && <span>review due {fmtAsOf(r.t.reUnderwriteBy)}</span>}
+              <Link href={stockHref(r.s.ticker)} className="ml-auto text-[14px] font-semibold !text-accent underline">{r.status === "none" ? "Write it" : "Edit"}</Link>
+            </div>
+          </section>
+        );
+      })}
+    </div>
+  );
+}
+
+function OptionD({ rows }: { rows: Row[] }) {
+  return (
+    <Card title="Why we own each stock" sub="statement, pillars and conditions" pad={false}>
+      <Table head={[{ label: "Stock" }, { label: "Statement" }, { label: "Pillars", title: "Intact · on watch · broken" }, { label: "Conditions", title: "Tripped of those that can trip" }, { label: "Updated" }, { label: "" }]} minWidth={980}>
+        {rows.map((r) => {
+          const p = pillarCounts(r.t);
+          const c = conditionCounts(r.t);
+          return (
+            <tr key={r.s.ticker}>
+              <td className={`${TD} whitespace-nowrap`}>
+                <Link href={stockHref(r.s.ticker)} className="font-bold !text-ink hover:underline">{displayTicker(r.s.ticker)}</Link>
+                <div className="mt-1"><StatusTag st={r.status} /></div>
+              </td>
+              <td className={`${TD} min-w-[300px] max-w-[460px] text-[14.5px] leading-snug`}>{r.sentence || <span className="text-ink-3">No statement yet.</span>}</td>
+              <td className={`${TD} whitespace-nowrap`}>
+                {p.total === 0 ? <span className="text-ink-3">—</span> : (
+                  <span className="flex flex-wrap gap-1.5">
+                    {p.intact > 0 && <Tag kind="green">{p.intact} intact</Tag>}
+                    {p.watch > 0 && <Tag kind="yellow">{p.watch} watch</Tag>}
+                    {p.broken > 0 && <Tag kind="red">{p.broken} broken</Tag>}
+                    {p.unset > 0 && <Tag>{p.unset} not assessed</Tag>}
+                  </span>
+                )}
+              </td>
+              <td className={`${TD} whitespace-nowrap ${c.tripped ? "font-semibold text-neg" : "text-ink-2"}`}>{c.total ? `${c.tripped} of ${c.total} tripped` : "—"}</td>
+              <td className={`${TD} whitespace-nowrap text-ink-2`}>{r.t?.updatedAt ? fmtAsOf(r.t.updatedAt) : "—"}</td>
+              <td className={`${TD} text-right`}><Link href={stockHref(r.s.ticker)} className="font-semibold !text-accent underline">{r.status === "none" ? "Write it" : "Edit"}</Link></td>
+            </tr>
+          );
+        })}
+      </Table>
+    </Card>
+  );
+}
+
 export default function ThesisView({ opt }: { opt: string }) {
   const { rows, loading } = useRows();
   return (
@@ -187,7 +281,7 @@ export default function ThesisView({ opt }: { opt: string }) {
       ) : (
         <>
           <Counts rows={rows} />
-          {opt === "b" ? <OptionB rows={rows} /> : <OptionA rows={rows} />}
+          {opt === "b" ? <OptionB rows={rows} /> : opt === "c" ? <OptionC rows={rows} /> : opt === "d" ? <OptionD rows={rows} /> : <OptionA rows={rows} />}
         </>
       )}
       <p className="px-1 text-[13px] text-ink-3">
