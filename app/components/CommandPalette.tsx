@@ -55,6 +55,7 @@ const CATEGORY_LABEL: Record<Entry["category"], string> = {
 };
 
 const PAGE_ENTRIES: Omit<Entry, "id" | "searchTarget">[] = [
+  { category: "page", label: "Redesign options", subtitle: "Design options for the team rebuild", href: "/redesign" },
   { category: "page", label: "Brief",        subtitle: "Regime, verdict, the day's calls",  href: "/brief" },
   { category: "page", label: "Holdings",     subtitle: "Portfolio rankings & filters",      href: "/" },
   { category: "page", label: "Positioning",  subtitle: "Live book vs model · rebalance",    href: "/portfolio" },

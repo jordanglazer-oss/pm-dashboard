@@ -75,6 +75,8 @@ export const NAV_GROUPS: NavGroup[] = [
 export const NAV_UTILITIES: NavItem[] = [
   { key: "chat", label: "Ask", href: "/chat", icon: "chat" },
   { key: "client-report", label: "Client report", href: "/client-report", icon: "doc" },
+  // Nov 2026 team rebuild: design options beside the existing screens.
+  { key: "redesign", label: "Redesign options", href: "/redesign", icon: "spark", match: (p) => p.startsWith("/redesign") },
 ];
 
 /** Under the System popover, with the health rows. */
