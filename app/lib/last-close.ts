@@ -110,3 +110,28 @@ export function closeLabel(date: string): string {
   const d = new Date(`${date}T12:00:00Z`);
   return Number.isNaN(d.getTime()) ? date : d.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric", timeZone: "UTC" });
 }
+
+/**
+ * True when a saved timestamp belongs to the close now in force — i.e. the
+ * number was typed for the close the Daily input is currently asking for.
+ * Typed at 3 pm Tuesday (Monday's close) and read at 5 pm Tuesday (Tuesday's
+ * close is now due) → false. Uses the market's calendar, never the UTC date.
+ */
+export function enteredForClose(stamp: string | null | undefined, now: Date = new Date()): boolean {
+  if (!stamp) return false;
+  const at = new Date(stamp);
+  return !Number.isNaN(at.getTime()) && lastMarketClose(at) === lastMarketClose(now);
+}
+
+/**
+ * Is a strategist note the current one? Dated today (Eastern) always counts.
+ * A note published after the close for the NEXT session ("prior-close", the
+ * Newton default) also counts when dated on or after the last market close —
+ * so Tuesday evening's note is still current on Wednesday morning.
+ */
+export function noteIsCurrent(date: string | null | undefined, timing: string | null | undefined, now: Date = new Date()): boolean {
+  if (!date) return false;
+  const today = easternParts(now).date;
+  if (date === today) return true;
+  return timing === "prior-close" && date >= lastMarketClose(now) && date <= today;
+}

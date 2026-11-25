@@ -529,7 +529,9 @@ export function StockProvider({ children }: { children: React.ReactNode }) {
 
   const [persistStocks, flushStocks, isStocksPersistPending, stocksSynced] = useStocksPersist(setStocks);
   // Market data persists immediately (not debounced) since updates are explicit save actions
+  const lastMarketPersistRef = useRef(0);
   const persistMarket = useCallback((data: unknown) => {
+    lastMarketPersistRef.current = Date.now();
     fetch("/api/kv/market", {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
@@ -1406,6 +1408,38 @@ export function StockProvider({ children }: { children: React.ReactNode }) {
       document.removeEventListener("visibilitychange", maybeRefresh);
     };
   }, [loading, refreshResearchMentions]);
+
+  // Pick up strategist notes that arrived BY EMAIL while this tab was open
+  // (the inbox writes pm:market.strategistNotes server-side). Without this a
+  // page left open — the phone app especially — kept showing "Newton note,
+  // Lee note" as not entered, and a later timing/date edit could send the old
+  // note text back. READ-ONLY: takes only `strategistNotes` from the server
+  // copy, never writes, skips right after a local save, throttled to 30s.
+  const lastNotesRefreshRef = useRef(0);
+  useEffect(() => {
+    if (loading) return;
+    const maybeRefreshNotes = () => {
+      if (document.visibilityState === "hidden") return;
+      const now = Date.now();
+      if (now - lastNotesRefreshRef.current < 30_000) return;
+      if (now - lastMarketPersistRef.current < 5_000) return;
+      lastNotesRefreshRef.current = now;
+      fetch("/api/kv/market", { cache: "no-store" })
+        .then((r) => (r.ok ? r.json() : null))
+        .then((res: { market?: MarketData } | null) => {
+          const notes = res?.market?.strategistNotes;
+          if (!notes || Date.now() - lastMarketPersistRef.current < 5_000) return;
+          setMarketData((prev) => (JSON.stringify(prev.strategistNotes ?? null) === JSON.stringify(notes) ? prev : { ...prev, strategistNotes: notes }));
+        })
+        .catch(() => {}); // a failed re-read leaves the page as it was
+    };
+    window.addEventListener("focus", maybeRefreshNotes);
+    document.addEventListener("visibilitychange", maybeRefreshNotes);
+    return () => {
+      window.removeEventListener("focus", maybeRefreshNotes);
+      document.removeEventListener("visibilitychange", maybeRefreshNotes);
+    };
+  }, [loading]);
 
   // Re-pull pm:stocks when the user returns to the app (window focus / tab
   // visible). The email-inbox pipeline writes pm:stocks SERVER-SIDE

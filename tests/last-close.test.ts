@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { isUsTradingDay, lastMarketClose, usMarketHolidays } from "@/app/lib/last-close";
+import { enteredForClose, isUsTradingDay, lastMarketClose, noteIsCurrent, usMarketHolidays } from "@/app/lib/last-close";
 
 // Eastern Standard Time is UTC-5 in late November; EDT is UTC-4 in summer.
 const est = (date: string, time: string) => new Date(`${date}T${time}:00-05:00`);
@@ -50,5 +50,25 @@ describe("US market holidays", () => {
   it("ordinary days", () => {
     expect(isUsTradingDay("2026-11-24")).toBe(true);
     expect(isUsTradingDay("2026-11-28")).toBe(false);
+  });
+});
+
+describe("Daily input checklist dates", () => {
+  // Wed 2026-11-25. 15:00 ET = 20:00 UTC; 20:00 ET = 01:00 UTC next day.
+  const wed3pm = new Date("2026-11-25T20:00:00Z");
+  const wed8pm = new Date("2026-11-26T01:00:00Z");
+  it("a number typed for the close in force counts, whatever the UTC date", () => {
+    expect(enteredForClose("2026-11-25T14:00:00Z", wed3pm)).toBe(true); // typed 9 am, Tuesday's close
+    expect(enteredForClose("2026-11-25T22:00:00Z", wed8pm)).toBe(true); // typed 5 pm, read 8 pm (UTC already Thursday)
+    expect(enteredForClose("2026-11-25T20:00:00Z", wed8pm)).toBe(false); // typed 3 pm for Tuesday; Wednesday's close now due
+    expect(enteredForClose(undefined, wed3pm)).toBe(false);
+  });
+  it("a note dated today counts; last evening's prior-close note counts the next morning", () => {
+    expect(noteIsCurrent("2026-11-25", "pre-market", wed3pm)).toBe(true);
+    expect(noteIsCurrent("2026-11-25", "pre-market", wed8pm)).toBe(true); // UTC date is the 26th
+    expect(noteIsCurrent("2026-11-24", "prior-close", wed3pm)).toBe(true);
+    expect(noteIsCurrent("2026-11-24", "pre-market", wed3pm)).toBe(false);
+    expect(noteIsCurrent("2026-11-24", "prior-close", wed8pm)).toBe(false); // Wednesday's close has happened
+    expect(noteIsCurrent(undefined, "prior-close", wed3pm)).toBe(false);
   });
 });
