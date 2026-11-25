@@ -5,6 +5,7 @@
 // and credit); otherwise we fall back to Yahoo Finance everywhere.
 
 import { getRedis } from "./redis";
+import { easternToday } from "./date-eastern";
 import { crossSectional, factsetConfigured } from "./factset";
 
 // Per-point freshness so the UI can render a badge that tells the user
@@ -547,7 +548,13 @@ async function fetchYahooComputedBreadth(): Promise<{
 // only one entry and the delta tiles will show no comparison — that's
 // expected and will fill in over the next few trading days.
 const BREADTH_HISTORY_KEY = "pm:breadth-history";
+// The window the tiles and the brief READ (wk/wk, mo/mo, the proxy backfill).
+// Since 2026-11-24 it is no longer how much is KEPT: the stored history is
+// never trimmed by age (a year of it is ~40 KB), only capped at
+// MANUAL_HISTORY_KEEP entries as a runaway guard.
 const BREADTH_HISTORY_MAX_DAYS = 45;
+/** Entries kept per hand-entered history (breadth, oscillator, put/call): ~20 years of trading days. */
+const MANUAL_HISTORY_KEEP = 5000;
 
 type BreadthSnapshot = {
   date: string; // ISO YYYY-MM-DD
@@ -569,7 +576,44 @@ type BreadthSnapshot = {
   // NYSE up/down volume (shares or billions — ratio is unit-invariant).
   upVolume?: number | null;
   downVolume?: number | null;
+  /** The Eastern day this as-of date was FIRST logged. Lets a later day's
+   *  numbers typed under an un-advanced date be told apart from a same-day
+   *  correction (see planManualBreadth). Absent on entries before 2026-11-24. */
+  loggedOn?: string;
 };
+
+const BREADTH_VALUE_FIELDS = ["above200", "above50", "broadAbove200", "broadAbove50", "newHighs", "newLows", "upVolume", "downVolume"] as const;
+
+/** The Eastern day a row was first logged (rows from before `loggedOn`
+ *  existed: the day after their date, the usual "typed the next morning"). */
+function firstLoggedDay(row: BreadthSnapshot): string {
+  return row.loggedOn ?? new Date(Date.parse(`${row.date}T12:00:00Z`) + 86_400_000).toISOString().slice(0, 10);
+}
+
+/**
+ * Merge a new reading into the row on file for the same date. PURE.
+ *   - a missing number never erases one already recorded;
+ *   - a row first logged on an EARLIER day is history: its recorded numbers
+ *     are frozen, and only its empty fields can still be filled;
+ *   - a row first logged TODAY can be corrected (multi-save days).
+ */
+export function mergeBreadthSnapshot(prev: BreadthSnapshot | undefined, next: BreadthSnapshot, today: string): BreadthSnapshot {
+  if (!prev) return next;
+  const frozen = firstLoggedDay(prev) < today;
+  const out: BreadthSnapshot = { ...prev, loggedOn: prev.loggedOn ?? next.loggedOn };
+  for (const f of BREADTH_VALUE_FIELDS) {
+    const had = prev[f] ?? null, got = next[f] ?? null;
+    out[f] = had == null ? got : frozen || got == null ? had : got;
+  }
+  out.source = prev.source ?? next.source;
+  return out;
+}
+
+/** The newest-first window readers use, cut from the full history. */
+function breadthWindow(history: BreadthSnapshot[]): BreadthSnapshot[] {
+  const cutoffMs = Date.now() - BREADTH_HISTORY_MAX_DAYS * 24 * 60 * 60 * 1000;
+  return history.filter((s) => new Date(s.date + "T00:00:00Z").getTime() >= cutoffMs);
+}
 
 async function loadBreadthHistory(): Promise<BreadthSnapshot[]> {
   try {
@@ -603,24 +647,110 @@ async function saveBreadthHistory(history: BreadthSnapshot[]): Promise<void> {
 // Returns the merged history after appending today's snapshot (if it
 // wasn't already recorded today). Sorted descending so [0] is newest.
 async function recordBreadthSnapshot(
-  todaySnapshot: BreadthSnapshot
+  todaySnapshot: BreadthSnapshot,
+  /** When a row for this date is already on file, merge THIS instead (the
+   *  page-load path passes only the numbers typed today, so a box that still
+   *  holds an earlier day's number is not re-filed under a new date). */
+  whenOnFile?: BreadthSnapshot,
 ): Promise<BreadthSnapshot[]> {
   const history = await loadBreadthHistory();
   const existingIdx = history.findIndex((s) => s.date === todaySnapshot.date);
   if (existingIdx >= 0) {
-    // Update existing entry in place so multi-refresh-per-day works.
-    history[existingIdx] = todaySnapshot;
-  } else {
-    history.push(todaySnapshot);
+    // Update in place so multi-refresh-per-day works — but a refresh that
+    // carries no number never erases one already recorded for that date, and
+    // a row logged on an earlier day keeps the numbers it has.
+    history[existingIdx] = mergeBreadthSnapshot(history[existingIdx], whenOnFile ?? todaySnapshot, easternToday());
+  } else if (BREADTH_VALUE_FIELDS.some((f) => todaySnapshot[f] != null)) {
+    // A reading with no numbers at all is not worth a row.
+    history.push({ ...todaySnapshot, loggedOn: todaySnapshot.loggedOn ?? easternToday() });
   }
   history.sort((a, b) => (a.date < b.date ? 1 : -1));
-  const cutoffMs =
-    Date.now() - BREADTH_HISTORY_MAX_DAYS * 24 * 60 * 60 * 1000;
-  const trimmed = history.filter(
-    (s) => new Date(s.date + "T00:00:00Z").getTime() >= cutoffMs
-  );
-  await saveBreadthHistory(trimmed);
-  return trimmed;
+  // Kept in full (never trimmed by age); readers get the 45-day window.
+  await saveBreadthHistory(history.slice(0, MANUAL_HISTORY_KEEP));
+  return breadthWindow(history);
+}
+
+// ── Hand-entered breadth: logged the moment it is saved (Nov 2026) ──
+// Until 2026-11-24 a breadth entry reached pm:breadth-history only when some
+// page later fetched the forward-looking bundle, and the entry form keeps its
+// "as of" date until the PM changes it — so a new day's numbers typed under
+// yesterday's date OVERWROTE yesterday's row. Both are closed here.
+
+/**
+ * Decide which date a saved breadth entry is logged under. PURE.
+ *   - no usable number            → null (nothing to log)
+ *   - no date, a bad or future one → today
+ *   - a date with nothing on file, or the same numbers → that date
+ *   - a date whose row holds DIFFERENT numbers that were first logged on an
+ *     EARLIER day → these are a new day's numbers under an un-advanced date:
+ *     log them under today so the earlier row survives
+ *   - different numbers, first logged today → a same-day correction: that date
+ * A row logged before `loggedOn` existed is taken as logged the day after its date.
+ */
+export function planManualBreadth(history: BreadthSnapshot[], input: ManualBreadthInput | null | undefined, today: string): { date: string; advanced: boolean; snapshot: BreadthSnapshot } | null {
+  if (!input) return null;
+  const values: Partial<Record<(typeof BREADTH_VALUE_FIELDS)[number], number>> = {};
+  for (const f of BREADTH_VALUE_FIELDS) {
+    const v = input[f];
+    if (typeof v === "number" && Number.isFinite(v)) values[f] = v;
+  }
+  if (!Object.keys(values).length) return null;
+  const valid = typeof input.date === "string" && /^\d{4}-\d{2}-\d{2}$/.test(input.date) && input.date <= today;
+  let date = valid ? (input.date as string) : today;
+  let advanced = false;
+  const onFile = history.find((s) => s.date === date);
+  if (onFile && date < today) {
+    const differs = BREADTH_VALUE_FIELDS.some((f) => values[f] != null && onFile[f] != null && values[f] !== onFile[f]);
+    const firstLogged = onFile.loggedOn ?? new Date(Date.parse(`${onFile.date}T12:00:00Z`) + 86_400_000).toISOString().slice(0, 10);
+    if (differs && firstLogged < today) {
+      date = today;
+      advanced = true;
+    }
+  }
+  return {
+    date,
+    advanced,
+    snapshot: { date, above200: values.above200 ?? null, above50: values.above50 ?? null, source: "manual", broadAbove200: values.broadAbove200 ?? null, broadAbove50: values.broadAbove50 ?? null, newHighs: values.newHighs ?? null, newLows: values.newLows ?? null, upVolume: values.upVolume ?? null, downVolume: values.downVolume ?? null },
+  };
+}
+
+const EASTERN_DAY = new Intl.DateTimeFormat("en-CA", { timeZone: "America/New_York" });
+
+/**
+ * Only the numbers actually TYPED today are logged today. The entry form
+ * keeps yesterday's numbers in its boxes until each is retyped, and stamps
+ * each box when it is typed (`editedAt`) — so a box left untouched must not be
+ * re-filed under a new date. With no stamps at all (an older tab) every
+ * number present is taken as typed now. PURE.
+ */
+export function breadthTypedOn(override: (ManualBreadthInput & { editedAt?: Record<string, string | undefined> }) | null | undefined, today: string): ManualBreadthInput | null {
+  if (!override) return null;
+  const stamps = override.editedAt;
+  const hasStamps = stamps != null && Object.values(stamps).some(Boolean);
+  const out: ManualBreadthInput = { date: override.date };
+  for (const f of BREADTH_VALUE_FIELDS) {
+    const stamp = stamps?.[f];
+    const typedToday = !hasStamps || (stamp != null && !Number.isNaN(Date.parse(stamp)) && EASTERN_DAY.format(new Date(stamp)) === today);
+    if (typedToday && typeof override[f] === "number") out[f] = override[f];
+  }
+  return out;
+}
+
+/** Log a saved breadth entry now. Returns the date it was filed under (so the
+ *  caller can keep pm:market's as-of date in step). Never throws. */
+export async function logManualBreadth(override: (ManualBreadthInput & { editedAt?: Record<string, string | undefined> }) | null | undefined): Promise<{ date: string; advanced: boolean } | null> {
+  try {
+    const today = easternToday();
+    const input = breadthTypedOn(override, today);
+    const history = await loadBreadthHistory();
+    const plan = planManualBreadth(history, input, today);
+    if (!plan) return null;
+    await recordBreadthSnapshot(plan.snapshot);
+    return { date: plan.date, advanced: plan.advanced };
+  } catch (e) {
+    console.error("Manual breadth log failed:", e);
+    return null;
+  }
 }
 
 // ── SPX-proxy breadth backfill ────────────────────────────────────────────
@@ -1222,7 +1352,17 @@ async function fetchAaiiSentiment(): Promise<AaiiResult | null> {
 // Lookups happen via append + getOscillatorHistory(); writes happen from
 // /api/kv/market when the user updates marketData.spOscillator.
 const OSCILLATOR_HISTORY_KEY = "pm:oscillator-history";
-const OSCILLATOR_HISTORY_MAX_DAYS = 180; // 6 months — enough for trend context
+const OSCILLATOR_HISTORY_MAX_DAYS = 180; // 6 months — the window the tile and brief READ
+
+/** The stored log is kept in full; the sparkline, trend stats and brief keep
+ *  seeing only the last `days` so their behaviour is unchanged. */
+function recentSparkPoints(parsed: unknown[], days: number): SparkPoint[] {
+  const cutoffMs = Date.now() - days * 24 * 60 * 60 * 1000;
+  return parsed.filter(
+    (x): x is SparkPoint =>
+      Boolean(x) && typeof (x as SparkPoint).date === "string" && typeof (x as SparkPoint).value === "number" && new Date((x as SparkPoint).date + "T00:00:00Z").getTime() >= cutoffMs
+  );
+}
 
 export async function appendOscillatorEntry(value: number): Promise<void> {
   if (typeof value !== "number" || isNaN(value)) return;
@@ -1257,11 +1397,9 @@ export async function appendOscillatorEntry(value: number): Promise<void> {
       history.push({ date: today, value });
     }
     history.sort((a, b) => (a.date < b.date ? -1 : 1));
-    const cutoffMs =
-      Date.now() - OSCILLATOR_HISTORY_MAX_DAYS * 24 * 60 * 60 * 1000;
-    history = history.filter(
-      (s) => new Date(s.date + "T00:00:00Z").getTime() >= cutoffMs
-    );
+    // Kept in full since 2026-11-24 (was trimmed to 180 days); the reader
+    // below still hands back only the last OSCILLATOR_HISTORY_MAX_DAYS.
+    history = history.slice(-MANUAL_HISTORY_KEEP);
     await redis.set(OSCILLATOR_HISTORY_KEY, JSON.stringify(history));
   } catch (e) {
     console.error("Oscillator history write failed:", e);
@@ -1275,10 +1413,7 @@ async function loadOscillatorHistory(): Promise<SparkPoint[]> {
     if (!raw) return [];
     const parsed = JSON.parse(raw);
     if (!Array.isArray(parsed)) return [];
-    return parsed.filter(
-      (x): x is SparkPoint =>
-        x && typeof x.date === "string" && typeof x.value === "number"
-    );
+    return recentSparkPoints(parsed, OSCILLATOR_HISTORY_MAX_DAYS);
   } catch (e) {
     console.error("Oscillator history read failed:", e);
     return [];
@@ -1320,10 +1455,8 @@ export async function appendPutCallEntry(value: number): Promise<void> {
       history.push({ date: today, value });
     }
     history.sort((a, b) => (a.date < b.date ? -1 : 1));
-    const cutoffMs = Date.now() - PUTCALL_HISTORY_MAX_DAYS * 24 * 60 * 60 * 1000;
-    history = history.filter(
-      (s) => new Date(s.date + "T00:00:00Z").getTime() >= cutoffMs
-    );
+    // Kept in full since 2026-11-24 (was trimmed to 180 days).
+    history = history.slice(-MANUAL_HISTORY_KEEP);
     await redis.set(PUTCALL_HISTORY_KEY, JSON.stringify(history));
   } catch (e) {
     console.error("Put/Call history write failed:", e);
@@ -1337,10 +1470,7 @@ async function loadPutCallHistory(): Promise<SparkPoint[]> {
     if (!raw) return [];
     const parsed = JSON.parse(raw);
     if (!Array.isArray(parsed)) return [];
-    return parsed.filter(
-      (x): x is SparkPoint =>
-        x && typeof x.date === "string" && typeof x.value === "number"
-    );
+    return recentSparkPoints(parsed, PUTCALL_HISTORY_MAX_DAYS);
   } catch (e) {
     console.error("Put/Call history read failed:", e);
     return [];
@@ -2223,18 +2353,36 @@ export async function fetchForwardLookingData(
     // to), not today, so wk/wk and mo/mo comparisons line up against the
     // correct historical points. recordBreadthSnapshot dedupes by date, so
     // re-saving the same as-of date updates in place.
-    const realHistory = await recordBreadthSnapshot({
-      date: breadthAsOf,
-      above200: above200Pct,
-      above50: above50Pct,
-      source: breadthSource === "manual" ? "manual" : undefined,
-      broadAbove200: broadAbove200Pct,
-      broadAbove50: broadAbove50Pct,
-      newHighs: newHighsCount,
-      newLows: newLowsCount,
-      upVolume,
-      downVolume,
-    });
+    // A saved entry is now logged the moment it is saved (logManualBreadth).
+    // This page-load path stays as the safety net: it creates the row when
+    // none exists, and when one does it may only add numbers typed TODAY.
+    const typedToday = breadthSource === "manual" ? breadthTypedOn(manualBreadth as Parameters<typeof breadthTypedOn>[0], easternToday()) : null;
+    const realHistory = await recordBreadthSnapshot(
+      {
+        date: breadthAsOf,
+        above200: above200Pct,
+        above50: above50Pct,
+        source: breadthSource === "manual" ? "manual" : undefined,
+        broadAbove200: broadAbove200Pct,
+        broadAbove50: broadAbove50Pct,
+        newHighs: newHighsCount,
+        newLows: newLowsCount,
+        upVolume,
+        downVolume,
+      },
+      {
+        date: breadthAsOf,
+        above200: typedToday?.above200 ?? null,
+        above50: typedToday?.above50 ?? null,
+        source: breadthSource === "manual" ? "manual" : undefined,
+        broadAbove200: typedToday?.broadAbove200 ?? null,
+        broadAbove50: typedToday?.broadAbove50 ?? null,
+        newHighs: typedToday?.newHighs ?? null,
+        newLows: typedToday?.newLows ?? null,
+        upVolume: typedToday?.upVolume ?? null,
+        downVolume: typedToday?.downVolume ?? null,
+      },
+    );
 
     // On cold start (or any time the real history hasn't accumulated at
     // least ~a month of distinct trading days) fold in an SPX-proxy
