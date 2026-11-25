@@ -1846,6 +1846,12 @@ export default function InboxPage() {
                 <td>Lands in the Brief&apos;s &ldquo;Analyst / Strategist Reports&rdquo; dropbox — picked up automatically on the next Brief refresh.</td>
                 <td className="font-mono">Strategist note from Newton</td>
               </tr>
+              <tr>
+                <td className="font-mono">Strategy: / Technical: / FX:</td>
+                <td>PDF, or the text pasted in the body</td>
+                <td>A strategy, technical or currency report from RBC, J.P. Morgan or anyone else. Follow the prefix with the firm: <span className="font-mono">RBC</span>, <span className="font-mono">JPM</span> or <span className="font-mono">Other</span>. Summarised and filed on Strategists (and Monitors › Currency outlook); kept one year.</td>
+                <td className="font-mono">FX: RBC – monthly forecasts</td>
+              </tr>
               {/* ── Research lists (Fundstrat / RBC / Seeking Alpha / FEW) ── */}
               <tr>
                 <td className="font-mono">Fundstrat Top</td>

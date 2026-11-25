@@ -247,7 +247,7 @@ export function buildStages(d: PipelineData): StageCell[] {
       label: "Portfolio",
       count: d.portfolioCount,
       title: "Scoreable stocks (ETFs / funds excluded)",
-      href: "/",
+      href: "/holdings",
     },
     {
       key: "underwritten",

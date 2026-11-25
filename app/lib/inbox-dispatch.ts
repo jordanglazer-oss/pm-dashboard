@@ -50,6 +50,7 @@ import { logResearchRemovals } from "./research-removals";
 import type { ResearchState } from "./defaults";
 import { defaultResearch, defaultMarketData } from "./defaults";
 import { appendStrategistNote } from "./forward-looking";
+import { fileStrategistReport, parseReportSubject } from "./strategist-reports";
 import { syncCoreListsFromLeeNote, describeCoreSync } from "./fundstrat-core-from-note";
 import { easternToday } from "./date-eastern";
 import { extractPdfText } from "./pdf-text";
@@ -86,6 +87,7 @@ export type InboxKind =
   | "street-takeaways"
   | "newton-note"
   | "lee-note"
+  | "strategy-report"
   | "unknown"
   | ResearchKind;
 
@@ -139,6 +141,11 @@ export function classifySubject(subject: string): InboxKind {
   if (/^sia(?:charts)?(?![a-z0-9])/i.test(s)) return "sia";
   if (/^(boostedai|boosted)\b/i.test(s)) return "boosted";
   if (/^(marketedge|chartscout)\b/i.test(s)) return "marketedge";
+  // Strategy / technical / currency reports from RBC, JPM or anyone else:
+  // "Strategy: RBC – …", "Technical: JPM – …", "FX: Other – …". Tested BEFORE
+  // "Strategist …" (the attachment dropbox) and before the "News: TICKER"
+  // convention further down, which would otherwise read "FX: RBC" as a ticker.
+  if (parseReportSubject(s)) return "strategy-report";
   if (/^strategist\b/i.test(s)) return "strategist";
   // Strategist NOTES — the daily Fundstrat reports. Preferred shape is the
   // report PDF forwarded unedited (text layer read locally, last 2 disclosure
@@ -424,6 +431,59 @@ export function stripEmailFooter(text: string): { text: string; stripped: boolea
   // Drop any separator line ("____", "--", whitespace) left dangling just
   // above the footer.
   return { text: text.slice(0, cut).replace(/[\s_\-–—*]+$/, "").trim(), stripped: true };
+}
+
+/**
+ * A strategy / technical / currency report from RBC, JPM or another firm
+ * ("Strategy: RBC – …", "Technical: JPM – …", "FX: Other – …"). The PDF's
+ * text layer is read locally (an image-only PDF is handed to the model as a
+ * document instead); a pasted email body works too. One model call writes the
+ * short and the full summary; the text goes to Blob and the record to its own
+ * Redis key, kept a year. Writes nothing else — no score, no model, no brief.
+ */
+async function handleStrategyReport(subject: string, bodyText: string, dataUrl?: string): Promise<DispatchResult> {
+  const kind: InboxKind = "strategy-report";
+  const parsed = parseReportSubject(subject.trim().replace(/^(?:\s*(?:fw|fwd|re|tr|wg|aw|rv)\s*:\s*)+/i, ""));
+  if (!parsed) return { ok: false, kind, status: 400, message: "Subject is not a Strategy: / Technical: / FX: report" };
+
+  let text = "";
+  let source: "pdf" | "body" = "body";
+  let pdfForModel: string | undefined;
+  const detail: Record<string, unknown> = { firm: parsed.firm, reportKind: parsed.kind };
+
+  if (dataUrl && isPdfDataUrl(dataUrl)) {
+    source = "pdf";
+    try {
+      const pdf = await extractPdfText(dataUrl, 0);
+      text = pdf.text;
+      detail.pages = pdf.totalPages;
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      return { ok: false, kind, status: 400, message: `Report PDF could not be parsed: ${msg}` };
+    }
+    // No text layer (a scanned or image-only PDF): let the model read the PDF itself.
+    if (text.length < 200) {
+      text = "";
+      pdfForModel = dataUrl;
+      detail.imageOnly = true;
+    }
+  } else {
+    const stripped = stripEmailFooter((bodyText ?? "").trim());
+    text = stripped.text;
+    if (text.length < 200) {
+      return { ok: false, kind, status: 400, message: `Report email had no usable content (${text.length} chars) — attach the PDF, or paste the report text into the body.` };
+    }
+  }
+
+  const res = await fileStrategistReport({ parsed, subject, text, source, today: easternToday(), pdfDataUrl: pdfForModel });
+  if (!res.ok) return { ok: false, kind, status: 500, message: res.error };
+  const r = res.report;
+  const who = [r.firm === "Other" ? r.firmName || "Other" : r.firm, r.author].filter(Boolean).join(" · ");
+  detail.id = r.id;
+  detail.date = r.date;
+  if (res.duplicate) return { ok: true, kind, message: `${who}: already on file (${r.date}, "${r.title}") — not stored twice`, detail };
+  const tail = r.summary ? `stance: ${r.summary.stance}` : `stored WITHOUT a summary (${r.summaryError ?? "summary unavailable"})`;
+  return { ok: true, kind, message: `${who} ${r.kind} report filed for ${r.date} — "${r.title}" · ${tail}`, detail };
 }
 
 /** Fundstrat's daily notes always end with the SAME two disclosure pages.
@@ -1072,6 +1132,7 @@ export async function dispatchInbox(args: {
     case "equate":       return await handleEquate(att, label);
     case "strategist":   return await handleStrategist(att, label);
     case "street-takeaways": return await handleStreetTakeaways(args.bodyText ?? "", args.subject);
+    case "strategy-report": return await handleStrategyReport(args.subject, args.bodyText ?? "", args.dataUrl);
     case "newton-note":  return await handleStrategistNote("newton", args.bodyText ?? "", args.subject, args.dataUrl);
     case "lee-note":     return await handleStrategistNote("lee", args.bodyText ?? "", args.subject, args.dataUrl);
     case "analyst-report": return null;  // existing flow handles this

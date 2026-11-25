@@ -33,7 +33,8 @@ export function pageLabel(path: string): string {
   }
   const base = path.split("?")[0];
   const MAP: Record<string, string> = {
-    "/": "Holdings",
+    "/": "Snapshot",
+    "/holdings": "Holdings",
     "/scoring": "Holdings",
     "/portfolio": "Positioning",
     "/pim-model": "Models",

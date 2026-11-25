@@ -1419,6 +1419,15 @@ export async function appendStrategistNote(
     history[strategist] = entries.filter((e) => e.date >= cutoff);
 
     await redis.set(STRATEGIST_HISTORY_KEY, JSON.stringify(history));
+
+    // One-year archive (Nov 2026). pm:strategist-history above stays the
+    // Brief's 30-day working window — the brief sends that whole window to
+    // the model, so it must not grow. The long history lives in the
+    // strategist-report store instead. Write-aside: never throws.
+    if (trimmed) {
+      const { archiveFundstratNote } = await import("./strategist-reports");
+      await archiveFundstratNote(strategist, targetDate, trimmed);
+    }
   } catch (e) {
     console.error(`Strategist history write failed (${strategist}):`, e);
   }

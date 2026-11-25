@@ -38,8 +38,8 @@ const ELSEWHERE: Elsewhere[] = [
   { key: "thesis", title: "Thesis", sources: ["kill", "coverage"], href: "/thesis", where: "Thesis desk" },
   // Alerts and change events are per-holding; Holdings carries the attention
   // row and the Changes panel.
-  { key: "alerts", title: "Alerts", sources: ["alert"], href: "/", where: "Holdings" },
-  { key: "changes", title: "Changes", sources: ["change"], href: "/", where: "Holdings" },
+  { key: "alerts", title: "Alerts", sources: ["alert"], href: "/holdings", where: "Holdings" },
+  { key: "changes", title: "Changes", sources: ["change"], href: "/holdings", where: "Holdings" },
   // Prints are read off the Calendar on this page, then actioned on the name.
   { key: "prints", title: "Prints", sources: ["earnings"], href: "#s-calendar", where: "Calendar" },
   // Entry-ready names are worked in the Pipeline.

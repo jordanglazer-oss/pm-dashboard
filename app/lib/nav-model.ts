@@ -24,60 +24,64 @@ export type NavGroup = {
   hue: "today" | "portfolio" | "ideas" | "research";
 };
 
+/**
+ * Nov 24 2026 hackathon scaffold: the rail is regrouped into the two sections
+ * the team asked for — "Portfolio & Research" (views you drill into) and
+ * "Tools" (click to generate). NOTHING was removed: every page that is not
+ * yet placed by the team sits in the third group until they decide. The team
+ * finalises the tab list in session; this is the starting point.
+ */
 export const NAV_GROUPS: NavGroup[] = [
   {
-    label: "Today",
-    hue: "today",
+    label: "Portfolio & Research",
+    hue: "portfolio",
     items: [
+      { key: "snapshot", label: "Snapshot", href: "/", icon: "pie" },
       { key: "brief", label: "Brief", href: "/brief", icon: "sun" },
-      { key: "hedging", label: "Hedging", href: "/hedging", icon: "umbrella" },
-      { key: "monitor", label: "Monitor", href: "/monitor", icon: "eye" },
+      { key: "holdings", label: "Holdings", href: "/holdings", icon: "table", match: (p) => p === "/scoring" || p.startsWith("/stock/") },
+      { key: "models", label: "Models", href: "/pim-model", icon: "layers" },
+      { key: "performance", label: "Performance", href: "/aa-performance", icon: "trend", match: (p) => p === "/attribution" },
+      { key: "strategists", label: "Strategists", href: "/strategists", icon: "chat" },
+      { key: "ranked", label: "Market research", href: "/research", icon: "list" },
+      { key: "monitors", label: "Monitors", href: "/monitors", icon: "shield" },
+      { key: "watchlist", label: "Ideas", href: "/watchlist", icon: "spark" },
     ],
   },
   {
-    label: "Portfolio",
-    hue: "portfolio",
+    label: "Tools",
+    hue: "research",
     items: [
-      { key: "holdings", label: "Holdings", href: "/", icon: "table", match: (p) => p === "/scoring" || p.startsWith("/stock/") },
+      { key: "pm-monthly", label: "PM Monthly", href: "/pm-monthly", icon: "mail" },
+      { key: "client-report", label: "Client report", href: "/client-report", icon: "doc" },
+      { key: "funds", label: "Fund one-pagers", href: "/funds", icon: "doc" },
+      { key: "chat", label: "Ask", href: "/chat", icon: "chat" },
+      { key: "inbox", label: "Inbox", href: "/inbox", icon: "inbox" },
+    ],
+  },
+  {
+    // Existing pages the team has not placed yet. Unchanged; nothing removed.
+    label: "Not yet sorted",
+    hue: "ideas",
+    items: [
       { key: "positioning", label: "Positioning", href: "/portfolio", icon: "pie", match: (p) => p.startsWith("/portfolio") },
       { key: "review", label: "Review", href: "/review", icon: "calendar" },
-      { key: "models", label: "Models", href: "/pim-model", icon: "layers" },
-      { key: "performance", label: "Performance", href: "/aa-performance", icon: "trend", match: (p) => p === "/attribution" },
       { key: "risk", label: "Risk", href: "/risk", icon: "shield" },
       { key: "thesis", label: "Thesis", href: "/thesis", icon: "filecheck" },
       { key: "themes", label: "Themes", href: "/themes", icon: "star" },
-      { key: "funds", label: "Funds", href: "/funds", icon: "doc" },
-      { key: "pm-monthly", label: "PM Monthly", href: "/pm-monthly", icon: "mail" },
       { key: "journal", label: "Journal", href: "/journal", icon: "book" },
-    ],
-  },
-  {
-    label: "Ideas",
-    hue: "ideas",
-    items: [
       { key: "synthesis", label: "Synthesis", href: "/synthesis", icon: "spark" },
       { key: "pipeline", label: "Pipeline", href: "/funnel", icon: "branch", match: (p) => p === "/conviction" },
-      { key: "watchlist", label: "Watchlist", href: "/watchlist", icon: "eye" },
-    ],
-  },
-  {
-    label: "Research",
-    hue: "research",
-    items: [
-      { key: "ranked", label: "Ranked", href: "/research", icon: "list" },
-      { key: "sources", label: "Sources", href: "/research/sources", icon: "inbox" },
-      { key: "inbox", label: "Inbox", href: "/inbox", icon: "mail" },
+      { key: "sources", label: "Research sources", href: "/research/sources", icon: "inbox" },
+      { key: "hedging", label: "Hedging", href: "/hedging", icon: "umbrella" },
+      { key: "monitor", label: "Watchers", href: "/monitor", icon: "eye" },
+      { key: "redesign", label: "Redesign options", href: "/redesign", icon: "spark", match: (p) => p.startsWith("/redesign") },
     ],
   },
 ];
 
-/** Rail footer: utilities that are not a hub page. */
-export const NAV_UTILITIES: NavItem[] = [
-  { key: "chat", label: "Ask", href: "/chat", icon: "chat" },
-  { key: "client-report", label: "Client report", href: "/client-report", icon: "doc" },
-  // Nov 2026 team rebuild: design options beside the existing screens.
-  { key: "redesign", label: "Redesign options", href: "/redesign", icon: "spark", match: (p) => p.startsWith("/redesign") },
-];
+/** Rail footer utilities. Empty since the Nov 2026 regroup (Ask and Client
+ *  report moved into Tools); kept so the footer code path is unchanged. */
+export const NAV_UTILITIES: NavItem[] = [];
 
 /** Under the System popover, with the health rows. */
 export const SYSTEM_LINKS: { label: string; href: string }[] = [

@@ -1503,7 +1503,7 @@ export default function StockDetailPage() {
 
   const handleDelete = () => {
     removeStock(ticker);
-    router.push("/");
+    router.push("/holdings");
   };
   // ── Identity-row derived facts ──
   const exchangeLabel = ticker.endsWith(".TO") || ticker.endsWith("-T") ? "TSX" : /^[A-Z]{2,4}\d{2,5}$/i.test(ticker) ? "FundServ" : "US";

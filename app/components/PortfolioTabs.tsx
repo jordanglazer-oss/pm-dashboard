@@ -10,7 +10,7 @@ import { usePathname, useRouter } from "next/navigation";
  * Routes are unchanged.
  */
 export const PORTFOLIO_SEGMENTS: { label: string; href: string }[] = [
-  { label: "Holdings", href: "/" },
+  { label: "Holdings", href: "/holdings" },
   { label: "Positioning", href: "/portfolio" },
   { label: "Review", href: "/review" },
   { label: "Models", href: "/pim-model" },
@@ -25,7 +25,7 @@ export function PortfolioTabs() {
   const router = useRouter();
 
   const isHub =
-    pathname === "/" ||
+    pathname === "/holdings" ||
     pathname === "/scoring" ||
     pathname.startsWith("/stock/") ||
     pathname.startsWith("/portfolio") ||
@@ -46,7 +46,7 @@ export function PortfolioTabs() {
     : pathname === "/journal" ? "/journal"
     : pathname === "/review" ? "/review"
     : pathname.startsWith("/portfolio") ? "/portfolio"
-    : "/";
+    : "/holdings";
 
   useEffect(() => {
     if (!isHub) return;

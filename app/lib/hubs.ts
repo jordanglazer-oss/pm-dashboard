@@ -11,6 +11,7 @@ export type Hub = "Brief" | "Portfolio" | "Ideas" | "Research" | "More";
 const ALIASES: Record<string, Hub> = {
   // Portfolio segments
   "/": "Portfolio",
+  "/holdings": "Portfolio",
   "/scoring": "Portfolio",
   "/portfolio": "Portfolio",
   "/pim-model": "Portfolio",
