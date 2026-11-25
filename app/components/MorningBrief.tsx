@@ -2,7 +2,8 @@
 
 import { usePersistedOpen } from "@/app/lib/useCollapsed";
 import { getTodayET } from "@/app/lib/market-hours";
-import { closeLabel, lastMarketClose } from "@/app/lib/last-close";
+import { closeLabel, enteredForClose, lastMarketClose, noteIsCurrent } from "@/app/lib/last-close";
+import { easternToday } from "@/app/lib/date-eastern";
 import { DeploymentLog, type LedgerStatus } from "@/app/components/DeploymentLog";
 import { CashScoreWorking } from "@/app/components/CashScoreWorking";
 import React, { useState, useEffect, useCallback, useMemo, useRef } from "react";
@@ -1120,10 +1121,12 @@ export function MorningBrief({
            handler and persistence path from the previous layout is preserved
            verbatim — this is reorganization plus a computed progress read,
            not a rewrite of behaviour. ── */
-        const today = new Date().toISOString().slice(0, 10);
+        // The trading day (Eastern), never the UTC date — UTC rolls over at
+        // 7 pm Eastern and made same-day entries read as "not entered".
+        const today = easternToday();
         const bo = marketData.breadthOverride ?? {};
         const editedMap = (bo.editedAt ?? {}) as Record<string, string | undefined>;
-        const enteredToday = (f: string) => (editedMap[f] ?? "").slice(0, 10) === today;
+        const enteredToday = (f: string) => enteredForClose(editedMap[f]);
         // 9 tracked fields: 6 core breadth + the up/down volume pair + 2 notes.
         const CORE: [string, string][] = [
           ["above200", "S&P > 200DMA"],
@@ -1134,8 +1137,8 @@ export function MorningBrief({
           ["newLows", "NYSE new lows"],
         ];
         const volDone = enteredToday("upVolume") && enteredToday("downVolume");
-        const newtonDone = Boolean(marketData.strategistNotes?.newton) && (marketData.strategistNotes?.newtonDate ?? "") === today;
-        const leeDone = Boolean(marketData.strategistNotes?.lee) && (marketData.strategistNotes?.leeDate ?? "") === today;
+        const newtonDone = Boolean(marketData.strategistNotes?.newton) && noteIsCurrent(marketData.strategistNotes?.newtonDate, marketData.strategistNotes?.newtonTiming ?? "prior-close");
+        const leeDone = Boolean(marketData.strategistNotes?.lee) && noteIsCurrent(marketData.strategistNotes?.leeDate, marketData.strategistNotes?.leeTiming ?? "pre-market");
         const missing: string[] = [
           ...CORE.filter(([f]) => !enteredToday(f)).map(([, l]) => l),
           ...(volDone ? [] : ["up/down volume"]),
@@ -1203,7 +1206,7 @@ export function MorningBrief({
         const topStamps = (marketData.manualEditedAt ?? {}) as Record<string, string | undefined>;
         const topState = (f: string) => {
           const ts = topStamps[f];
-          if ((ts ?? "").slice(0, 10) === today) return { label: "saved", cls: "text-pos" };
+          if (enteredForClose(ts)) return { label: "saved", cls: "text-pos" };
           return ts ? { label: ts.slice(5, 10), cls: "text-warn" } : { label: "no date", cls: "text-ink-faint" };
         };
         const saveTop = (f: "putCall" | "spOscillator", n: number) =>
