@@ -36,8 +36,43 @@ function isFundservCode(ticker: string): boolean {
 
 type Row = readonly [number, number]; // [epochMs, adjClose]
 
-async function fetchSeries(ticker: string, range: string): Promise<Row[]> {
-  if (isFundservCode(ticker)) return [];
+/**
+ * Mutual fund NAV history WITH distributions reinvested (Nov 2026).
+ *
+ * A fund's NAV drops by the amount of each distribution, so a return taken
+ * from the plain NAV understates what an investor earned — badly for income
+ * funds that pay monthly (checked 2026-11-24: FID5982 year to date reads
+ * +32.1% on plain NAV and +38.0% with its January distribution reinvested;
+ * FactSet shows +37.9%). The same Globe / Barchart end-of-day feed the app
+ * already uses for fund prices returns a distribution-adjusted series when
+ * asked (`dividends=true&backadjust=true`).
+ *
+ * OPT-IN (`funds: true` in the body) so existing callers — the Client
+ * Report's metrics — are unchanged.
+ */
+async function fetchFundSeries(code: string, range: string): Promise<Row[]> {
+  const years = /^(\d+)y$/i.exec(range)?.[1];
+  const records = Math.min(2600, Math.max(300, (years ? Number(years) : 1) * 262));
+  try {
+    const url = `https://globeandmail.pl.barchart.com/proxies/timeseries/queryeod.ashx?symbol=${encodeURIComponent(`${code.toUpperCase()}.CF`)}&data=daily&maxrecords=${records}&volume=contract&order=asc&dividends=true&backadjust=true`;
+    const res = await fetch(url, { cache: "no-store", headers: { "User-Agent": "Mozilla/5.0", Referer: "https://www.theglobeandmail.com/" } });
+    if (!res.ok) return [];
+    const out: Row[] = [];
+    for (const line of (await res.text()).trim().split("\n")) {
+      const p = line.split(",");
+      const close = parseFloat(p[5]);
+      // Stamp at 16:00 UTC so the date reads the same in Eastern time.
+      const ms = /^\d{4}-\d{2}-\d{2}$/.test(p[1] ?? "") ? Date.parse(`${p[1]}T16:00:00Z`) : NaN;
+      if (Number.isFinite(close) && close > 0 && Number.isFinite(ms)) out.push([ms, close] as const);
+    }
+    return out;
+  } catch {
+    return [];
+  }
+}
+
+async function fetchSeries(ticker: string, range: string, funds = false): Promise<Row[]> {
+  if (isFundservCode(ticker)) return funds ? fetchFundSeries(ticker, range) : [];
   const yahoo = toYahoo(ticker);
   try {
     const url = `${YAHOO_BASE}/v8/finance/chart/${encodeURIComponent(
@@ -72,7 +107,7 @@ async function fetchSeries(ticker: string, range: string): Promise<Row[]> {
 }
 
 export async function POST(req: NextRequest) {
-  let body: { tickers?: unknown; range?: unknown };
+  let body: { tickers?: unknown; range?: unknown; funds?: unknown };
   try {
     body = await req.json();
   } catch {
@@ -92,7 +127,7 @@ export async function POST(req: NextRequest) {
   // rate-limit territory.
   const batch = tickers.slice(0, 50);
   const entries = await Promise.all(
-    batch.map(async (t) => [t, await fetchSeries(t, range)] as const)
+    batch.map(async (t) => [t, await fetchSeries(t, range, body.funds === true)] as const)
   );
   const series: Record<string, Row[]> = {};
   for (const [t, s] of entries) series[t] = s;

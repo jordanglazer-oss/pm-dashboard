@@ -111,8 +111,9 @@ const fmtDay = (iso: string | null | undefined) => {
   return Number.isNaN(d.getTime()) ? "—" : d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric", timeZone: plain ? "UTC" : ET });
 };
 
-/** Price-history ticker for a model symbol (FUNDSERV codes return nothing — shown as "—"). */
-const historyTicker = (sym: string) => (sym.endsWith("-T") ? yahooClassShare(sym.replace(/-T$/, ".TO")) : sym);
+const isFund = (sym: string) => /^[A-Z]{2,4}\d{2,5}(-T)?$/i.test(sym);
+/** Price-history ticker for a model symbol. Mutual funds (FUNDSERV codes) go bare, and get their NAV history with distributions reinvested. */
+const historyTicker = (sym: string) => (isFund(sym) ? sym.replace(/-T$/i, "") : sym.endsWith("-T") ? yahooClassShare(sym.replace(/-T$/, ".TO")) : sym);
 
 function useHoldingHistory(symbols: string[]): { series: Record<string, Pt[]>; at: string | null } {
   const key = symbols.join(",");
@@ -121,7 +122,7 @@ function useHoldingHistory(symbols: string[]): { series: Record<string, Pt[]>; a
     if (!key) return;
     let alive = true;
     const syms = key.split(",");
-    fetch("/api/report-history", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ tickers: syms.map(historyTicker), range: "5y" }) })
+    fetch("/api/report-history", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ tickers: syms.map(historyTicker), range: "5y", funds: true }) })
       .then((r) => (r.ok ? r.json() : null))
       .then((d: { series?: Record<string, [number, number][]>; fetchedAt?: string } | null) => {
         if (!alive || !d?.series) return;
@@ -357,7 +358,11 @@ export default function Snapshot() {
 
   const holdingsTable = (ccy: "CAD" | "USD") => {
     const ret = (sym: string) => periodReturn(hist.series[sym] ?? [], period, inception);
-    const val = (h: (typeof held)[number]) => (heldSort.key === "name" ? h.name || h.symbol : heldSort.key === "ticker" ? h.symbol : heldSort.key === "ret" ? ret(h.symbol) : heldSort.key === "day" ? day.moves[h.symbol] : h.weight);
+    const dayMove = (sym: string) => {
+      const sr = isFund(sym) ? (hist.series[sym] ?? []) : [];
+      return sr.length >= 2 ? (sr[sr.length - 1].value / sr[sr.length - 2].value - 1) * 100 : day.moves[sym];
+    };
+    const val = (h: (typeof held)[number]) => (heldSort.key === "name" ? h.name || h.symbol : heldSort.key === "ticker" ? h.symbol : heldSort.key === "ret" ? ret(h.symbol) : heldSort.key === "day" ? dayMove(h.symbol) : h.weight);
     const rows = held.filter((h) => h.currency === ccy).sort((a, b) => compare(val(a), val(b), heldSort.dir));
     if (!rows.length) return null;
     const sub = rows.reduce((a, h) => a + h.weight, 0);
@@ -370,7 +375,10 @@ export default function Snapshot() {
         </tr>
         {rows.map((h) => {
           const r = ret(h.symbol);
-          const d1 = day.moves[h.symbol];
+          // A mutual fund has no intraday price: its "today" is the latest NAV vs the one before, dated.
+          const navSeries = isFund(h.symbol) ? (hist.series[h.symbol] ?? []) : [];
+          const nav = navSeries.length >= 2 ? { move: (navSeries[navSeries.length - 1].value / navSeries[navSeries.length - 2].value - 1) * 100, date: navSeries[navSeries.length - 1].date } : null;
+          const d1 = nav ? nav.move : day.moves[h.symbol];
           return (
             <tr key={h.symbol}>
               <td className={TDc} style={{ borderColor: T.rule }}>
@@ -378,7 +386,10 @@ export default function Snapshot() {
               </td>
               <td className={`${TDc} whitespace-nowrap text-[13px] tabular-nums`} style={{ borderColor: T.rule, color: T.muted }}>{h.symbol}</td>
               <td className={`${TDc} text-right text-[15px] font-semibold tabular-nums`} style={{ borderColor: T.rule, color: T.navy }}>{pct(h.weight)}</td>
-              <td className={`${TDc} text-right text-[15px] tabular-nums`} style={{ borderColor: T.rule, color: tone(d1) }}>{signed(d1)}</td>
+              <td className={`${TDc} text-right text-[15px] tabular-nums`} style={{ borderColor: T.rule, color: tone(d1) }}>
+                {signed(d1)}
+                {nav && <div className="text-[11.5px] font-normal" style={{ color: T.muted }} title="A mutual fund is priced once a day; this is its latest NAV against the one before">NAV {fmtDay(nav.date).replace(/, \d{4}$/, "")}</div>}
+              </td>
               <td className={`${TDc} text-right text-[15px] tabular-nums`} style={{ borderColor: T.rule, color: tone(r) }}>{signed(r)}</td>
             </tr>
           );
@@ -490,7 +501,7 @@ export default function Snapshot() {
                   </table>
                 </div>
                 <p className="mt-2 text-[12.5px]" style={{ color: T.muted }}>
-                  One line per position as held; funds and ETFs are a single line. Weights are {data?.weightsSource === "live" ? "live (positions × latest prices)" : "the model targets (no positions on file)"}. Click a heading to sort (within each currency group). Today = latest price vs the prior close. {periodLabel} = total return over {periodLong}. Both are in each holding&apos;s own currency, from Yahoo Finance{hist.at ? ` (${fmtDay(hist.at)})` : ""}; “—” = no price history (mutual funds) or not held that long.
+                  One line per position as held; funds and ETFs are a single line. Weights are {data?.weightsSource === "live" ? "live (positions × latest prices)" : "the model targets (no positions on file)"}. Click a heading to sort (within each currency group). Today = latest price vs the prior close. {periodLabel} = total return over {periodLong}. Both are in each holding&apos;s own currency, from Yahoo Finance{hist.at ? ` (${fmtDay(hist.at)})` : ""}. Mutual funds use their daily NAV with distributions reinvested (Globe and Mail fund data), so their &ldquo;today&rdquo; is the latest NAV, dated. “—” = no price history, or not held that long.
                 </p>
               </>
             ) : (
