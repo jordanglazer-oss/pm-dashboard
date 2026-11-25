@@ -686,6 +686,12 @@ export type MarketData = {
     // a stale value left over from a previous session). Persisted alongside
     // the values in pm:market, so the tags survive refreshes / sync across
     // devices. Keyed by the same field names as above.
+    /** A catch-up as-of date chosen in the form ("Change"), for entering an
+     *  older day's numbers. Honoured only on the Eastern day in
+     *  `manualDateSetOn`; otherwise the date is the most recent market close,
+     *  assigned by the server (app/lib/last-close.ts). */
+    manualDate?: string;
+    manualDateSetOn?: string;
     editedAt?: {
       above200?: string; above50?: string;
       broadAbove200?: string; broadAbove50?: string;

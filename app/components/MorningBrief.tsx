@@ -1,6 +1,8 @@
 "use client";
 
 import { usePersistedOpen } from "@/app/lib/useCollapsed";
+import { getTodayET } from "@/app/lib/market-hours";
+import { closeLabel, lastMarketClose } from "@/app/lib/last-close";
 import { DeploymentLog, type LedgerStatus } from "@/app/components/DeploymentLog";
 import { CashScoreWorking } from "@/app/components/CashScoreWorking";
 import React, { useState, useEffect, useCallback, useMemo, useRef } from "react";
@@ -521,6 +523,8 @@ export function MorningBrief({
   // fetched automatically with direct source links for user verification.
   const [forwardData, setForwardData] = useState<ForwardLookingBundle | null>(null);
   const [forwardLoading, setForwardLoading] = useState(false);
+  // The breadth "Change date" picker — a transient inline form (catch-up only).
+  const [breadthDateOpen, setBreadthDateOpen] = useState(false);
   const [forwardError, setForwardError] = useState<string | null>(null);
 
   // Deterministic regime snapshot from /api/market-regime (pm:market-regime).
@@ -1145,6 +1149,28 @@ export function MorningBrief({
         const marked = uiPrefs["briefInputMarked"] === today;
         const effectiveMissing = marked ? [] : missing;
 
+        // Which close the breadth numbers describe — worked out, never typed:
+        // the previous trading day before 4 pm Eastern, today from 4 pm;
+        // weekends and market holidays roll back (app/lib/last-close.ts).
+        // "Change" below sets a catch-up date that lasts only for today.
+        const todayEastern = getTodayET();
+        const autoClose = lastMarketClose();
+        const boDates = (marketData.breadthOverride ?? {}) as { manualDate?: string; manualDateSetOn?: string };
+        const catchUpDate = boDates.manualDate && boDates.manualDateSetOn === todayEastern && boDates.manualDate <= todayEastern ? boDates.manualDate : null;
+        const breadthAsOf = catchUpDate ?? autoClose;
+        const setCatchUpDate = (d: string | null) => {
+          const prev = { ...(marketData.breadthOverride ?? {}) } as Record<string, unknown>;
+          if (d) {
+            prev.manualDate = d;
+            prev.manualDateSetOn = todayEastern;
+            prev.date = d;
+          } else {
+            delete prev.manualDate;
+            delete prev.manualDateSetOn;
+            prev.date = autoClose;
+          }
+          onUpdateMarketData({ breadthOverride: prev } as Partial<MarketData>);
+        };
         const updateBreadthField = (field: string, raw: string) => {
           const v = raw === "" ? undefined : parseFloat(raw);
           const prev = marketData.breadthOverride ?? {};
@@ -1152,13 +1178,16 @@ export function MorningBrief({
           const nextEditedAt: Record<string, string> = { ...(prev.editedAt ?? {}) };
           if (valid) nextEditedAt[field] = new Date().toISOString();
           else delete nextEditedAt[field];
+          // The date is not the PM's job: these are end-of-session figures, so
+          // they describe the most recent market close (or the catch-up date
+          // chosen today). The server assigns the same date on save.
           onUpdateMarketData({
-            breadthOverride: { ...prev, date: prev.date ?? today, [field]: valid ? v : undefined, editedAt: nextEditedAt },
+            breadthOverride: { ...prev, date: breadthAsOf, [field]: valid ? v : undefined, editedAt: nextEditedAt },
           });
         };
         const clearAllBreadth = () => {
           if (!window.confirm("Clear all manual breadth values? You'll need to re-enter them from the source.")) return;
-          onUpdateMarketData({ breadthOverride: { date: today } });
+          onUpdateMarketData({ breadthOverride: { date: breadthAsOf } });
         };
         const numVal = (v: unknown): number | "" => (typeof v === "number" ? v : "");
         const BC = {
@@ -1334,16 +1363,37 @@ export function MorningBrief({
                       {volDone ? "saved" : bo.upVolume != null || bo.downVolume != null ? "partial" : "empty"}
                     </span>
                   </div>
-                  {/* Entry date — must equal today to be used by the brief. */}
-                  <div className="flex items-center gap-2 px-3.5 py-2">
-                    <span className="text-[12.5px] text-ink-2">Entry date</span>
-                    <input
-                      type="date"
-                      value={bo.date ?? today}
-                      onChange={(e) => onUpdateMarketData({ breadthOverride: { ...marketData.breadthOverride, date: e.target.value } })}
-                      className="ml-auto h-7 rounded-control border border-line bg-surface px-2.5 font-mono text-[12.5px] text-ink-2 outline-none transition-colors focus:border-accent-border"
-                      title="Must equal today's UTC date to be used. Earlier dates are treated as 'not entered today'."
-                    />
+                  {/* As-of date — worked out automatically; no box to fill in. */}
+                  <div className="flex flex-wrap items-center gap-x-2 gap-y-1 px-3.5 py-2">
+                    <span className="text-[12.5px] text-ink-2">As of</span>
+                    <span className="text-[12.5px] font-medium text-ink">{closeLabel(breadthAsOf)} close</span>
+                    {catchUpDate ? (
+                      <>
+                        <span className="text-[11px] text-warn">catch-up date, today only</span>
+                        <button type="button" onClick={() => { setCatchUpDate(null); setBreadthDateOpen(false); }} className="ml-auto text-[11.5px] text-accent hover:underline">
+                          Back to automatic ({closeLabel(autoClose)})
+                        </button>
+                      </>
+                    ) : breadthDateOpen ? (
+                      <span className="ml-auto flex items-center gap-2">
+                        <input
+                          type="date"
+                          max={todayEastern}
+                          defaultValue={autoClose}
+                          onChange={(e) => { if (/^\d{4}-\d{2}-\d{2}$/.test(e.target.value) && e.target.value !== autoClose) setCatchUpDate(e.target.value); }}
+                          aria-label="Catch-up date for these breadth numbers"
+                          className="h-7 rounded-control border border-line bg-surface px-2.5 font-mono text-[12.5px] text-ink-2 outline-none transition-colors focus:border-accent-border"
+                        />
+                        <button type="button" onClick={() => setBreadthDateOpen(false)} className="text-[11.5px] text-ink-3 hover:underline">Cancel</button>
+                      </span>
+                    ) : (
+                      <>
+                        <span className="text-[11px] text-ink-3">set automatically</span>
+                        <button type="button" onClick={() => setBreadthDateOpen(true)} className="ml-auto text-[11.5px] text-accent hover:underline" title="Only needed when entering numbers for an older day">
+                          Change
+                        </button>
+                      </>
+                    )}
                   </div>
                 </div>
                 <div className="flex flex-wrap items-center gap-x-3 gap-y-1 border-t border-line-soft px-3.5 py-2 text-[11px] text-ink-3">
