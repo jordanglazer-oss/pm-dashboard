@@ -6,6 +6,7 @@ import {
   appendOscillatorEntry,
   appendPutCallEntry,
   appendStrategistNote,
+  logManualBreadth,
 } from "@/app/lib/forward-looking";
 
 const KEY = "pm:market";
@@ -45,6 +46,15 @@ export async function PUT(req: NextRequest) {
         merged.manualEditedAt = { ...(merged.manualEditedAt ?? {}), [f]: stampNow };
       }
     }
+    // Hand-entered breadth is logged to pm:breadth-history NOW (it used to
+    // wait for a later page load). When these are a new day's numbers typed
+    // under an as-of date that was never advanced, they are filed under today
+    // so the earlier day's row survives — and the stored as-of date follows,
+    // so the form and every reader agree on the date.
+    if (updates?.breadthOverride && typeof updates.breadthOverride === "object") {
+      const logged = await logManualBreadth(merged.breadthOverride);
+      if (logged?.advanced) merged.breadthOverride = { ...merged.breadthOverride, date: logged.date };
+    }
     await redis.set(KEY, JSON.stringify(merged));
 
     // If the PM updated the S&P Oscillator, append it to the rolling history
@@ -55,8 +65,9 @@ export async function PUT(req: NextRequest) {
       typeof updates?.spOscillator === "number" &&
       !isNaN(updates.spOscillator)
     ) {
-      // Fire-and-forget — failure to log shouldn't block the save.
-      appendOscillatorEntry(updates.spOscillator).catch((err) =>
+      // Awaited: a serverless function can be frozen once the response is
+      // sent, which would drop the entry. It never throws, so it can't fail the save.
+      await appendOscillatorEntry(updates.spOscillator).catch((err) =>
         console.error("Oscillator history append failed:", err)
       );
     }
@@ -66,7 +77,7 @@ export async function PUT(req: NextRequest) {
       typeof updates?.putCall === "number" &&
       !isNaN(updates.putCall)
     ) {
-      appendPutCallEntry(updates.putCall).catch((err) =>
+      await appendPutCallEntry(updates.putCall).catch((err) =>
         console.error("Put/Call history append failed:", err)
       );
     }
@@ -83,12 +94,12 @@ export async function PUT(req: NextRequest) {
         leeDate?: string;
       };
       if (typeof notes.newton === "string") {
-        appendStrategistNote("newton", notes.newton, notes.newtonDate).catch((err) =>
+        await appendStrategistNote("newton", notes.newton, notes.newtonDate).catch((err) =>
           console.error("Newton note history append failed:", err)
         );
       }
       if (typeof notes.lee === "string") {
-        appendStrategistNote("lee", notes.lee, notes.leeDate).catch((err) =>
+        await appendStrategistNote("lee", notes.lee, notes.leeDate).catch((err) =>
           console.error("Lee note history append failed:", err)
         );
         // A pasted Lee note carries the Fundstrat Core lists too — same sync
