@@ -1168,6 +1168,17 @@ export function MorningBrief({
           nh: "https://www.barchart.com/stocks/quotes/$MAHN",
           nl: "https://www.barchart.com/stocks/quotes/$MALN",
         };
+        // Put/call and the oscillator get the same "saved / date" tag as the
+        // breadth rows: a stamp per field in pm:market.manualEditedAt (also
+        // stamped server-side on every save, so any entry path is covered).
+        const topStamps = (marketData.manualEditedAt ?? {}) as Record<string, string | undefined>;
+        const topState = (f: string) => {
+          const ts = topStamps[f];
+          if ((ts ?? "").slice(0, 10) === today) return { label: "saved", cls: "text-pos" };
+          return ts ? { label: ts.slice(5, 10), cls: "text-warn" } : { label: "no date", cls: "text-ink-faint" };
+        };
+        const saveTop = (f: "putCall" | "spOscillator", n: number) =>
+          onUpdateMarketData({ [f]: n, manualEditedAt: { ...topStamps, [f]: new Date().toISOString() } } as Partial<MarketData>);
         const rowState = (f: string) => {
           if (enteredToday(f)) return { label: "saved", cls: "text-pos" };
           const ts = editedMap[f];
@@ -1360,19 +1371,21 @@ export function MorningBrief({
                       <span className="text-[11px] text-ink-faint">{marketData.spOscillator < 0 ? "oversold · bullish" : marketData.spOscillator > 0 ? "overbought · bearish" : "neutral"}</span>
                       <SaveableNumericInput
                         savedValue={marketData.spOscillator}
-                        onSave={(n) => onUpdateMarketData({ spOscillator: n })}
+                        onSave={(n) => saveTop("spOscillator", n)}
                         allowNegative
                         inputClassName={`ml-auto ${breadthInputCls}`}
                       />
+                      <span className={`w-11 shrink-0 text-right text-[11px] ${topState("spOscillator").cls}`} title="When this number was last entered">{topState("spOscillator").label}</span>
                     </div>
                     <div className="flex items-center gap-2 px-3.5 py-2">
                       <span className="text-[12.5px] text-ink">Put / call</span>
                       <a href="https://www.cboe.com/us/options/market_statistics/daily/" target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-[11px] text-accent hover:underline" title="CBOE Total Put/Call">CBOE <AppIcon name="external" size={11} /></a>
                       <SaveableNumericInput
                         savedValue={marketData.putCall}
-                        onSave={(n) => onUpdateMarketData({ putCall: n })}
+                        onSave={(n) => saveTop("putCall", n)}
                         inputClassName={`ml-auto ${breadthInputCls}`}
                       />
+                      <span className={`w-11 shrink-0 text-right text-[11px] ${topState("putCall").cls}`} title="When this number was last entered">{topState("putCall").label}</span>
                     </div>
                   </div>
                   <div className="grid grid-cols-1 gap-3 border-t border-line-soft px-3.5 py-3 sm:grid-cols-2">

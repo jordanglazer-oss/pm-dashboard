@@ -32,6 +32,19 @@ export async function PUT(req: NextRequest) {
     const raw = await redis.get(KEY);
     const existing = raw ? JSON.parse(raw) : defaultMarketData;
     const merged = { ...existing, ...updates };
+    // The two stamp maps are merged KEY BY KEY (a save that sends one field's
+    // stamp must not drop the other's), and a hand-entered put/call or
+    // oscillator value is always date-stamped here, whichever screen sent it
+    // — so a number typed today is never read as "not entered".
+    for (const k of ["manualEditedAt", "manualEditedBy"] as const) {
+      if (existing?.[k] || updates?.[k]) merged[k] = { ...(existing?.[k] ?? {}), ...(updates?.[k] ?? {}) };
+    }
+    const stampNow = new Date().toISOString();
+    for (const f of ["putCall", "spOscillator"] as const) {
+      if (typeof updates?.[f] === "number" && !isNaN(updates[f]) && !updates?.manualEditedAt?.[f]) {
+        merged.manualEditedAt = { ...(merged.manualEditedAt ?? {}), [f]: stampNow };
+      }
+    }
     await redis.set(KEY, JSON.stringify(merged));
 
     // If the PM updated the S&P Oscillator, append it to the rolling history

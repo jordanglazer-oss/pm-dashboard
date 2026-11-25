@@ -596,6 +596,14 @@ export type MarketData = {
   putCall: number;
   termStructure: string;
   spOscillator: number;
+  /** When each hand-entered TOP-LEVEL number (putCall, spOscillator) was last
+   *  saved — ISO stamps, the counterpart of breadthOverride.editedAt. Stamped
+   *  server-side in PUT /api/kv/market whenever one of those numbers is sent,
+   *  so every entry path is covered. Absent on values saved before Nov 2026. */
+  manualEditedAt?: Record<string, string | undefined>;
+  /** Who typed each hand-entered number (the "Update manual inputs" screen). */
+  manualEditedBy?: Record<string, string | undefined>;
+  manualLastBy?: string;
   /** @deprecated Removed from the brief in 2026-05. Field kept for
    *  backward compat with persisted marketData blobs but no longer
    *  read or rendered. Safe to ignore. */
