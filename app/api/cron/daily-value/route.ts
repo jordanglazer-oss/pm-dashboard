@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { refreshDailyValues } from "@/app/lib/daily-value-refresh";
 import { emailIfBackupStale } from "@/app/lib/backup-alert";
+import { updateFundNavLog } from "@/app/lib/fund-nav-log";
 
 /**
  * GET /api/cron/daily-value — weekday after-close (21:30 UTC = 17:30 ET,
@@ -11,7 +12,7 @@ import { emailIfBackupStale } from "@/app/lib/backup-alert";
  *
  * Redis: writes only what /api/update-daily-value already writes
  * (pm:pim-performance, pm:appendix-daily-values), via that route's own
- * read-modify-write. Best-effort — a Yahoo hiccup returns 200 with `error`.
+ * read-modify-write, plus the append-only pm:fund-nav-log (write-aside). Best-effort — a Yahoo hiccup returns 200 with `error`.
  */
 
 export const dynamic = "force-dynamic";
@@ -34,5 +35,9 @@ export async function GET(req: NextRequest) {
   // Independent of the backup cron on purpose: if that job never starts, this
   // one still notices the newest backup is overdue and emails. Best-effort.
   const backupCheck = await emailIfBackupStale();
-  return NextResponse.json({ ok: !result.error, startedAt, finishedAt: new Date().toISOString(), ...result, backupCheck });
+  // Our own record of each mutual fund's NAV and distributions (pm:fund-nav-log).
+  // Write-aside: it only ADDS entries, never throws, and nothing above depends on it.
+  const fundLog = await updateFundNavLog();
+  console.log(`[cron/daily-value] fund log: ${fundLog.error ? `failed: ${fundLog.error}` : fundLog.funds.map((f) => `${f.code} +${f.navAdded}${f.distributionsAdded.length ? ` (+${f.distributionsAdded.length} distribution)` : ""}`).join(", ") || "no funds"}`);
+  return NextResponse.json({ ok: !result.error, startedAt, finishedAt: new Date().toISOString(), ...result, backupCheck, fundLog });
 }
