@@ -137,13 +137,81 @@ function useHoldingHistory(symbols: string[]): { series: Record<string, Pt[]>; a
   return state.key === key ? state : { series: {}, at: null };
 }
 
+/** /api/prices ticker for a model or look-through symbol (same mapping the Positioning tab uses). */
+const priceTicker = (s: string) => {
+  if (/^[A-Z]{2,4}\d{2,5}(-T)?$/i.test(s)) return s.replace(/-T$/i, "");
+  if (s.endsWith("-T")) return s.replace("-T", ".TO");
+  if (s.endsWith(".U")) return s.replace(".U", "-U.TO");
+  return s;
+};
+
+/** Today's move per symbol: latest price vs the prior close (the existing /api/prices POST). Null when either is missing. */
+function useDayMoves(symbols: string[]): { moves: Record<string, number | null>; at: string | null } {
+  const key = [...new Set(symbols)].sort().join(",");
+  const [state, setState] = useState<{ moves: Record<string, number | null>; at: string | null }>({ moves: {}, at: null });
+  useEffect(() => {
+    if (!key) return;
+    let alive = true;
+    const syms = key.split(",");
+    const load = () =>
+      fetch("/api/prices", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ tickers: syms.map(priceTicker) }) })
+        .then((r) => (r.ok ? r.json() : null))
+        .then((d: { prices?: Record<string, number | null>; previousCloses?: Record<string, number | null> } | null) => {
+          if (!alive || !d?.prices) return;
+          const moves: Record<string, number | null> = {};
+          for (const s of syms) {
+            const t = priceTicker(s);
+            const px = d.prices[t] ?? d.prices[s];
+            const pc = d.previousCloses?.[t] ?? d.previousCloses?.[s];
+            moves[s] = typeof px === "number" && typeof pc === "number" && px > 0 && pc > 0 ? (px / pc - 1) * 100 : null;
+          }
+          setState({ moves, at: new Date().toISOString() });
+        })
+        .catch(() => {});
+    load();
+    const id = setInterval(load, 5 * 60_000);
+    return () => {
+      alive = false;
+      clearInterval(id);
+    };
+  }, [key]);
+  return state;
+}
+
+type Sort<K extends string> = { key: K; dir: "asc" | "desc" };
+/** Numbers: missing values always sort last, whichever direction. Text: A–Z. */
+function compare(a: number | string | null | undefined, b: number | string | null | undefined, dir: "asc" | "desc"): number {
+  if (typeof a === "string" || typeof b === "string") {
+    const r = String(a ?? "").localeCompare(String(b ?? ""), "en", { sensitivity: "base" });
+    return dir === "asc" ? r : -r;
+  }
+  const an = a == null || !Number.isFinite(a), bn = b == null || !Number.isFinite(b);
+  if (an && bn) return 0;
+  if (an) return 1;
+  if (bn) return -1;
+  return dir === "asc" ? (a as number) - (b as number) : (b as number) - (a as number);
+}
+
+/** A clickable column heading. First click sorts high-to-low for numbers, A–Z for text; a second click reverses. */
+function SortTh<K extends string>({ k, label, sort, onSort, right, text, title }: { k: K; label: string; sort: Sort<K>; onSort: (s: Sort<K>) => void; right?: boolean; text?: boolean; title?: string }) {
+  const on = sort.key === k;
+  const next: Sort<K> = on ? { key: k, dir: sort.dir === "asc" ? "desc" : "asc" } : { key: k, dir: text ? "asc" : "desc" };
+  return (
+    <th className={`${TH} ${right ? "text-right" : "text-left"}`} aria-sort={on ? (sort.dir === "asc" ? "ascending" : "descending") : "none"}>
+      <button type="button" onClick={() => onSort(next)} title={title ?? `Sort by ${label.toLowerCase()}`} className="inline-flex items-center gap-1 uppercase tracking-[0.1em] hover:underline" style={{ color: on ? T.navy : T.muted }}>
+        {label}
+        <span aria-hidden="true" className="text-[10px]" style={{ opacity: on ? 1 : 0.35 }}>{on ? (sort.dir === "asc" ? "▲" : "▼") : "▼"}</span>
+      </button>
+    </th>
+  );
+}
+
 // ── Pieces ──
 
-function CardBox({ num, eyebrow, right, children, tone: bg = "cream" }: { num: string; eyebrow: string; right?: React.ReactNode; children: React.ReactNode; tone?: "cream" | "sky" }) {
+function CardBox({ eyebrow, right, children, tone: bg = "cream" }: { eyebrow: string; right?: React.ReactNode; children: React.ReactNode; tone?: "cream" | "sky" }) {
   return (
     <section className="flex min-w-0 flex-col rounded-[10px] border" style={{ backgroundColor: bg === "sky" ? T.sky : T.card, borderColor: T.rule }}>
       <div className="flex flex-wrap items-center gap-x-3 gap-y-2 border-b px-5 py-3" style={{ borderColor: T.rule }}>
-        <span className="text-[13px] font-semibold tabular-nums" style={{ color: T.gold }}>{num}</span>
         <span className="text-[12.5px] font-semibold uppercase tracking-[0.14em]" style={{ color: T.navy }}>{eyebrow}</span>
         {right && <div className="ml-auto flex flex-wrap items-center gap-1.5">{right}</div>}
       </div>
@@ -273,23 +341,36 @@ export default function Snapshot() {
     return dates.length ? { oldest: dates[0], newest: dates[dates.length - 1], n: dates.length } : null;
   }, [held, stocks]);
 
-  const xray = (data?.xray ?? []).slice(0, 20);
+  const xrayTop = useMemo(() => (data?.xray ?? []).slice(0, 20), [data]);
+  const day = useDayMoves(useMemo(() => [...symbols, ...xrayTop.map((r) => r.symbol)], [symbols, xrayTop]));
+  type HeldKey = "name" | "ticker" | "weight" | "ret" | "day";
+  type XrayKey = "name" | "weight" | "direct" | "via" | "day";
+  const [heldSort, setHeldSort] = useState<Sort<HeldKey>>({ key: "weight", dir: "desc" });
+  const [xraySort, setXraySort] = useState<Sort<XrayKey>>({ key: "weight", dir: "desc" });
+  const xray = useMemo(() => {
+    const val = (r: (typeof xrayTop)[number]) => (xraySort.key === "name" ? r.name || r.symbol : xraySort.key === "direct" ? r.direct : xraySort.key === "via" ? r.lookThrough : xraySort.key === "day" ? day.moves[r.symbol] : r.weight);
+    return [...xrayTop].sort((a, b) => compare(val(a), val(b), xraySort.dir));
+  }, [xrayTop, xraySort, day.moves]);
+  const periodLabel = PERIODS.find((p) => p.id === period)!.label;
   const periodLong = PERIODS.find((p) => p.id === period)!.long;
   const today = new Date().toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric", year: "numeric" });
 
   const holdingsTable = (ccy: "CAD" | "USD") => {
-    const rows = held.filter((h) => h.currency === ccy);
+    const ret = (sym: string) => periodReturn(hist.series[sym] ?? [], period, inception);
+    const val = (h: (typeof held)[number]) => (heldSort.key === "name" ? h.name || h.symbol : heldSort.key === "ticker" ? h.symbol : heldSort.key === "ret" ? ret(h.symbol) : heldSort.key === "day" ? day.moves[h.symbol] : h.weight);
+    const rows = held.filter((h) => h.currency === ccy).sort((a, b) => compare(val(a), val(b), heldSort.dir));
     if (!rows.length) return null;
     const sub = rows.reduce((a, h) => a + h.weight, 0);
     return (
       <tbody key={ccy}>
         <tr>
-          <td colSpan={4} className="px-2 pb-1 pt-3 text-[12px] font-bold uppercase tracking-[0.14em]" style={{ color: T.gold }}>
+          <td colSpan={5} className="px-2 pb-1 pt-3 text-[12px] font-bold uppercase tracking-[0.14em]" style={{ color: T.gold }}>
             {ccy === "CAD" ? "Canadian-dollar holdings" : "US-dollar holdings"} <span className="font-semibold normal-case tracking-normal" style={{ color: T.muted }}>· {pct(sub)} of the portfolio</span>
           </td>
         </tr>
         {rows.map((h) => {
-          const r = periodReturn(hist.series[h.symbol] ?? [], period, inception);
+          const r = ret(h.symbol);
+          const d1 = day.moves[h.symbol];
           return (
             <tr key={h.symbol}>
               <td className={TDc} style={{ borderColor: T.rule }}>
@@ -297,6 +378,7 @@ export default function Snapshot() {
               </td>
               <td className={`${TDc} whitespace-nowrap text-[13px] tabular-nums`} style={{ borderColor: T.rule, color: T.muted }}>{h.symbol}</td>
               <td className={`${TDc} text-right text-[15px] font-semibold tabular-nums`} style={{ borderColor: T.rule, color: T.navy }}>{pct(h.weight)}</td>
+              <td className={`${TDc} text-right text-[15px] tabular-nums`} style={{ borderColor: T.rule, color: tone(d1) }}>{signed(d1)}</td>
               <td className={`${TDc} text-right text-[15px] tabular-nums`} style={{ borderColor: T.rule, color: tone(r) }}>{signed(r)}</td>
             </tr>
           );
@@ -330,7 +412,7 @@ export default function Snapshot() {
         )}
 
         {/* Performance by period */}
-        <CardBox num="01" eyebrow="Performance by period" right={<span className="text-[13px]" style={{ color: T.muted }}>recorded daily values, close to close · through {fmtDay(modelSeries[modelSeries.length - 1]?.date)}</span>}>
+        <CardBox eyebrow="Performance by period" right={<span className="text-[13px]" style={{ color: T.muted }}>recorded daily values, close to close · through {fmtDay(modelSeries[modelSeries.length - 1]?.date)}</span>}>
           <div className="-mx-2 overflow-x-auto">
             <table className="w-full min-w-[760px] border-collapse">
               <thead>
@@ -370,7 +452,6 @@ export default function Snapshot() {
         <div className="grid items-start gap-4 xl:grid-cols-[minmax(0,1.35fr)_minmax(0,1fr)]">
           {/* Top holdings */}
           <CardBox
-            num="02"
             eyebrow="Top holdings"
             right={
               <>
@@ -384,13 +465,14 @@ export default function Snapshot() {
             ) : tab === "held" ? (
               <>
                 <div className="-mx-2 overflow-x-auto">
-                  <table className="w-full min-w-[520px] border-collapse">
+                  <table className="w-full min-w-[600px] border-collapse">
                     <thead>
                       <tr style={{ color: T.muted }}>
-                        <th className={`${TH} text-left`}>Holding</th>
-                        <th className={`${TH} text-left`}>Ticker</th>
-                        <th className={`${TH} text-right`}>% of portfolio</th>
-                        <th className={`${TH} text-right`}>Return · {PERIODS.find((p) => p.id === period)!.label}</th>
+                        <SortTh k="name" label="Holding" sort={heldSort} onSort={setHeldSort} text />
+                        <SortTh k="ticker" label="Ticker" sort={heldSort} onSort={setHeldSort} text />
+                        <SortTh k="weight" label="% of portfolio" sort={heldSort} onSort={setHeldSort} right />
+                        <SortTh k="day" label="Today" sort={heldSort} onSort={setHeldSort} right title="Sort by today's move (latest price vs the prior close)" />
+                        <SortTh k="ret" label={periodLabel} sort={heldSort} onSort={setHeldSort} right title={`Sort by return over ${periodLong}`} />
                       </tr>
                     </thead>
                     {holdingsTable("CAD")}
@@ -401,25 +483,28 @@ export default function Snapshot() {
                           <td className={TDc} style={{ borderColor: T.rule }} colSpan={2}><span className="text-[15px] font-medium">Cash</span></td>
                           <td className={`${TDc} text-right text-[15px] font-semibold tabular-nums`} style={{ borderColor: T.rule, color: T.navy }}>{pct(data.totals.cash)}</td>
                           <td className={`${TDc} text-right`} style={{ borderColor: T.rule, color: T.muted }}>—</td>
+                          <td className={`${TDc} text-right`} style={{ borderColor: T.rule, color: T.muted }}>—</td>
                         </tr>
                       </tbody>
                     )}
                   </table>
                 </div>
                 <p className="mt-2 text-[12.5px]" style={{ color: T.muted }}>
-                  One line per position as held; funds and ETFs are a single line. Weights are {data?.weightsSource === "live" ? "live (positions × latest prices)" : "the model targets (no positions on file)"}. Returns are total return over {periodLong} in each holding&apos;s own currency, from Yahoo Finance{hist.at ? ` (${fmtDay(hist.at)})` : ""}; “—” = no price history (mutual funds) or not held that long.
+                  One line per position as held; funds and ETFs are a single line. Weights are {data?.weightsSource === "live" ? "live (positions × latest prices)" : "the model targets (no positions on file)"}. Click a heading to sort (within each currency group). Today = latest price vs the prior close. {periodLabel} = total return over {periodLong}. Both are in each holding&apos;s own currency, from Yahoo Finance{hist.at ? ` (${fmtDay(hist.at)})` : ""}; “—” = no price history (mutual funds) or not held that long.
                 </p>
               </>
             ) : (
               <>
                 <div className="-mx-2 overflow-x-auto">
-                  <table className="w-full min-w-[520px] border-collapse">
+                  <table className="w-full min-w-[600px] border-collapse">
                     <thead>
                       <tr style={{ color: T.muted }}>
                         <th className={`${TH} text-left`}>#</th>
-                        <th className={`${TH} text-left`}>Underlying stock</th>
-                        <th className={`${TH} text-right`}>% of portfolio</th>
-                        <th className={`${TH} text-right`} title="Held directly + held through funds and ETFs">Direct + via funds</th>
+                        <SortTh k="name" label="Underlying stock" sort={xraySort} onSort={setXraySort} text />
+                        <SortTh k="weight" label="% of portfolio" sort={xraySort} onSort={setXraySort} right />
+                        <SortTh k="direct" label="Direct" sort={xraySort} onSort={setXraySort} right title="Sort by the weight we hold directly" />
+                        <SortTh k="via" label="Via funds" sort={xraySort} onSort={setXraySort} right title="Sort by the weight held through funds and ETFs" />
+                        <SortTh k="day" label="Today" sort={xraySort} onSort={setXraySort} right title="Sort by today's move (latest price vs the prior close)" />
                       </tr>
                     </thead>
                     <tbody>
@@ -429,23 +514,28 @@ export default function Snapshot() {
                           <tr key={r.symbol} style={own ? { backgroundColor: "rgba(184,137,63,0.12)" } : undefined}>
                             <td className={`${TDc} text-[13px] tabular-nums`} style={{ borderColor: T.rule, color: T.muted }}>{i + 1}</td>
                             <td className={TDc} style={{ borderColor: T.rule }}>
-                              <span className="text-[15px] font-medium">{r.name || r.symbol}</span>
-                              <span className="ml-2 text-[13px] tabular-nums" style={{ color: T.muted }}>{r.symbol}</span>
-                              {own && <span className="ml-2 rounded-full px-2 py-0.5 text-[11.5px] font-semibold" style={{ backgroundColor: T.gold, color: "#fff" }}>Owned directly</span>}
+                              {/* The pill never breaks across lines: it wraps as ONE piece under a long name. */}
+                              <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                                <span className="text-[15px] font-medium">{r.name || r.symbol}</span>
+                                <span className="text-[13px] tabular-nums" style={{ color: T.muted }}>{r.symbol}</span>
+                                {own && <span className="inline-block whitespace-nowrap rounded-full px-2 py-0.5 text-[11.5px] font-semibold leading-tight" style={{ backgroundColor: T.gold, color: "#fff" }}>Owned directly</span>}
+                              </div>
                             </td>
                             <td className={`${TDc} text-right text-[15px] font-semibold tabular-nums`} style={{ borderColor: T.rule, color: T.navy }}>{pct(r.weight, 2)}</td>
-                            <td className={`${TDc} text-right text-[13.5px] tabular-nums`} style={{ borderColor: T.rule, color: T.muted }}>{pct(r.direct, 2)} + {pct(r.lookThrough, 2)}</td>
+                            <td className={`${TDc} text-right text-[14px] tabular-nums`} style={{ borderColor: T.rule, color: own ? T.ink : T.muted }}>{pct(r.direct, 2)}</td>
+                            <td className={`${TDc} text-right text-[14px] tabular-nums`} style={{ borderColor: T.rule, color: T.muted }}>{pct(r.lookThrough, 2)}</td>
+                            <td className={`${TDc} text-right text-[15px] tabular-nums`} style={{ borderColor: T.rule, color: tone(day.moves[r.symbol]) }}>{signed(day.moves[r.symbol])}</td>
                           </tr>
                         );
                       })}
                       {!xray.length && (
-                        <tr><td colSpan={4} className="py-6 text-[14.5px]" style={{ color: T.muted }}>No look-through data yet. It fills in once fund holdings are on file.</td></tr>
+                        <tr><td colSpan={6} className="py-6 text-[14.5px]" style={{ color: T.muted }}>No look-through data yet. It fills in once fund holdings are on file.</td></tr>
                       )}
                     </tbody>
                   </table>
                 </div>
                 <p className="mt-2 text-[12.5px]" style={{ color: T.muted }}>
-                  The 20 largest underlying stocks across the whole mandate, with funds and ETFs broken into their holdings. Highlighted = we also own it directly.{" "}
+                  The 20 largest underlying stocks across the whole mandate, with funds and ETFs broken into their holdings. Highlighted = we also own it directly. Click a heading to sort; Today = latest price vs the prior close, in the stock&apos;s own currency.{" "}
                   {fundAsOf ? <span style={{ color: T.ink }}>Fund holdings data last fetched {fundAsOf.oldest === fundAsOf.newest ? fmtDay(fundAsOf.oldest) : `between ${fmtDay(fundAsOf.oldest)} and ${fmtDay(fundAsOf.newest)}`} ({fundAsOf.n} funds); the providers&apos; own lists are often a month old.</span> : "No date is on file for the fund holdings data."}
                 </p>
               </>
@@ -453,12 +543,12 @@ export default function Snapshot() {
           </CardBox>
 
           <div className="flex min-w-0 flex-col gap-4">
-            <CardBox num="03" eyebrow="Asset allocation" right={data ? <span className="text-[13px]" style={{ color: T.muted }}>{data.weightsSource === "live" ? "live" : "model targets"}</span> : null}>
+            <CardBox eyebrow="Asset allocation" right={data ? <span className="text-[13px]" style={{ color: T.muted }}>{data.weightsSource === "live" ? "live" : "model targets"}</span> : null}>
               {data ? (
                 <>
                   <Donut slices={data.allocation} />
                   <div className="mt-4 flex flex-wrap gap-x-8 gap-y-2 border-t pt-3" style={{ borderColor: T.rule }}>
-                    {[["CAD", data.totals.cad], ["USD", data.totals.usd], ["Cash", data.totals.cash]].map(([k, v]) => (
+                    {[["CAD", data.totals.cad], ["USD", data.totals.usd]].map(([k, v]) => (
                       <div key={k as string}>
                         <div className="text-[12px] font-semibold uppercase tracking-[0.14em]" style={{ color: T.muted }}>{k}</div>
                         <div className="text-[22px] font-semibold tabular-nums" style={{ color: T.navy, fontFamily: SERIF }}>{pct(v as number)}</div>
@@ -470,7 +560,7 @@ export default function Snapshot() {
                 <p className="animate-pulse py-6 text-[14.5px]" style={{ color: T.muted }}>Loading…</p>
               )}
             </CardBox>
-            <CardBox num="04" eyebrow="Sector exposure" tone="sky" right={<span className="text-[13px]" style={{ color: T.muted }}>equity, look-through</span>}>
+            <CardBox eyebrow="Sector exposure" tone="sky" right={<span className="text-[13px]" style={{ color: T.muted }}>equity, look-through</span>}>
               {data ? <Bars rows={data.sectors.slice(0, 9).map((s) => ({ label: s.sector, value: s.weight }))} /> : <p className="animate-pulse py-6 text-[14.5px]" style={{ color: T.muted }}>Loading…</p>}
             </CardBox>
           </div>
