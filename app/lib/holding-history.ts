@@ -33,7 +33,7 @@ export async function history(symbol: string, sinceIso: string): Promise<Series>
   try {
     if (isFundserv(symbol)) {
       const days = Math.min(3000, Math.max(30, Math.ceil((Date.now() - new Date(sinceIso).getTime()) / 86_400_000) + 10));
-      const url = `https://globeandmail.pl.barchart.com/proxies/timeseries/queryeod.ashx?symbol=${encodeURIComponent(`${symbol}.CF`)}&data=daily&maxrecords=${days}&volume=contract&order=asc&dividends=false&backadjust=false`;
+      const url = `https://globeandmail.pl.barchart.com/proxies/timeseries/queryeod.ashx?symbol=${encodeURIComponent(`${symbol}.CF`)}&data=daily&maxrecords=${days}&volume=contract&order=asc&dividends=true&backadjust=true`;
       const res = await fetch(url, { cache: "no-store", headers: { "User-Agent": UA, Referer: "https://www.theglobeandmail.com/" } });
       if (!res.ok) return out;
       const rows: [string, number][] = [];

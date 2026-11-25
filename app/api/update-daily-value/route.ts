@@ -28,7 +28,11 @@ const POSITIONS_KEY = "pm:pim-positions";
  *
  * Uses Yahoo adjusted close prices (dividends/splits baked in).
  * Converts USD-denominated holding returns to CAD using daily USD/CAD rate.
- * Mutual fund NAV from Barchart already reflects reinvested distributions.
+ * Mutual funds use the NAV WITH DISTRIBUTIONS REINVESTED (since 2026-11-24).
+ * Before that this job read the plain NAV, which falls by the amount of every
+ * distribution — so each distribution day was recorded as a loss. See
+ * app/lib/fund-nav.ts. Only the days this job computes are affected; earlier
+ * recorded entries are never modified.
  */
 
 type DailyPriceData = { date: string; adjClose: number };
@@ -85,10 +89,13 @@ async function fetchAdjustedCloses(symbol: string, range: string = "15d"): Promi
   }
 }
 
-/** Fetch FUNDSERV NAV prices from Barchart (distributions reflected in NAV) */
+/** Fetch a mutual fund's NAV history with distributions reinvested — the
+ *  fund counterpart of Yahoo's adjusted close, so a day-to-day ratio is the
+ *  fund's TOTAL return. The newest value equals the plain NAV (the feed
+ *  back-adjusts older days), so `latestPrices` still reads a true price. */
 async function fetchFundservCloses(ticker: string): Promise<DailyPriceData[]> {
   const symbol = `${ticker}.CF`;
-  const url = `https://globeandmail.pl.barchart.com/proxies/timeseries/queryeod.ashx?symbol=${encodeURIComponent(symbol)}&data=daily&maxrecords=15&volume=contract&order=desc&dividends=false&backadjust=false`;
+  const url = `https://globeandmail.pl.barchart.com/proxies/timeseries/queryeod.ashx?symbol=${encodeURIComponent(symbol)}&data=daily&maxrecords=15&volume=contract&order=desc&dividends=true&backadjust=true`;
   try {
     const res = await fetch(url, {
       cache: "no-store",

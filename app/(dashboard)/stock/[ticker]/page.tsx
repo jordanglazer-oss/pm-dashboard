@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { StatStrip } from "@/app/components/StatStrip";
+import { FundPerformancePanel } from "@/app/components/FundPerformance";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { useStocks } from "@/app/lib/StockContext";
@@ -709,31 +710,9 @@ function FundDataPanels({ fundData, ticker, onHoldingsUpdate }: { fundData: Fund
     <div className="flex flex-col gap-3.5">
       {/* Row 1: Performance + Risk */}
       <div className="grid gap-3.5 md:grid-cols-2">
-        {/* Performance */}
-        {fundData.performance && (
-          <section className="panel">
-            <div className="panel-h"><span className="t">Performance</span><span className="m">trailing returns</span></div>
-            <div className="p-2.5">
-            <StatStrip
-              cols={4}
-              items={[
-                { label: "1M", val: fundData.performance.oneMonth },
-                { label: "3M", val: fundData.performance.threeMonth },
-                { label: "YTD", val: fundData.performance.ytd },
-                { label: "1Y", val: fundData.performance.oneYear },
-                { label: "3Y", val: fundData.performance.threeYear },
-                { label: "5Y", val: fundData.performance.fiveYear },
-                { label: "10Y", val: fundData.performance.tenYear },
-              ]
-                .filter((r) => r.val != null)
-                .map((r) => ({
-                  label: r.label,
-                  value: <span className={returnColor(r.val)}>{formatReturn(r.val)}</span>,
-                }))}
-            />
-            </div>
-          </section>
-        )}
+        {/* Performance — a mutual fund's short periods are computed from its
+            NAV with distributions reinvested and dated; see FundPerformance.tsx. */}
+        <FundPerformancePanel fundData={fundData} ticker={ticker} />
 
         {/* Risk & Key Stats */}
         <section className="panel">

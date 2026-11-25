@@ -42,7 +42,7 @@ async function closesAround(symbol: string, from: string, to: string): Promise<C
   const out: Closes = new Map();
   try {
     if (isFundserv(symbol)) {
-      const url = `https://globeandmail.pl.barchart.com/proxies/timeseries/queryeod.ashx?symbol=${encodeURIComponent(`${symbol}.CF`)}&data=daily&maxrecords=400&volume=contract&order=desc&dividends=false&backadjust=false`;
+      const url = `https://globeandmail.pl.barchart.com/proxies/timeseries/queryeod.ashx?symbol=${encodeURIComponent(`${symbol}.CF`)}&data=daily&maxrecords=400&volume=contract&order=desc&dividends=true&backadjust=true`;
       const res = await fetch(url, { cache: "no-store", headers: { "User-Agent": UA, Referer: "https://www.theglobeandmail.com/" } });
       if (!res.ok) return out;
       for (const line of (await res.text()).trim().split("\n")) {
