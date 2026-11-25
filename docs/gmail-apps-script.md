@@ -291,7 +291,7 @@ function processInbox() {
     //   sia         "SIA\b" could not match SIACharts or SIA_SP500: \b needs a
     //               NON-word character after "SIA", and both "C" and "_" are
     //               word characters. An unedited SIA download never matched.
-    const SUBJECT_RE = /^(?:\s*(?:fw|fwd|re|tr)\s*:\s*)*(?:analyst\s+report:|fundstrat\b|rbc\s+(?:canadian|us)\b|jpm\s+focus\b|rbccm\s+few\b|rbc\s+(?:cdn\s+)?small[-\s]?cap\b|v[-\s]?list\b|equate\b|.*\bequate\b.*\b(?:rank|all\s*cap|large\s*cap)|seeking\s+alpha\b|alpha\s+picks\b|sia(?:charts)?(?![a-z0-9])|boosted(?:ai)?\b|marketedge\b|chartscout\b|strategist\b|(?:mark\s+)?newton(?![a-z0-9])|(?:tom\s+)?lee(?![a-z0-9])|(?:sa:\s*)?(?:street\s+takeaways|streetaccount|transcript\s+intelligence)\b|.*\breports\s+Q[1-4]\b.*\bvs\b)/i;
+    const SUBJECT_RE = /^(?:\s*(?:fw|fwd|re|tr)\s*:\s*)*(?:analyst\s+report:|(?:strategy|technicals?|fx|currency|currencies)\s*[:\-\u2013\u2014]|fundstrat\b|rbc\s+(?:canadian|us)\b|jpm\s+focus\b|rbccm\s+few\b|rbc\s+(?:cdn\s+)?small[-\s]?cap\b|v[-\s]?list\b|equate\b|.*\bequate\b.*\b(?:rank|all\s*cap|large\s*cap)|seeking\s+alpha\b|alpha\s+picks\b|sia(?:charts)?(?![a-z0-9])|boosted(?:ai)?\b|marketedge\b|chartscout\b|strategist\b|(?:mark\s+)?newton(?![a-z0-9])|(?:tom\s+)?lee(?![a-z0-9])|(?:sa:\s*)?(?:street\s+takeaways|streetaccount|transcript\s+intelligence)\b|.*\breports\s+Q[1-4]\b.*\bvs\b)/i;
     // FactSet alerts are BODY-TEXT emails (no attachment) — matched by sender so
     // a plain forward works with its original subject untouched.
     const BODY_TEXT_SENDER_RE = /factset[_.]?alerts?@factset\.com/i;
@@ -305,11 +305,15 @@ function processInbox() {
     // on the server.
     const SUBJECT_NOTE_RE = /^(?:(?:re|fwd?|fw):\s*)*(?:news|fyi|note)\s*:\s*[A-Z][A-Z0-9]{0,5}(?:[.\-][A-Z]{1,2}){0,2}(?:\s|$)/;
     const BODY_TEXT_SUBJECT_RE = /^(?:(?:re|fwd?|fw):\s*)*(?:SA:\s*\S|(?:Street Takeaways|StreetAccount|Transcript Intelligence)|(?:Mark )?Newton\b|(?:Tom )?Lee\b|.*\breports\s+Q[1-4]\b.*\bvs\b)/i;
+    // Also covers strategy / technical / currency reports from RBC, JPM or
+    // anyone else ("Strategy: RBC ...", "Technical: JPM ...", "FX: Other ...",
+    // added Nov 2026): the PDF is sent when one is attached, the pasted body
+    // when not.
     // Strategist notes (Fundstrat dailies). Normally ATTACHMENT emails — the
     // dashboard reads the PDF's text layer and drops the 2 disclosure pages —
     // but pasted text must keep working, so these take the body path ONLY when
     // nothing is attached. Mirrors the dashboard's classifySubject.
-    const STRATEGIST_NOTE_RE = /^(?:\s*(?:fw|fwd|re|tr)\s*:\s*)*(?:(?:mark\s+)?newton|(?:tom\s+)?lee)(?![a-z0-9])/i;
+    const STRATEGIST_NOTE_RE = /^(?:\s*(?:fw|fwd|re|tr)\s*:\s*)*(?:(?:(?:mark\s+)?newton|(?:tom\s+)?lee)(?![a-z0-9])|(?:strategy|technicals?|fx|currency|currencies)\s*[:\-\u2013\u2014])/i;
     const PROCESSED_LABEL_NAME = "Dashboard-Processed";
 
     let label = GmailApp.getUserLabelByName(PROCESSED_LABEL_NAME);
@@ -541,7 +545,7 @@ function testWebhook() {
  *  works no matter where SUBJECT_RE lives. */
 function reprocessRecent() {
   var DAYS = 3; // widen if your CSVs are older than this
-  var SUBJECT_RE = /^(?:\s*(?:fw|fwd|re|tr)\s*:\s*)*(?:analyst\s+report:|fundstrat\b|rbc\s+(?:canadian|us)\b|jpm\s+focus\b|rbccm\s+few\b|rbc\s+(?:cdn\s+)?small[-\s]?cap\b|v[-\s]?list\b|equate\b|.*\bequate\b.*\b(?:rank|all\s*cap|large\s*cap)|seeking\s+alpha\b|alpha\s+picks\b|sia(?:charts)?(?![a-z0-9])|boosted(?:ai)?\b|marketedge\b|chartscout\b|strategist\b|(?:mark\s+)?newton(?![a-z0-9])|(?:tom\s+)?lee(?![a-z0-9])|(?:sa:\s*)?(?:street\s+takeaways|streetaccount|transcript\s+intelligence)\b|.*\breports\s+Q[1-4]\b.*\bvs\b)/i;
+  var SUBJECT_RE = /^(?:\s*(?:fw|fwd|re|tr)\s*:\s*)*(?:analyst\s+report:|(?:strategy|technicals?|fx|currency|currencies)\s*[:\-\u2013\u2014]|fundstrat\b|rbc\s+(?:canadian|us)\b|jpm\s+focus\b|rbccm\s+few\b|rbc\s+(?:cdn\s+)?small[-\s]?cap\b|v[-\s]?list\b|equate\b|.*\bequate\b.*\b(?:rank|all\s*cap|large\s*cap)|seeking\s+alpha\b|alpha\s+picks\b|sia(?:charts)?(?![a-z0-9])|boosted(?:ai)?\b|marketedge\b|chartscout\b|strategist\b|(?:mark\s+)?newton(?![a-z0-9])|(?:tom\s+)?lee(?![a-z0-9])|(?:sa:\s*)?(?:street\s+takeaways|streetaccount|transcript\s+intelligence)\b|.*\breports\s+Q[1-4]\b.*\bvs\b)/i;
   var props = PropertiesService.getScriptProperties();
   var url = props.getProperty("WEBHOOK_URL");
   var secret = props.getProperty("INBOX_SECRET");
@@ -615,7 +619,7 @@ function fixLabels() {
   if (!label) { Logger.log("No Dashboard-Processed label — nothing to do."); return; }
 
   // Identical to processInbox's copy.
-  var SUBJECT_RE = /^(?:\s*(?:fw|fwd|re|tr)\s*:\s*)*(?:analyst\s+report:|fundstrat\b|rbc\s+(?:canadian|us)\b|jpm\s+focus\b|rbccm\s+few\b|rbc\s+(?:cdn\s+)?small[-\s]?cap\b|v[-\s]?list\b|equate\b|.*\bequate\b.*\b(?:rank|all\s*cap|large\s*cap)|seeking\s+alpha\b|alpha\s+picks\b|sia(?:charts)?(?![a-z0-9])|boosted(?:ai)?\b|marketedge\b|chartscout\b|strategist\b|(?:mark\s+)?newton(?![a-z0-9])|(?:tom\s+)?lee(?![a-z0-9])|(?:sa:\s*)?(?:street\s+takeaways|streetaccount|transcript\s+intelligence)\b|.*\breports\s+Q[1-4]\b.*\bvs\b)/i;
+  var SUBJECT_RE = /^(?:\s*(?:fw|fwd|re|tr)\s*:\s*)*(?:analyst\s+report:|(?:strategy|technicals?|fx|currency|currencies)\s*[:\-\u2013\u2014]|fundstrat\b|rbc\s+(?:canadian|us)\b|jpm\s+focus\b|rbccm\s+few\b|rbc\s+(?:cdn\s+)?small[-\s]?cap\b|v[-\s]?list\b|equate\b|.*\bequate\b.*\b(?:rank|all\s*cap|large\s*cap)|seeking\s+alpha\b|alpha\s+picks\b|sia(?:charts)?(?![a-z0-9])|boosted(?:ai)?\b|marketedge\b|chartscout\b|strategist\b|(?:mark\s+)?newton(?![a-z0-9])|(?:tom\s+)?lee(?![a-z0-9])|(?:sa:\s*)?(?:street\s+takeaways|streetaccount|transcript\s+intelligence)\b|.*\breports\s+Q[1-4]\b.*\bvs\b)/i;
   // Body-text kinds are recognised by subject here; sender matching needs
   // getMessages(), which is the expensive call this pass exists to avoid. A
   // FactSet thread whose subject does not say so is left LABELED — the safe

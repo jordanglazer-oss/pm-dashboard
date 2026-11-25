@@ -245,7 +245,7 @@ export async function POST(request: NextRequest) {
     (bodyText.length > 0 && isFactsetAlertBody(bodyText.slice(0, 6000)));
   // Strategist notes (Newton / Lee) are body-text emails too — the pasted
   // report text IS the payload, no attachment expected.
-  const isBodyTextKind = isFactsetBodyKind || classified === "newton-note" || classified === "lee-note";
+  const isBodyTextKind = isFactsetBodyKind || classified === "newton-note" || classified === "lee-note" || classified === "strategy-report";
 
   if (!subject || (!dataUrl && !isBodyTextKind)) {
     await appendInboxEvent({ status: "error", subject, sender, filename, message: "Missing subject or dataUrl/blob" });
