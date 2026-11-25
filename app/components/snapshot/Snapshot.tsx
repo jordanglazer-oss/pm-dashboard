@@ -115,6 +115,45 @@ const isFund = (sym: string) => /^[A-Z]{2,4}\d{2,5}(-T)?$/i.test(sym);
 /** Price-history ticker for a model symbol. Mutual funds (FUNDSERV codes) go bare, and get their NAV history with distributions reinvested. */
 const historyTicker = (sym: string) => (isFund(sym) ? sym.replace(/-T$/i, "") : sym.endsWith("-T") ? yahooClassShare(sym.replace(/-T$/, ".TO")) : sym);
 
+/**
+ * The last view, kept in THIS browser so the page paints at once on the next
+ * visit and then updates itself. A convenience copy only: never a source of
+ * record, never written to the server, always labelled with its time while it
+ * is what is on screen. `id` says what the copy describes (a mandate, a list
+ * of symbols); a copy for a different id is ignored.
+ */
+function useSaved<T>(slot: string, id: string, live: T | null): { value: T | null; savedAt: string | null } {
+  const [kept, setKept] = useState<{ slot: string; id: string; at: string; value: T } | null>(null);
+  useEffect(() => {
+    if (!id) return;
+    let alive = true;
+    // Read after mount (the server render has no browser storage).
+    Promise.resolve().then(() => {
+      if (!alive) return;
+      try {
+        const raw = window.localStorage.getItem(`snapshot.saved.${slot}`);
+        const parsed = raw ? (JSON.parse(raw) as { id?: string; at?: string; value?: T }) : null;
+        if (parsed && parsed.id === id && parsed.at && parsed.value != null) setKept({ slot, id, at: parsed.at, value: parsed.value });
+      } catch {
+        /* no saved copy — the page simply waits for live data */
+      }
+    });
+    return () => {
+      alive = false;
+    };
+  }, [slot, id]);
+  useEffect(() => {
+    if (live == null || !id) return;
+    try {
+      window.localStorage.setItem(`snapshot.saved.${slot}`, JSON.stringify({ id, at: new Date().toISOString(), value: live }));
+    } catch {
+      /* storage full or blocked — nothing depends on it */
+    }
+  }, [slot, id, live]);
+  if (live != null) return { value: live, savedAt: null };
+  return kept && kept.slot === slot && kept.id === id ? { value: kept.value, savedAt: kept.at } : { value: null, savedAt: null };
+}
+
 function useHoldingHistory(symbols: string[]): { series: Record<string, Pt[]>; at: string | null } {
   const key = symbols.join(",");
   const [state, setState] = useState<{ key: string; series: Record<string, Pt[]>; at: string | null }>({ key: "", series: {}, at: null });
@@ -135,7 +174,9 @@ function useHoldingHistory(symbols: string[]): { series: Record<string, Pt[]>; a
       alive = false;
     };
   }, [key]);
-  return state.key === key ? state : { series: {}, at: null };
+  const fresh = state.key === key && key ? state : null;
+  const saved = useSaved("history", key, fresh);
+  return saved.value ?? { series: {}, at: null };
 }
 
 /** /api/prices ticker for a model or look-through symbol (same mapping the Positioning tab uses). */
@@ -176,7 +217,8 @@ function useDayMoves(symbols: string[]): { moves: Record<string, number | null>;
       clearInterval(id);
     };
   }, [key]);
-  return state;
+  const saved = useSaved("day", key, state.at ? state : null);
+  return saved.value ?? state;
 }
 
 type Sort<K extends string> = { key: K; dir: "asc" | "desc" };
@@ -307,8 +349,13 @@ export default function Snapshot() {
   const tab = uiPrefs["snapshot.holdingsTab"] === "lookthrough" ? "lookthrough" : "held";
   const period = (PERIODS.some((p) => p.id === uiPrefs["snapshot.period"]) ? uiPrefs["snapshot.period"] : "ytd") as Period;
 
-  const { data, loading, error, refetch } = useReportData("pim", mandate);
-  const bench = useBenchmarkHistory();
+  const report = useReportData("pim", mandate);
+  const { loading, error, refetch } = report;
+  // Live data when it has arrived; until then the last view saved in this browser.
+  const savedReport = useSaved("report", ctxLoading ? "" : mandate, report.data?.profile === mandate ? report.data : null);
+  const data = savedReport.value;
+  const benchLive = useBenchmarkHistory();
+  const bench = useSaved("bench", "all", benchLive && Object.keys(benchLive).length ? benchLive : null).value ?? benchLive;
 
   // Holdings as held: one line per position, funds and ETFs a single line each.
   const held = useMemo(() => {
@@ -408,6 +455,11 @@ export default function Snapshot() {
               {data?.profileLabel ?? MANDATES.find((m) => m.id === mandate)?.label} Model, <span style={{ color: T.gold, fontStyle: "italic" }}>Portfolio Snapshot</span>
             </h1>
             <div className="mt-1 text-[13px] uppercase tracking-[0.18em]" style={{ color: T.muted }}>{today}</div>
+            {savedReport.savedAt && (
+              <div className="mt-1 text-[13px] font-semibold" style={{ color: T.gold }}>
+                Saved view from {new Date(savedReport.savedAt).toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })} · {error ? "live update failed" : "updating…"}
+              </div>
+            )}
           </div>
           <div className="ml-auto flex flex-wrap items-center gap-2" role="group" aria-label="Mandate">
             {mandates.map((m) => (
@@ -419,6 +471,17 @@ export default function Snapshot() {
         {error && (
           <div className="rounded-[10px] border px-4 py-3 text-[14.5px]" style={{ borderColor: T.neg, color: T.neg, backgroundColor: "#fff" }}>
             {error}. <button type="button" onClick={() => refetch()} className="font-semibold underline">Try again</button>
+          </div>
+        )}
+
+        {data?.unpriced && data.unpriced.length > 0 && (
+          <div className="rounded-[10px] border px-4 py-3 text-[14.5px]" style={{ borderColor: T.neg, color: T.neg, backgroundColor: "#fff" }}>
+            Not shown, no price available: {data.unpriced.join(", ")}. The other weights are overstated until it returns. <button type="button" onClick={() => refetch()} className="font-semibold underline">Try again</button>
+          </div>
+        )}
+        {data?.stalePriced && data.stalePriced.length > 0 && (
+          <div className="text-[13px]" style={{ color: T.muted }}>
+            Weighted at the last price on hand (live price did not arrive): {data.stalePriced.join(", ")}.
           </div>
         )}
 

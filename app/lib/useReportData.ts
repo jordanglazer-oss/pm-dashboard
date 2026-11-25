@@ -33,7 +33,7 @@
  */
 
 import { modelBucketLookup } from "./sleeve-targets";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useStocks } from "./StockContext";
 import { countryFor, CORE_ETF_FAMILIES, coreFamilyFor, isCoreEtf, type Country } from "./geography";
 import { normalizeSector } from "./scoring";
@@ -167,6 +167,12 @@ export type ReportData = {
    *  downstream callers that need to look up per-ticker attributes
    *  such as MER (blended-fee calc). */
   rawHoldings: { symbol: string; name: string; weight: number }[];
+  /** Held positions LEFT OUT of the live weights because no price could be
+   *  found for them (not live, not the last one seen this session, not the
+   *  prior close). Empty in the normal case; the page must say so when not. */
+  unpriced?: string[];
+  /** Held positions weighted at an earlier price because the live one did not arrive. */
+  stalePriced?: string[];
   allocation: ReportAllocationSlice[];
   /** Drill-down: which holdings contribute to each pie slice. Same
    *  classification used to compute `allocation`, just emitted as a
@@ -314,16 +320,28 @@ function bucketFor(h: PimHolding): ReportHoldingRow["bucket"] {
 
 // ───────── The hook ─────────
 
+/** Last good price seen for each symbol in this browser session. A holding
+ *  whose live price fails to arrive is valued at this rather than dropped
+ *  from the page (Nov 2026: holdings were vanishing on a slow price feed). */
+const lastGoodPrice = new Map<string, number>();
+const goodPrice = (v: unknown): v is number => typeof v === "number" && isFinite(v) && v > 0;
+
 export function useReportData(
   groupId: string,
   profile: PimProfileType
 ): UseReportDataResult {
-  const { pimModels, stocks } = useStocks();
+  const { pimModels, stocks, loading: ctxLoading } = useStocks();
   const [data, setData] = useState<ReportData | null>(null);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  // Only the NEWEST build may update the page. The inputs change several
+  // times while the app loads; an older build finishing late must not
+  // replace a newer one.
+  const runRef = useRef(0);
 
   const compute = useCallback(async () => {
+    const run = ++runRef.current;
+    const latest = () => run === runRef.current;
     setError(null);
     setLoading(true);
 
@@ -393,14 +411,39 @@ export function useReportData(
       }
 
       let prices: Record<string, number | null> = {};
+      let previousCloses: Record<string, number | null> = {};
       if (priceRes?.ok) {
         try {
           const payload = await priceRes.json();
           prices = payload?.prices ?? {};
+          previousCloses = payload?.previousCloses ?? {};
         } catch {
           /* ignore — fall back to target below */
         }
       }
+      // A price that did not arrive is asked for ONCE more before anything
+      // falls back — a slow feed must not drop a holding from the page.
+      const missing = tickerList.filter((t) => !goodPrice(prices[t]));
+      if (missing.length > 0 && missing.length < tickerList.length) {
+        try {
+          const retry = await fetch("/api/prices", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ tickers: missing }),
+            cache: "no-store",
+          });
+          if (retry.ok) {
+            const payload = await retry.json();
+            for (const t of missing) {
+              if (goodPrice(payload?.prices?.[t])) prices[t] = payload.prices[t];
+              if (goodPrice(payload?.previousCloses?.[t])) previousCloses[t] = payload.previousCloses[t];
+            }
+          }
+        } catch {
+          /* fall back below */
+        }
+      }
+      for (const t of tickerList) if (goodPrice(prices[t])) lastGoodPrice.set(t, prices[t] as number);
 
       let usdCad = 1;
       if (fxRes?.ok) {
@@ -419,6 +462,8 @@ export function useReportData(
       //    label the report honestly.
       let weightsSource: "live" | "target" = "target";
       const weighted: (PimHolding & { weight: number })[] = [];
+      const unpriced: string[] = [];
+      const stalePriced: string[] = [];
 
       if (positions && positions.positions.length > 0) {
         const posMap = new Map(
@@ -431,8 +476,17 @@ export function useReportData(
           if (!pos || pos.units <= 0) continue;
           // `/api/prices` keys by the caller's input ticker, so look up
           // by the raw symbol first, then yahoo-mapped as a safety net.
-          const live = prices[h.symbol] ?? prices[toYahoo(h.symbol)] ?? null;
-          if (live == null || !isFinite(live) || live <= 0) continue;
+          let live = prices[h.symbol] ?? prices[toYahoo(h.symbol)] ?? null;
+          if (!goodPrice(live)) {
+            // No live price: the last one seen this session, else the prior close.
+            const earlier = lastGoodPrice.get(h.symbol) ?? previousCloses[h.symbol] ?? previousCloses[toYahoo(h.symbol)] ?? null;
+            if (!goodPrice(earlier)) {
+              unpriced.push(h.symbol);
+              continue;
+            }
+            live = earlier;
+            stalePriced.push(h.symbol);
+          }
           const fx = h.currency === "USD" ? usdCad : 1;
           const valueCad = pos.units * live * fx;
           if (!isFinite(valueCad) || valueCad <= 0) continue;
@@ -1145,6 +1199,8 @@ export function useReportData(
         weightsSource,
         holdings: holdingRows,
         rawHoldings,
+        unpriced: weightsSource === "live" ? unpriced : [],
+        stalePriced: weightsSource === "live" ? stalePriced : [],
         allocation,
         allocationBreakdown,
         geography,
@@ -1154,20 +1210,29 @@ export function useReportData(
         tracker,
         totals,
       };
-      setData(built);
+      if (latest()) setData(built);
       return built;
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to build report");
-      setData(null);
+      if (latest()) {
+        setError(e instanceof Error ? e.message : "Failed to build report");
+        setData(null);
+      }
       return null;
     } finally {
-      setLoading(false);
+      if (latest()) setLoading(false);
     }
   }, [groupId, profile, pimModels, stocks]);
 
+  // Build once the saved models and stocks have loaded (never from the
+  // built-in sample models), and let the burst of changes that follows the
+  // load settle into ONE build instead of one per change.
   useEffect(() => {
-    compute();
-  }, [compute]);
+    if (ctxLoading) return;
+    const t = setTimeout(() => {
+      void compute();
+    }, 200);
+    return () => clearTimeout(t);
+  }, [compute, ctxLoading]);
 
   return { data, loading, error, refetch: compute };
 }
