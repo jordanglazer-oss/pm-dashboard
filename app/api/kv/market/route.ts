@@ -46,14 +46,19 @@ export async function PUT(req: NextRequest) {
         merged.manualEditedAt = { ...(merged.manualEditedAt ?? {}), [f]: stampNow };
       }
     }
-    // Hand-entered breadth is logged to pm:breadth-history NOW (it used to
-    // wait for a later page load). When these are a new day's numbers typed
-    // under an as-of date that was never advanced, they are filed under today
-    // so the earlier day's row survives — and the stored as-of date follows,
-    // so the form and every reader agree on the date.
+    // Hand-entered breadth: the SERVER assigns the as-of date (the most recent
+    // market close, or a catch-up date the PM chose today) and logs the entry
+    // to pm:breadth-history now. Nobody sets a date by hand, and a catch-up
+    // date expires at the end of the day it was chosen, so it can never linger
+    // and capture the next day's numbers.
     if (updates?.breadthOverride && typeof updates.breadthOverride === "object") {
-      const logged = await logManualBreadth(merged.breadthOverride);
-      if (logged?.advanced) merged.breadthOverride = { ...merged.breadthOverride, date: logged.date };
+      const asOf = await logManualBreadth(merged.breadthOverride);
+      const next = { ...merged.breadthOverride, date: asOf.date };
+      if (!asOf.explicit) {
+        delete next.manualDate;
+        delete next.manualDateSetOn;
+      }
+      merged.breadthOverride = next;
     }
     await redis.set(KEY, JSON.stringify(merged));
 

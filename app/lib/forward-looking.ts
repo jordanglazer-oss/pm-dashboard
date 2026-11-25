@@ -6,6 +6,7 @@
 
 import { getRedis } from "./redis";
 import { easternToday } from "./date-eastern";
+import { lastMarketClose } from "./last-close";
 import { crossSectional, factsetConfigured } from "./factset";
 
 // Per-point freshness so the UI can render a badge that tells the user
@@ -584,22 +585,17 @@ type BreadthSnapshot = {
 
 const BREADTH_VALUE_FIELDS = ["above200", "above50", "broadAbove200", "broadAbove50", "newHighs", "newLows", "upVolume", "downVolume"] as const;
 
-/** The Eastern day a row was first logged (rows from before `loggedOn`
- *  existed: the day after their date, the usual "typed the next morning"). */
-function firstLoggedDay(row: BreadthSnapshot): string {
-  return row.loggedOn ?? new Date(Date.parse(`${row.date}T12:00:00Z`) + 86_400_000).toISOString().slice(0, 10);
-}
-
 /**
  * Merge a new reading into the row on file for the same date. PURE.
  *   - a missing number never erases one already recorded;
- *   - a row first logged on an EARLIER day is history: its recorded numbers
- *     are frozen, and only its empty fields can still be filled;
- *   - a row first logged TODAY can be corrected (multi-save days).
+ *   - `canCorrect` (the row is the close currently being entered, or a day
+ *     the PM explicitly chose): a new number replaces the old one;
+ *   - otherwise the row is history: its recorded numbers are frozen and only
+ *     its empty fields can still be filled.
  */
-export function mergeBreadthSnapshot(prev: BreadthSnapshot | undefined, next: BreadthSnapshot, today: string): BreadthSnapshot {
+export function mergeBreadthSnapshot(prev: BreadthSnapshot | undefined, next: BreadthSnapshot, canCorrect: boolean): BreadthSnapshot {
   if (!prev) return next;
-  const frozen = firstLoggedDay(prev) < today;
+  const frozen = !canCorrect;
   const out: BreadthSnapshot = { ...prev, loggedOn: prev.loggedOn ?? next.loggedOn };
   for (const f of BREADTH_VALUE_FIELDS) {
     const had = prev[f] ?? null, got = next[f] ?? null;
@@ -652,14 +648,16 @@ async function recordBreadthSnapshot(
    *  page-load path passes only the numbers typed today, so a box that still
    *  holds an earlier day's number is not re-filed under a new date). */
   whenOnFile?: BreadthSnapshot,
+  /** The row for this date may be corrected (see mergeBreadthSnapshot). */
+  canCorrect = false,
 ): Promise<BreadthSnapshot[]> {
   const history = await loadBreadthHistory();
   const existingIdx = history.findIndex((s) => s.date === todaySnapshot.date);
   if (existingIdx >= 0) {
     // Update in place so multi-refresh-per-day works — but a refresh that
     // carries no number never erases one already recorded for that date, and
-    // a row logged on an earlier day keeps the numbers it has.
-    history[existingIdx] = mergeBreadthSnapshot(history[existingIdx], whenOnFile ?? todaySnapshot, easternToday());
+    // a row for an earlier close keeps the numbers it has.
+    history[existingIdx] = mergeBreadthSnapshot(history[existingIdx], whenOnFile ?? todaySnapshot, canCorrect);
   } else if (BREADTH_VALUE_FIELDS.some((f) => todaySnapshot[f] != null)) {
     // A reading with no numbers at all is not worth a row.
     history.push({ ...todaySnapshot, loggedOn: todaySnapshot.loggedOn ?? easternToday() });
@@ -670,87 +668,90 @@ async function recordBreadthSnapshot(
   return breadthWindow(history);
 }
 
-// ── Hand-entered breadth: logged the moment it is saved (Nov 2026) ──
-// Until 2026-11-24 a breadth entry reached pm:breadth-history only when some
-// page later fetched the forward-looking bundle, and the entry form keeps its
-// "as of" date until the PM changes it — so a new day's numbers typed under
-// yesterday's date OVERWROTE yesterday's row. Both are closed here.
+// ── Hand-entered breadth: logged the moment it is saved, dated automatically ──
+// (Nov 2026.) Two things used to lose data: an entry reached
+// pm:breadth-history only when some page later fetched the forward-looking
+// bundle, and the form's date stayed where it was until the PM changed it, so
+// a new day's numbers REPLACED the previous day's row.
+//
+// Now nobody sets a date. Breadth is an end-of-session figure, so the numbers
+// typed describe the MOST RECENT MARKET CLOSE (app/lib/last-close.ts: the
+// previous trading day before 4 pm Eastern, today from 4 pm; weekends and US
+// market holidays roll back). The server assigns that date on every save.
+//   - The row for the current close can be corrected freely (a typo fixed
+//     later that morning is the same close).
+//   - Rows for EARLIER closes are history: nothing targets them any more, and
+//     the merge only lets their empty fields be filled.
+//   - To catch up on an older day the form can send an explicit date, honoured
+//     only on the day it was chosen so it can never linger and capture the
+//     next day's numbers.
 
-/**
- * Decide which date a saved breadth entry is logged under. PURE.
- *   - no usable number            → null (nothing to log)
- *   - no date, a bad or future one → today
- *   - a date with nothing on file, or the same numbers → that date
- *   - a date whose row holds DIFFERENT numbers that were first logged on an
- *     EARLIER day → these are a new day's numbers under an un-advanced date:
- *     log them under today so the earlier row survives
- *   - different numbers, first logged today → a same-day correction: that date
- * A row logged before `loggedOn` existed is taken as logged the day after its date.
- */
-export function planManualBreadth(history: BreadthSnapshot[], input: ManualBreadthInput | null | undefined, today: string): { date: string; advanced: boolean; snapshot: BreadthSnapshot } | null {
-  if (!input) return null;
-  const values: Partial<Record<(typeof BREADTH_VALUE_FIELDS)[number], number>> = {};
-  for (const f of BREADTH_VALUE_FIELDS) {
-    const v = input[f];
-    if (typeof v === "number" && Number.isFinite(v)) values[f] = v;
-  }
-  if (!Object.keys(values).length) return null;
-  const valid = typeof input.date === "string" && /^\d{4}-\d{2}-\d{2}$/.test(input.date) && input.date <= today;
-  let date = valid ? (input.date as string) : today;
-  let advanced = false;
-  const onFile = history.find((s) => s.date === date);
-  if (onFile && date < today) {
-    const differs = BREADTH_VALUE_FIELDS.some((f) => values[f] != null && onFile[f] != null && values[f] !== onFile[f]);
-    const firstLogged = onFile.loggedOn ?? new Date(Date.parse(`${onFile.date}T12:00:00Z`) + 86_400_000).toISOString().slice(0, 10);
-    if (differs && firstLogged < today) {
-      date = today;
-      advanced = true;
-    }
-  }
-  return {
-    date,
-    advanced,
-    snapshot: { date, above200: values.above200 ?? null, above50: values.above50 ?? null, source: "manual", broadAbove200: values.broadAbove200 ?? null, broadAbove50: values.broadAbove50 ?? null, newHighs: values.newHighs ?? null, newLows: values.newLows ?? null, upVolume: values.upVolume ?? null, downVolume: values.downVolume ?? null },
-  };
-}
+type BreadthOverrideInput = ManualBreadthInput & {
+  editedAt?: Record<string, string | undefined>;
+  /** An explicit as-of date chosen in the form ("change"), for catching up. */
+  manualDate?: string;
+  /** The Eastern day it was chosen; it expires when that day ends. */
+  manualDateSetOn?: string;
+};
 
 const EASTERN_DAY = new Intl.DateTimeFormat("en-CA", { timeZone: "America/New_York" });
 
 /**
- * Only the numbers actually TYPED today are logged today. The entry form
- * keeps yesterday's numbers in its boxes until each is retyped, and stamps
- * each box when it is typed (`editedAt`) — so a box left untouched must not be
- * re-filed under a new date. With no stamps at all (an older tab) every
- * number present is taken as typed now. PURE.
+ * Which date a breadth save is filed under. PURE.
+ * The explicit date wins only when it was chosen TODAY and is a real,
+ * non-future date; otherwise it is the most recent market close.
  */
-export function breadthTypedOn(override: (ManualBreadthInput & { editedAt?: Record<string, string | undefined> }) | null | undefined, today: string): ManualBreadthInput | null {
+export function breadthAsOfDate(override: BreadthOverrideInput | null | undefined, now: Date): { date: string; explicit: boolean } {
+  const today = EASTERN_DAY.format(now);
+  const m = override?.manualDate;
+  if (typeof m === "string" && /^\d{4}-\d{2}-\d{2}$/.test(m) && m <= today && override?.manualDateSetOn === today) return { date: m, explicit: true };
+  return { date: lastMarketClose(now), explicit: false };
+}
+
+/**
+ * Only the numbers typed FOR THIS CLOSE are logged under it. The form keeps
+ * the previous numbers in its boxes until each is retyped, and stamps each box
+ * when it is typed (`editedAt`); a box left untouched must not be re-filed
+ * under a newer date. A number counts when the close in force at the moment it
+ * was typed is this one (or, for an explicit catch-up date, when it was typed
+ * today). With no stamps at all (an older tab) every number present counts. PURE.
+ */
+export function breadthTypedFor(override: BreadthOverrideInput | null | undefined, asOf: { date: string; explicit: boolean }, now: Date): ManualBreadthInput | null {
   if (!override) return null;
   const stamps = override.editedAt;
   const hasStamps = stamps != null && Object.values(stamps).some(Boolean);
-  const out: ManualBreadthInput = { date: override.date };
+  const today = EASTERN_DAY.format(now);
+  const out: ManualBreadthInput = { date: asOf.date };
   for (const f of BREADTH_VALUE_FIELDS) {
+    if (typeof override[f] !== "number" || !Number.isFinite(override[f] as number)) continue;
     const stamp = stamps?.[f];
-    const typedToday = !hasStamps || (stamp != null && !Number.isNaN(Date.parse(stamp)) && EASTERN_DAY.format(new Date(stamp)) === today);
-    if (typedToday && typeof override[f] === "number") out[f] = override[f];
+    const when = stamp ? new Date(stamp) : null;
+    const counts = !hasStamps || (when != null && !Number.isNaN(when.getTime()) && (asOf.explicit ? EASTERN_DAY.format(when) === today : lastMarketClose(when) === asOf.date));
+    if (counts) out[f] = override[f];
   }
   return out;
 }
 
-/** Log a saved breadth entry now. Returns the date it was filed under (so the
- *  caller can keep pm:market's as-of date in step). Never throws. */
-export async function logManualBreadth(override: (ManualBreadthInput & { editedAt?: Record<string, string | undefined> }) | null | undefined): Promise<{ date: string; advanced: boolean } | null> {
+function snapshotFrom(input: ManualBreadthInput | null, date: string): BreadthSnapshot | null {
+  if (!input || !BREADTH_VALUE_FIELDS.some((f) => typeof input[f] === "number")) return null;
+  return { date, above200: input.above200 ?? null, above50: input.above50 ?? null, source: "manual", broadAbove200: input.broadAbove200 ?? null, broadAbove50: input.broadAbove50 ?? null, newHighs: input.newHighs ?? null, newLows: input.newLows ?? null, upVolume: input.upVolume ?? null, downVolume: input.downVolume ?? null };
+}
+
+/**
+ * Log a saved breadth entry now, under the date the server assigns. Returns
+ * that date so the caller stores it on pm:market (the form shows it, every
+ * reader uses it). Never throws; a failure only means this save is not logged.
+ */
+export async function logManualBreadth(override: BreadthOverrideInput | null | undefined, now: Date = new Date()): Promise<{ date: string; explicit: boolean }> {
+  const asOf = breadthAsOfDate(override, now);
   try {
-    const today = easternToday();
-    const input = breadthTypedOn(override, today);
-    const history = await loadBreadthHistory();
-    const plan = planManualBreadth(history, input, today);
-    if (!plan) return null;
-    await recordBreadthSnapshot(plan.snapshot);
-    return { date: plan.date, advanced: plan.advanced };
+    const snapshot = snapshotFrom(breadthTypedFor(override, asOf, now), asOf.date);
+    // The row for the close being entered (or an explicitly chosen day) can be corrected.
+    if (snapshot) await recordBreadthSnapshot(snapshot, undefined, true);
   } catch (e) {
     console.error("Manual breadth log failed:", e);
-    return null;
   }
+  return asOf;
 }
 
 // ── SPX-proxy breadth backfill ────────────────────────────────────────────
@@ -2355,8 +2356,12 @@ export async function fetchForwardLookingData(
     // re-saving the same as-of date updates in place.
     // A saved entry is now logged the moment it is saved (logManualBreadth).
     // This page-load path stays as the safety net: it creates the row when
-    // none exists, and when one does it may only add numbers typed TODAY.
-    const typedToday = breadthSource === "manual" ? breadthTypedOn(manualBreadth as Parameters<typeof breadthTypedOn>[0], easternToday()) : null;
+    // none exists, and when one does it may only add numbers typed for the
+    // close currently being entered — an earlier close's row is left as it is.
+    const nowForBreadth = new Date();
+    const currentClose = lastMarketClose(nowForBreadth);
+    const isCurrentClose = breadthAsOf === currentClose;
+    const typedToday = breadthSource === "manual" && isCurrentClose ? breadthTypedFor(manualBreadth as Parameters<typeof breadthTypedFor>[0], { date: currentClose, explicit: false }, nowForBreadth) : null;
     const realHistory = await recordBreadthSnapshot(
       {
         date: breadthAsOf,
@@ -2382,6 +2387,7 @@ export async function fetchForwardLookingData(
         upVolume: typedToday?.upVolume ?? null,
         downVolume: typedToday?.downVolume ?? null,
       },
+      isCurrentClose,
     );
 
     // On cold start (or any time the real history hasn't accumulated at
