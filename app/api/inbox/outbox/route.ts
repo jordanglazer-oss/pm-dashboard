@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createLogger } from "@/app/lib/logger";
-import { readPendingMail, markMailSent } from "@/app/lib/mail-outbox";
+import { takePendingMail, markMailSent } from "@/app/lib/mail-outbox";
 
 /**
  * Outbound-mail drain for the Gmail Apps Script (the "send via inbox Gmail"
@@ -28,7 +28,8 @@ export async function GET(req: NextRequest) {
   }
   if (!authorized(req)) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   try {
-    const mails = await readPendingMail();
+    // Handed out ONCE: removed from the queue as it is returned (see takePendingMail).
+    const mails = await takePendingMail();
     // The Apps Script only needs the fields it sends with.
     return NextResponse.json({
       mails: mails.map((m) => ({ id: m.id, to: m.to, subject: m.subject, text: m.text })),
