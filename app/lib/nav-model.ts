@@ -28,21 +28,22 @@ export type NavGroup = {
  * Nov 24 2026 hackathon scaffold: the rail is regrouped into the two sections
  * the team asked for — "Portfolio & Research" (views you drill into) and
  * "Tools" (click to generate). NOTHING was removed: every page that is not
- * yet placed by the team sits in the third group until they decide. The team
- * finalises the tab list in session; this is the starting point.
+ * yet placed by the team sits in the third group ("Other") until they decide.
  */
 export const NAV_GROUPS: NavGroup[] = [
   {
+    // Order agreed in the Nov 25 team session. The Brief page is unchanged — only its label reads "Market Brief".
     label: "Portfolio & Research",
     hue: "portfolio",
     items: [
       { key: "snapshot", label: "Portfolio Snapshot", href: "/", icon: "pie" },
-      { key: "brief", label: "Brief", href: "/brief", icon: "sun" },
+      { key: "brief", label: "Market Brief", href: "/brief", icon: "sun" },
+      { key: "hedging", label: "Hedging", href: "/hedging", icon: "umbrella" },
       { key: "holdings", label: "Holdings", href: "/holdings", icon: "table", match: (p) => p === "/scoring" || p.startsWith("/stock/") },
       { key: "models", label: "Models", href: "/pim-model", icon: "layers" },
       { key: "performance", label: "Performance", href: "/aa-performance", icon: "trend", match: (p) => p === "/attribution" },
       { key: "strategists", label: "Strategists", href: "/strategists", icon: "chat" },
-      { key: "ranked", label: "Market research", href: "/research", icon: "list" },
+      { key: "ranked", label: "Market Research", href: "/research", icon: "list" },
       { key: "monitors", label: "Monitors", href: "/monitors", icon: "shield" },
       { key: "watchlist", label: "Ideas", href: "/watchlist", icon: "spark" },
     ],
@@ -51,16 +52,15 @@ export const NAV_GROUPS: NavGroup[] = [
     label: "Tools",
     hue: "research",
     items: [
+      { key: "client-report", label: "Client Report", href: "/client-report", icon: "doc" },
       { key: "pm-monthly", label: "PM Monthly", href: "/pm-monthly", icon: "mail" },
-      { key: "client-report", label: "Client report", href: "/client-report", icon: "doc" },
-      { key: "funds", label: "Fund one-pagers", href: "/funds", icon: "doc" },
+      { key: "funds", label: "Fund One-Pagers", href: "/funds", icon: "doc" },
       { key: "chat", label: "Ask", href: "/chat", icon: "chat" },
-      { key: "inbox", label: "Inbox", href: "/inbox", icon: "inbox" },
     ],
   },
   {
-    // Existing pages the team has not placed yet. Unchanged; nothing removed.
-    label: "Not yet sorted",
+    // Every other existing page. Unchanged; nothing removed or hidden.
+    label: "Other",
     hue: "ideas",
     items: [
       { key: "positioning", label: "Positioning", href: "/portfolio", icon: "pie", match: (p) => p.startsWith("/portfolio") },
@@ -72,7 +72,7 @@ export const NAV_GROUPS: NavGroup[] = [
       { key: "synthesis", label: "Synthesis", href: "/synthesis", icon: "spark" },
       { key: "pipeline", label: "Pipeline", href: "/funnel", icon: "branch", match: (p) => p === "/conviction" },
       { key: "sources", label: "Research sources", href: "/research/sources", icon: "inbox" },
-      { key: "hedging", label: "Hedging", href: "/hedging", icon: "umbrella" },
+      { key: "inbox", label: "Inbox", href: "/inbox", icon: "inbox" },
       { key: "monitor", label: "Watchers", href: "/monitor", icon: "eye" },
       { key: "redesign", label: "Redesign options", href: "/redesign", icon: "spark", match: (p) => p.startsWith("/redesign") },
     ],
