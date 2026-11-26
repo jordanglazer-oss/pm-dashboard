@@ -36,7 +36,7 @@ export const NAV_GROUPS: NavGroup[] = [
     label: "Portfolio & Research",
     hue: "portfolio",
     items: [
-      { key: "snapshot", label: "Snapshot", href: "/", icon: "pie" },
+      { key: "snapshot", label: "Portfolio Snapshot", href: "/", icon: "pie" },
       { key: "brief", label: "Brief", href: "/brief", icon: "sun" },
       { key: "holdings", label: "Holdings", href: "/holdings", icon: "table", match: (p) => p === "/scoring" || p.startsWith("/stock/") },
       { key: "models", label: "Models", href: "/pim-model", icon: "layers" },

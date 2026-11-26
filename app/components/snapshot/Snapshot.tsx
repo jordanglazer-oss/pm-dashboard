@@ -5,7 +5,7 @@
  * "What's our model up?" answered at a glance, in the look of the landscape
  * client-report slide (cream cards, navy + gold, serif headings).
  *
- *   mandate toggle · Top Holdings (as held / look-through) · asset
+ *   mandate toggle · Holdings (as held / look-through) · asset
  *   allocation · sector exposure · performance by period
  *
  * FACTS ONLY and READ-ONLY. Everything comes from the same `useReportData`
@@ -69,6 +69,15 @@ const PERIODS: { id: Period; label: string; long: string }[] = [
   { id: "si", label: "Since inception", long: "since inception" },
 ];
 const TRADING_DAYS: Partial<Record<Period, number>> = { "1d": 1, "1w": 5, "1m": 21, "3m": 63 };
+
+/** The one return column on the Holdings card (Nov 25 team session): chosen from a dropdown, default Today. */
+type Ret = "today" | "1w" | "1m" | "3m";
+const RETS: { id: Ret; label: string; long: string }[] = [
+  { id: "today", label: "Today", long: "today (latest price vs the prior close)" },
+  { id: "1w", label: "1W", long: "1 week" },
+  { id: "1m", label: "1M", long: "1 month" },
+  { id: "3m", label: "3M", long: "3 months" },
+];
 
 type Pt = { date: string; value: number };
 const ET = "America/New_York";
@@ -154,14 +163,14 @@ function useSaved<T>(slot: string, id: string, live: T | null): { value: T | nul
   return kept && kept.slot === slot && kept.id === id ? { value: kept.value, savedAt: kept.at } : { value: null, savedAt: null };
 }
 
-function useHoldingHistory(symbols: string[]): { series: Record<string, Pt[]>; at: string | null } {
+function useHoldingHistory(symbols: string[], slot = "history"): { series: Record<string, Pt[]>; at: string | null } {
   const key = symbols.join(",");
   const [state, setState] = useState<{ key: string; series: Record<string, Pt[]>; at: string | null }>({ key: "", series: {}, at: null });
   useEffect(() => {
     if (!key) return;
     let alive = true;
     const syms = key.split(",");
-    fetch("/api/report-history", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ tickers: syms.map(historyTicker), range: "5y", funds: true }) })
+    fetch("/api/report-history", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ tickers: syms.map(historyTicker), range: "1y", funds: true }) })
       .then((r) => (r.ok ? r.json() : null))
       .then((d: { series?: Record<string, [number, number][]>; fetchedAt?: string } | null) => {
         if (!alive || !d?.series) return;
@@ -175,8 +184,48 @@ function useHoldingHistory(symbols: string[]): { series: Record<string, Pt[]>; a
     };
   }, [key]);
   const fresh = state.key === key && key ? state : null;
-  const saved = useSaved("history", key, fresh);
+  const saved = useSaved(slot, key, fresh);
   return saved.value ?? { series: {}, at: null };
+}
+
+type SinceRow = { symbol: string; since: string; returnPct: number | null; reason: string | null };
+type SinceData = { onFile: boolean; through?: string; rows: SinceRow[] };
+/** Price change vs average cost for each position still held, from the SIA transaction log (read-only route). */
+function useSincePurchase(): { data: SinceData | null; failed: boolean } {
+  const [state, setState] = useState<{ data: SinceData | null; failed: boolean }>({ data: null, failed: false });
+  useEffect(() => {
+    let alive = true;
+    fetch("/api/since-purchase")
+      .then((r) => (r.ok ? r.json() : Promise.reject(new Error(String(r.status)))))
+      .then((d: SinceData) => alive && setState({ data: d && Array.isArray(d.rows) ? d : null, failed: !(d && Array.isArray(d.rows)) }))
+      .catch(() => alive && setState({ data: null, failed: true }));
+    return () => {
+      alive = false;
+    };
+  }, []);
+  const saved = useSaved("since", "all", state.data);
+  return { data: saved.value, failed: state.failed };
+}
+
+type FxImpact = { profile: string; from: string; contributionPct: number | null; fxPct: number | null; unhedgedWeight: number; unclassifiedWeight: number; fxEnd: { date: string } | null };
+/** Currency impact on the mandate's return, year to date (the existing read-only estimate). */
+function useCurrencyImpact(mandate: string): { data: FxImpact | null; failed: boolean } {
+  const [state, setState] = useState<{ key: string; data: FxImpact | null; failed: boolean }>({ key: "", data: null, failed: false });
+  useEffect(() => {
+    if (!mandate) return;
+    let alive = true;
+    const from = `${new Date().getFullYear()}-01-01`;
+    fetch(`/api/currency-impact?from=${from}&profile=${encodeURIComponent(mandate)}`)
+      .then((r) => (r.ok ? r.json() : Promise.reject(new Error(String(r.status)))))
+      .then((d: FxImpact) => alive && setState({ key: mandate, data: d?.profile === mandate ? d : null, failed: d?.profile !== mandate }))
+      .catch(() => alive && setState({ key: mandate, data: null, failed: true }));
+    return () => {
+      alive = false;
+    };
+  }, [mandate]);
+  const fresh = state.key === mandate ? state.data : null;
+  const saved = useSaved("fx", mandate, fresh);
+  return { data: saved.value, failed: state.key === mandate && state.failed };
 }
 
 /** /api/prices ticker for a model or look-through symbol (same mapping the Positioning tab uses). */
@@ -347,7 +396,9 @@ export default function Snapshot() {
   const stored = uiPrefs["snapshot.mandate"] as PimProfileType | undefined;
   const mandate: PimProfileType = mandates.some((m) => m.id === stored) ? (stored as PimProfileType) : mandates.some((m) => m.id === "balanced") ? "balanced" : (mandates[0]?.id ?? "balanced");
   const tab = uiPrefs["snapshot.holdingsTab"] === "lookthrough" ? "lookthrough" : "held";
-  const period = (PERIODS.some((p) => p.id === uiPrefs["snapshot.period"]) ? uiPrefs["snapshot.period"] : "ytd") as Period;
+  const ret = (RETS.some((r) => r.id === uiPrefs["snapshot.holdingsReturn"]) ? uiPrefs["snapshot.holdingsReturn"] : "today") as Ret;
+  const retLabel = RETS.find((r) => r.id === ret)!.label;
+  const retLong = RETS.find((r) => r.id === ret)!.long;
 
   const report = useReportData("pim", mandate);
   const { loading, error, refetch } = report;
@@ -391,25 +442,32 @@ export default function Snapshot() {
 
   const xrayTop = useMemo(() => (data?.xray ?? []).slice(0, 20), [data]);
   const day = useDayMoves(useMemo(() => [...symbols, ...xrayTop.map((r) => r.symbol)], [symbols, xrayTop]));
-  type HeldKey = "name" | "ticker" | "weight" | "ret" | "day";
-  type XrayKey = "name" | "weight" | "direct" | "via" | "day";
+  // Look-through returns need price history for the underlying stocks: fetched only when that view asks for it.
+  const xraySymbols = useMemo(() => xrayTop.map((r) => r.symbol), [xrayTop]);
+  const xhist = useHoldingHistory(tab === "lookthrough" && ret !== "today" ? xraySymbols : [], "xhistory");
+  const xrayRet = (sym: string) => (ret === "today" ? day.moves[sym] : periodReturn(xhist.series[sym] ?? [], ret, null));
+  const since = useSincePurchase();
+  const sinceOf = (sym: string) => since.data?.rows.find((r) => tickerMatch(r.symbol, sym)) ?? null;
+  const fxImpact = useCurrencyImpact(ctxLoading ? "" : mandate);
+  type HeldKey = "name" | "ticker" | "weight" | "ret" | "since";
+  type XrayKey = "name" | "weight" | "direct" | "via" | "ret";
   const [heldSort, setHeldSort] = useState<Sort<HeldKey>>({ key: "weight", dir: "desc" });
   const [xraySort, setXraySort] = useState<Sort<XrayKey>>({ key: "weight", dir: "desc" });
   const xray = useMemo(() => {
-    const val = (r: (typeof xrayTop)[number]) => (xraySort.key === "name" ? r.name || r.symbol : xraySort.key === "direct" ? r.direct : xraySort.key === "via" ? r.lookThrough : xraySort.key === "day" ? day.moves[r.symbol] : r.weight);
+    const val = (r: (typeof xrayTop)[number]) => (xraySort.key === "name" ? r.name || r.symbol : xraySort.key === "direct" ? r.direct : xraySort.key === "via" ? r.lookThrough : xraySort.key === "ret" ? xrayRet(r.symbol) : r.weight);
     return [...xrayTop].sort((a, b) => compare(val(a), val(b), xraySort.dir));
-  }, [xrayTop, xraySort, day.moves]);
-  const periodLabel = PERIODS.find((p) => p.id === period)!.label;
-  const periodLong = PERIODS.find((p) => p.id === period)!.long;
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- xrayRet reads only the values listed
+  }, [xrayTop, xraySort, day.moves, xhist.series, ret]);
   const today = new Date().toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric", year: "numeric" });
 
   const holdingsTable = (ccy: "CAD" | "USD") => {
-    const ret = (sym: string) => periodReturn(hist.series[sym] ?? [], period, inception);
-    const dayMove = (sym: string) => {
+    // A mutual fund has no intraday price: its "today" is the latest NAV vs the one before, dated.
+    const navMove = (sym: string) => {
       const sr = isFund(sym) ? (hist.series[sym] ?? []) : [];
-      return sr.length >= 2 ? (sr[sr.length - 1].value / sr[sr.length - 2].value - 1) * 100 : day.moves[sym];
+      return sr.length >= 2 ? { move: (sr[sr.length - 1].value / sr[sr.length - 2].value - 1) * 100, date: sr[sr.length - 1].date } : null;
     };
-    const val = (h: (typeof held)[number]) => (heldSort.key === "name" ? h.name || h.symbol : heldSort.key === "ticker" ? h.symbol : heldSort.key === "ret" ? ret(h.symbol) : heldSort.key === "day" ? dayMove(h.symbol) : h.weight);
+    const retOf = (sym: string) => (ret === "today" ? (navMove(sym)?.move ?? day.moves[sym]) : periodReturn(hist.series[sym] ?? [], ret, null));
+    const val = (h: (typeof held)[number]) => (heldSort.key === "name" ? h.name || h.symbol : heldSort.key === "ticker" ? h.symbol : heldSort.key === "ret" ? retOf(h.symbol) : heldSort.key === "since" ? sinceOf(h.symbol)?.returnPct : h.weight);
     const rows = held.filter((h) => h.currency === ccy).sort((a, b) => compare(val(a), val(b), heldSort.dir));
     if (!rows.length) return null;
     const sub = rows.reduce((a, h) => a + h.weight, 0);
@@ -421,11 +479,9 @@ export default function Snapshot() {
           </td>
         </tr>
         {rows.map((h) => {
-          const r = ret(h.symbol);
-          // A mutual fund has no intraday price: its "today" is the latest NAV vs the one before, dated.
-          const navSeries = isFund(h.symbol) ? (hist.series[h.symbol] ?? []) : [];
-          const nav = navSeries.length >= 2 ? { move: (navSeries[navSeries.length - 1].value / navSeries[navSeries.length - 2].value - 1) * 100, date: navSeries[navSeries.length - 1].date } : null;
-          const d1 = nav ? nav.move : day.moves[h.symbol];
+          const r = retOf(h.symbol);
+          const nav = ret === "today" ? navMove(h.symbol) : null;
+          const sp = sinceOf(h.symbol);
           return (
             <tr key={h.symbol}>
               <td className={TDc} style={{ borderColor: T.rule }}>
@@ -433,11 +489,20 @@ export default function Snapshot() {
               </td>
               <td className={`${TDc} whitespace-nowrap text-[13px] tabular-nums`} style={{ borderColor: T.rule, color: T.muted }}>{h.symbol}</td>
               <td className={`${TDc} text-right text-[15px] font-semibold tabular-nums`} style={{ borderColor: T.rule, color: T.navy }}>{pct(h.weight)}</td>
-              <td className={`${TDc} text-right text-[15px] tabular-nums`} style={{ borderColor: T.rule, color: tone(d1) }}>
-                {signed(d1)}
+              <td className={`${TDc} text-right text-[15px] tabular-nums`} style={{ borderColor: T.rule, color: tone(r) }}>
+                {signed(r)}
                 {nav && <div className="text-[11.5px] font-normal" style={{ color: T.muted }} title="A mutual fund is priced once a day; this is its latest NAV against the one before">NAV {fmtDay(nav.date).replace(/, \d{4}$/, "")}</div>}
               </td>
-              <td className={`${TDc} text-right text-[15px] tabular-nums`} style={{ borderColor: T.rule, color: tone(r) }}>{signed(r)}</td>
+              <td className={`${TDc} text-right text-[15px] tabular-nums`} style={{ borderColor: T.rule, color: sp?.returnPct != null ? tone(sp.returnPct) : T.muted }}>
+                {sp?.returnPct != null ? (
+                  <>
+                    {signed(sp.returnPct, 1)}
+                    <div className="text-[11.5px] font-normal" style={{ color: T.muted }}>since {fmtDay(sp.since)}</div>
+                  </>
+                ) : (
+                  <span className="text-[12.5px]" title={sp?.reason ?? "This position is not in the SIA transaction log on file"}>{!since.data ? (since.failed ? "not loaded" : "…") : sp ? sp.reason : "no purchase record"}</span>
+                )}
+              </td>
             </tr>
           );
         })}
@@ -493,11 +558,7 @@ export default function Snapshot() {
                 <tr style={{ color: T.muted }}>
                   <th className={`${TH} text-left`} />
                   {PERIODS.map((p) => (
-                    <th key={p.id} className={`${TH} text-right`}>
-                      <button type="button" onClick={() => setUiPref("snapshot.period", p.id)} title={`Show holdings returns for ${p.long}`} className="rounded px-1.5 py-0.5 uppercase tracking-[0.1em]" style={p.id === period ? { backgroundColor: T.navy, color: "#fff" } : undefined}>
-                        {p.label}
-                      </button>
-                    </th>
+                    <th key={p.id} className={`${TH} text-right`} title={p.long}>{p.label}</th>
                   ))}
                 </tr>
               </thead>
@@ -508,7 +569,7 @@ export default function Snapshot() {
                     {PERIODS.map((p) => {
                       const v = periodReturn(row.series, p.id, inception);
                       return (
-                        <td key={p.id} className={`${TDc} text-right tabular-nums ${row.model ? "text-[19px] font-semibold" : "text-[15px]"}`} style={{ borderColor: T.rule, color: tone(v), backgroundColor: p.id === period ? "rgba(10,42,80,0.04)" : undefined }}>
+                        <td key={p.id} className={`${TDc} text-right tabular-nums ${row.model ? "text-[19px] font-semibold" : "text-[15px]"}`} style={{ borderColor: T.rule, color: tone(v) }}>
                           {signed(v)}
                         </td>
                       );
@@ -519,16 +580,24 @@ export default function Snapshot() {
             </table>
           </div>
           <p className="mt-2 text-[12.5px]" style={{ color: T.muted }}>
-            {inception ? `Since inception = from ${fmtDay(inception)}, the model's first recorded day; the indices are measured from the same day.` : "No recorded model history yet."} Click a period to show holdings returns for it.
+            {inception ? `Since inception = from ${fmtDay(inception)}, the model's first recorded day; the indices are measured from the same day.` : "No recorded model history yet."}
           </p>
         </CardBox>
 
         <div className="grid items-start gap-4 xl:grid-cols-[minmax(0,1.35fr)_minmax(0,1fr)]">
           {/* Top holdings */}
           <CardBox
-            eyebrow="Top holdings"
+            eyebrow="Holdings"
             right={
               <>
+                <label className="flex items-center gap-2 text-[13px] font-semibold" style={{ color: T.muted }}>
+                  Return
+                  <select value={ret} onChange={(e) => setUiPref("snapshot.holdingsReturn", e.target.value)} aria-label="Return period for the holdings table" className="h-9 rounded-full border bg-white px-3 text-[14px] font-semibold" style={{ borderColor: T.rule, color: T.ink }}>
+                    {RETS.map((r) => (
+                      <option key={r.id} value={r.id}>{r.label}</option>
+                    ))}
+                  </select>
+                </label>
                 <Pill on={tab === "held"} onClick={() => setUiPref("snapshot.holdingsTab", "held")}>Portfolio holdings</Pill>
                 <Pill on={tab === "lookthrough"} onClick={() => setUiPref("snapshot.holdingsTab", "lookthrough")}>Look-through</Pill>
               </>
@@ -545,8 +614,8 @@ export default function Snapshot() {
                         <SortTh k="name" label="Holding" sort={heldSort} onSort={setHeldSort} text />
                         <SortTh k="ticker" label="Ticker" sort={heldSort} onSort={setHeldSort} text />
                         <SortTh k="weight" label="% of portfolio" sort={heldSort} onSort={setHeldSort} right />
-                        <SortTh k="day" label="Today" sort={heldSort} onSort={setHeldSort} right title="Sort by today's move (latest price vs the prior close)" />
-                        <SortTh k="ret" label={periodLabel} sort={heldSort} onSort={setHeldSort} right title={`Sort by return over ${periodLong}`} />
+                        <SortTh k="ret" label={retLabel} sort={heldSort} onSort={setHeldSort} right title={`Sort by return: ${retLong}`} />
+                        <SortTh k="since" label="Since purchase" sort={heldSort} onSort={setHeldSort} right title="Sort by price change vs our average cost" />
                       </tr>
                     </thead>
                     {holdingsTable("CAD")}
@@ -564,7 +633,7 @@ export default function Snapshot() {
                   </table>
                 </div>
                 <p className="mt-2 text-[12.5px]" style={{ color: T.muted }}>
-                  One line per position as held; funds and ETFs are a single line. Weights are {data?.weightsSource === "live" ? "live (positions × latest prices)" : "the model targets (no positions on file)"}. Click a heading to sort (within each currency group). Today = latest price vs the prior close. {periodLabel} = total return over {periodLong}. Both are in each holding&apos;s own currency, from Yahoo Finance{hist.at ? ` (${fmtDay(hist.at)})` : ""}. Mutual funds use their daily NAV with distributions reinvested (Globe and Mail fund data), so their &ldquo;today&rdquo; is the latest NAV, dated. “—” = no price history, or not held that long.
+                  One line per position as held; funds and ETFs are a single line. Weights are {data?.weightsSource === "live" ? "live (positions × latest prices)" : "the model targets (no positions on file)"}. Click a heading to sort (within each currency group). {retLabel} = {ret === "today" ? "latest price vs the prior close" : `the holding's own total return over ${retLong}, whether or not we held it that long`}, in its own currency, from Yahoo Finance{hist.at ? ` (${fmtDay(hist.at)})` : ""}. Mutual funds use their daily NAV with distributions reinvested (Globe and Mail fund data), so their &ldquo;today&rdquo; is the latest NAV, dated. Since purchase = latest price vs our average cost in C$, from the SIA transaction log{since.data?.through ? ` (trades through ${fmtDay(since.data.through)})` : ""}; price only, dividends and distributions not counted; a US-dollar holding includes the currency move.
                 </p>
               </>
             ) : (
@@ -578,7 +647,7 @@ export default function Snapshot() {
                         <SortTh k="weight" label="% of portfolio" sort={xraySort} onSort={setXraySort} right />
                         <SortTh k="direct" label="Direct" sort={xraySort} onSort={setXraySort} right title="Sort by the weight we hold directly" />
                         <SortTh k="via" label="Via funds" sort={xraySort} onSort={setXraySort} right title="Sort by the weight held through funds and ETFs" />
-                        <SortTh k="day" label="Today" sort={xraySort} onSort={setXraySort} right title="Sort by today's move (latest price vs the prior close)" />
+                        <SortTh k="ret" label={retLabel} sort={xraySort} onSort={setXraySort} right title={`Sort by the stock's own return: ${retLong}`} />
                       </tr>
                     </thead>
                     <tbody>
@@ -598,7 +667,7 @@ export default function Snapshot() {
                             <td className={`${TDc} text-right text-[15px] font-semibold tabular-nums`} style={{ borderColor: T.rule, color: T.navy }}>{pct(r.weight, 2)}</td>
                             <td className={`${TDc} text-right text-[14px] tabular-nums`} style={{ borderColor: T.rule, color: own ? T.ink : T.muted }}>{pct(r.direct, 2)}</td>
                             <td className={`${TDc} text-right text-[14px] tabular-nums`} style={{ borderColor: T.rule, color: T.muted }}>{pct(r.lookThrough, 2)}</td>
-                            <td className={`${TDc} text-right text-[15px] tabular-nums`} style={{ borderColor: T.rule, color: tone(day.moves[r.symbol]) }}>{signed(day.moves[r.symbol])}</td>
+                            <td className={`${TDc} text-right text-[15px] tabular-nums`} style={{ borderColor: T.rule, color: tone(xrayRet(r.symbol)) }}>{signed(xrayRet(r.symbol))}</td>
                           </tr>
                         );
                       })}
@@ -609,7 +678,7 @@ export default function Snapshot() {
                   </table>
                 </div>
                 <p className="mt-2 text-[12.5px]" style={{ color: T.muted }}>
-                  The 20 largest underlying stocks across the whole mandate, with funds and ETFs broken into their holdings. Highlighted = we also own it directly. Click a heading to sort; Today = latest price vs the prior close, in the stock&apos;s own currency.{" "}
+                  The 20 largest underlying stocks across the whole mandate, with funds and ETFs broken into their holdings. Highlighted = we also own it directly. Click a heading to sort; {retLabel} = each stock&apos;s own market return ({ret === "today" ? "latest price vs the prior close" : retLong}), in its own currency; blank where no price history was found.{" "}
                   {fundAsOf ? <span style={{ color: T.ink }}>Fund holdings data last fetched {fundAsOf.oldest === fundAsOf.newest ? fmtDay(fundAsOf.oldest) : `between ${fmtDay(fundAsOf.oldest)} and ${fmtDay(fundAsOf.newest)}`} ({fundAsOf.n} funds); the providers&apos; own lists are often a month old.</span> : "No date is on file for the fund holdings data."}
                 </p>
               </>
@@ -628,6 +697,17 @@ export default function Snapshot() {
                         <div className="text-[22px] font-semibold tabular-nums" style={{ color: T.navy, fontFamily: SERIF }}>{pct(v as number)}</div>
                       </div>
                     ))}
+                    <div className="min-w-[190px] flex-1">
+                      <div className="text-[12px] font-semibold uppercase tracking-[0.14em]" style={{ color: T.muted }}>Currency impact, YTD <span className="normal-case tracking-normal">· estimate</span></div>
+                      <div className="text-[22px] font-semibold tabular-nums" style={{ color: tone(fxImpact.data?.contributionPct), fontFamily: SERIF }}>{fxImpact.data ? signed(fxImpact.data.contributionPct) : fxImpact.failed ? "not loaded" : "…"}</div>
+                      {fxImpact.data && (
+                        <div className="text-[12.5px]" style={{ color: T.muted }}>
+                          USD/CAD {signed(fxImpact.data.fxPct)} × {pct(fxImpact.data.unhedgedWeight * 100)} unhedged US-dollar exposure{fxImpact.data.fxEnd ? ` · to ${fmtDay(fxImpact.data.fxEnd.date)}` : ""}.{" "}
+                          <Link href="/aa-performance" className="font-semibold underline" style={{ color: T.navy }}>Detail</Link>
+                          {fxImpact.data.unclassifiedWeight > 0.005 && <div style={{ color: T.neg }}>{pct(fxImpact.data.unclassifiedWeight * 100)} of the portfolio has no currency mix on file and is not counted.</div>}
+                        </div>
+                      )}
+                    </div>
                   </div>
                 </>
               ) : (
