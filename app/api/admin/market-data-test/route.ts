@@ -45,7 +45,16 @@ function thirdFriday(y: number, m: number): string {
 
 export async function GET() {
   const key = process.env.MARKET_DATA_API;
-  if (!key) return NextResponse.json({ ok: false, problem: "MARKET_DATA_API is not set for this deployment. In Vercel, tick the Preview environment for the variable, then redeploy." });
+  if (!key) {
+    // Names only (never values): shows a misspelt or differently named variable.
+    const similarNames = Object.keys(process.env).filter((k) => /market|mda|data_api/i.test(k)).sort();
+    return NextResponse.json({
+      ok: false,
+      problem: "MARKET_DATA_API is not set for this deployment.",
+      similarNames,
+      thisBuild: { environment: process.env.VERCEL_ENV ?? null, branch: process.env.VERCEL_GIT_COMMIT_REF ?? null, commit: (process.env.VERCEL_GIT_COMMIT_SHA ?? "").slice(0, 7) || null },
+    });
+  }
   try {
     const calls: Call[] = [];
     const exp = await call("expiry list", "/options/expirations/SPY/", key);
