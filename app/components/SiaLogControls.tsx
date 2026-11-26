@@ -27,7 +27,7 @@ type Preview = {
   unreadableRows?: string[];
   splitsFound?: Record<string, string>;
   noPriceSource?: string[];
-  modelCheck?: { date: string; rows: { symbol: string; logPct: number; modelPct: number | null }[]; worstGapPts: number | null; note: string } | null;
+  modelCheck?: { date: string; rows: { symbol: string; logPct: number; modelPct: number | null }[]; worstGapPts: number | null; worst?: { symbol: string; logPct: number; modelPct: number } | null; splitLike?: string[]; unpriced?: string[]; note: string } | null;
   onFileNow?: Status;
 };
 
@@ -104,7 +104,11 @@ export function SiaLogControls({ source, onChanged }: { source: "sia" | "tradelo
 
   const s = status;
   const p = preview;
-  const off = p?.modelCheck?.worstGapPts != null && p.modelCheck.worstGapPts > 1;
+  const mc = p?.modelCheck;
+  const splitLike = mc?.splitLike ?? [];
+  // Older responses carry no split test: fall back to the plain 1-point rule.
+  const off = mc?.splitLike ? splitLike.length > 0 : mc?.worstGapPts != null && mc.worstGapPts > 1;
+  const drift = !off && mc?.worstGapPts != null && mc.worstGapPts > 1;
 
   return (
     <div className={open ? "mx-3.5 mt-2.5 rounded-control border border-line bg-surface-2 px-3 py-2 text-[12.5px] text-ink-2" : "px-3.5 pt-2 text-[12px] text-ink-3"}>
@@ -177,8 +181,14 @@ export function SiaLogControls({ source, onChanged }: { source: "sia" | "tradelo
               {(p.unreadableRows?.length ?? 0) > 0 && <p className="text-neg">{p.unreadableRows!.length} row(s) could not be read: {p.unreadableRows!.slice(0, 3).join(" · ")}</p>}
               {p.modelCheck && (
                 <p className={off ? "text-neg" : ""}>
-                  Model check ({p.modelCheck.date}): largest weight difference {p.modelCheck.worstGapPts ?? "—"} pt.{" "}
-                  {off ? "Larger than expected — a stock split may be missing. Ask before saving." : "In line with the model."}
+                  Model check ({p.modelCheck.date}): largest weight difference {p.modelCheck.worstGapPts ?? "—"} pt
+                  {mc?.worst ? " (" + mc.worst.symbol + ": log " + mc.worst.logPct + "%, model today " + mc.worst.modelPct + "%)" : ""}.{" "}
+                  {off
+                    ? "A stock split may be missing" + (splitLike.length ? " for " + splitLike.join(", ") : "") + ". Ask before saving."
+                    : drift
+                      ? "No holding is at half or double its model weight, so no split is missing; the difference is drift or a model change since that day."
+                      : "In line with the model."}
+                  {(mc?.unpriced?.length ?? 0) > 0 ? " Not traded that day, so left out of the check: " + mc!.unpriced!.join(", ") + "." : ""}
                 </p>
               )}
               {p.splitsFound && Object.keys(p.splitsFound).length > 0 && (

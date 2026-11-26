@@ -82,7 +82,7 @@ export async function POST(req: NextRequest) {
     // Sanity check a person can read: on the file's last trade day (a full
     // rebalance in practice), do the units × that day's prices give the weights
     // the model says? A missing split shows up here as one name far off.
-    let modelCheck: { date: string; rows: { symbol: string; logPct: number; modelPct: number | null }[]; worstGapPts: number | null; note: string } | null = null;
+    let modelCheck: { date: string; rows: { symbol: string; logPct: number; modelPct: number | null }[]; worstGapPts: number | null; worst: { symbol: string; logPct: number; modelPct: number } | null; splitLike: string[]; unpriced: string[]; note: string } | null = null;
     try {
       const modelsRaw = await redis.get("pm:pim-models");
       const pim = modelsRaw ? (JSON.parse(modelsRaw) as PimModelData).groups?.find((g) => g.id === "pim") : null;
@@ -102,8 +102,13 @@ export async function POST(req: NextRequest) {
             return { symbol: r.symbol, logPct: parseFloat(((r.value / total) * 100).toFixed(2)), modelPct: share != null ? parseFloat((share * 100).toFixed(2)) : null };
           })
           .sort((a, b) => b.logPct - a.logPct);
-        const gaps = rows.filter((r) => r.modelPct != null).map((r) => Math.abs(r.logPct - r.modelPct!));
-        modelCheck = { date: day, rows, worstGapPts: gaps.length ? parseFloat(Math.max(...gaps).toFixed(2)) : null, note: "Weights from the log on its last trade day beside today's model. Only names traded that day are priced; a gap of more than about 1 point on one name usually means a split the lookup missed." };
+        const matched = rows.filter((r): r is { symbol: string; logPct: number; modelPct: number } => r.modelPct != null);
+        const worst = matched.reduce<{ symbol: string; logPct: number; modelPct: number } | null>((a, r) => (!a || Math.abs(r.logPct - r.modelPct) > Math.abs(a.logPct - a.modelPct) ? r : a), null);
+        // A missed split shows as one name at about half or double its model weight (or worse), not as a point or so of drift.
+        const splitLike = matched.filter((r) => r.modelPct > 0.3 && (r.logPct / r.modelPct > 1.8 || r.logPct / r.modelPct < 0.56)).map((r) => r.symbol);
+        // Held on that day but not traded, so not priced and not in the total — every other weight reads slightly high.
+        const unpriced = pos.filter((p) => unitsAt(p.steps, day) > 0 && !(px.get(p.symbol)! > 0) && pim.holdings.some((h) => sameSymbol(h.symbol, p.symbol))).map((p) => p.symbol);
+        modelCheck = { date: day, rows, worstGapPts: worst ? parseFloat(Math.abs(worst.logPct - worst.modelPct).toFixed(2)) : null, worst, splitLike, unpriced, note: "Weights from the log on its last trade day beside today's model. Only names traded that day are priced. A missed split shows as one name at about half or double its model weight; a point or so on a large holding is drift or a model change since that day." };
       }
     } catch {
       /* the check is a courtesy; never block on it */
