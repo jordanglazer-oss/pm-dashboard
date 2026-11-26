@@ -5,7 +5,7 @@ import { sameSymbol } from "@/app/lib/model-staging";
 import type { PimModelData } from "@/app/lib/pim-types";
 import { mergeSplits, parseSiaCsv, siaPositions, siaSummary, siaSymbol, unitsAt } from "@/app/lib/sia-holdings";
 import { fetchSiaSplits } from "@/app/lib/sia-splits";
-import { SIA_KEY, packTxns, readSiaStore, siaStatus, type SiaStore } from "@/app/lib/sia-store";
+import { SIA_BOOKS, isSiaBook, packTxns, readSiaStore, siaKey, siaStatus, type SiaBook, type SiaStore } from "@/app/lib/sia-store";
 
 /**
  * The SIA transaction log behind "Contribution by holding".
@@ -21,7 +21,11 @@ import { SIA_KEY, packTxns, readSiaStore, siaStatus, type SiaStore } from "@/app
  * POST { action: "disable" | "enable" }   — the switch. "disable" keeps the
  *        data and makes the panel use the dashboard's own trade log again.
  *
- * Touches ONE key, pm:sia-transactions (and its stash). It never reads or
+ * `book` (allEquity — the default — growth, balanced, conservative) says which
+ * mandate's log: each has its OWN key, so loading one never touches another.
+ * GET ?all=1 lists what is on file for every mandate.
+ *
+ * Touches ONE key per call, that mandate's log (and its stash). It never reads or
  * writes a performance series, a position, a model or a score, so loading,
  * replacing or switching off the log cannot change recorded performance.
  */
@@ -31,16 +35,27 @@ export const maxDuration = 300;
 
 const log = createLogger("SIA-transactions");
 
-export async function GET() {
-  return NextResponse.json(siaStatus(await readSiaStore()));
+export async function GET(req: NextRequest) {
+  const q = new URL(req.url).searchParams;
+  if (q.get("all")) {
+    const books = await Promise.all(SIA_BOOKS.map(async (b) => ({ book: b.id, label: b.label, ...siaStatus(await readSiaStore(b.id)) })));
+    return NextResponse.json({ books });
+  }
+  const book = q.get("book");
+  return NextResponse.json(siaStatus(await readSiaStore(isSiaBook(book) ? book : "allEquity")));
 }
+
+const CLASS_KEY = { equity: "equity", fixedIncome: "fixedIncome", alternative: "alternatives" } as const;
 
 export async function POST(req: NextRequest) {
   try {
-    const body = (await req.json().catch(() => null)) as { csv?: unknown; fileName?: unknown; confirm?: unknown; replace?: unknown; action?: unknown } | null;
+    const body = (await req.json().catch(() => null)) as { csv?: unknown; fileName?: unknown; confirm?: unknown; replace?: unknown; action?: unknown; book?: unknown } | null;
     if (!body) return NextResponse.json({ error: "Expected a JSON body." }, { status: 400 });
+    if (body.book != null && !isSiaBook(body.book)) return NextResponse.json({ error: "Unknown mandate." }, { status: 400 });
+    const book: SiaBook = isSiaBook(body.book) ? body.book : "allEquity";
+    const SIA_KEY = siaKey(book);
     const redis = await getRedis();
-    const stored = await readSiaStore();
+    const stored = await readSiaStore(book);
 
     if (body.action === "disable" || body.action === "enable") {
       if (!stored) return NextResponse.json({ error: "No SIA log is on file." }, { status: 409 });
@@ -80,8 +95,11 @@ export async function POST(req: NextRequest) {
         const total = priced.reduce((a, r) => a + r.value, 0);
         const rows = priced
           .map((r) => {
-            const m = pim.holdings.find((h) => h.assetClass === "equity" && sameSymbol(h.symbol, r.symbol));
-            return { symbol: r.symbol, logPct: parseFloat(((r.value / total) * 100).toFixed(2)), modelPct: m ? parseFloat((m.weightInClass * 100).toFixed(2)) : null };
+            // All-Equity: the equity class is the whole book (as before). Other mandates: each class at its share of the mandate.
+            const mix = book === "allEquity" ? null : pim.profiles[book];
+            const m = pim.holdings.find((h) => (mix ? true : h.assetClass === "equity") && sameSymbol(h.symbol, r.symbol));
+            const share = m ? m.weightInClass * (mix ? (mix[CLASS_KEY[m.assetClass]] ?? 0) : 1) : null;
+            return { symbol: r.symbol, logPct: parseFloat(((r.value / total) * 100).toFixed(2)), modelPct: share != null ? parseFloat((share * 100).toFixed(2)) : null };
           })
           .sort((a, b) => b.logPct - a.logPct);
         const gaps = rows.filter((r) => r.modelPct != null).map((r) => Math.abs(r.logPct - r.modelPct!));
@@ -91,7 +109,18 @@ export async function POST(req: NextRequest) {
       /* the check is a courtesy; never block on it */
     }
 
+    // A file loaded under the wrong mandate is the likeliest mistake: say so when it is identical to another mandate's log.
+    let sameAs: string | null = null;
+    const packed = JSON.stringify(packTxns(txns));
+    for (const b of SIA_BOOKS) {
+      if (b.id === book) continue;
+      const other = await readSiaStore(b.id);
+      if (other && other.rows === txns.length && JSON.stringify(other.txns) === packed) sameAs = b.label;
+    }
+
     const preview = {
+      book,
+      sameAs,
       file: typeof body.fileName === "string" ? body.fileName.slice(0, 120) : null,
       summary,
       unreadableRows: problems,
@@ -122,7 +151,7 @@ export async function POST(req: NextRequest) {
       splitsNoData: looked.noData,
     };
     await redis.set(SIA_KEY, JSON.stringify(next));
-    log.info("loaded " + txns.length + " trades to " + summary.last + (prior ? "; prior stashed .pre-import-" + stamp : ""));
+    log.info(book + ": loaded " + txns.length + " trades to " + summary.last + (prior ? "; prior stashed .pre-import-" + stamp : ""));
     return NextResponse.json({ mode: "SAVED", stash: prior ? SIA_KEY + ".pre-import-" + stamp : null, ...preview, onFileNow: siaStatus(next) });
   } catch (e) {
     log.error("failed:", e);

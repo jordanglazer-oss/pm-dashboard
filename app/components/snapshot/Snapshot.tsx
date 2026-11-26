@@ -189,22 +189,23 @@ function useHoldingHistory(symbols: string[], slot = "history"): { series: Recor
 }
 
 type SinceRow = { symbol: string; since: string; returnPct: number | null; reason: string | null };
-type SinceData = { onFile: boolean; through?: string; rows: SinceRow[] };
+type SinceData = { onFile: boolean; through?: string; bookLabel?: string; ownLog?: boolean; rows: SinceRow[] };
 /** Price change vs average cost for each position still held, from the SIA transaction log (read-only route). */
-function useSincePurchase(): { data: SinceData | null; failed: boolean } {
-  const [state, setState] = useState<{ data: SinceData | null; failed: boolean }>({ data: null, failed: false });
+function useSincePurchase(mandate: string): { data: SinceData | null; failed: boolean } {
+  const [state, setState] = useState<{ key: string; data: SinceData | null; failed: boolean }>({ key: "", data: null, failed: false });
   useEffect(() => {
+    if (!mandate) return;
     let alive = true;
-    fetch("/api/since-purchase")
+    fetch(`/api/since-purchase?mandate=${encodeURIComponent(mandate)}`)
       .then((r) => (r.ok ? r.json() : Promise.reject(new Error(String(r.status)))))
-      .then((d: SinceData) => alive && setState({ data: d && Array.isArray(d.rows) ? d : null, failed: !(d && Array.isArray(d.rows)) }))
-      .catch(() => alive && setState({ data: null, failed: true }));
+      .then((d: SinceData) => alive && setState({ key: mandate, data: d && Array.isArray(d.rows) ? d : null, failed: !(d && Array.isArray(d.rows)) }))
+      .catch(() => alive && setState({ key: mandate, data: null, failed: true }));
     return () => {
       alive = false;
     };
-  }, []);
-  const saved = useSaved("since", "all", state.data);
-  return { data: saved.value, failed: state.failed };
+  }, [mandate]);
+  const saved = useSaved("since", mandate, state.key === mandate ? state.data : null);
+  return { data: saved.value, failed: state.key === mandate && state.failed };
 }
 
 type FxImpact = { profile: string; from: string; contributionPct: number | null; fxPct: number | null; unhedgedWeight: number; unclassifiedWeight: number; fxEnd: { date: string } | null };
@@ -446,7 +447,7 @@ export default function Snapshot() {
   const xraySymbols = useMemo(() => xrayTop.map((r) => r.symbol), [xrayTop]);
   const xhist = useHoldingHistory(tab === "lookthrough" && ret !== "today" ? xraySymbols : [], "xhistory");
   const xrayRet = (sym: string) => (ret === "today" ? day.moves[sym] : periodReturn(xhist.series[sym] ?? [], ret, null));
-  const since = useSincePurchase();
+  const since = useSincePurchase(ctxLoading ? "" : mandate);
   const sinceOf = (sym: string) => since.data?.rows.find((r) => tickerMatch(r.symbol, sym)) ?? null;
   const fxImpact = useCurrencyImpact(ctxLoading ? "" : mandate);
   type HeldKey = "name" | "ticker" | "weight" | "ret" | "since";
@@ -633,7 +634,7 @@ export default function Snapshot() {
                   </table>
                 </div>
                 <p className="mt-2 text-[12.5px]" style={{ color: T.muted }}>
-                  One line per position as held; funds and ETFs are a single line. Weights are {data?.weightsSource === "live" ? "live (positions × latest prices)" : "the model targets (no positions on file)"}. Click a heading to sort (within each currency group). {retLabel} = {ret === "today" ? "latest price vs the prior close" : `the holding's own total return over ${retLong}, whether or not we held it that long`}, in its own currency, from Yahoo Finance{hist.at ? ` (${fmtDay(hist.at)})` : ""}. Mutual funds use their daily NAV with distributions reinvested (Globe and Mail fund data), so their &ldquo;today&rdquo; is the latest NAV, dated. Since purchase = latest price vs our average cost in C$, from the SIA transaction log{since.data?.through ? ` (trades through ${fmtDay(since.data.through)})` : ""}; price only, dividends and distributions not counted; a US-dollar holding includes the currency move.
+                  One line per position as held; funds and ETFs are a single line. Weights are {data?.weightsSource === "live" ? "live (positions × latest prices)" : "the model targets (no positions on file)"}. Click a heading to sort (within each currency group). {retLabel} = {ret === "today" ? "latest price vs the prior close" : `the holding's own total return over ${retLong}, whether or not we held it that long`}, in its own currency, from Yahoo Finance{hist.at ? ` (${fmtDay(hist.at)})` : ""}. Mutual funds use their daily NAV with distributions reinvested (Globe and Mail fund data), so their &ldquo;today&rdquo; is the latest NAV, dated. Since purchase = latest price vs our average cost in C$, from the {since.data?.bookLabel ? `${since.data.bookLabel} ` : ""}SIA transaction log{since.data?.through ? ` (trades through ${fmtDay(since.data.through)})` : ""}{since.data && since.data.ownLog === false ? "; this mandate has no log of its own on file" : ""}. Stocks and ETFs are price only (dividends not counted); mutual funds include reinvested distributions; a US-dollar holding includes the currency move.
                 </p>
               </>
             ) : (

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { siaCostBasis } from "@/app/lib/sia-cost";
+import { lotsTotalReturn, siaCostBasis } from "@/app/lib/sia-cost";
 import { currencyImpact, type FxRow } from "@/app/lib/currency-impact";
 import type { SiaTxn } from "@/app/lib/sia-holdings";
 
@@ -46,6 +46,27 @@ describe("Since purchase — average cost from the SIA log", () => {
     const [c] = siaCostBasis([t("2026-01-05", "ABC", "SELL", 50, 12), t("2026-01-05", "ABC", "BUY", 100, 10)]);
     expect(c.units).toBe(50);
     expect(c.avgCost).toBeCloseTo(10, 9);
+  });
+});
+
+describe("Since purchase — a fund's lots on the distribution-adjusted NAV", () => {
+  const series = [
+    { date: "2026-01-05", nav: 10 },
+    { date: "2026-03-05", nav: 11 },
+    { date: "2026-06-30", nav: 12.1 },
+  ];
+  it("each lot grows from its own purchase day, weighted by cost", () => {
+    const [c] = siaCostBasis([t("2026-01-05", "RBF1083", "BUY", 100, 10), t("2026-03-05", "RBF1083", "BUY", 100, 10)]);
+    expect(c.lots).toEqual([{ date: "2026-01-05", cost: 1000 }, { date: "2026-03-05", cost: 1000 }]);
+    // lot 1: +21%, lot 2: +10% → +15.5% on equal cost
+    expect(lotsTotalReturn(c.lots, series)).toBeCloseTo(15.5, 6);
+  });
+  it("a sale reduces every lot in proportion", () => {
+    const [c] = siaCostBasis([t("2026-01-05", "RBF1083", "BUY", 100, 10), t("2026-03-05", "RBF1083", "BUY", 100, 10), t("2026-04-01", "RBF1083", "SELL", 100, 11)]);
+    expect(c.lots.map((l) => l.cost)).toEqual([500, 500]);
+  });
+  it("no figure when the fund history does not reach the purchase", () => {
+    expect(lotsTotalReturn([{ date: "2025-06-01", cost: 1000 }], series)).toBeNull();
   });
 });
 

@@ -4,7 +4,10 @@ import type { SiaTxn, SplitTable } from "./sia-holdings";
 
 /**
  * pm:sia-transactions — the SIA Charts transaction log for the PIM All-Equity
- * book, as loaded by the PM (Nov 2026). A NEW key that holds only this: the
+ * book, as loaded by the PM (Nov 2026). Since 2026-11-26 the other mandates
+ * have their OWN log, each in its own key (`pm:sia-transactions:balanced`,
+ * `:growth`, `:conservative`) so loading one can never touch another; the
+ * All-Equity key and everything that reads it are unchanged. A NEW key that holds only this: the
  * parsed trades, the split history looked up at load time, and an on/off
  * switch. Nothing else is stored in it and nothing reads it except the
  * read-only "Contribution by holding" calculation, so it cannot affect a
@@ -18,6 +21,17 @@ import type { SiaTxn, SplitTable } from "./sia-holdings";
 
 const log = createLogger("SIA-store");
 export const SIA_KEY = "pm:sia-transactions";
+
+/** One log per mandate. All-Equity keeps the original key. */
+export type SiaBook = "allEquity" | "growth" | "balanced" | "conservative";
+export const SIA_BOOKS: { id: SiaBook; label: string }[] = [
+  { id: "allEquity", label: "All-Equity" },
+  { id: "growth", label: "Growth" },
+  { id: "balanced", label: "Balanced" },
+  { id: "conservative", label: "Conservative" },
+];
+export const isSiaBook = (v: unknown): v is SiaBook => SIA_BOOKS.some((b) => b.id === v);
+export const siaKey = (book: SiaBook = "allEquity") => (book === "allEquity" ? SIA_KEY : `${SIA_KEY}:${book}`);
 
 /** Compact row: [date, symbol as exported, "B" | "S", units, price]. */
 export type SiaRow = [string, string, "B" | "S", number, number];
@@ -37,9 +51,9 @@ export const packTxns = (txns: SiaTxn[]): SiaRow[] => txns.map((t) => [t.date, t
 export const unpackTxns = (rows: SiaRow[]): SiaTxn[] => rows.map((r) => ({ date: r[0], symbol: r[1], action: r[2] === "B" ? "BUY" : "SELL", units: r[3], price: r[4] }));
 
 /** The stored log, or null when none is on file or it cannot be read. Never throws, never seeds. */
-export async function readSiaStore(): Promise<SiaStore | null> {
+export async function readSiaStore(book: SiaBook = "allEquity"): Promise<SiaStore | null> {
   try {
-    const raw = await (await getRedis()).get(SIA_KEY);
+    const raw = await (await getRedis()).get(siaKey(book));
     if (!raw) return null;
     const v = JSON.parse(raw) as SiaStore;
     if (!v || !Array.isArray(v.txns) || typeof v.last !== "string") return null;

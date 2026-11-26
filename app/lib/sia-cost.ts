@@ -9,6 +9,8 @@
  *     by a trim.
  *   - "Since" is the first purchase of the CURRENT holding period: a name sold
  *     out and bought again starts fresh.
+ *   - Each purchase still held is kept as a "lot" (date + remaining cost), so
+ *     a fund's return can include its reinvested distributions.
  *   - A purchase logged at a price of 0 (a transfer in, a reinvested
  *     distribution) makes the cost incomplete; the position is reported as
  *     such and no return is computed from it. Never guessed.
@@ -26,7 +28,32 @@ export type SiaCost = {
   avgCost: number;
   /** True when a purchase in this holding period was logged with no price. */
   incomplete: boolean;
+  /** The purchases still held: each one's date and the C$ cost remaining after any sales (a sale reduces every lot in proportion). */
+  lots: { date: string; cost: number }[];
 };
+
+/**
+ * Total return of the lots still held, on a series that already includes
+ * reinvested distributions (a fund's adjusted NAV): each lot grows by
+ * series(today) ÷ series(its purchase day), weighted by its cost. Null when
+ * the series does not reach back to a lot (within a week) — never guessed.
+ */
+export function lotsTotalReturn(lots: { date: string; cost: number }[], series: { date: string; nav: number }[]): number | null {
+  const end = series[series.length - 1];
+  const total = lots.reduce((a, l) => a + l.cost, 0);
+  if (!end || !(total > 0)) return null;
+  let value = 0;
+  for (const l of lots) {
+    let base: { date: string; nav: number } | null = null;
+    for (const p of series) {
+      if (p.date <= l.date) base = p;
+      else break;
+    }
+    if (!base || !(base.nav > 0) || Date.parse(l.date) - Date.parse(base.date) > 7 * 86_400_000) return null;
+    value += l.cost * (end.nav / base.nav);
+  }
+  return (value / total - 1) * 100;
+}
 
 export function siaCostBasis(txns: SiaTxn[], splits: SplitTable = SIA_SPLITS): SiaCost[] {
   const by = new Map<string, SiaTxn[]>();
@@ -40,6 +67,7 @@ export function siaCostBasis(txns: SiaTxn[], splits: SplitTable = SIA_SPLITS): S
     let u = 0, cost = 0, peak = 0;
     let since: string | null = null;
     let incomplete = false;
+    let lots: { date: string; cost: number }[] = [];
     for (let i = 0; i < sorted.length; ) {
       const day = sorted[i].date;
       const f = splitFactorAfter(symbol, day, splits);
@@ -50,11 +78,14 @@ export function siaCostBasis(txns: SiaTxn[], splits: SplitTable = SIA_SPLITS): S
         if (!(u > 0)) since = day;
         u += t.units * f;
         cost += t.units * t.price;
+        lots.push({ date: day, cost: t.units * t.price });
         if (!(t.price > 0)) incomplete = true;
       }
       for (const t of today.filter((x) => x.action === "SELL")) {
         const sold = t.units * f;
-        if (u > 0) cost *= Math.max(0, 1 - Math.min(1, sold / u));
+        const keep = u > 0 ? Math.max(0, 1 - Math.min(1, sold / u)) : 0;
+        cost *= keep;
+        lots = lots.map((l) => ({ date: l.date, cost: l.cost * keep }));
         u -= sold;
       }
       if (u < 0) u = 0;
@@ -66,9 +97,10 @@ export function siaCostBasis(txns: SiaTxn[], splits: SplitTable = SIA_SPLITS): S
         peak = 0;
         since = null;
         incomplete = false;
+        lots = [];
       }
     }
-    if (u > 0 && since) out.push({ symbol, since, units: u, avgCost: cost / u, incomplete });
+    if (u > 0 && since) out.push({ symbol, since, units: u, avgCost: cost / u, incomplete, lots: lots.filter((l) => l.cost > 0) });
   }
   return out.sort((a, b) => a.symbol.localeCompare(b.symbol));
 }

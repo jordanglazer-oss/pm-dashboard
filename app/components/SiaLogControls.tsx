@@ -12,8 +12,15 @@ import React, { useEffect, useRef, useState } from "react";
  */
 
 type Status = { onFile: boolean; enabled: boolean; rows?: number; first?: string; last?: string; importedAt?: string; fileName?: string | null };
+type BookStatus = Status & { book: string; label: string };
+const BOOKS: { id: string; label: string }[] = [
+  { id: "allEquity", label: "All-Equity" },
+  { id: "growth", label: "Growth" },
+  { id: "balanced", label: "Balanced" },
+];
 type Preview = {
   mode?: string;
+  sameAs?: string | null;
   error?: string;
   refuse?: string;
   summary?: { rows: number; first: string | null; last: string | null; symbols: number; tradeDays: number; heldAtEnd: string[]; resetToZero: string[] };
@@ -31,11 +38,17 @@ export function SiaLogControls({ source, onChanged }: { source: "sia" | "tradelo
   const [preview, setPreview] = useState<Preview | null>(null);
   const [file, setFile] = useState<{ name: string; text: string } | null>(null);
   const input = useRef<HTMLInputElement>(null);
+  // Which mandate the chosen file belongs to. Transient form state.
+  const [book, setBook] = useState("allEquity");
+  const [books, setBooks] = useState<BookStatus[]>([]);
 
   const refresh = () =>
-    fetch("/api/admin/sia-transactions")
+    fetch("/api/admin/sia-transactions?all=1")
       .then((r) => r.json())
-      .then((s: Status) => setStatus(s))
+      .then((d: { books?: BookStatus[] }) => {
+        setBooks(d.books ?? []);
+        setStatus(d.books?.find((b) => b.book === "allEquity") ?? { onFile: false, enabled: false });
+      })
       .catch(() => setStatus({ onFile: false, enabled: false }));
   useEffect(() => {
     refresh();
@@ -53,7 +66,7 @@ export function SiaLogControls({ source, onChanged }: { source: "sia" | "tradelo
     setFile({ name: f.name, text });
     setBusy("Reading the file and looking up stock splits (about a minute)…");
     try {
-      setPreview(await post({ csv: text, fileName: f.name }));
+      setPreview(await post({ csv: text, fileName: f.name, book }));
     } catch {
       setPreview({ error: "Could not read that file." });
     }
@@ -64,7 +77,7 @@ export function SiaLogControls({ source, onChanged }: { source: "sia" | "tradelo
     if (!file) return;
     setBusy("Saving…");
     try {
-      const res = await post({ csv: file.text, fileName: file.name, confirm: "LOAD", ...(replace ? { replace: true } : {}) });
+      const res = await post({ csv: file.text, fileName: file.name, book, confirm: "LOAD", ...(replace ? { replace: true } : {}) });
       setPreview(res);
       if (res.mode === "SAVED") {
         setFile(null);
@@ -125,14 +138,41 @@ export function SiaLogControls({ source, onChanged }: { source: "sia" | "tradelo
       {open && (
         <div className="mt-2 border-t border-line pt-2">
           <p className="text-ink-3">Export the transaction table from SIA Charts as a CSV and choose it here. You see a preview before anything is saved; recorded performance is never changed.</p>
+          <p className="mt-1.5">
+            <span className="font-medium text-ink-2">On file:</span>{" "}
+            {BOOKS.map((b) => {
+              const st = books.find((x) => x.book === b.id);
+              return `${b.label} ${st?.onFile ? `to ${st.last}` : "none"}`;
+            }).join(" · ")}
+          </p>
+          <label className="mt-1.5 flex flex-wrap items-center gap-2">
+            <span className="font-medium text-ink-2">This file is for:</span>
+            <select
+              value={book}
+              disabled={!!busy}
+              onChange={(e) => {
+                setBook(e.target.value);
+                setFile(null);
+                setPreview(null);
+                if (input.current) input.current.value = "";
+              }}
+              className="rounded-control border border-line bg-surface px-2 py-1 text-ink"
+            >
+              {BOOKS.map((b) => (
+                <option key={b.id} value={b.id}>{b.label}</option>
+              ))}
+            </select>
+            <span className="text-ink-3">Pick the mandate first, then the file.</span>
+          </label>
           <input ref={input} type="file" accept=".csv,text/csv" className="mt-1.5 text-[12.5px]" onChange={(e) => pick(e.target.files?.[0])} />
 
           {p?.error && <p className="mt-2 text-neg">{p.error}</p>}
           {p?.refuse && <p className="mt-2 text-neg">{p.refuse}</p>}
+          {p?.sameAs && <p className="mt-2 text-neg">This file is identical to the {p.sameAs} log already on file. Check you picked the right file for {BOOKS.find((b) => b.id === book)?.label}.</p>}
           {p?.summary && (
             <div className="mt-2 flex flex-col gap-1.5">
               <p>
-                <span className="font-semibold text-ink">{p.mode === "SAVED" ? "Saved." : "Preview — nothing saved yet."}</span> {p.summary.rows.toLocaleString()} trades · {p.summary.first} to {p.summary.last} · {p.summary.symbols} holdings over time, {p.summary.heldAtEnd.length} held at the end
+                <span className="font-semibold text-ink">{BOOKS.find((b) => b.id === book)?.label} log. {p.mode === "SAVED" ? "Saved." : "Preview — nothing saved yet."}</span> {p.summary.rows.toLocaleString()} trades · {p.summary.first} to {p.summary.last} · {p.summary.symbols} holdings over time, {p.summary.heldAtEnd.length} held at the end
               </p>
               {(p.unreadableRows?.length ?? 0) > 0 && <p className="text-neg">{p.unreadableRows!.length} row(s) could not be read: {p.unreadableRows!.slice(0, 3).join(" · ")}</p>}
               {p.modelCheck && (
@@ -150,7 +190,7 @@ export function SiaLogControls({ source, onChanged }: { source: "sia" | "tradelo
               {p.mode !== "SAVED" && file && (
                 <div className="flex flex-wrap items-center gap-3">
                   <button disabled={!!busy} onClick={() => save(false)} className="rounded-control border border-line bg-surface px-3 py-1 font-medium text-ink">
-                    Save and use this log
+                    Save as the {BOOKS.find((b) => b.id === book)?.label} log
                   </button>
                   {p.refuse && (
                     <button disabled={!!busy} onClick={() => save(true)} className="font-medium underline decoration-line underline-offset-2">
