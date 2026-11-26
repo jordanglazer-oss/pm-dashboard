@@ -42,10 +42,35 @@ function parseList(raw: string | null): OutboundMail[] {
 }
 
 /**
+ * EMAIL PAUSE (PM's request, 2026-11-26): every notification email is held
+ * except the ones listed in STILL_SENT. Set EMAILS_PAUSED to false to send
+ * everything again. A held email is simply not queued — nothing else changes:
+ * flags, digests, memos and reports are still written and shown in the app.
+ * Being an allow-list, any NEW kind of email is held too until it is added.
+ */
+export const EMAILS_PAUSED = true;
+const STILL_SENT = [
+  "intraday-", // intraday price-move alerts — the PM asked to keep these
+  "backup-failed-", // safety alarm: the nightly backup did not run
+  "backup-stale-", // safety alarm: no backup for over 30 hours
+  "provider-", // a request the PM sends by pressing a button, not a notification
+];
+
+/** True when this mail is held by the pause (decided by its id prefix). */
+export function isMailPaused(id: string): boolean {
+  return EMAILS_PAUSED && !STILL_SENT.some((p) => id.startsWith(p));
+}
+
+/**
  * Queue a mail. Idempotent by `id`: a second enqueue with an id already
- * pending is a no-op. Returns true if newly queued, false if it was a dupe.
+ * pending is a no-op. Returns true if newly queued, false if it was a dupe
+ * or is held by the email pause.
  */
 export async function enqueueMail(mail: OutboundMail): Promise<boolean> {
+  if (isMailPaused(mail.id)) {
+    log.info("held by the email pause:", mail.id);
+    return false;
+  }
   const redis = await getRedis();
   const list = parseList(await redis.get(OUTBOX_KEY));
   if (list.some((m) => m.id === mail.id)) return false;

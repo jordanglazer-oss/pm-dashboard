@@ -244,3 +244,6 @@ log.warn("non-200 from Yahoo");     // → "[Score] non-200 from Yahoo"
 log.error("Anthropic failed:", e);  // → "[Score] Anthropic failed: ..."
 ```
 New routes should use this rather than bare `console.log` so Vercel runtime log search ("[Score]", "[Finviz breadth]", "[Backfill-summaries]") finds the right output during incidents.
+
+### Email pause (since 2026-11-26)
+At the PM's request every notification email is HELD except intraday price-move alerts, the two backup alarms and the PM's own provider requests: `EMAILS_PAUSED` + the `STILL_SENT` id-prefix allow-list in `app/lib/mail-outbox.ts` (`enqueueMail` returns false for a held mail; tested in `tests/mail-pause.test.ts`). Nothing else changes — flags, digests, memos and reports are still written and shown in the app. A new kind of email is held until its id prefix is added. Do not switch emails back on without the PM asking.
