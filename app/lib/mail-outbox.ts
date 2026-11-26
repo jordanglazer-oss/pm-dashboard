@@ -84,6 +84,24 @@ export async function readPendingMail(): Promise<OutboundMail[]> {
   return parseList(await redis.get(OUTBOX_KEY));
 }
 
+/**
+ * Hand the pending mail to the sender and REMOVE it in the same step, so a
+ * mail can be sent at most once. Until 2026-11-26 a mail stayed queued until
+ * the sender confirmed it; when that confirmation stopped arriving (the site
+ * moved to a new address and the old one redirects, which turns the
+ * confirming POST into a GET) the same email was re-sent on every poll.
+ * A mail held by the email pause is dropped here and never handed out.
+ */
+export async function takePendingMail(): Promise<OutboundMail[]> {
+  const redis = await getRedis();
+  const list = parseList(await redis.get(OUTBOX_KEY));
+  if (!list.length) return [];
+  await redis.set(OUTBOX_KEY, "[]");
+  const send = list.filter((m) => !isMailPaused(m.id));
+  log.info(`handed out ${send.length}, dropped ${list.length - send.length} held`);
+  return send;
+}
+
 /** Remove the given ids from the outbox (called after the Apps Script sends). */
 export async function markMailSent(ids: string[]): Promise<number> {
   if (!ids.length) return 0;
