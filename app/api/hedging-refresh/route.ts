@@ -62,7 +62,7 @@ export async function POST() {
       loadHedges().catch(() => []),
     ]);
     if (!hedgingCosts.text) {
-      return NextResponse.json({ ok: false, error: "Live hedging costs unavailable (CBOE fetch failed) — try again in a minute." });
+      return NextResponse.json({ ok: false, error: "Hedging costs unavailable (option price fetch failed) — try again in a minute." });
     }
 
     const marketRegime = parse<MarketRegimeData>(marketRegimeRaw);

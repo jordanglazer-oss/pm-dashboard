@@ -5,6 +5,7 @@ import { useStocks } from "@/app/lib/StockContext";
 import type { HedgingLiveData, HedgingQuote, CustomStrikeRow } from "@/app/api/hedging/route";
 import type { HedgingHistory, HedgingSnapshot } from "@/app/api/kv/hedging-history/route";
 import type { HedgingCustomStrikes } from "@/app/api/kv/hedging-custom-strikes/route";
+import { easternToday } from "@/app/lib/date-eastern";
 import { AppIcon } from "./AppIcon";
 import { StatStrip } from "./StatStrip";
 import { EmptyState } from "./EmptyState";
@@ -72,6 +73,15 @@ function fmtPct(v: number | null): string {
 function fmtDelta(v: number | null): string {
   if (v == null) return "—";
   return `${v >= 0 ? "+" : ""}${v.toFixed(1)}%`;
+}
+
+/** A quote time in Eastern, e.g. "Nov 24, 4:00 PM ET". */
+function fmtAsOfEt(iso: string): string {
+  try {
+    return new Date(iso).toLocaleString("en-US", { timeZone: "America/New_York", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }) + " ET";
+  } catch {
+    return iso;
+  }
 }
 
 function fmtFetchedAt(iso: string): string {
@@ -173,10 +183,11 @@ export default function HedgingDashboard() {
 
       // Persist today's snapshot (includes custom strike premiums for WoW/MoM)
       if (persist && live && live.quotes.length > 0) {
-        const today = new Date().toISOString().slice(0, 10);
+        // Filed under the day the PRICES are from (an earlier session on a delayed feed or a closed market).
+        const today = live.quotesAsOfDate ?? new Date().toISOString().slice(0, 10);
         const snapshot: HedgingSnapshot = {
           date: today,
-          fetchedAt: live.fetchedAt,
+          fetchedAt: live.quotesAsOf ?? live.fetchedAt,
           spotPrice: live.spotPrice,
           quotes: live.quotes.map((q) => ({
             expiry: q.expiry,
@@ -327,7 +338,11 @@ export default function HedgingDashboard() {
           SPY protective put premiums · ATM / ~5% OTM / ~10% OTM · strikes rounded to nearest $5
         </span>
         <div className="ml-auto flex items-center gap-2">
-          {data && <span className="text-[11.5px] text-ink-3">Updated {fmtFetchedAt(data.fetchedAt)}</span>}
+          {data && (
+            <span className="text-[11.5px] text-ink-3">
+              {data.quotesAsOf ? `Prices as of ${fmtAsOfEt(data.quotesAsOf)}` : `Updated ${fmtFetchedAt(data.fetchedAt)}`}
+            </span>
+          )}
           <button
             type="button"
             onClick={handleRefresh}
@@ -354,6 +369,11 @@ export default function HedgingDashboard() {
       )}
 
       {error && <div className="panel px-3.5 py-2.5 text-[12.5px] text-neg">{error}</div>}
+      {!savedAsOf && data?.quotesAsOfDate && data.quotesAsOfDate !== easternToday() && (
+        <div className="panel border-warn-border bg-warn-soft px-3.5 py-2.5 text-[12.5px] text-ink">
+          <span className="font-semibold">These are not today&apos;s prices.</span> Premiums and SPY spot are from {fmtAsOfEt(data.quotesAsOf ?? data.quotesAsOfDate)}.
+        </div>
+      )}
       {savedAsOf && (
         <div className="panel border-warn-border bg-warn-soft px-3.5 py-2.5 text-[12.5px] text-ink">
           <span className="font-semibold">Live option prices are unavailable.</span> Showing the last saved prices, from {savedAsOf}. Premiums and SPY spot are as of that day, not now.
@@ -524,7 +544,7 @@ export default function HedgingDashboard() {
         <p className="text-[11.5px] leading-[1.5] text-ink-3">
           Premiums are mid-prices (bid+ask)/2 where available, else last traded price. Strikes round to
           nearest $5 from the live SPY spot. One expiry per calendar month (3rd-Friday preferred).
-          Custom strikes are priced only if that exact strike is listed on CBOE; otherwise the cell shows &quot;—&quot;.
+          Custom strikes are priced only if that exact strike is listed; otherwise the cell shows &quot;—&quot;.
           Snapshots are captured on every refresh and stored permanently for week/month comparisons.
         </p>
       )}

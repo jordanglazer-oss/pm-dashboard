@@ -22,8 +22,8 @@ export async function POST() {
   } catch (e) {
     const message = e instanceof Error ? e.message : String(e);
     log.error("capture failed:", message);
-    // 502 for known upstream (CBOE) trouble, 500 otherwise
-    const status = /CBOE|parse|quote|empty/i.test(message) ? 502 : 500;
+    // 502 for known upstream (price feed) trouble, 500 otherwise
+    const status = /Market Data|parse|quote|empty/i.test(message) ? 502 : 500;
     return NextResponse.json({ ok: false, error: message }, { status });
   }
 }

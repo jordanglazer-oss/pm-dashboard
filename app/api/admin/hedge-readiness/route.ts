@@ -73,7 +73,7 @@ export async function GET() {
     try {
       quotes = await fetchPutQuotes(wanted);
     } catch (e) {
-      quoteError = e instanceof Error ? e.message : "CBOE fetch failed";
+      quoteError = e instanceof Error ? e.message : "option price fetch failed";
     }
 
     const hedgeRows = active.map((h) => {
@@ -110,7 +110,7 @@ export async function GET() {
         note: missing.length > 0
           ? `Cannot be marked — missing ${missing.join(", ")}.`
           : q?.mid == null
-            ? "CBOE does not currently list this exact (expiry, strike). Cannot be marked."
+            ? "This exact (expiry, strike) is not listed. Cannot be marked."
             : null,
       };
     });
@@ -170,7 +170,7 @@ export async function GET() {
       caveats: [
         "Notional is valued at COST here, not live prices — this route deliberately avoids a price fetch. The real implementation will mark at live prices.",
         "unresolvedSymbols must be empty before any hedge is sized. A holding with an unknown US share is never counted as 0% — that would under-hedge silently. Set its US equity % on the stock page.",
-        "CBOE quotes are 15-minute delayed, which is fine for a daily mark.",
+        "Quotes come from Market Data: 15-minute delayed on a paid plan, the last closed session on a trial.",
         "There are no historical option prices available, so a hedge can only be marked from the day tracking starts — its earlier contribution cannot be reconstructed.",
       ],
     });

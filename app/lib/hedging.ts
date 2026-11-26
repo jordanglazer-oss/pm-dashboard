@@ -3,25 +3,17 @@
  * (which powers the Hedging tab) and the /api/morning-brief route (which
  * injects live put costs into the Hedging Window analysis prompt).
  *
- * All data is pulled from CBOE delayed quotes (15-min delay, no auth).
+ * Prices come from the Market Data API (app/lib/marketdata-options.ts) since
+ * Nov 2026 — the CBOE delayed chain blocks automated requests. Every result
+ * carries the quotes' own time (`quotesAsOf`); on a delayed plan or a closed
+ * market that is an earlier session, and history is filed under THAT day.
  */
 
 import { hedgeSentimentGate, type HedgeSentimentInputs, type HedgeSentimentResult } from "@/app/lib/agents/policy";
 import { getRedis } from "@/app/lib/redis";
-
-export type CboeOption = {
-  option: string;
-  bid?: number;
-  ask?: number;
-  last_trade_price?: number;
-};
-
-type CboeResponse = {
-  data?: {
-    current_price?: number;
-    options?: CboeOption[];
-  };
-};
+import { easternToday } from "@/app/lib/date-eastern";
+import { mergeHedgingSnapshot, snapshotDateFor } from "@/app/lib/hedging-snapshot";
+import { newestQuoteTime, putKey, spyExpirations, spyPut, spyPuts, spySpot } from "@/app/lib/marketdata-options";
 
 export type HedgingQuote = {
   expiry: string;
@@ -54,24 +46,18 @@ export type HedgingLiveData = {
   spotPrice: number;
   quotes: HedgingQuote[];
   customRows: CustomStrikeRow[];
+  /** Where the prices came from ("Market Data"); absent on a saved snapshot. */
+  source?: string;
+  /** Time of the newest option quote (ISO). The prices are as of THIS, not fetchedAt. */
+  quotesAsOf?: string;
+  /** Eastern calendar day of quotesAsOf (YYYY-MM-DD). */
+  quotesAsOfDate?: string;
 };
 
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
 function roundToNearest5(v: number): number {
   return Math.round(v / 5) * 5;
-}
-
-function parseOptionSymbol(sym: string): { expiry: string; type: "C" | "P"; strike: number } | null {
-  const m = /^([A-Z]+)(\d{6})([CP])(\d{8})$/.exec(sym);
-  if (!m) return null;
-  const dateStr = m[2];
-  const year = 2000 + parseInt(dateStr.slice(0, 2), 10);
-  const month = parseInt(dateStr.slice(2, 4), 10);
-  const day = parseInt(dateStr.slice(4, 6), 10);
-  if (month < 1 || month > 12 || day < 1 || day > 31) return null;
-  const expiry = `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
-  return { expiry, type: m[3] as "C" | "P", strike: parseInt(m[4], 10) / 1000 };
 }
 
 function thirdFridayIso(year: number, month: number): string {
@@ -115,12 +101,12 @@ function midPrice(bid: number | undefined, ask: number | undefined, last: number
  */
 /**
  * Live mid price for an arbitrary SPY put, keyed the way a logged hedge is
- * (expiry + absolute strike). Same CBOE chain fetchLiveHedgingCosts uses — the
+ * (expiry + absolute strike). Same Market Data feed fetchLiveHedgingCosts uses — the
  * dashboard narrows that chain to monthly expiries and three strikes, but the
  * raw response carries every listed contract, so a position can be marked
  * directly rather than approximated from the nearest displayed tenor.
  *
- * Returns null when the exact contract is not listed (CBOE lists discrete
+ * Returns null when the exact contract is not listed (the exchange lists discrete
  * strikes; a hedge recorded with an off-grid strike cannot be marked) or when
  * bid/ask/last are all absent. Callers must treat null as "unknown", never as
  * zero — a hedge silently valued at zero would overstate a drawdown.
@@ -131,58 +117,29 @@ export async function fetchPutQuotes(
   const out = new Map<string, { mid: number | null; bid?: number; ask?: number; last?: number; spot: number }>();
   if (wanted.length === 0) return out;
 
-  const res = await fetch("https://cdn.cboe.com/api/global/delayed_quotes/options/SPY.json", {
-    headers: { "User-Agent": "Mozilla/5.0" },
-    cache: "no-store",
-  });
-  if (!res.ok) throw new Error(`CBOE returned ${res.status}`);
-  const body = (await res.json()) as CboeResponse;
-  const spot = body?.data?.current_price;
-  const rawOptions = body?.data?.options || [];
-  if (!spot || rawOptions.length === 0) throw new Error("Could not parse SPY quote or options");
-
-  const puts = new Map<string, CboeOption>();
-  for (const opt of rawOptions) {
-    const parsed = parseOptionSymbol(opt.option);
-    if (!parsed || parsed.type !== "P") continue;
-    puts.set(`${parsed.expiry}|${parsed.strike}`, opt);
-  }
+  const [puts, quoteSpot] = await Promise.all([spyPuts(wanted), spySpot()]);
+  // SPY at the quotes' own time when the feed gives it (a delayed feed's puts and a newer SPY price must not be mixed).
+  const spot = [...puts.values()].find((p) => p?.underlying && p.underlying > 0)?.underlying ?? quoteSpot;
+  if (!spot) throw new Error("Could not parse SPY quote or options");
 
   for (const w of wanted) {
-    const key = `${w.expiry}|${w.strike}`;
+    const key = putKey(w.expiry, w.strike);
     const opt = puts.get(key);
-    out.set(key, opt
-      ? { mid: midPrice(opt.bid, opt.ask, opt.last_trade_price), bid: opt.bid, ask: opt.ask, last: opt.last_trade_price, spot }
-      : { mid: null, spot });
+    out.set(key, opt ? { mid: midPrice(opt.bid, opt.ask, opt.last), bid: opt.bid, ask: opt.ask, last: opt.last, spot } : { mid: null, spot });
   }
   return out;
 }
 
 export async function fetchLiveHedgingCosts(extraStrikes: number[] = []): Promise<HedgingLiveData> {
-  const res = await fetch("https://cdn.cboe.com/api/global/delayed_quotes/options/SPY.json", {
-    headers: { "User-Agent": "Mozilla/5.0" },
-    cache: "no-store",
-  });
-  if (!res.ok) throw new Error(`CBOE returned ${res.status}`);
-  const body = (await res.json()) as CboeResponse;
-  const spot = body?.data?.current_price;
-  const rawOptions = body?.data?.options || [];
-  if (!spot || rawOptions.length === 0) {
+  const [allListed, quoteSpot] = await Promise.all([spyExpirations(), spySpot()]);
+  if (!quoteSpot || allListed.length === 0) {
     throw new Error("Could not parse SPY quote or options");
   }
 
   const todayIso = new Date().toISOString().slice(0, 10);
-  const putsByExpiry = new Map<string, Map<number, CboeOption>>();
-  for (const opt of rawOptions) {
-    const parsed = parseOptionSymbol(opt.option);
-    if (!parsed || parsed.type !== "P") continue;
-    if (parsed.expiry <= todayIso) continue;
-    if (!putsByExpiry.has(parsed.expiry)) putsByExpiry.set(parsed.expiry, new Map());
-    putsByExpiry.get(parsed.expiry)!.set(parsed.strike, opt);
-  }
 
   // Pick best available expiry per calendar month for next 9 months
-  const allExpiries = [...putsByExpiry.keys()].sort();
+  const allExpiries = allListed.filter((e) => e > todayIso);
   const now = new Date();
   const monthlyExpiries: string[] = [];
   const seen = new Set<string>();
@@ -205,53 +162,65 @@ export async function fetchLiveHedgingCosts(extraStrikes: number[] = []): Promis
 
   if (monthlyExpiries.length === 0) throw new Error("No monthly expiries in option chain");
 
+  // One put first, to read SPY at the QUOTES' time: on a delayed feed the puts
+  // can be a session behind the stock quote, and strikes and "% of spot" must
+  // be measured against the same moment as the premiums.
+  const probeStrike = roundToNearest5(quoteSpot);
+  const probe = await spyPut(monthlyExpiries[0], probeStrike);
+  const spot = probe?.underlying && probe.underlying > 0 ? probe.underlying : quoteSpot;
+
   const atmStrike = roundToNearest5(spot);
   const otm5Strike = roundToNearest5(spot * 0.95);
   const otm10Strike = roundToNearest5(spot * 0.9);
 
+  const strikes = [...new Set([atmStrike, otm5Strike, otm10Strike, ...extraStrikes])];
+  const wanted = monthlyExpiries.flatMap((expiry) => strikes.map((strike) => ({ expiry, strike })));
+  const probeKey = putKey(monthlyExpiries[0], probeStrike);
+  const puts = await spyPuts(wanted.filter((w) => putKey(w.expiry, w.strike) !== probeKey));
+  puts.set(probeKey, probe);
+  const premium = (expiry: string, strike: number): number | null => {
+    const o = puts.get(putKey(expiry, strike));
+    return o ? midPrice(o.bid, o.ask, o.last) : null;
+  };
+  const pctOfSpot = (v: number | null) => (v != null ? parseFloat(((v / spot) * 100).toFixed(2)) : null);
+
   const quotes: HedgingQuote[] = monthlyExpiries.map((expiry) => {
-    const strikeMap = putsByExpiry.get(expiry)!;
-    const atm = strikeMap.get(atmStrike);
-    const otm5 = strikeMap.get(otm5Strike);
-    const otm10 = strikeMap.get(otm10Strike);
-    const atmPremium = midPrice(atm?.bid, atm?.ask, atm?.last_trade_price);
-    const otm5Premium = midPrice(otm5?.bid, otm5?.ask, otm5?.last_trade_price);
-    const otm10Premium = midPrice(otm10?.bid, otm10?.ask, otm10?.last_trade_price);
+    const atmPremium = premium(expiry, atmStrike);
+    const otm5Premium = premium(expiry, otm5Strike);
+    const otm10Premium = premium(expiry, otm10Strike);
     return {
       expiry,
       expiryLabel: isoToShortLabel(expiry),
       daysToExpiry: daysUntil(expiry),
       atmStrike,
       atmPremium,
-      atmPctOfSpot: atmPremium != null ? parseFloat(((atmPremium / spot) * 100).toFixed(2)) : null,
+      atmPctOfSpot: pctOfSpot(atmPremium),
       otm5Strike,
       otm5Premium,
-      otm5PctOfSpot: otm5Premium != null ? parseFloat(((otm5Premium / spot) * 100).toFixed(2)) : null,
+      otm5PctOfSpot: pctOfSpot(otm5Premium),
       otm10Strike,
       otm10Premium,
-      otm10PctOfSpot: otm10Premium != null ? parseFloat(((otm10Premium / spot) * 100).toFixed(2)) : null,
+      otm10PctOfSpot: pctOfSpot(otm10Premium),
     };
   });
+  if (quotes.every((q) => q.atmPremium == null && q.otm5Premium == null && q.otm10Premium == null)) throw new Error("Market Data returned no SPY put prices");
 
   const customRows: CustomStrikeRow[] = extraStrikes.map((strike) => ({
     strike,
     quotes: monthlyExpiries.map((expiry) => {
-      const strikeMap = putsByExpiry.get(expiry)!;
-      const opt = strikeMap.get(strike);
-      const premium = opt ? midPrice(opt.bid, opt.ask, opt.last_trade_price) : null;
-      return {
-        expiry,
-        premium,
-        pctOfSpot: premium != null ? parseFloat(((premium / spot) * 100).toFixed(2)) : null,
-      };
+      const p = premium(expiry, strike);
+      return { expiry, premium: p, pctOfSpot: pctOfSpot(p) };
     }),
   }));
 
+  const quotesAsOf = newestQuoteTime(puts.values());
   return {
     fetchedAt: new Date().toISOString(),
     spotPrice: parseFloat(spot.toFixed(2)),
     quotes,
     customRows,
+    source: "Market Data",
+    ...(quotesAsOf ? { quotesAsOf, quotesAsOfDate: easternToday(new Date(quotesAsOf)) } : {}),
   };
 }
 
@@ -316,10 +285,10 @@ export async function captureLiveHedgingSnapshot(): Promise<{ date: string; tota
   const live = await fetchLiveHedgingCosts(extraStrikes);
   if (!live.quotes.length) throw new Error("No quotes in live hedging data — refusing to write empty snapshot");
 
-  const date = new Date().toISOString().slice(0, 10);
+  const date = snapshotDateFor(live);
   const snapshot = {
     date,
-    fetchedAt: live.fetchedAt,
+    fetchedAt: live.quotesAsOf ?? live.fetchedAt,
     spotPrice: live.spotPrice,
     quotes: live.quotes.map((q) => ({
       expiry: q.expiry,
@@ -339,16 +308,9 @@ export async function captureLiveHedgingSnapshot(): Promise<{ date: string; tota
   // Read-modify-write: preserve every prior day; replace only today's entry.
   const raw = await redis.get("pm:hedging-history");
   const history = raw ? JSON.parse(raw) : { snapshots: [], lastUpdated: null };
-  const snapshots: Array<{ date: string }> = Array.isArray(history.snapshots) ? history.snapshots : [];
-  const idx = snapshots.findIndex((s) => s.date === date);
-  if (idx >= 0) {
-    snapshots[idx] = snapshot;
-  } else {
-    snapshots.push(snapshot);
-    snapshots.sort((a, b) => a.date.localeCompare(b.date));
-  }
-  const next = { ...history, snapshots, lastUpdated: new Date().toISOString() };
-  await redis.set("pm:hedging-history", JSON.stringify(next));
+  const prior: Array<{ date: string }> = Array.isArray(history.snapshots) ? history.snapshots : [];
+  const { snapshots, wrote } = mergeHedgingSnapshot(prior, snapshot);
+  if (wrote) await redis.set("pm:hedging-history", JSON.stringify({ ...history, snapshots, lastUpdated: new Date().toISOString() }));
 
   return { date, totalSnapshots: snapshots.length };
 }
@@ -880,7 +842,9 @@ export async function buildHedgingCostsBlock(): Promise<{
     const anchors = Array.from(new Set([near, mid, far].filter(Boolean))) as HedgingQuote[];
 
     const lines: string[] = [];
-    lines.push(`Live SPY Hedging Costs (CBOE delayed 15 min, fetched ${new Date(live.fetchedAt).toLocaleString("en-US", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}):`);
+    const asOfEt = live.quotesAsOf ? new Date(live.quotesAsOf).toLocaleString("en-US", { timeZone: "America/New_York", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }) + " ET" : null;
+    const staleDay = live.quotesAsOfDate && live.quotesAsOfDate !== easternToday();
+    lines.push(`SPY Hedging Costs (Market Data${asOfEt ? `, prices as of ${asOfEt}` : ""}${staleDay ? " — an EARLIER session, NOT today's prices; say so when citing a premium" : ""}):`);
     lines.push(`- SPY Spot: $${live.spotPrice.toFixed(2)}`);
     lines.push(`- Strike ladder: ATM $${anchors[0].atmStrike} / ~5% OTM $${anchors[0].otm5Strike} / ~10% OTM $${anchors[0].otm10Strike}`);
     lines.push("");

@@ -1,10 +1,13 @@
 import { getRedis } from "@/app/lib/redis";
 import { NextRequest, NextResponse } from "next/server";
+import { mergeHedgingSnapshot } from "@/app/lib/hedging-snapshot";
 
 /**
  * Append-only daily snapshot ledger for SPY hedging costs.
- * One snapshot per UTC date — later snapshots on the same day overwrite.
- * Never deletes or modifies prior days.
+ * One snapshot per day, dated by the day the PRICES are from (the Eastern day
+ * of the quotes; before Nov 2026 the UTC capture date). A later reading the
+ * same day overwrites; an earlier day is only added when missing, never
+ * replaced or deleted.
  */
 
 const KEY = "pm:hedging-history";
@@ -15,7 +18,7 @@ export type HedgingSnapshotCustomRow = {
 };
 
 export type HedgingSnapshot = {
-  date: string; // YYYY-MM-DD (capture date, UTC)
+  date: string; // YYYY-MM-DD the prices are from
   fetchedAt: string; // ISO timestamp
   spotPrice: number;
   quotes: Array<{
@@ -63,14 +66,10 @@ export async function POST(req: NextRequest) {
     const raw = await redis.get(KEY);
     const history: HedgingHistory = raw ? JSON.parse(raw) : { snapshots: [], lastUpdated: null };
 
-    // Replace same-day snapshot, else append
-    const idx = history.snapshots.findIndex((s) => s.date === snapshot.date);
-    if (idx >= 0) {
-      history.snapshots[idx] = snapshot;
-    } else {
-      history.snapshots.push(snapshot);
-      history.snapshots.sort((a, b) => a.date.localeCompare(b.date));
-    }
+    // Today's entry can be replaced; an entry for an earlier day is only added when missing.
+    const merged = mergeHedgingSnapshot(Array.isArray(history.snapshots) ? history.snapshots : [], snapshot);
+    if (!merged.wrote) return NextResponse.json({ ok: true, kept: snapshot.date, totalSnapshots: history.snapshots.length });
+    history.snapshots = merged.snapshots;
     history.lastUpdated = new Date().toISOString();
 
     await redis.set(KEY, JSON.stringify(history));

@@ -2622,7 +2622,7 @@ export function MorningBrief({
                     {brief.hedgingDetail && (
                       <div>
                         <div className="font-semibold text-ink-2">
-                          Live SPY put premiums · spot ${brief.hedgingDetail.spotPrice.toFixed(2)} · CBOE {new Date(brief.hedgingDetail.fetchedAt).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })} (15-min delay)
+                          Live SPY put premiums · spot ${brief.hedgingDetail.spotPrice.toFixed(2)} · fetched {new Date(brief.hedgingDetail.fetchedAt).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })} (15-min delay)
                         </div>
                         <div className="mt-1.5 overflow-x-auto">
                           <table className="data-table">

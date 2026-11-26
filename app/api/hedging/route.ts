@@ -27,7 +27,7 @@ export async function GET(req: NextRequest) {
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     // Map known upstream problems to 502, everything else to 500
-    const status = /CBOE|parse|expiries/i.test(message) ? 502 : 500;
+    const status = /Market Data|parse|expiries/i.test(message) ? 502 : 500;
     return NextResponse.json({ error: message }, { status });
   }
 }
