@@ -1,6 +1,6 @@
-import Strategists from "@/app/components/strategists/Strategists";
+import StrategistsPage from "@/app/components/strategists/StrategistsPage";
 
-/** /strategists — base page for strategist, technician and currency reports (Nov 2026). */
-export default function StrategistsPage() {
-  return <Strategists />;
+/** /strategists — one card per strategist and technician, from the list in app/lib/strategist-sources.ts (Nov 26 2026). */
+export default function Page() {
+  return <StrategistsPage />;
 }
