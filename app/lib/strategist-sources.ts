@@ -154,7 +154,8 @@ export type GroupRollup = {
   line: string;
 };
 
-const lastName = (name: string) => name.split(/\s+/).pop() ?? name;
+/** A person is named by surname; a desk or product ("RBC strategist", "SIA equity action call") keeps its full name. */
+const lastName = (name: string) => (/^(RBC|SIA|J\.P\.|JPM|Fidelity|Fundstrat)\b/i.test(name) ? name : (name.split(/\s+/).pop() ?? name));
 
 /**
  * One line per group for the Market Brief roll-up. Counts only sources with a

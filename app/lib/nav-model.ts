@@ -41,7 +41,7 @@ export const NAV_GROUPS: NavGroup[] = [
     hue: "portfolio",
     items: [
       { key: "snapshot", label: "Portfolio Snapshot", href: "/", icon: "pie" },
-      { key: "brief", label: "Market Brief", href: "/brief", icon: "sun" },
+      { key: "market-brief", label: "Market Brief", href: "/market-brief", icon: "sun" },
       { key: "hedging", label: "Hedging", href: "/hedging", icon: "umbrella" },
       { key: "strategists", label: "Strategists", href: "/strategists", icon: "chat" },
       { key: "sentiment", label: "Sentiment", href: "/sentiment", icon: "shield" },
@@ -67,6 +67,8 @@ export const NAV_GROUPS: NavGroup[] = [
     label: "Other",
     hue: "ideas",
     items: [
+      // The AI-written brief: still generated (the watchers and the hedging read use it) and kept until the team signs off.
+      { key: "brief", label: "Brief (current)", href: "/brief", icon: "sun" },
       { key: "positioning", label: "Positioning", href: "/portfolio", icon: "pie", match: (p) => p.startsWith("/portfolio") },
       { key: "review", label: "Review", href: "/review", icon: "calendar" },
       { key: "sources", label: "Research sources", href: "/research/sources", icon: "inbox" },

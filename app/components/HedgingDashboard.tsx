@@ -6,6 +6,7 @@ import type { HedgingLiveData, HedgingQuote, CustomStrikeRow } from "@/app/api/h
 import type { HedgingHistory, HedgingSnapshot } from "@/app/api/kv/hedging-history/route";
 import type { HedgingCustomStrikes } from "@/app/api/kv/hedging-custom-strikes/route";
 import { easternToday } from "@/app/lib/date-eastern";
+import { HEADLINE_DEFAULT, HEADLINE_STRIKES, hedgeHeadline, type HeadlineStrike } from "@/app/lib/hedging-headline";
 import { AppIcon } from "./AppIcon";
 import { StatStrip } from "./StatStrip";
 import { EmptyState } from "./EmptyState";
@@ -146,7 +147,10 @@ export default function HedgingDashboard() {
   // Set when the live chain failed and the page is showing a saved snapshot: that snapshot's date.
   const [savedAsOf, setSavedAsOf] = useState<string | null>(null);
   const [view, setView] = useState<ViewMode>("current");
-  const { priceRefreshNonce } = useStocks();
+  const { priceRefreshNonce, uiPrefs, setUiPref } = useStocks();
+  // Standard measure (Nov 26 2026): a 3-month, 5% out-of-the-money put as % of exposure; term and strike adjustable.
+  const hlMonths = Math.min(9, Math.max(1, parseInt(uiPrefs["hedging.headline.months"] ?? "", 10) || HEADLINE_DEFAULT.months));
+  const hlStrike: HeadlineStrike = HEADLINE_STRIKES.some((x) => x.id === uiPrefs["hedging.headline.strike"]) ? (uiPrefs["hedging.headline.strike"] as HeadlineStrike) : HEADLINE_DEFAULT.strike;
 
   const loadAll = useCallback(async (persist: boolean, strikes: number[]) => {
     setError(null);
@@ -367,6 +371,36 @@ export default function HedgingDashboard() {
           ]}
         />
       )}
+
+      {data && data.quotes.length > 0 && (() => {
+        const asOf = savedAsOf ?? data.quotesAsOfDate ?? easternToday();
+        const h = hedgeHeadline({ date: asOf, spotPrice: data.spotPrice, quotes: data.quotes }, history.filter((x) => x.date !== asOf), hlMonths, hlStrike);
+        const chg = (prior: { pct: number; date: string } | null) => (h.pct == null || !prior ? "—" : `${h.pct - prior.pct >= 0 ? "+" : "−"}${Math.abs(h.pct - prior.pct).toFixed(2)} pts`);
+        const sel = "h-7 rounded-control border border-line bg-surface px-2 text-[12.5px] text-ink";
+        return (
+          <div className="panel px-3.5 py-3">
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
+              <span className="text-[12.5px] font-semibold text-ink">Cost of protection</span>
+              <select aria-label="Term" className={sel} value={hlMonths} onChange={(e) => setUiPref("hedging.headline.months", e.target.value)}>
+                {[1, 2, 3, 4, 5, 6, 7, 8, 9].map((m) => <option key={m} value={m}>{m}-month</option>)}
+              </select>
+              <select aria-label="Strike" className={sel} value={hlStrike} onChange={(e) => setUiPref("hedging.headline.strike", e.target.value)}>
+                {HEADLINE_STRIKES.map((x) => <option key={x.id} value={x.id}>SPY put, {x.label}</option>)}
+              </select>
+              <span className="text-[12px] text-ink-3">as % of exposure · as of {asOf}{h.expiry ? ` · expiry ${h.expiry}` : ""}</span>
+            </div>
+            <div className="mt-2 flex flex-wrap items-end gap-x-10 gap-y-2">
+              <div>
+                <div className="text-[28px] font-semibold leading-none tabular-nums text-ink">{h.pct == null ? "—" : `${h.pct.toFixed(2)}%`}</div>
+                {h.pct == null && <div className="mt-1 text-[12px] text-ink-3">No price for that term and strike.</div>}
+              </div>
+              <div className="text-[13px]"><div className="text-ink-3">Week over week</div><div className="font-semibold tabular-nums text-ink">{chg(h.weekAgo)}</div><div className="text-[11.5px] text-ink-3">{h.weekAgo ? `${h.weekAgo.pct.toFixed(2)}% on ${h.weekAgo.date}` : "no saved day"}</div></div>
+              <div className="text-[13px]"><div className="text-ink-3">Month over month</div><div className="font-semibold tabular-nums text-ink">{chg(h.monthAgo)}</div><div className="text-[11.5px] text-ink-3">{h.monthAgo ? `${h.monthAgo.pct.toFixed(2)}% on ${h.monthAgo.date}` : "no saved day"}</div></div>
+              <div className="text-[13px]"><div className="text-ink-3">3-month average</div><div className="font-semibold tabular-nums text-ink">{h.avg3m ? `${h.avg3m.pct.toFixed(2)}%` : "—"}</div><div className="text-[11.5px] text-ink-3">{h.avg3m ? `${h.avg3m.days} saved days · now ${h.vsAvg === "low" ? "below" : h.vsAvg === "high" ? "above" : "near"} it` : "fewer than 5 saved days"}</div></div>
+            </div>
+          </div>
+        );
+      })()}
 
       {error && <div className="panel px-3.5 py-2.5 text-[12.5px] text-neg">{error}</div>}
       {!savedAsOf && data?.quotesAsOfDate && data.quotesAsOfDate !== easternToday() && (

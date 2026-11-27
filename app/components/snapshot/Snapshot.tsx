@@ -28,6 +28,7 @@ import { useBenchmarkHistory } from "@/app/lib/useBenchmarkHistory";
 import { yahooClassShare } from "@/app/lib/yahoo-symbol";
 import { tickerMatch } from "@/app/lib/rebalance";
 import { Explain } from "@/app/components/Explain";
+import { WhyPopup, useWhyStore } from "@/app/components/holdings/WhyWeOwn";
 
 const serif = Playfair_Display({ subsets: ["latin"], style: ["normal", "italic"], weight: ["500", "600", "700"], display: "swap" });
 const SERIF = serif.style.fontFamily;
@@ -452,6 +453,8 @@ export default function Snapshot() {
   const since = useSincePurchase(ctxLoading ? "" : mandate);
   const sinceOf = (sym: string) => since.data?.rows.find((r) => tickerMatch(r.symbol, sym)) ?? null;
   const fxImpact = useCurrencyImpact(ctxLoading ? "" : mandate);
+  const why = useWhyStore();
+  const [whyFor, setWhyFor] = useState<{ symbol: string; name: string } | null>(null);
   type HeldKey = "name" | "ticker" | "weight" | "ret" | "added" | "since";
   type XrayKey = "name" | "weight" | "direct" | "via" | "ret";
   const [heldSort, setHeldSort] = useState<Sort<HeldKey>>({ key: "weight", dir: "desc" });
@@ -488,7 +491,10 @@ export default function Snapshot() {
           return (
             <tr key={h.symbol}>
               <td className={TDc} style={{ borderColor: T.rule }}>
-                <Link href={`/stock/${encodeURIComponent(h.symbol.toLowerCase())}`} className="text-[15px] font-medium hover:underline" style={{ color: T.ink }}>{h.name || h.symbol}</Link>
+                <div className="flex items-center justify-between gap-2">
+                  <Link href={`/stock/${encodeURIComponent(h.symbol.toLowerCase())}`} className="text-[15px] font-medium hover:underline" style={{ color: T.ink }}>{h.name || h.symbol}</Link>
+                  <button type="button" onClick={() => setWhyFor({ symbol: h.symbol, name: h.name || h.symbol })} title="Why we own it" aria-label={`Why we own ${h.name || h.symbol}`} className="shrink-0 rounded-full border px-2 py-0.5 text-[11.5px] font-semibold" style={{ borderColor: T.rule, color: T.navy }}>Why</button>
+                </div>
               </td>
               <td className={`${TDc} whitespace-nowrap text-[13px] tabular-nums`} style={{ borderColor: T.rule, color: T.muted }}>{h.symbol}</td>
               <td className={`${TDc} text-right text-[15px] font-semibold tabular-nums`} style={{ borderColor: T.rule, color: T.navy }}>{pct(h.weight)}</td>
@@ -770,6 +776,7 @@ export default function Snapshot() {
           <Link href="/holdings" className="font-semibold underline" style={{ color: T.navy }}>Full holdings table</Link> · <Link href="/aa-performance" className="font-semibold underline" style={{ color: T.navy }}>Performance detail</Link> · <Link href={`/client-report?group=pim&profile=${mandate}&layout=landscape`} className="font-semibold underline" style={{ color: T.navy }}>Client report</Link>
         </p>
       </div>
+      {whyFor && <WhyPopup symbol={whyFor.symbol} name={whyFor.name} why={why} onClose={() => setWhyFor(null)} />}
     </main>
   );
 }
