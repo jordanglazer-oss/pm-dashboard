@@ -31,11 +31,17 @@ describe("Signal grid — each signal on its own", () => {
     expect(relStrengthSignal({}).state).toBe("pending");
   });
 
-  it("fundamentals: pending with fewer than three metrics, never a guess", () => {
-    expect(fundamentalsSignal({ peg: 1.0, roic: 20 }).state).toBe("pending");
-    expect(fundamentalsSignal({ peg: 1.0, roic: 20, fcfMargin: 15 }).state).toBe("positive");
-    expect(fundamentalsSignal({ peg: 4, roic: 3, fcfMargin: -2 }).state).toBe("negative");
-    expect(fundamentalsSignal({ peg: 1.0, roic: 3, fcfMargin: 5 }).state).toBe("neutral");
+  it("fundamentals: pending with fewer than four metrics, never a guess", () => {
+    expect(fundamentalsSignal({ peg: 1.0, roic: 20, fcfMargin: 15 }).state).toBe("pending");
+    expect(fundamentalsSignal({ peg: 1.0, roic: 20, fcfMargin: 15, netDebtEbitda: 0.5 }).state).toBe("positive");
+    expect(fundamentalsSignal({ peg: 4, roic: 3, fcfMargin: -2, interestCoverage: 1.2 }).state).toBe("negative");
+    expect(fundamentalsSignal({ peg: 1.0, roic: 3, fcfMargin: 5, peVsMarketPct: 5 }).state).toBe("neutral");
+  });
+
+  it("fundamentals: no debt reads well for coverage and leverage; P/E vs market and sector count", () => {
+    const s = fundamentalsSignal({ noDebt: true, peVsMarketPct: -20, peVsSectorPct: -15 });
+    expect(s.state).toBe("positive");
+    expect(s.rows.find((r) => r.label.startsWith("Net debt"))?.value).toBe("no debt");
   });
 
   it("technicals: above both averages near the high reads positive", () => {

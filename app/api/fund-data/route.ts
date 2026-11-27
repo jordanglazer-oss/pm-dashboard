@@ -1,4 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
+import { usableSectors } from "@/app/lib/fund-data-sanity";
+import { createLogger } from "@/app/lib/logger";
 import { yahooClassShare } from "@/app/lib/yahoo-symbol";
 import * as cheerio from "cheerio";
 import type { FundData, FundHolding, FundSectorWeight, FundPerformance, FundRiskStats } from "@/app/lib/types";
@@ -1487,6 +1489,15 @@ export async function GET(request: NextRequest) {
       fundData.holdingsSource = providerHoldings.provider || "Fund provider";
     }
     if (providerHoldings.sectorWeightings?.length) fundData.sectorWeightings = providerHoldings.sectorWeightings;
+
+    // A fund that holds ONE other fund (XUH → XUU) comes back from the
+    // holdings feeds tagged as a single "Financials" position. That is the
+    // wrapper's tag, not the fund's exposure, so it is not stored (the
+    // look-through takes the sectors from the underlying fund).
+    if (fundData.sectorWeightings?.length && !usableSectors(fundData).sectors) {
+      createLogger("Fund-data").info(`${ticker}: sector breakdown withheld (${usableSectors(fundData).withheld?.slice(0, 60)})`);
+      fundData.sectorWeightings = undefined;
+    }
 
     return NextResponse.json({ ticker, fundData });
   } catch (err) {

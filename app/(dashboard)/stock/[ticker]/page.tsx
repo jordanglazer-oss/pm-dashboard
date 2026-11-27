@@ -1,5 +1,6 @@
 "use client";
 
+import { usableSectors } from "@/app/lib/fund-data-sanity";
 import React, { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { StatStrip } from "@/app/components/StatStrip";
 import { FundPerformancePanel } from "@/app/components/FundPerformance";
@@ -886,7 +887,13 @@ function FundDataPanels({ fundData, ticker, onHoldingsUpdate }: { fundData: Fund
         </section>
 
         {/* Sector Breakdown */}
-        {fundData.sectorWeightings && fundData.sectorWeightings.length > 0 && (() => {
+        {usableSectors(fundData).withheld && (
+          <section className="panel">
+            <div className="panel-h"><span className="t">Sector breakdown</span><span className="m">not shown</span></div>
+            <p className="px-3.5 py-3 text-[12.5px] text-ink-2">{usableSectors(fundData).withheld}</p>
+          </section>
+        )}
+        {usableSectors(fundData).sectors && fundData.sectorWeightings && fundData.sectorWeightings.length > 0 && (() => {
           // Normalize provider sector names (Yahoo / Morningstar / Globe
           // and Mail all emit their own variants) so e.g. "Financial
           // Services" and "Financials" roll into a single bucket instead

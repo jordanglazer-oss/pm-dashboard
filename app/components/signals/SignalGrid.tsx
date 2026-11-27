@@ -6,24 +6,52 @@
  * context (stocks + analyst snapshots); stores nothing.
  */
 
-import React from "react";
+import React, { useEffect, useState } from "react";
 import type { Stock } from "@/app/lib/types";
 import { getSnapshotForTicker, type AnalystSnapshots } from "@/app/lib/analyst-snapshots";
+import type { NameFundamentals, SignalFundamentals } from "@/app/lib/signal-fundamentals-shared";
 import { SIGNAL_COLUMNS, computeSignals, revisionArrow, type Signal, type SignalInput, type SignalKey, type SignalSet, type SignalState } from "@/app/lib/signals";
 
-export function signalInputFor(stock: Stock | undefined, snaps: AnalystSnapshots | undefined): SignalInput {
+/** The FactSet fundamentals behind the grid (read-only cache route). */
+export function useSignalFundamentals(): SignalFundamentals | null {
+  const [data, setData] = useState<SignalFundamentals | null>(null);
+  useEffect(() => {
+    let alive = true;
+    fetch("/api/signal-fundamentals").then((r) => (r.ok ? r.json() : null)).then((d: SignalFundamentals | null) => alive && setData(d && d.names ? d : null)).catch(() => {});
+    return () => {
+      alive = false;
+    };
+  }, []);
+  return data;
+}
+
+const fundFor = (f: SignalFundamentals | null | undefined, ticker: string): NameFundamentals | undefined => {
+  const t = ticker.toUpperCase();
+  return f?.names?.[t] ?? f?.names?.[t.replace(/\.TO$/, "-T")] ?? f?.names?.[t.replace(/-T$/, ".TO")];
+};
+
+export function signalInputFor(stock: Stock | undefined, snaps: AnalystSnapshots | undefined, fundamentals?: SignalFundamentals | null): SignalInput {
   if (!stock) return {};
+  const ff = fundFor(fundamentals, stock.ticker);
   const snap = getSnapshotForTicker(snaps, stock.ticker);
   const h = stock.healthData;
   const t = stock.technicals;
   return {
     price: stock.price ?? h?.currentPrice ?? t?.currentPrice ?? null,
-    peg: h?.pegRatio,
-    fcfMargin: h?.fcfMargin,
-    roic: h?.roic,
-    revenueGrowth: h?.revenueGrowth,
-    forwardPE: h?.forwardPE,
-    evEbitda: h?.enterpriseToEbitda,
+    // FactSet first; the figures stored on the stock are the fallback.
+    peg: ff?.peg ?? h?.pegRatio,
+    fcfMargin: ff?.fcfMargin ?? h?.fcfMargin,
+    roic: ff?.roic ?? h?.roic,
+    revenueGrowth: ff?.revenueGrowth ?? h?.revenueGrowth,
+    forwardPE: ff?.ntmPe ?? null,
+    forwardPE5yAvg: ff?.forwardPE5yAvg ?? null,
+    evEbitda: ff?.evEbitdaForHistory ?? null,
+    evEbitda5yAvg: ff?.evEbitda5yAvg ?? null,
+    peVsMarketPct: ff?.peVsMarketPct,
+    peVsSectorPct: ff?.peVsSectorPct,
+    interestCoverage: ff?.interestCoverage,
+    netDebtEbitda: ff?.netDebtEbitda,
+    noDebt: ff?.noDebt,
     avgTarget: snap?.factset?.averageTarget,
     analystCount: snap?.factset?.analystCount,
     revUp: snap?.factset?.revUp,
@@ -43,8 +71,8 @@ export function signalInputFor(stock: Stock | undefined, snaps: AnalystSnapshots
 /** Funds and ETFs are not read by company signals. */
 export const signalsApply = (stock: Stock | undefined) => !stock?.instrumentType || stock.instrumentType === "stock";
 
-export function signalsFor(stock: Stock | undefined, snaps: AnalystSnapshots | undefined): SignalSet | null {
-  return stock && signalsApply(stock) ? computeSignals(signalInputFor(stock, snaps)) : null;
+export function signalsFor(stock: Stock | undefined, snaps: AnalystSnapshots | undefined, fundamentals?: SignalFundamentals | null): SignalSet | null {
+  return stock && signalsApply(stock) ? computeSignals(signalInputFor(stock, snaps, fundamentals)) : null;
 }
 
 const CELL: Record<SignalState, { text: string; cls: string }> = {

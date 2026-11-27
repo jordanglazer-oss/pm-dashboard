@@ -37,6 +37,13 @@ export type SignalInput = {
   forwardPE5yAvg?: number | null;
   evEbitda?: number | null;
   evEbitda5yAvg?: number | null;
+  /** From the FactSet pull: % vs the market / sector median P/E, coverage and leverage. */
+  peVsMarketPct?: number | null;
+  peVsSectorPct?: number | null;
+  interestCoverage?: number | null;
+  netDebtEbitda?: number | null;
+  /** No debt on file: coverage and leverage both read well. */
+  noDebt?: boolean;
   // Street
   avgTarget?: number | null;
   analystCount?: number | null;
@@ -83,9 +90,14 @@ export function fundamentalsSignal(i: SignalInput, cfg: SignalConfig = SIGNAL_CO
     fcfMargin: num(i.fcfMargin) ? i.fcfMargin : null,
     roic: num(i.roic) ? i.roic : null,
     revenueGrowth: num(i.revenueGrowth) ? i.revenueGrowth : null,
+    peVsMarket: num(i.peVsMarketPct) ? i.peVsMarketPct : null,
+    peVsIndustry: num(i.peVsSectorPct) ? i.peVsSectorPct : null,
+    interestCoverage: num(i.interestCoverage) ? i.interestCoverage : null,
+    leverage: num(i.netDebtEbitda) ? i.netDebtEbitda : null,
   };
   const rows: SignalRow[] = cfg.fundamentals.metrics.map((m) => {
     const v = "pending" in m && m.pending ? null : (values[m.id] ?? null);
+    if (v == null && i.noDebt && (m.id === "interestCoverage" || m.id === "leverage")) return { label: m.label, value: "no debt", read: "positive" as const };
     if (v == null) return { label: m.label, value: "pending" in m && m.pending ? "source pending" : "no data", read: "pending" as const };
     return { label: m.label, value: `${fmt(v)}${m.unit.startsWith("%") ? "%" : m.unit === "x" ? "x" : ""}${m.unit.includes("vs") ? " " + m.unit.replace(/^% /, "") : ""}`, read: metricRead(v, m) };
   });

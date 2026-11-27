@@ -19,7 +19,7 @@ import { whyKey } from "@/app/lib/why-we-own";
 import { Explain } from "@/app/components/Explain";
 import { usePersistedOpen } from "@/app/lib/useCollapsed";
 import { Card, Empty, Page } from "@/app/components/redesign/ui";
-import { SignalCells, SignalDetail, SignalHead, signalsFor } from "@/app/components/signals/SignalGrid";
+import { SignalCells, SignalDetail, SignalHead, signalsFor, useSignalFundamentals } from "@/app/components/signals/SignalGrid";
 import { WhyPanel, useWhyStore } from "@/app/components/holdings/WhyWeOwn";
 
 const TH = "border-b border-line px-2 py-2 text-left text-[11.5px] font-semibold uppercase tracking-wide text-ink-3";
@@ -32,6 +32,7 @@ type SortKey = "weight" | "name" | "positives";
 export default function HoldingsBoard() {
   const { stocks, pimModels, analystSnapshots, loading } = useStocks() as ReturnType<typeof useStocks> & { loading?: boolean };
   const why = useWhyStore();
+  const fundamentals = useSignalFundamentals();
   const [open, setOpen] = useState<{ symbol: string; signal: SignalKey | null } | null>(null);
   const [sort, setSort] = useState<SortKey>("weight");
   const [closedOpen, toggleClosed] = usePersistedOpen("holdings.closed", false);
@@ -41,12 +42,12 @@ export default function HoldingsBoard() {
     const list = (group?.holdings ?? []).map((h) => {
       const stock = stocks.find((s) => tickerMatch(s.ticker, h.symbol));
       const isStock = !stock?.instrumentType || stock.instrumentType === "stock";
-      return { h, stock, isStock: Boolean(stock) && isStock, set: signalsFor(stock, analystSnapshots), snap: stock ? getSnapshotForTicker(analystSnapshots, stock.ticker) : undefined };
+      return { h, stock, isStock: Boolean(stock) && isStock, set: signalsFor(stock, analystSnapshots, fundamentals), snap: stock ? getSnapshotForTicker(analystSnapshots, stock.ticker) : undefined };
     });
     const by = (a: (typeof list)[number], b: (typeof list)[number]) =>
       sort === "name" ? (a.h.name || a.h.symbol).localeCompare(b.h.name || b.h.symbol) : sort === "positives" ? (b.set?.positives ?? -1) - (a.set?.positives ?? -1) || b.h.weightInClass - a.h.weightInClass : b.h.weightInClass - a.h.weightInClass;
     return { stocks: list.filter((r) => r.isStock && r.h.assetClass === "equity").sort(by), funds: list.filter((r) => !(r.isStock && r.h.assetClass === "equity")).sort(by) };
-  }, [group, stocks, analystSnapshots, sort]);
+  }, [group, stocks, analystSnapshots, sort, fundamentals]);
 
   const heldKeys = useMemo(() => new Set((group?.holdings ?? []).map((h) => whyKey(h.symbol))), [group]);
   const closed = useMemo(() => Object.entries(why.store?.entries ?? {}).filter(([k]) => !heldKeys.has(k)), [why.store, heldKeys]);
@@ -116,12 +117,14 @@ export default function HoldingsBoard() {
 
   return (
     <Page title="Holdings" lede="Every current position: signals, targets and why we own it." right={<>{sortBtn("weight", "By weight")}{sortBtn("positives", "By positive signals")}{sortBtn("name", "A to Z")}</>}>
-      <Card title="Individual stocks" sub={`${rows.stocks.length} positions · click a signal for its numbers`} pad={false}>
+      <Card title="Individual stocks" sub={`${rows.stocks.length} positions · click a signal for its numbers${fundamentals?.at ? ` · FactSet fundamentals ${fundamentals.at.slice(0, 10)}` : ""}`} pad={false}>
+        {fundamentals?.error && <div className="border-b border-line-soft bg-warn-soft px-5 py-2 text-[13px] text-ink">FactSet fundamentals could not be refreshed ({fundamentals.error}). {fundamentals.at ? `Showing the copy from ${fundamentals.at.slice(0, 10)}.` : "Fundamentals read from the figures stored on each stock."}</div>}
         {rows.stocks.length ? table(rows.stocks, true) : <div className="px-5 py-3"><Empty>{loading ? "Loading…" : "No individual stocks in the model."}</Empty></div>}
         <div className="px-5 py-3">
           <Explain prefKey="explain.holdings.signals" label="How the signals are read">
             <p>Six separate reads, each Positive, Neutral or Negative. There is no combined score; &ldquo;Positive&rdquo; counts how many of the signals with data read positive.</p>
             <p className="mt-1">Fundamentals: valuation and quality measures, positive when at least two more read well than read poorly. Analysts: the 30-day trend in estimate revisions (arrow). Upside: average street target against the price, positive above 10%. House: positive only when RBC and J.P. Morgan both rate it positively. Technicals: price against its 50 and 200-day averages, RSI, distance from the 52-week high, Market Edge. Rel. str.: the SIA ranking.</p>
+            <p className="mt-1">Fundamentals come from FactSet, refreshed about once a day: P/E against the median of the S&amp;P 500 and TSX 60 and of the company&apos;s sector, net debt to EBITDA, interest coverage, free cash flow margin, return on capital, revenue growth, PEG, and the multiple against its own 5-year average where a FactSet analyst round-up is on file. Banks and insurers get no debt-based measures. FactSet does not supply an average analyst rating on our plan.</p>
             <p className="mt-1">&ldquo;No data&rdquo; means the source is not on file; it is never counted as neutral. The thresholds are starting values in one settings file and have not been confirmed by the team.</p>
           </Explain>
         </div>

@@ -26,7 +26,7 @@ export const SIGNAL_CONFIG = {
    * `minMetrics` have data. `better` says which direction is good.
    */
   fundamentals: {
-    minMetrics: 3,
+    minMetrics: 4,
     netForPositive: 2,
     netForNegative: -2,
     metrics: [
@@ -36,11 +36,11 @@ export const SIGNAL_CONFIG = {
       { id: "fcfMargin", label: "Free cash flow margin", better: "higher", positive: 10, negative: 0, unit: "%" },
       { id: "roic", label: "Return on invested capital", better: "higher", positive: 12, negative: 6, unit: "%" },
       { id: "revenueGrowth", label: "Revenue growth", better: "higher", positive: 8, negative: 0, unit: "%" },
-      // No source on file yet — shown as "source pending", never guessed.
-      { id: "peVsMarket", label: "P/E vs the market", better: "lower", positive: -10, negative: 10, unit: "% vs market", pending: true },
-      { id: "peVsIndustry", label: "P/E vs the industry", better: "lower", positive: -10, negative: 10, unit: "% vs industry", pending: true },
-      { id: "interestCoverage", label: "Interest coverage", better: "higher", positive: 6, negative: 2, unit: "x", pending: true },
-      { id: "leverage", label: "Net debt / EBITDA", better: "lower", positive: 1.5, negative: 3.5, unit: "x", pending: true },
+      // From the nightly FactSet pull (app/lib/signal-fundamentals.ts).
+      { id: "peVsMarket", label: "P/E vs the market (S&P 500 + TSX 60 median)", better: "lower", positive: -10, negative: 25, unit: "% vs market" },
+      { id: "peVsIndustry", label: "P/E vs its sector median", better: "lower", positive: -10, negative: 25, unit: "% vs sector" },
+      { id: "interestCoverage", label: "Interest coverage (operating income ÷ interest)", better: "higher", positive: 6, negative: 2, unit: "x" },
+      { id: "leverage", label: "Net debt ÷ EBITDA", better: "lower", positive: 1.5, negative: 3.5, unit: "x" },
     ],
   },
 

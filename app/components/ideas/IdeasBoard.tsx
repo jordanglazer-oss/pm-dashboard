@@ -23,7 +23,7 @@ import { Explain } from "@/app/components/Explain";
 import { usePersistedOpen } from "@/app/lib/useCollapsed";
 import { useGet } from "@/app/components/redesign/data";
 import { Card, Empty, Page, todayET } from "@/app/components/redesign/ui";
-import { SignalCells, SignalDetail, SignalHead, signalsFor } from "@/app/components/signals/SignalGrid";
+import { SignalCells, SignalDetail, SignalHead, signalsFor, useSignalFundamentals } from "@/app/components/signals/SignalGrid";
 
 const TH = "border-b border-line px-2 py-2 text-left text-[11.5px] font-semibold uppercase tracking-wide text-ink-3";
 const TD = "border-b border-line-soft px-2 py-2 align-middle text-[13.5px]";
@@ -35,6 +35,7 @@ export default function IdeasBoard() {
   const research = useGet<Partial<ResearchState>>("/api/kv/research", (raw) => (raw as { research?: Partial<ResearchState> })?.research ?? null);
   const suggested = useGet<Stock[]>("/api/kv/stocks-suggested", (raw) => (raw as { stocks?: Stock[] })?.stocks ?? null);
   const history = useGet<RankedHistory>("/api/ranked-source-history", (raw) => ((raw as { history?: RankedHistory })?.history ?? (raw as RankedHistory)) || null);
+  const fundamentals = useSignalFundamentals();
   const [sort, setSort] = useState<SortKey>("positives");
   const [open, setOpen] = useState<{ key: string; signal: SignalKey } | null>(null);
   const [archiveOpen, toggleArchive] = usePersistedOpen("ideas.archive", false);
@@ -51,12 +52,12 @@ export default function IdeasBoard() {
     const pool = [...stocks, ...(suggested.data ?? [])];
     const withSignals = ideas.map((i) => {
       const stock = pool.find((s) => rootOf(s.ticker) === i.key);
-      return { i, stock, set: signalsFor(stock, analystSnapshots) };
+      return { i, stock, set: signalsFor(stock, analystSnapshots, fundamentals) };
     });
     const by = (a: (typeof withSignals)[number], b: (typeof withSignals)[number]) =>
       sort === "name" ? a.i.name.localeCompare(b.i.name) : sort === "lists" ? b.i.listCount - a.i.listCount || (b.set?.positives ?? -1) - (a.set?.positives ?? -1) : (b.set?.positives ?? -1) - (a.set?.positives ?? -1) || b.i.listCount - a.i.listCount;
     return { active: withSignals.filter((r) => !r.i.stale).sort(by), archived: withSignals.filter((r) => r.i.stale).sort(by) };
-  }, [ideas, stocks, suggested.data, analystSnapshots, sort]);
+  }, [ideas, stocks, suggested.data, analystSnapshots, sort, fundamentals]);
 
   const table = (list: typeof rows.active) => (
     <div className="overflow-x-auto">
