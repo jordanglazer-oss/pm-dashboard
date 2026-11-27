@@ -14,6 +14,8 @@ export type NavItem = {
   icon: string;
   /** Route predicates that highlight this item beyond its own href. */
   match?: (path: string) => boolean;
+  /** "Removed" pages only: the kept page this content is proposed to move into. */
+  mergeInto?: string;
 };
 
 export type NavGroup = {
@@ -25,26 +27,26 @@ export type NavGroup = {
 };
 
 /**
- * Nov 24 2026 hackathon scaffold: the rail is regrouped into the two sections
- * the team asked for — "Portfolio & Research" (views you drill into) and
- * "Tools" (click to generate). NOTHING was removed: every page that is not
- * yet placed by the team sits in the third group ("Other") until they decide.
+ * Nov 26 2026 team session: the rail the team agreed on. "Portfolio &
+ * Research" and "Tools" are the pages being kept; "Other" holds working pages
+ * the team has not placed (they are still needed to run the book); "Removed"
+ * holds pages leaving the dashboard — STILL REACHABLE on the preview so the
+ * team can pick what to roll into a kept page. `mergeInto` names the kept
+ * page that content is proposed for. NOTHING is deleted and no stored data
+ * changes when a page moves groups.
  */
 export const NAV_GROUPS: NavGroup[] = [
   {
-    // Order agreed in the Nov 25 team session. The Brief page is unchanged — only its label reads "Market Brief".
     label: "Portfolio & Research",
     hue: "portfolio",
     items: [
       { key: "snapshot", label: "Portfolio Snapshot", href: "/", icon: "pie" },
       { key: "brief", label: "Market Brief", href: "/brief", icon: "sun" },
       { key: "hedging", label: "Hedging", href: "/hedging", icon: "umbrella" },
-      { key: "holdings", label: "Holdings", href: "/holdings", icon: "table", match: (p) => p === "/scoring" || p.startsWith("/stock/") },
-      { key: "models", label: "Models", href: "/pim-model", icon: "layers" },
-      { key: "performance", label: "Performance", href: "/aa-performance", icon: "trend", match: (p) => p === "/attribution" },
       { key: "strategists", label: "Strategists", href: "/strategists", icon: "chat" },
-      { key: "ranked", label: "Market Research", href: "/research", icon: "list" },
-      { key: "monitors", label: "Monitors", href: "/monitors", icon: "shield" },
+      { key: "sentiment", label: "Sentiment", href: "/sentiment", icon: "shield" },
+      { key: "performance", label: "Performance", href: "/aa-performance", icon: "trend", match: (p) => p === "/attribution" },
+      { key: "holdings", label: "Holdings", href: "/holdings", icon: "table", match: (p) => p.startsWith("/stock/") },
       { key: "watchlist", label: "Ideas", href: "/watchlist", icon: "spark" },
     ],
   },
@@ -56,24 +58,35 @@ export const NAV_GROUPS: NavGroup[] = [
       { key: "pm-monthly", label: "PM Monthly", href: "/pm-monthly", icon: "mail" },
       { key: "funds", label: "Fund One-Pagers", href: "/funds", icon: "doc" },
       { key: "chat", label: "Ask", href: "/chat", icon: "chat" },
+      { key: "models", label: "Models", href: "/pim-model", icon: "layers" },
     ],
   },
   {
-    // Every other existing page. Unchanged; nothing removed or hidden.
+    // Working pages the team has not placed. Still needed to run the book; unchanged.
     label: "Other",
     hue: "ideas",
     items: [
       { key: "positioning", label: "Positioning", href: "/portfolio", icon: "pie", match: (p) => p.startsWith("/portfolio") },
       { key: "review", label: "Review", href: "/review", icon: "calendar" },
-      { key: "risk", label: "Risk", href: "/risk", icon: "shield" },
-      { key: "thesis", label: "Thesis", href: "/thesis", icon: "filecheck" },
-      { key: "themes", label: "Themes", href: "/themes", icon: "star" },
-      { key: "journal", label: "Journal", href: "/journal", icon: "book" },
-      { key: "synthesis", label: "Synthesis", href: "/synthesis", icon: "spark" },
-      { key: "pipeline", label: "Pipeline", href: "/funnel", icon: "branch", match: (p) => p === "/conviction" },
       { key: "sources", label: "Research sources", href: "/research/sources", icon: "inbox" },
       { key: "inbox", label: "Inbox", href: "/inbox", icon: "inbox" },
       { key: "monitor", label: "Watchers", href: "/monitor", icon: "eye" },
+    ],
+  },
+  {
+    // Leaving the dashboard. Reachable on the preview until the team signs off; data untouched.
+    label: "Removed",
+    hue: "today",
+    items: [
+      { key: "ranked", label: "Market Research", href: "/research", icon: "list", mergeInto: "Holdings, Ideas" },
+      { key: "monitors", label: "Monitors", href: "/monitors", icon: "shield", mergeInto: "Sentiment, Strategists" },
+      { key: "thesis", label: "Thesis", href: "/thesis", icon: "filecheck", mergeInto: "Holdings" },
+      { key: "journal", label: "Journal", href: "/journal", icon: "book", mergeInto: "Holdings" },
+      { key: "themes", label: "Themes", href: "/themes", icon: "star", mergeInto: "Holdings" },
+      { key: "pipeline", label: "Pipeline", href: "/funnel", icon: "branch", match: (p) => p === "/conviction", mergeInto: "Ideas" },
+      { key: "risk", label: "Risk", href: "/risk", icon: "shield", mergeInto: "Portfolio Snapshot" },
+      { key: "scoring", label: "PIM Scoring", href: "/scoring", icon: "table" },
+      { key: "synthesis", label: "Synthesis", href: "/synthesis", icon: "spark" },
       { key: "redesign", label: "Redesign options", href: "/redesign", icon: "spark", match: (p) => p.startsWith("/redesign") },
     ],
   },

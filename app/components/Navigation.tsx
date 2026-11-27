@@ -388,10 +388,14 @@ export function Navigation() {
                   href={it.href}
                   onClick={onNavigate}
                   aria-current={on ? "page" : undefined}
-                  className={`rail-item flex h-8 items-center gap-2.5 rounded-control px-2.5 text-[13px] ${on ? "bg-white font-semibold !text-rail shadow-[0_1px_2px_rgb(0_0_0/0.12)]" : "!text-rail-ink hover:bg-rail-hover hover:!text-white"}`}
+                  title={it.mergeInto ? `Proposed to move into: ${it.mergeInto}` : undefined}
+                  className={`rail-item flex ${it.mergeInto ? "min-h-8 py-1" : "h-8"} items-center gap-2.5 rounded-control px-2.5 text-[13px] ${on ? "bg-white font-semibold !text-rail shadow-[0_1px_2px_rgb(0_0_0/0.12)]" : "!text-rail-ink hover:bg-rail-hover hover:!text-white"}`}
                 >
                   <AppIcon name={it.icon} size={15} className={on ? "" : "text-rail-ink-3"} />
-                  <span>{it.label}</span>
+                  <span className="flex min-w-0 flex-col leading-tight">
+                    <span>{it.label}</span>
+                    {it.mergeInto && <span className={`text-[10.5px] font-normal ${on ? "text-ink-3" : "text-rail-ink-3"}`}>→ {it.mergeInto}</span>}
+                  </span>
                 </Link>
               );
             })}

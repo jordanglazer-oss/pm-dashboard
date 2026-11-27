@@ -28,7 +28,7 @@ const TABS: { id: Tab; label: string }[] = [
 ];
 const SENTIMENT_IDS = ["fearGreed", "aaii", "putCall", "oscillator", "vix"];
 
-function Sentiment() {
+export function Sentiment() {
   const { facts, loading } = useFacts();
   const rows = facts.filter((f) => SENTIMENT_IDS.includes(f.id));
   return (

@@ -193,7 +193,7 @@ export async function runStanceWatch(opts: { force?: boolean } = {}): Promise<St
   text.regime = `Regime ${label}`;
   const pend = regime?.composite?.pending;
   signals.regimePending = pend ? pend.label : "none";
-  text.regimePending = pend ? `Regime reading ${pend.label} for ${pend.days} of the ${pend.needed} sessions needed to flip` : "No regime flip pending";
+  text.regimePending = pend ? `Regime reading ${pend.label} for ${pend.days} of the ${pend.needed} sessions needed to flip` : "Market regime: no change building";
   const vix = regime?.crossAsset?.vix?.price ?? null;
   signals.vix = vixBand(vix, prev?.signals?.vix);
   text.vix = vix == null ? "VIX unavailable" : `VIX ${vix.toFixed(1)} (${signals.vix}, Yahoo as of ${regime?.computedAt ? new Date(regime.computedAt).toLocaleString("en-US", { timeZone: "America/New_York", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }) + " ET" : today})`;
