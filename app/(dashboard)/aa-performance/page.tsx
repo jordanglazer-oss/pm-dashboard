@@ -17,6 +17,7 @@ import { SleeveTracking } from "@/app/components/SleeveTracking";
 import { HoldingHistoryPanel } from "@/app/components/HoldingHistoryPanel";
 import { RealizedGainsPanel } from "@/app/components/RealizedGainsPanel";
 import { ReturnSourcesPanel } from "@/app/components/ReturnSourcesPanel";
+import { TradeLogPanel } from "@/app/components/TradeLogPanel";
 
 /* ─── Types ─── */
 type AllocationRow = {
@@ -1017,6 +1018,7 @@ export default function AAPerformancePage() {
 
       {/* Where returns came from: summary → sleeves and holdings → currency, one date range. */}
       <ReturnSourcesPanel />
+      <TradeLogPanel />
 
       {/* What we did. */}
       <HoldingHistoryPanel />
