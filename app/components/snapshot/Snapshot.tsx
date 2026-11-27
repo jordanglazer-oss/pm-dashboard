@@ -27,6 +27,7 @@ import type { PimProfileType } from "@/app/lib/pim-types";
 import { useBenchmarkHistory } from "@/app/lib/useBenchmarkHistory";
 import { yahooClassShare } from "@/app/lib/yahoo-symbol";
 import { tickerMatch } from "@/app/lib/rebalance";
+import { Explain } from "@/app/components/Explain";
 
 const serif = Playfair_Display({ subsets: ["latin"], style: ["normal", "italic"], weight: ["500", "600", "700"], display: "swap" });
 const SERIF = serif.style.fontFamily;
@@ -71,12 +72,13 @@ const PERIODS: { id: Period; label: string; long: string }[] = [
 const TRADING_DAYS: Partial<Record<Period, number>> = { "1d": 1, "1w": 5, "1m": 21, "3m": 63 };
 
 /** The one return column on the Holdings card (Nov 25 team session): chosen from a dropdown, default Today. */
-type Ret = "today" | "1w" | "1m" | "3m";
+type Ret = "today" | "1w" | "1m" | "3m" | "ytd";
 const RETS: { id: Ret; label: string; long: string }[] = [
   { id: "today", label: "Today", long: "today (latest price vs the prior close)" },
   { id: "1w", label: "1W", long: "1 week" },
   { id: "1m", label: "1M", long: "1 month" },
   { id: "3m", label: "3M", long: "3 months" },
+  { id: "ytd", label: "YTD", long: "year to date" },
 ];
 
 type Pt = { date: string; value: number };
@@ -188,7 +190,7 @@ function useHoldingHistory(symbols: string[], slot = "history"): { series: Recor
   return saved.value ?? { series: {}, at: null };
 }
 
-type SinceRow = { symbol: string; since: string; returnPct: number | null; reason: string | null };
+type SinceRow = { symbol: string; since: string; returnPct: number | null; sinceAddedPct?: number | null; reason: string | null };
 type SinceData = { onFile: boolean; through?: string; bookLabel?: string; ownLog?: boolean; rows: SinceRow[] };
 /** Price change vs average cost for each position still held, from the SIA transaction log (read-only route). */
 function useSincePurchase(mandate: string): { data: SinceData | null; failed: boolean } {
@@ -208,7 +210,7 @@ function useSincePurchase(mandate: string): { data: SinceData | null; failed: bo
   return { data: saved.value, failed: state.key === mandate && state.failed };
 }
 
-type FxImpact = { profile: string; from: string; contributionPct: number | null; fxPct: number | null; unhedgedWeight: number; unclassifiedWeight: number; fxEnd: { date: string } | null };
+type FxImpact = { profile: string; from: string; contributionPct: number | null; fxPct: number | null; unhedgedWeight: number; unclassifiedWeight: number; fxEnd: { date: string } | null; rows?: { symbol: string; name: string; weight: number; cls: string; reason: string }[] };
 /** Currency impact on the mandate's return, year to date (the existing read-only estimate). */
 function useCurrencyImpact(mandate: string): { data: FxImpact | null; failed: boolean } {
   const [state, setState] = useState<{ key: string; data: FxImpact | null; failed: boolean }>({ key: "", data: null, failed: false });
@@ -450,7 +452,7 @@ export default function Snapshot() {
   const since = useSincePurchase(ctxLoading ? "" : mandate);
   const sinceOf = (sym: string) => since.data?.rows.find((r) => tickerMatch(r.symbol, sym)) ?? null;
   const fxImpact = useCurrencyImpact(ctxLoading ? "" : mandate);
-  type HeldKey = "name" | "ticker" | "weight" | "ret" | "since";
+  type HeldKey = "name" | "ticker" | "weight" | "ret" | "added" | "since";
   type XrayKey = "name" | "weight" | "direct" | "via" | "ret";
   const [heldSort, setHeldSort] = useState<Sort<HeldKey>>({ key: "weight", dir: "desc" });
   const [xraySort, setXraySort] = useState<Sort<XrayKey>>({ key: "weight", dir: "desc" });
@@ -468,14 +470,14 @@ export default function Snapshot() {
       return sr.length >= 2 ? { move: (sr[sr.length - 1].value / sr[sr.length - 2].value - 1) * 100, date: sr[sr.length - 1].date } : null;
     };
     const retOf = (sym: string) => (ret === "today" ? (navMove(sym)?.move ?? day.moves[sym]) : periodReturn(hist.series[sym] ?? [], ret, null));
-    const val = (h: (typeof held)[number]) => (heldSort.key === "name" ? h.name || h.symbol : heldSort.key === "ticker" ? h.symbol : heldSort.key === "ret" ? retOf(h.symbol) : heldSort.key === "since" ? sinceOf(h.symbol)?.returnPct : h.weight);
+    const val = (h: (typeof held)[number]) => (heldSort.key === "name" ? h.name || h.symbol : heldSort.key === "ticker" ? h.symbol : heldSort.key === "ret" ? retOf(h.symbol) : heldSort.key === "since" ? sinceOf(h.symbol)?.returnPct : heldSort.key === "added" ? sinceOf(h.symbol)?.sinceAddedPct : h.weight);
     const rows = held.filter((h) => h.currency === ccy).sort((a, b) => compare(val(a), val(b), heldSort.dir));
     if (!rows.length) return null;
     const sub = rows.reduce((a, h) => a + h.weight, 0);
     return (
       <tbody key={ccy}>
         <tr>
-          <td colSpan={5} className="px-2 pb-1 pt-3 text-[12px] font-bold uppercase tracking-[0.14em]" style={{ color: T.gold }}>
+          <td colSpan={6} className="px-2 pb-1 pt-3 text-[12px] font-bold uppercase tracking-[0.14em]" style={{ color: T.gold }}>
             {ccy === "CAD" ? "Canadian-dollar holdings" : "US-dollar holdings"} <span className="font-semibold normal-case tracking-normal" style={{ color: T.muted }}>· {pct(sub)} of the portfolio</span>
           </td>
         </tr>
@@ -494,12 +496,19 @@ export default function Snapshot() {
                 {signed(r)}
                 {nav && <div className="text-[11.5px] font-normal" style={{ color: T.muted }} title="A mutual fund is priced once a day; this is its latest NAV against the one before">NAV {fmtDay(nav.date).replace(/, \d{4}$/, "")}</div>}
               </td>
+              <td className={`${TDc} text-right text-[15px] tabular-nums`} style={{ borderColor: T.rule, color: sp?.sinceAddedPct != null ? tone(sp.sinceAddedPct) : T.muted }}>
+                {sp?.sinceAddedPct != null ? (
+                  <>
+                    {signed(sp.sinceAddedPct, 1)}
+                    <div className="text-[11.5px] font-normal" style={{ color: T.muted }}>first buy {fmtDay(sp.since)}</div>
+                  </>
+                ) : (
+                  <span className="text-[12.5px]">{!since.data ? (since.failed ? "not loaded" : "…") : sp ? "no first price" : "no purchase record"}</span>
+                )}
+              </td>
               <td className={`${TDc} text-right text-[15px] tabular-nums`} style={{ borderColor: T.rule, color: sp?.returnPct != null ? tone(sp.returnPct) : T.muted }}>
                 {sp?.returnPct != null ? (
-                  <>
-                    {signed(sp.returnPct, 1)}
-                    <div className="text-[11.5px] font-normal" style={{ color: T.muted }}>since {fmtDay(sp.since)}</div>
-                  </>
+                  signed(sp.returnPct, 1)
                 ) : (
                   <span className="text-[12.5px]" title={sp?.reason ?? "This position is not in the SIA transaction log on file"}>{!since.data ? (since.failed ? "not loaded" : "…") : sp ? sp.reason : "no purchase record"}</span>
                 )}
@@ -609,14 +618,15 @@ export default function Snapshot() {
             ) : tab === "held" ? (
               <>
                 <div className="-mx-2 overflow-x-auto">
-                  <table className="w-full min-w-[600px] border-collapse">
+                  <table className="w-full min-w-[700px] border-collapse">
                     <thead>
                       <tr style={{ color: T.muted }}>
                         <SortTh k="name" label="Holding" sort={heldSort} onSort={setHeldSort} text />
                         <SortTh k="ticker" label="Ticker" sort={heldSort} onSort={setHeldSort} text />
                         <SortTh k="weight" label="% of portfolio" sort={heldSort} onSort={setHeldSort} right />
                         <SortTh k="ret" label={retLabel} sort={heldSort} onSort={setHeldSort} right title={`Sort by return: ${retLong}`} />
-                        <SortTh k="since" label="Since purchase" sort={heldSort} onSort={setHeldSort} right title="Sort by price change vs our average cost" />
+                        <SortTh k="added" label="Since added" sort={heldSort} onSort={setHeldSort} right title="Sort by the security's own move since our first purchase" />
+                        <SortTh k="since" label="Our return" sort={heldSort} onSort={setHeldSort} right title="Sort by our return on average cost" />
                       </tr>
                     </thead>
                     {holdingsTable("CAD")}
@@ -628,17 +638,22 @@ export default function Snapshot() {
                           <td className={`${TDc} text-right text-[15px] font-semibold tabular-nums`} style={{ borderColor: T.rule, color: T.navy }}>{pct(data.totals.cash)}</td>
                           <td className={`${TDc} text-right`} style={{ borderColor: T.rule, color: T.muted }}>—</td>
                           <td className={`${TDc} text-right`} style={{ borderColor: T.rule, color: T.muted }}>—</td>
+                          <td className={`${TDc} text-right`} style={{ borderColor: T.rule, color: T.muted }}>—</td>
                         </tr>
                       </tbody>
                     )}
                   </table>
                 </div>
                 <p className="mt-2 text-[12.5px]" style={{ color: T.muted }}>
-                  One line per position as held; funds and ETFs are a single line. Weights are {data?.weightsSource === "live" ? "live (positions × latest prices)" : "the model targets (no positions on file)"}. Click a heading to sort (within each currency group). {retLabel} = {ret === "today" ? "latest price vs the prior close" : `the holding's own total return over ${retLong}, whether or not we held it that long`}, in its own currency, from Yahoo Finance{hist.at ? ` (${fmtDay(hist.at)})` : ""}. Mutual funds use their daily NAV with distributions reinvested (Globe and Mail fund data), so their &ldquo;today&rdquo; is the latest NAV, dated. Since purchase = latest price vs our average cost in C$, from the {since.data?.bookLabel ? `${since.data.bookLabel} ` : ""}SIA transaction log{since.data?.through ? ` (trades through ${fmtDay(since.data.through)})` : ""}{since.data && since.data.ownLog === false ? "; this mandate has no log of its own on file" : ""}. Stocks and ETFs are price only (dividends not counted); mutual funds include reinvested distributions; a US-dollar holding includes the currency move.
+                  One line per position as held; funds and ETFs are a single line. Weights are {data?.weightsSource === "live" ? "live (positions × latest prices)" : "the model targets (no positions on file)"}. Click a heading to sort (within each currency group). {retLabel} = {ret === "today" ? "latest price vs the prior close" : `the holding's own total return over ${retLong}, whether or not we held it that long`}, in its own currency, from Yahoo Finance{hist.at ? ` (${fmtDay(hist.at)})` : ""}. Mutual funds use their daily NAV with distributions reinvested (Globe and Mail fund data), so their &ldquo;today&rdquo; is the latest NAV, dated. Since added = the security&apos;s own move from the price we paid on our first purchase (current holding period) to now. Our return = latest price vs our average cost, counting every add and trim. Both are in C$, from the {since.data?.bookLabel ? `${since.data.bookLabel} ` : ""}SIA transaction log{since.data?.through ? ` (trades through ${fmtDay(since.data.through)})` : ""}{since.data && since.data.ownLog === false ? "; this mandate has no log of its own on file" : ""}. Stocks and ETFs are price only (dividends not counted); mutual funds include reinvested distributions; a US-dollar holding includes the currency move.
                 </p>
               </>
             ) : (
               <>
+                <p className="mb-2 text-[13px] font-semibold" style={{ color: T.ink }}>
+                  {fundAsOf ? `Fund holdings last fetched ${fundAsOf.oldest === fundAsOf.newest ? fmtDay(fundAsOf.oldest) : `${fmtDay(fundAsOf.oldest)} to ${fmtDay(fundAsOf.newest)}`}.` : "Fund holdings: no date on file."}{" "}
+                  <span className="font-normal" style={{ color: T.muted }}>The fund companies&apos; own as-of date is not stored yet (source pending); their lists are typically a quarter-end.</span>
+                </p>
                 <div className="-mx-2 overflow-x-auto">
                   <table className="w-full min-w-[600px] border-collapse">
                     <thead>
@@ -706,6 +721,35 @@ export default function Snapshot() {
                           USD/CAD {signed(fxImpact.data.fxPct)} × {pct(fxImpact.data.unhedgedWeight * 100)} unhedged US-dollar exposure{fxImpact.data.fxEnd ? ` · to ${fmtDay(fxImpact.data.fxEnd.date)}` : ""}.{" "}
                           <Link href="/aa-performance" className="font-semibold underline" style={{ color: T.navy }}>Detail</Link>
                           {fxImpact.data.unclassifiedWeight > 0.005 && <div style={{ color: T.neg }}>{pct(fxImpact.data.unclassifiedWeight * 100)} of the portfolio has no currency mix on file and is not counted.</div>}
+                          {(() => {
+                            const rows = fxImpact.data.rows ?? [];
+                            const by = (cls: string) => rows.filter((r) => r.cls === cls).sort((a, b) => b.weight - a.weight);
+                            const usd = by("usd-unhedged");
+                            const hedged = by("hedged");
+                            if (!rows.length) return null;
+                            return (
+                              <Explain prefKey="explain.snapshot.currency" label="What counts as US-dollar exposure" className="mt-1">
+                                <p>Impact = unhedged US-dollar share of the portfolio × the USD/CAD move this year. Today&apos;s model weights are applied to the whole year, so it is an estimate.</p>
+                                <p className="mt-1.5 font-semibold">Counted as unhedged US-dollar exposure ({pct(usd.reduce((a, r) => a + r.weight, 0) * 100)}):</p>
+                                <ul className="mt-0.5">
+                                  {usd.map((r) => (
+                                    <li key={r.symbol}>{r.name || r.symbol} · {pct(r.weight * 100)} · {r.reason}</li>
+                                  ))}
+                                </ul>
+                                {hedged.length > 0 && (
+                                  <>
+                                    <p className="mt-1.5 font-semibold">Hedged to Canadian dollars, counted as zero ({pct(hedged.reduce((a, r) => a + r.weight, 0) * 100)}):</p>
+                                    <ul className="mt-0.5">
+                                      {hedged.map((r) => (
+                                        <li key={r.symbol}>{r.name || r.symbol} · {pct(r.weight * 100)} · {r.reason}</li>
+                                      ))}
+                                    </ul>
+                                  </>
+                                )}
+                                <p className="mt-1.5">The CAD / USD split beside this is by the currency a holding is listed in; a Canadian-listed fund that holds unhedged US or global assets counts as US-dollar exposure here, which is why the two differ.</p>
+                              </Explain>
+                            );
+                          })()}
                         </div>
                       )}
                     </div>

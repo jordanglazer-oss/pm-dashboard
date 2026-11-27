@@ -11,8 +11,11 @@ import { fetchFundNav, isFundCode } from "@/app/lib/fund-nav";
 import { SIA_BOOKS, isSiaBook, readSiaStore, unpackTxns, type SiaBook } from "@/app/lib/sia-store";
 
 /**
- * GET /api/since-purchase[?mandate=balanced] — the price change of each position still held
- * against its average cost, from the SIA transaction log. READ-ONLY: reads
+ * GET /api/since-purchase[?mandate=balanced] — two figures for each position still held,
+ * from the SIA transaction log: `returnPct` = OUR return, latest price against
+ * our average cost (every add and trim counted); `sinceAddedPct` = the
+ * security's own move since the day we first bought it (`since`, at
+ * `firstPriceCad`). The two differ whenever a position was added to over time. READ-ONLY: reads
  * pm:sia-transactions (that mandate's own log when one is on file, otherwise
  * the All-Equity log — the response says which in `book`) and pm:pim-models,
  * fetches latest prices, stores nothing.
@@ -53,11 +56,14 @@ export async function GET(req: NextRequest) {
 
     // Mutual funds: total return of the lots still held, on the distribution-adjusted NAV.
     const fundTotal = new Map<string, number | null>();
+    const fundSinceAdded = new Map<string, number | null>();
     await Promise.all(
-      costs.filter((c) => isFundCode(c.symbol) && !c.incomplete).map(async (c) => {
+      costs.filter((c) => isFundCode(c.symbol)).map(async (c) => {
         const days = Math.ceil((Date.now() - Date.parse(c.since)) / 86_400_000);
         const series = await fetchFundNav(c.symbol, { records: Math.min(2600, Math.ceil(days * 0.72) + 40), adjusted: true });
-        fundTotal.set(c.symbol, lotsTotalReturn(c.lots, series));
+        if (!c.incomplete) fundTotal.set(c.symbol, lotsTotalReturn(c.lots, series));
+        // The fund's own total return since the day we first bought it (one notional lot on that day).
+        fundSinceAdded.set(c.symbol, lotsTotalReturn([{ date: c.since, cost: 1 }], series));
       }),
     );
 
@@ -68,9 +74,13 @@ export async function GET(req: NextRequest) {
       const fund = isFundCode(c.symbol);
       const total = fund ? fundTotal.get(c.symbol) : undefined;
       const reason = c.incomplete ? "a purchase was logged with no price" : fund && total == null ? "no fund history back to the purchase" : priceCad == null ? "no latest price" : !(c.avgCost > 0) ? "no cost on file" : null;
+      // "Since added": the security's own move since our first purchase (price only for stocks and ETFs, in C$).
+      const added = fund ? (fundSinceAdded.get(c.symbol) ?? null) : priceCad != null && c.firstPrice > 0 ? (priceCad / c.firstPrice - 1) * 100 : null;
       return {
         symbol: c.symbol,
         since: c.since,
+        firstPriceCad: c.firstPrice > 0 ? +c.firstPrice.toFixed(4) : null,
+        sinceAddedPct: added == null ? null : +added.toFixed(2),
         avgCostCad: Number.isFinite(c.avgCost) ? +c.avgCost.toFixed(4) : null,
         priceCad: priceCad == null ? null : +priceCad.toFixed(4),
         returnPct: reason ? null : fund ? +(total as number).toFixed(2) : priceCad == null ? null : +((priceCad / c.avgCost - 1) * 100).toFixed(2),

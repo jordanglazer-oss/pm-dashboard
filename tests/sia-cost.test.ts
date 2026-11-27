@@ -12,6 +12,7 @@ describe("Since purchase — average cost from the SIA log", () => {
     expect(c.since).toBe("2026-01-05");
     expect(c.units).toBe(200);
     expect(c.avgCost).toBeCloseTo(110, 9);
+    expect(c.firstPrice).toBe(100); // "Since added" is measured from the first purchase, not the average
     expect(c.incomplete).toBe(false);
   });
 
@@ -24,6 +25,7 @@ describe("Since purchase — average cost from the SIA log", () => {
   it("sold out and bought again starts a fresh holding period", () => {
     const [c] = siaCostBasis([t("2025-01-05", "GS", "BUY", 100, 100), t("2025-06-05", "GS", "SELL", 100, 150), t("2026-04-24", "GS", "BUY", 50, 200)]);
     expect(c.since).toBe("2026-04-24");
+    expect(c.firstPrice).toBe(200);
     expect(c.avgCost).toBeCloseTo(200, 9);
   });
 
@@ -35,6 +37,7 @@ describe("Since purchase — average cost from the SIA log", () => {
     const [c] = siaCostBasis([t("2024-01-05", "NVDA", "BUY", 10, 500)]);
     expect(c.units).toBe(100); // 10-for-1 on 2024-06-10
     expect(c.avgCost).toBeCloseTo(50, 9);
+    expect(c.firstPrice).toBeCloseTo(50, 9);
   });
 
   it("a purchase with no price marks the cost incomplete", () => {

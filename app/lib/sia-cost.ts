@@ -8,7 +8,9 @@
  *     proportion to the units sold, so the average cost per unit is unchanged
  *     by a trim.
  *   - "Since" is the first purchase of the CURRENT holding period: a name sold
- *     out and bought again starts fresh.
+ *     out and bought again starts fresh. `firstPrice` is the C$ price paid
+ *     that day — the base of "Since added" (the security's own move since we
+ *     first bought), as opposed to "Our return" (on average cost).
  *   - Each purchase still held is kept as a "lot" (date + remaining cost), so
  *     a fund's return can include its reinvested distributions.
  *   - A purchase logged at a price of 0 (a transfer in, a reinvested
@@ -22,6 +24,8 @@ export type SiaCost = {
   symbol: string;
   /** First purchase of the current holding period (YYYY-MM-DD). */
   since: string;
+  /** C$ price paid at that first purchase, per unit in today's share terms (0 when logged with no price). */
+  firstPrice: number;
   /** Units held, in today's share terms. */
   units: number;
   /** Average C$ cost per unit (today's share terms). */
@@ -66,6 +70,7 @@ export function siaCostBasis(txns: SiaTxn[], splits: SplitTable = SIA_SPLITS): S
     const sorted = [...list].sort((m, n) => m.date.localeCompare(n.date));
     let u = 0, cost = 0, peak = 0;
     let since: string | null = null;
+    let firstPrice = 0;
     let incomplete = false;
     let lots: { date: string; cost: number }[] = [];
     for (let i = 0; i < sorted.length; ) {
@@ -75,7 +80,10 @@ export function siaCostBasis(txns: SiaTxn[], splits: SplitTable = SIA_SPLITS): S
       for (; i < sorted.length && sorted[i].date === day; i++) today.push(sorted[i]);
       // Buys before sells: a sell listed ahead of a same-day buy is not a short.
       for (const t of today.filter((x) => x.action === "BUY")) {
-        if (!(u > 0)) since = day;
+        if (!(u > 0)) {
+          since = day;
+          firstPrice = f > 0 ? t.price / f : t.price;
+        }
         u += t.units * f;
         cost += t.units * t.price;
         lots.push({ date: day, cost: t.units * t.price });
@@ -96,11 +104,12 @@ export function siaCostBasis(txns: SiaTxn[], splits: SplitTable = SIA_SPLITS): S
         cost = 0;
         peak = 0;
         since = null;
+        firstPrice = 0;
         incomplete = false;
         lots = [];
       }
     }
-    if (u > 0 && since) out.push({ symbol, since, units: u, avgCost: cost / u, incomplete, lots: lots.filter((l) => l.cost > 0) });
+    if (u > 0 && since) out.push({ symbol, since, firstPrice, units: u, avgCost: cost / u, incomplete, lots: lots.filter((l) => l.cost > 0) });
   }
   return out.sort((a, b) => a.symbol.localeCompare(b.symbol));
 }
