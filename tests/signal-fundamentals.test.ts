@@ -18,6 +18,7 @@ describe("Signal grid fundamentals from FactSet", () => {
     expect(d.netDebtEbitda).toBeNull();
     expect(d.interestCoverage).toBeNull();
     expect(d.evEbitda).toBeNull();
+    expect(deriveFundamentals({ fcfLtm: 500, salesLtm: 490, sector: "Financials" }, 20, 13).fcfMargin).toBeNull();
     expect(d.pe).toBe(12);
   });
   it("missing inputs give null, never a guess; a negative or absurd P/E is not ranked", () => {

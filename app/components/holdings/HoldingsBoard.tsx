@@ -19,7 +19,8 @@ import { whyKey } from "@/app/lib/why-we-own";
 import { Explain } from "@/app/components/Explain";
 import { usePersistedOpen } from "@/app/lib/useCollapsed";
 import { Card, Empty, Page } from "@/app/components/redesign/ui";
-import { SignalCells, SignalDetail, SignalHead, signalsFor, useSignalFundamentals } from "@/app/components/signals/SignalGrid";
+import { SIGNAL_COLUMNS, type SignalKey as SK } from "@/app/lib/signals";
+import { SignalCells, SignalDetail, SignalHead, SortTh, signalRank, signalsFor, useSignalFundamentals, type GridSort } from "@/app/components/signals/SignalGrid";
 import { WhyPanel, useWhyStore } from "@/app/components/holdings/WhyWeOwn";
 
 const TH = "border-b border-line px-2 py-2 text-left text-[11.5px] font-semibold uppercase tracking-wide text-ink-3";
@@ -27,14 +28,13 @@ const TD = "border-b border-line-soft px-2 py-2 align-middle text-[13.5px]";
 const money = (v: number | null | undefined) => (typeof v === "number" && Number.isFinite(v) ? v.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : "—");
 const RATING: Record<string, string> = { outperform: "Outperform", neutral: "Neutral", underperform: "Underperform", "not-covered": "Not covered" };
 
-type SortKey = "weight" | "name" | "positives";
 
 export default function HoldingsBoard() {
   const { stocks, pimModels, analystSnapshots, loading } = useStocks() as ReturnType<typeof useStocks> & { loading?: boolean };
   const why = useWhyStore();
   const fundamentals = useSignalFundamentals();
   const [open, setOpen] = useState<{ symbol: string; signal: SignalKey | null } | null>(null);
-  const [sort, setSort] = useState<SortKey>("weight");
+  const [sort, setSort] = useState<GridSort>({ key: "weight", dir: "desc" });
   const [closedOpen, toggleClosed] = usePersistedOpen("holdings.closed", false);
 
   const group = pimModels.groups.find((g) => g.id === "pim") ?? pimModels.groups[0];
@@ -44,8 +44,14 @@ export default function HoldingsBoard() {
       const isStock = !stock?.instrumentType || stock.instrumentType === "stock";
       return { h, stock, isStock: Boolean(stock) && isStock, set: signalsFor(stock, analystSnapshots, fundamentals), snap: stock ? getSnapshotForTicker(analystSnapshots, stock.ticker) : undefined };
     });
-    const by = (a: (typeof list)[number], b: (typeof list)[number]) =>
-      sort === "name" ? (a.h.name || a.h.symbol).localeCompare(b.h.name || b.h.symbol) : sort === "positives" ? (b.set?.positives ?? -1) - (a.set?.positives ?? -1) || b.h.weightInClass - a.h.weightInClass : b.h.weightInClass - a.h.weightInClass;
+    const isSignal = SIGNAL_COLUMNS.some((c) => c.key === sort.key);
+    const val = (r: (typeof list)[number]): number | string =>
+      sort.key === "name" ? (r.h.name || r.h.symbol).toLowerCase() : sort.key === "positives" ? (r.set?.positives ?? -1) : isSignal ? signalRank(r.set, sort.key as SK) : r.h.weightInClass;
+    const by = (a: (typeof list)[number], b: (typeof list)[number]) => {
+      const x = val(a), y = val(b);
+      const cmp = typeof x === "string" && typeof y === "string" ? x.localeCompare(y) : (x as number) - (y as number);
+      return (sort.dir === "asc" ? cmp : -cmp) || b.h.weightInClass - a.h.weightInClass;
+    };
     return { stocks: list.filter((r) => r.isStock && r.h.assetClass === "equity").sort(by), funds: list.filter((r) => !(r.isStock && r.h.assetClass === "equity")).sort(by) };
   }, [group, stocks, analystSnapshots, sort, fundamentals]);
 
@@ -57,9 +63,9 @@ export default function HoldingsBoard() {
       <table className="w-full border-collapse" style={{ minWidth: withSignals ? 1080 : 760 }}>
         <thead>
           <tr>
-            <th className={TH}>Holding</th>
-            <th className={`${TH} text-right`} title="Weight inside its asset class in the model">Weight</th>
-            {withSignals && <SignalHead />}
+            <SortTh k="name" label="Holding" sort={sort} onSort={setSort} firstDir="asc" />
+            <SortTh k="weight" label="Weight" sort={sort} onSort={setSort} align="right" title="Weight inside its asset class in the model" />
+            {withSignals && <SignalHead sort={sort} onSort={setSort} />}
             <th className={`${TH} text-right`}>Street target</th>
             <th className={TH}>RBC</th>
             <th className={TH}>J.P. Morgan</th>
@@ -111,13 +117,9 @@ export default function HoldingsBoard() {
     </div>
   );
 
-  const sortBtn = (k: SortKey, label: string) => (
-    <button key={k} type="button" onClick={() => setSort(k)} className={`h-8 rounded-control border px-3 text-[13px] font-semibold ${sort === k ? "border-ink bg-ink text-white" : "border-line bg-surface text-ink-2 hover:bg-surface-hover"}`}>{label}</button>
-  );
-
   return (
-    <Page title="Holdings" lede="Every current position: signals, targets and why we own it." right={<>{sortBtn("weight", "By weight")}{sortBtn("positives", "By positive signals")}{sortBtn("name", "A to Z")}</>}>
-      <Card title="Individual stocks" sub={`${rows.stocks.length} positions · click a signal for its numbers${fundamentals?.at ? ` · FactSet fundamentals ${fundamentals.at.slice(0, 10)}` : ""}`} pad={false}>
+    <Page title="Holdings" lede="Every current position: signals, targets and why we own it.">
+      <Card title="Individual stocks" sub={`${rows.stocks.length} positions · click a heading to sort, a signal for its numbers${fundamentals?.at ? ` · FactSet fundamentals ${fundamentals.at.slice(0, 10)}` : ""}`} pad={false}>
         {fundamentals?.error && <div className="border-b border-line-soft bg-warn-soft px-5 py-2 text-[13px] text-ink">FactSet fundamentals could not be refreshed ({fundamentals.error}). {fundamentals.at ? `Showing the copy from ${fundamentals.at.slice(0, 10)}.` : "Fundamentals read from the figures stored on each stock."}</div>}
         {rows.stocks.length ? table(rows.stocks, true) : <div className="px-5 py-3"><Empty>{loading ? "Loading…" : "No individual stocks in the model."}</Empty></div>}
         <div className="px-5 py-3">

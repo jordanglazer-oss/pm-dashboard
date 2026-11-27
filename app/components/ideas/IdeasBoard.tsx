@@ -23,11 +23,11 @@ import { Explain } from "@/app/components/Explain";
 import { usePersistedOpen } from "@/app/lib/useCollapsed";
 import { useGet } from "@/app/components/redesign/data";
 import { Card, Empty, Page, todayET } from "@/app/components/redesign/ui";
-import { SignalCells, SignalDetail, SignalHead, signalsFor, useSignalFundamentals } from "@/app/components/signals/SignalGrid";
+import { SIGNAL_COLUMNS } from "@/app/lib/signals";
+import { SignalCells, SignalDetail, SignalHead, SortTh, signalRank, signalsFor, useSignalFundamentals, type GridSort } from "@/app/components/signals/SignalGrid";
 
 const TH = "border-b border-line px-2 py-2 text-left text-[11.5px] font-semibold uppercase tracking-wide text-ink-3";
 const TD = "border-b border-line-soft px-2 py-2 align-middle text-[13.5px]";
-type SortKey = "positives" | "lists" | "name";
 const rootOf = (t: string) => t.trim().toUpperCase().replace(/(-T|\.TO|\.U|-U\.TO)$/i, "");
 
 export default function IdeasBoard() {
@@ -37,7 +37,7 @@ export default function IdeasBoard() {
   const history = useGet<RankedHistory>("/api/ranked-source-history", (raw) => ((raw as { history?: RankedHistory })?.history ?? (raw as RankedHistory)) || null);
   const fundamentals = useSignalFundamentals();
   const movers = useGet<{ date: string | null; movers: { ticker: string; wChg?: number; smax?: number | null; sector?: string | null }[] }>("/api/sia-universe");
-  const [sort, setSort] = useState<SortKey>("positives");
+  const [sort, setSort] = useState<GridSort>({ key: "positives", dir: "desc" });
   const [open, setOpen] = useState<{ key: string; signal: SignalKey } | null>(null);
   const [archiveOpen, toggleArchive] = usePersistedOpen("ideas.archive", false);
 
@@ -55,8 +55,14 @@ export default function IdeasBoard() {
       const stock = pool.find((s) => rootOf(s.ticker) === i.key);
       return { i, stock, set: signalsFor(stock, analystSnapshots, fundamentals) };
     });
-    const by = (a: (typeof withSignals)[number], b: (typeof withSignals)[number]) =>
-      sort === "name" ? a.i.name.localeCompare(b.i.name) : sort === "lists" ? b.i.listCount - a.i.listCount || (b.set?.positives ?? -1) - (a.set?.positives ?? -1) : (b.set?.positives ?? -1) - (a.set?.positives ?? -1) || b.i.listCount - a.i.listCount;
+    const isSignal = SIGNAL_COLUMNS.some((c) => c.key === sort.key);
+    const val = (r: (typeof withSignals)[number]): number | string =>
+      sort.key === "name" ? r.i.name.toLowerCase() : sort.key === "lists" ? r.i.listCount : isSignal ? signalRank(r.set, sort.key as SignalKey) : (r.set?.positives ?? -1);
+    const by = (a: (typeof withSignals)[number], b: (typeof withSignals)[number]) => {
+      const x = val(a), y = val(b);
+      const cmp = typeof x === "string" && typeof y === "string" ? x.localeCompare(y) : (x as number) - (y as number);
+      return (sort.dir === "asc" ? cmp : -cmp) || b.i.listCount - a.i.listCount || a.i.name.localeCompare(b.i.name);
+    };
     return { active: withSignals.filter((r) => !r.i.stale).sort(by), archived: withSignals.filter((r) => r.i.stale).sort(by) };
   }, [ideas, stocks, suggested.data, analystSnapshots, sort, fundamentals]);
 
@@ -65,10 +71,10 @@ export default function IdeasBoard() {
       <table className="w-full border-collapse" style={{ minWidth: 1000 }}>
         <thead>
           <tr>
-            <th className={TH}>Name</th>
+            <SortTh k="name" label="Name" sort={sort} onSort={setSort} firstDir="asc" />
             <th className={TH}>Where it came from</th>
-            <th className={`${TH} text-center`} title="Bullish research lists it is on now">Lists</th>
-            <SignalHead />
+            <SortTh k="lists" label="Lists" sort={sort} onSort={setSort} align="center" title="Bullish research lists it is on now" />
+            <SignalHead sort={sort} onSort={setSort} />
             <th className={TH} />
           </tr>
         </thead>
@@ -107,14 +113,11 @@ export default function IdeasBoard() {
     </div>
   );
 
-  const sortBtn = (k: SortKey, label: string) => (
-    <button key={k} type="button" onClick={() => setSort(k)} className={`h-8 rounded-control border px-3 text-[13px] font-semibold ${sort === k ? "border-ink bg-ink text-white" : "border-line bg-surface text-ink-2 hover:bg-surface-hover"}`}>{label}</button>
-  );
   const loading = research.loading || suggested.loading;
 
   return (
-    <Page title="Ideas" lede="One list: every name we don't own, from every source." right={<>{sortBtn("positives", "By positive signals")}{sortBtn("lists", "By number of lists")}{sortBtn("name", "A to Z")}</>}>
-      <Card title="Active ideas" sub={`${rows.active.length} names · no sector filter`} pad={false}>
+    <Page title="Ideas" lede="One list: every name we don't own, from every source.">
+      <Card title="Active ideas" sub={`${rows.active.length} names · no sector filter · click a heading to sort`} pad={false}>
         {rows.active.length ? table(rows.active) : <div className="px-5 py-3"><Empty>{loading ? "Loading…" : "No ideas on file yet."}</Empty></div>}
         <div className="flex flex-col gap-1.5 px-5 py-3">
           <div className="text-[13px] text-ink-2">Add a name by hand: use <span className="font-semibold">+ Add</span> at the top right and choose Watchlist. Target buy price and notes are on the <Link href="/watchlist" className="font-semibold !text-accent underline">watchlist page</Link>.</div>

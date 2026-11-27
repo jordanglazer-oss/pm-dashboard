@@ -70,7 +70,7 @@ export function median(xs: number[]): number | null {
 /** P/E values that can be ranked: positive and not absurd (a near-zero-earnings 900x is not a valuation). */
 export const usablePe = (v: number | null | undefined): v is number => pos(v) && v < 150;
 
-/** Banks, insurers and the like: debt, EBITDA and interest cover do not describe them. */
+/** Banks, insurers and the like: debt, EBITDA, interest cover and free cash flow do not describe them (checked 2026-11-26: Goldman read a 102% cash-flow margin). */
 export const isFinancial = (sector: string | null | undefined) => /financ/i.test(sector ?? "");
 
 export function deriveFundamentals(raw: RawFundamentals, marketPe: number | null, sectorPe: number | null): NameFundamentals {
@@ -89,7 +89,7 @@ export function deriveFundamentals(raw: RawFundamentals, marketPe: number | null
     netDebtEbitda: !fincl && netDebt != null && ebitda != null ? round(netDebt / ebitda, 2) : null,
     interestCoverage: !fincl && pos(raw.intExp) && fin(raw.operIncLtm) ? round(raw.operIncLtm / raw.intExp, 1) : null,
     noDebt: !fincl && noDebt,
-    fcfMargin: fin(raw.fcfLtm) && pos(raw.salesLtm) ? round((raw.fcfLtm / raw.salesLtm) * 100, 1) : null,
+    fcfMargin: !fincl && fin(raw.fcfLtm) && pos(raw.salesLtm) ? round((raw.fcfLtm / raw.salesLtm) * 100, 1) : null,
     roic: fin(raw.roic) ? round(raw.roic, 1) : null,
     revenueGrowth: pos(raw.salesLtm) && pos(raw.salesLtm4) ? round((raw.salesLtm / raw.salesLtm4 - 1) * 100, 1) : null,
     peg: pe != null && pos(raw.ltg) ? round(pe / raw.ltg, 2) : null,

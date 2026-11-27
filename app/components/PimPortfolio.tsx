@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { bucketTests } from "@/app/lib/sleeve-targets";
+import { tickerMatch } from "@/app/lib/rebalance";
 import { ZERO_SCORES as ALL_ZERO_SCORES } from "@/app/lib/types";
 import { useSearchParams } from "next/navigation";
 import Link from "next/link";
@@ -603,6 +604,8 @@ type HoldingRow = {
   currentPct: number;
   driftPct: number;
   gainLoss: number;
+  /** True when Gain % is from the SIA transaction log; false = this book's own cost. */
+  gainFromSia?: boolean;
   action: "BUY" | "SELL" | "HOLD";
   /** Units are held but the group's model has no holding for this symbol.
    *  Such a row has no model target and would not exist at all before the
@@ -770,6 +773,29 @@ export function PimPortfolio({ groups }: Props) {
   const activeProfile = availableProfiles.includes(selectedProfile)
     ? selectedProfile
     : availableProfiles[0] || "allEquity";
+
+  // Gain % comes from the SIA transaction log (the team's reference for cost),
+  // not from this book's own cost figures: the book's cost was reset whenever a
+  // position was rebuilt or resized here, so it understated long-held names
+  // (Alphabet read +11% against SIA's +115%). READ-ONLY (/api/since-purchase).
+  // The sleeve books are slices of the All-Equity account, so they use its log.
+  const siaMandate = ["growth", "balanced", "conservative"].includes(activeProfile as string) ? (activeProfile as string) : "allEquity";
+  const [siaGain, setSiaGain] = useState<{ mandate: string; label: string; through: string | null; rows: { symbol: string; returnPct: number | null }[] } | null>(null);
+  useEffect(() => {
+    let alive = true;
+    fetch(`/api/since-purchase?mandate=${encodeURIComponent(siaMandate)}`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d: { onFile?: boolean; ownLog?: boolean; bookLabel?: string; through?: string; rows?: { symbol: string; returnPct: number | null }[] } | null) => {
+        if (!alive) return;
+        // Only a log that belongs to THIS mandate is used; another mandate's cost is not ours.
+        setSiaGain(d?.onFile && d.ownLog !== false && Array.isArray(d.rows) ? { mandate: siaMandate, label: d.bookLabel ?? siaMandate, through: d.through ?? null, rows: d.rows } : null);
+      })
+      .catch(() => alive && setSiaGain(null));
+    return () => {
+      alive = false;
+    };
+  }, [siaMandate]);
+  const siaGainRows = siaGain && siaGain.mandate === siaMandate ? siaGain.rows : null;
 
   // Keyboard navigation: ← / → cycle through available profiles
   // (balanced ↔ growth ↔ allEquity ↔ alpha). Mirrors the PimModel
@@ -1179,7 +1205,9 @@ export function PimPortfolio({ groups }: Props) {
     for (const r of activeRows) {
       const currentPct = totalValueCad > 0 ? r.valueCad / totalValueCad : 0;
       const driftPct = currentPct - r.modelPct;
-      const gainLoss = r.costValueCad > 0 ? ((r.valueCad - r.costValueCad) / r.costValueCad) * 100 : 0;
+      const bookGain = r.costValueCad > 0 ? ((r.valueCad - r.costValueCad) / r.costValueCad) * 100 : 0;
+      const fromSia = siaGainRows?.find((x) => tickerMatch(x.symbol, r.h.symbol))?.returnPct;
+      const gainLoss = typeof fromSia === "number" ? fromSia : bookGain;
 
       let action: "BUY" | "SELL" | "HOLD" = "HOLD";
       if (Math.abs(driftPct) > 0.0001) {
@@ -1204,13 +1232,14 @@ export function PimPortfolio({ groups }: Props) {
         currentPct,
         driftPct,
         gainLoss,
+        gainFromSia: typeof fromSia === "number",
         action,
         isOrphan: "isOrphan" in r ? true : undefined,
       });
     }
 
     return rows;
-  }, [effectiveGroup, selectedGroup, profileWeights, livePrices, positionMap, currentPositions, usdCadRate, sharedCostBasisMap]);
+  }, [effectiveGroup, selectedGroup, profileWeights, livePrices, positionMap, currentPositions, usdCadRate, sharedCostBasisMap, siaGainRows]);
 
   // Sort
   const sortedRows = useMemo(() => {
@@ -3939,7 +3968,7 @@ export function PimPortfolio({ groups }: Props) {
                               })()}
                               {showGain && (
                                 <td className={`n ${row.units > 0 ? (row.gainLoss >= 0 ? "text-pos" : "text-neg") : ""}`}>
-                                  {row.units > 0 ? fmtGainLoss(row.gainLoss) : <span className="text-ink-faint">—</span>}
+                                  {row.units > 0 ? <span title={row.gainFromSia ? "Latest price vs our average cost in the SIA transaction log" : "Not in the SIA log for this mandate: measured from this book's own cost"}>{fmtGainLoss(row.gainLoss)}{!row.gainFromSia && siaGainRows ? <span className="text-ink-3">*</span> : null}</span> : <span className="text-ink-faint">—</span>}
                                 </td>
                               )}
                               <td className="n text-ink-3">{fmtPct2(dTargetV)}</td>
@@ -4005,6 +4034,7 @@ export function PimPortfolio({ groups }: Props) {
             </div>
           )}
           <div className="flex min-h-[32px] flex-wrap items-center gap-x-2 border-t border-line-soft px-3.5 py-1 text-[11.5px] text-ink-3">
+            <span title="Gain = latest price against our average cost in the SIA transaction log. A star marks a position that is not in that log; its gain is measured from this book's own cost.">{siaGainRows ? `Gain from the ${siaGain?.label} SIA log${siaGain?.through ? ` (trades through ${siaGain.through})` : ""} · * not in the log · ` : "Gain from this book's cost (no SIA log for this mandate) · "}</span>
             <span>{heldCount} of {holdingRows.length} held{hasPositions && <> · {outsideTolerance} outside tolerance ({(DRIFT_TOLERANCE * 100).toFixed(1)}pp)</>}</span>
             {usdCadRate > 1 && (
               <span className="ml-auto font-mono">

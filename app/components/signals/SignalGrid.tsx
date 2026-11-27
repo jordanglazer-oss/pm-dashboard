@@ -109,13 +109,33 @@ export function SignalCells({ set, openKey, onOpen }: { set: SignalSet | null; o
   );
 }
 
-export function SignalHead() {
+export type GridSort = { key: string; dir: "asc" | "desc" };
+const RANK: Record<SignalState, number> = { positive: 3, neutral: 2, negative: 1, pending: 0 };
+/** Sort value for a signal column: positive first, then neutral, negative, no data; a row with no signals last. */
+export const signalRank = (set: SignalSet | null, k: SignalKey) => (set ? RANK[set[k].state] : -1);
+/** Click a heading: first click sorts best / largest first, a second click reverses it. */
+export const nextSort = (cur: GridSort, key: string, firstDir: "asc" | "desc" = "desc"): GridSort => (cur.key === key ? { key, dir: cur.dir === "asc" ? "desc" : "asc" } : { key, dir: firstDir });
+
+const TH_BASE = "border-b border-line px-2 py-2 text-[11.5px] font-semibold uppercase tracking-wide";
+export function SortTh({ k, label, sort, onSort, align = "left", title, firstDir = "desc" }: { k: string; label: string; sort: GridSort; onSort: (s: GridSort) => void; align?: "left" | "right" | "center"; title?: string; firstDir?: "asc" | "desc" }) {
+  const on = sort.key === k;
+  return (
+    <th className={`${TH_BASE} ${align === "right" ? "text-right" : align === "center" ? "text-center" : "text-left"}`} aria-sort={on ? (sort.dir === "asc" ? "ascending" : "descending") : "none"} title={title}>
+      <button type="button" onClick={() => onSort(nextSort(sort, k, firstDir))} className={`inline-flex items-center gap-1 uppercase tracking-wide ${on ? "text-ink" : "text-ink-3 hover:text-ink-2"}`}>
+        {label}
+        <span aria-hidden className="text-[10px]">{on ? (sort.dir === "asc" ? "▲" : "▼") : "↕"}</span>
+      </button>
+    </th>
+  );
+}
+
+export function SignalHead({ sort, onSort }: { sort: GridSort; onSort: (s: GridSort) => void }) {
   return (
     <>
       {SIGNAL_COLUMNS.map((c) => (
-        <th key={c.key} className="border-b border-line px-1.5 py-2 text-center text-[11.5px] font-semibold uppercase tracking-wide text-ink-3" title={c.label}>{c.short}</th>
+        <SortTh key={c.key} k={c.key} label={c.short} sort={sort} onSort={onSort} align="center" title={`${c.label} — click to sort`} />
       ))}
-      <th className="border-b border-line px-2 py-2 text-center text-[11.5px] font-semibold uppercase tracking-wide text-ink-3" title="How many of the signals with data read positive. A count, not a score.">Positive</th>
+      <SortTh k="positives" label="Positive" sort={sort} onSort={onSort} align="center" title="How many of the signals with data read positive. A count, not a score. Click to sort." />
     </>
   );
 }
