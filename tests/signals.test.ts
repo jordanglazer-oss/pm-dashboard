@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { analystSignal, computeSignals, fundamentalsSignal, houseSignal, relStrengthSignal, technicalsSignal, upsideSignal } from "@/app/lib/signals";
+import { analystSignal, analystsSignal, computeSignals, fundamentalsSignal, houseSignal, relStrengthSignal, technicalsSignal, upsideSignal } from "@/app/lib/signals";
 
 describe("Signal grid — each signal on its own", () => {
   it("upside: positive above 10%, negative below 0, neutral between, pending with no target", () => {
@@ -50,10 +50,21 @@ describe("Signal grid — each signal on its own", () => {
     expect(technicalsSignal({ price: 100 }).state).toBe("pending");
   });
 
-  it("counts positives; there is no combined score", () => {
+  it("Analysts is ONE signal: street target, revisions, RBC and J.P. Morgan together", () => {
+    const strong = analystsSignal({ price: 100, avgTarget: 120, revUp: 8, revDown: 1, analystCount: 30, rbc: { rating: "outperform" }, jpm: { rating: "outperform" } });
+    expect(strong.state).toBe("positive");
+    expect(strong.rows.map((r) => r.label)).toEqual(["Street target vs price", "Estimate revisions, 30 days", "RBC", "J.P. Morgan"]);
+    expect(analystsSignal({ price: 100, avgTarget: 120, rbc: { rating: "underperform" } }).state).toBe("neutral");
+    expect(analystsSignal({ price: 100, avgTarget: 90, revUp: 1, revDown: 9, analystCount: 30 }).state).toBe("negative");
+    expect(analystsSignal({ price: 100, avgTarget: 120 }).state).toBe("pending"); // one read is not enough
+    expect(analystsSignal({}).state).toBe("pending");
+  });
+
+  it("four signals; counts positives; there is no combined score", () => {
     const s = computeSignals({ price: 100, avgTarget: 120, sia: 8, rbc: { rating: "outperform" }, jpm: { rating: "outperform" } });
-    expect(s.positives).toBe(3);
-    expect(s.withData).toBe(3);
-    expect(Object.keys(s)).not.toContain("score");
+    expect(s.analysts.state).toBe("positive");
+    expect(s.positives).toBe(2);
+    expect(s.withData).toBe(2);
+    expect(Object.keys(s).sort()).toEqual(["analysts", "fundamentals", "positives", "relStrength", "technicals", "withData"]);
   });
 });

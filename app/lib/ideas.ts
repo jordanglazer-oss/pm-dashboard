@@ -1,7 +1,7 @@
 /**
  * Ideas — ONE list (Nov 26 2026 team session): every name we do not own that
- * came from somewhere: our watchlist, the Suggested store, or any research
- * list. Pure — no I/O. READ-ONLY: merges what is already on file, stores
+ * came from somewhere: our watchlist, the Suggested store, any research
+ * list, or the SIA movers (names gaining relative strength). Pure — no I/O. READ-ONLY: merges what is already on file, stores
  * nothing, and never feeds a score, a weight or a trade.
  *
  * A name that is on NO source list and has been off them (or on the
@@ -35,7 +35,9 @@ export type Idea = {
 const root = (t: string) => t.trim().toUpperCase().replace(/(-T|\.TO|\.U|-U\.TO)$/i, "");
 const daysBetween = (a: string, b: string) => Math.round((Date.parse(b) - Date.parse(a)) / 86_400_000);
 
-export function buildIdeas(opts: { ranked: RankedRow[]; watchlist: IdeaStockLike[]; suggested: IdeaStockLike[]; history: RankedHistory | null; pinned: string[]; today: string; dropAfterDays: number }): Idea[] {
+export type IdeaMover = { ticker: string; wChg?: number; smax?: number | null; sector?: string | null };
+
+export function buildIdeas(opts: { ranked: RankedRow[]; watchlist: IdeaStockLike[]; suggested: IdeaStockLike[]; history: RankedHistory | null; pinned: string[]; today: string; dropAfterDays: number; movers?: IdeaMover[]; held?: string[] }): Idea[] {
   const { ranked, watchlist, suggested, history, today, dropAfterDays } = opts;
   const pinned = new Set(opts.pinned.map(root));
   const out = new Map<string, Idea>();
@@ -69,7 +71,16 @@ export function buildIdeas(opts: { ranked: RankedRow[]; watchlist: IdeaStockLike
     const added = s.watch?.addedOn;
     if (added && (!i.lastSeen || added > i.lastSeen)) i.lastSeen = added;
   }
+  // SIA movers: names gaining relative strength in the latest SIA export. A source of its own, seen today.
+  const heldRoots = new Set((opts.held ?? []).map(root));
+  for (const m of opts.movers ?? []) {
+    if (!m?.ticker || heldRoots.has(root(m.ticker))) continue;
+    const i = get(m.ticker, "", m.sector ?? "");
+    if (!i.sources.includes("SIA mover")) i.sources.push("SIA mover");
+    i.lastSeen = today;
+  }
   for (const i of out.values()) {
+    if (i.sources.includes("SIA mover") && i.listCount === 0) continue;
     if (i.listCount > 0) {
       i.lastSeen = today;
       continue;

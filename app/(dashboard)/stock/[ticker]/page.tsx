@@ -1,6 +1,7 @@
 "use client";
 
 import { usableSectors } from "@/app/lib/fund-data-sanity";
+import { tickerMatch } from "@/app/lib/rebalance";
 import React, { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { StatStrip } from "@/app/components/StatStrip";
 import { FundPerformancePanel } from "@/app/components/FundPerformance";
@@ -561,6 +562,32 @@ function expandLookThrough(
 
 function FundDataPanels({ fundData, ticker, onHoldingsUpdate }: { fundData: FundData; ticker: string; onHoldingsUpdate?: (holdings: FundData["topHoldings"], sectors: FundData["sectorWeightings"], url: string) => void }) {
   const { scoredStocks } = useStocks();
+  // A fund that holds one other fund (XUH → XUU): show THAT fund's sectors.
+  // From the copy already on file when we track it, else fetched once.
+  const usable = usableSectors(fundData);
+  const wrapSym = usable.lookThrough?.symbol ?? null;
+  const onFileUnderlying = wrapSym ? scoredStocks.find((x) => tickerMatch(x.ticker, wrapSym) || x.ticker.replace(/[.-](U|TO|T)$/gi, "") === wrapSym.replace(/[.-](U|TO|T)$/gi, ""))?.fundData : undefined;
+  const onFileSectors = onFileUnderlying ? usableSectors(onFileUnderlying).sectors : null;
+  const [underlying, setUnderlying] = useState<{ sym: string | null; sectors: FundData["sectorWeightings"] | null; loading: boolean }>({ sym: null, sectors: null, loading: false });
+  useEffect(() => {
+    if (!wrapSym || onFileSectors) return;
+    let alive = true;
+    setUnderlying({ sym: wrapSym, sectors: null, loading: true });
+    fetch(`/api/fund-data?ticker=${encodeURIComponent(wrapSym)}`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d: { fundData?: FundData } | null) => alive && setUnderlying({ sym: wrapSym, sectors: d?.fundData ? usableSectors(d.fundData).sectors : null, loading: false }))
+      .catch(() => alive && setUnderlying({ sym: wrapSym, sectors: null, loading: false }));
+    return () => {
+      alive = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [wrapSym, Boolean(onFileSectors)]);
+  const throughSectors = wrapSym ? (onFileSectors ?? (underlying.sym === wrapSym ? underlying.sectors : null)) : null;
+  const sectorView: { sectors: FundData["sectorWeightings"] | null; via: string | null; note: string | null } = usable.sectors
+    ? { sectors: usable.sectors, via: null, note: null }
+    : throughSectors?.length
+      ? { sectors: throughSectors, via: usable.lookThrough?.name || wrapSym, note: usable.withheld }
+      : { sectors: null, via: null, note: usable.withheld };
   const [holdingsUrl, setHoldingsUrl] = useState(fundData.holdingsUrl || "");
   const [scrapingHoldings, setScrapingHoldings] = useState(false);
   const [scrapeError, setScrapeError] = useState("");
@@ -887,19 +914,19 @@ function FundDataPanels({ fundData, ticker, onHoldingsUpdate }: { fundData: Fund
         </section>
 
         {/* Sector Breakdown */}
-        {usableSectors(fundData).withheld && (
+        {sectorView.note && !sectorView.sectors && (
           <section className="panel">
-            <div className="panel-h"><span className="t">Sector breakdown</span><span className="m">not shown</span></div>
-            <p className="px-3.5 py-3 text-[12.5px] text-ink-2">{usableSectors(fundData).withheld}</p>
+            <div className="panel-h"><span className="t">Sector breakdown</span><span className="m">{underlying.loading ? "loading" : "not available"}</span></div>
+            <p className="px-3.5 py-3 text-[12.5px] text-ink-2">{sectorView.note}{underlying.loading ? " Loading that fund's sectors…" : " Its sectors could not be loaded."}</p>
           </section>
         )}
-        {usableSectors(fundData).sectors && fundData.sectorWeightings && fundData.sectorWeightings.length > 0 && (() => {
+        {sectorView.sectors && sectorView.sectors.length > 0 && (() => {
           // Normalize provider sector names (Yahoo / Morningstar / Globe
           // and Mail all emit their own variants) so e.g. "Financial
           // Services" and "Financials" roll into a single bucket instead
           // of rendering as two bars with mismatched colors.
           const bySector = new Map<string, number>();
-          for (const s of fundData.sectorWeightings) {
+          for (const s of sectorView.sectors!) {
             const key = normalizeSector(s.sector);
             bySector.set(key, (bySector.get(key) ?? 0) + s.weight);
           }
@@ -908,8 +935,9 @@ function FundDataPanels({ fundData, ticker, onHoldingsUpdate }: { fundData: Fund
             .sort((a, b) => b.weight - a.weight);
           return (
           <section className="panel">
-            <div className="panel-h"><span className="t">Sector breakdown</span><span className="m">{normalizedSectors.length} sectors</span></div>
+            <div className="panel-h"><span className="t">Sector breakdown</span><span className="m">{normalizedSectors.length} sectors{sectorView.via ? ` · through ${sectorView.via}` : ""}</span></div>
             <div className="p-3.5">
+            {sectorView.note && <p className="mb-2.5 text-[12.5px] text-ink-2">{sectorView.note}</p>}
             {/* Stacked bar */}
             <div className="mb-3 flex h-6 overflow-hidden rounded-card">
               {normalizedSectors.map((s) => (

@@ -54,7 +54,7 @@ export default function HoldingsBoard() {
 
   const table = (list: typeof rows.stocks, withSignals: boolean) => (
     <div className="overflow-x-auto">
-      <table className="w-full border-collapse" style={{ minWidth: withSignals ? 1180 : 760 }}>
+      <table className="w-full border-collapse" style={{ minWidth: withSignals ? 1080 : 760 }}>
         <thead>
           <tr>
             <th className={TH}>Holding</th>
@@ -91,7 +91,7 @@ export default function HoldingsBoard() {
                 </tr>
                 {isOpen && (
                   <tr>
-                    <td colSpan={withSignals ? 13 : 6} className="border-b border-line bg-surface-2 px-4 py-3">
+                    <td colSpan={withSignals ? 11 : 6} className="border-b border-line bg-surface-2 px-4 py-3">
                       {open!.signal && set ? (
                         <SignalDetail k={open!.signal} s={set[open!.signal]} />
                       ) : (
@@ -122,8 +122,8 @@ export default function HoldingsBoard() {
         {rows.stocks.length ? table(rows.stocks, true) : <div className="px-5 py-3"><Empty>{loading ? "Loading…" : "No individual stocks in the model."}</Empty></div>}
         <div className="px-5 py-3">
           <Explain prefKey="explain.holdings.signals" label="How the signals are read">
-            <p>Six separate reads, each Positive, Neutral or Negative. There is no combined score; &ldquo;Positive&rdquo; counts how many of the signals with data read positive.</p>
-            <p className="mt-1">Fundamentals: valuation and quality measures, positive when at least two more read well than read poorly. Analysts: the 30-day trend in estimate revisions (arrow). Upside: average street target against the price, positive above 10%. House: positive only when RBC and J.P. Morgan both rate it positively. Technicals: price against its 50 and 200-day averages, RSI, distance from the 52-week high, Market Edge. Rel. str.: the SIA ranking.</p>
+            <p>Four separate reads, each Positive, Neutral or Negative. There is no combined score; &ldquo;Positive&rdquo; counts how many of the signals with data read positive.</p>
+            <p className="mt-1">Fundamentals: valuation and quality measures. Analysts: the street&apos;s average target against the price (positive above 10% upside), the 30-day trend in estimate revisions (the arrow), and the RBC and J.P. Morgan ratings, read together. Technicals: price against its 50 and 200-day averages, RSI, distance from the 52-week high, Market Edge. Rel. strength: the SIA ranking. A signal is positive when at least two more of its checks read well than read poorly.</p>
             <p className="mt-1">Fundamentals come from FactSet, refreshed about once a day: P/E against the median of the S&amp;P 500 and TSX 60 and of the company&apos;s sector, net debt to EBITDA, interest coverage, free cash flow margin, return on capital, revenue growth, PEG, and the multiple against its own 5-year average where a FactSet analyst round-up is on file. Banks and insurers get no debt-based measures. FactSet does not supply an average analyst rating on our plan.</p>
             <p className="mt-1">&ldquo;No data&rdquo; means the source is not on file; it is never counted as neutral. The thresholds are starting values in one settings file and have not been confirmed by the team.</p>
           </Explain>

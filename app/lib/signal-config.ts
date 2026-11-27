@@ -10,11 +10,14 @@
  */
 
 export const SIGNAL_CONFIG = {
-  /** Upside to the average street target. */
+  /** Street target vs price (a row inside Analysts): positive above, negative below. */
   upside: { positiveAbovePct: 10, negativeBelowPct: 0 },
 
-  /** Analyst consensus: 30-day estimate revisions, net (up − down) as a share of the analyst count. */
+  /** Estimate revisions (a row inside Analysts): 30-day revisions, net (up − down) as a share of the analyst count. */
   analyst: { positiveAboveShare: 0.1, negativeBelowShare: -0.1, minAnalysts: 3 },
+
+  /** Analysts (one signal): street target vs price, revision trend, RBC, J.P. Morgan — counted like fundamentals. */
+  analysts: { minChecks: 2, netForPositive: 2, netForNegative: -2 },
 
   /** Relative strength: SIA SMAX, 0 to 10. */
   relStrength: { positiveAtOrAbove: 7, negativeAtOrBelow: 3 },

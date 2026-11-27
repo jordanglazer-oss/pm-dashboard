@@ -29,6 +29,8 @@ export type FundLike = {
 export const FUND_SANITY = {
   /** One holding at or above this % of the fund = a wrapper around another fund. */
   wrapperHoldingPct: 80,
+  /** ...and one sector at or above this % means the breakdown is that holding's tag, not the fund's exposure. */
+  wrapperSectorPct: 90,
   /** A sector breakdown adding to more than this is not a breakdown. */
   sectorSumMax: 105,
   /** ...and one adding to less than this is partial. */
@@ -51,14 +53,28 @@ export function wrapperHolding(fd: FundLike): Holding | null {
  * The sector breakdown that can be shown, or null with the reason it is
  * withheld. Never rescales or fills in.
  */
-export function usableSectors(fd: FundLike): { sectors: SectorWeight[] | null; withheld: string | null } {
+/** The breakdown is the wrapper's own tag: one holding IS the fund, and one sector is (nearly) all of it. */
+export function isWrapperTag(fd: FundLike): boolean {
   const sectors = fd.sectorWeightings ?? [];
-  if (!sectors.length) return { sectors: null, withheld: null };
+  if (!sectors.length || !wrapperHolding(fd)) return false;
+  const top = Math.max(...sectors.map((s) => s.weight || 0));
+  return top >= FUND_SANITY.wrapperSectorPct;
+}
+
+/**
+ * The sector breakdown that can be shown as is, or null with the reason.
+ * A wrapper whose breakdown is already diversified (the feed looked through
+ * for us: XUS.U, QQC.F) is shown as is. When `lookThrough` is set, the page
+ * should show the UNDERLYING fund's sectors instead. Never rescales or fills in.
+ */
+export function usableSectors(fd: FundLike): { sectors: SectorWeight[] | null; withheld: string | null; lookThrough: Holding | null } {
+  const sectors = fd.sectorWeightings ?? [];
+  if (!sectors.length) return { sectors: null, withheld: null, lookThrough: null };
   const w = wrapperHolding(fd);
-  if (w) return { sectors: null, withheld: `This fund holds one other fund (${w.name || w.symbol}, ${(w.weight ?? 0).toFixed(0)}%). The breakdown on file describes that holding, not what the fund is exposed to, so it is not shown. The Portfolio Snapshot look-through uses the underlying fund's sectors.` };
+  if (w && isWrapperTag(fd)) return { sectors: null, lookThrough: w, withheld: `This fund holds one other fund (${w.name || w.symbol}, ${(w.weight ?? 0).toFixed(0)}%). Its sector mix is that fund's sector mix.` };
   const total = sum(sectors.map((s) => s.weight));
-  if (total > FUND_SANITY.sectorSumMax) return { sectors: null, withheld: `The sector breakdown on file adds to ${total.toFixed(0)}%, so it is not shown.` };
-  return { sectors, withheld: null };
+  if (total > FUND_SANITY.sectorSumMax) return { sectors: null, lookThrough: null, withheld: `The sector breakdown on file adds to ${total.toFixed(0)}%, so it is not shown.` };
+  return { sectors, withheld: null, lookThrough: null };
 }
 
 export type FundIssue = { severity: "wrong" | "check" | "missing"; what: string };
@@ -72,7 +88,7 @@ export function auditFund(fd: FundLike | null | undefined, today: string): FundI
   const sTotal = sum(sectors.map((s) => s.weight));
   if (sectors.length) {
     const top = [...sectors].sort((a, b) => b.weight - a.weight)[0];
-    if (w) out.push({ severity: "wrong", what: `Sector breakdown is the wrapper's tag: ${top.sector} ${top.weight.toFixed(1)}% while the fund holds ${w.name || w.symbol} at ${(w.weight ?? 0).toFixed(0)}%. Withheld on the fund page; look-through is unaffected.` });
+    if (w && isWrapperTag(fd)) out.push({ severity: "wrong", what: `Stored sector breakdown is the wrapper's tag: ${top.sector} ${top.weight.toFixed(1)}%, while the fund holds ${w.name || w.symbol} at ${(w.weight ?? 0).toFixed(0)}%. The fund page shows the underlying fund's sectors instead.` });
     else if (sTotal > FUND_SANITY.sectorSumMax) out.push({ severity: "wrong", what: `Sectors add to ${sTotal.toFixed(1)}%.` });
     else if (sTotal < FUND_SANITY.sectorSumMin) out.push({ severity: "check", what: `Sectors add to only ${sTotal.toFixed(1)}% (partial breakdown).` });
     else if (top.weight >= 90 && sectors.length === 1) out.push({ severity: "check", what: `A single sector at ${top.weight.toFixed(0)}% (${top.sector}). Correct for a sector fund; otherwise wrong.` });

@@ -10,7 +10,7 @@ import React, { useEffect, useState } from "react";
 import type { Stock } from "@/app/lib/types";
 import { getSnapshotForTicker, type AnalystSnapshots } from "@/app/lib/analyst-snapshots";
 import type { NameFundamentals, SignalFundamentals } from "@/app/lib/signal-fundamentals-shared";
-import { SIGNAL_COLUMNS, computeSignals, revisionArrow, type Signal, type SignalInput, type SignalKey, type SignalSet, type SignalState } from "@/app/lib/signals";
+import { SIGNAL_COLUMNS, computeSignals, type Signal, type SignalInput, type SignalKey, type SignalSet, type SignalState } from "@/app/lib/signals";
 
 /** The FactSet fundamentals behind the grid (read-only cache route). */
 export function useSignalFundamentals(): SignalFundamentals | null {
@@ -84,10 +84,13 @@ const CELL: Record<SignalState, { text: string; cls: string }> = {
 
 export function SignalCell({ k, s, onOpen, open }: { k: SignalKey; s: Signal; onOpen: () => void; open: boolean }) {
   const c = CELL[s.state];
+  // The revision trend's arrow, shown on the Analysts cell.
+  const revRow = k === "analysts" ? s.rows.find((r) => r.label.startsWith("Estimate revisions")) : undefined;
+  const arrow = revRow && revRow.read !== "pending" ? (revRow.read === "positive" ? "▲" : revRow.read === "negative" ? "▼" : "→") : "";
   return (
-    <button type="button" onClick={onOpen} aria-expanded={open} title={s.summary} className={`inline-flex h-7 min-w-[78px] items-center justify-center gap-1 rounded-control border px-2 text-[12.5px] font-semibold ${c.cls} ${open ? "ring-2 ring-accent/40" : ""}`}>
+    <button type="button" onClick={onOpen} aria-expanded={open} title={s.summary} className={`inline-flex h-7 min-w-[92px] items-center justify-center gap-1 rounded-control border px-2 text-[12.5px] font-semibold ${c.cls} ${open ? "ring-2 ring-accent/40" : ""}`}>
       {c.text}
-      {k === "analyst" && s.state !== "pending" && <span aria-hidden>{revisionArrow(s)}</span>}
+      {k === "analysts" && arrow && <span aria-hidden>{arrow}</span>}
     </button>
   );
 }

@@ -10,7 +10,13 @@ describe("Fund data sanity", () => {
     const u = usableSectors(xuh);
     expect(u.sectors).toBeNull();
     expect(u.withheld).toMatch(/holds one other fund/);
+    expect(u.lookThrough?.symbol).toBe("XUU.TO");
     expect(auditFund(xuh, "2026-11-26").some((i) => i.severity === "wrong")).toBe(true);
+  });
+  it("a wrapper whose breakdown is already diversified is shown as is (XUS.U, QQC.F)", () => {
+    const xus = { ...xuh, topHoldings: [{ symbol: "IVV", name: "iShares Core S&P 500 ETF", weight: 100 }], sectorWeightings: [{ sector: "Technology", weight: 38.7 }, { sector: "Financials", weight: 13 }, { sector: "Other", weight: 48.3 }] };
+    expect(usableSectors(xus).sectors).toHaveLength(3);
+    expect(auditFund(xus, "2026-11-26")).toEqual([]);
   });
   it("a normal fund is shown as is and has no findings", () => {
     expect(usableSectors(normal).sectors).toHaveLength(3);

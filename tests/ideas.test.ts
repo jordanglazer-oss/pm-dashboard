@@ -23,6 +23,12 @@ describe("Ideas — one list", () => {
     expect(ideas.find((i) => i.key === "NEW")!.stale).toBe(false);
     expect(buildIdeas({ ...base, pinned: ["OLD"], ranked: [], watchlist: wl, suggested: [] }).find((i) => i.key === "OLD")!.stale).toBe(false);
   });
+  it("SIA movers are a source of their own; one we already own is left out", () => {
+    const ideas = buildIdeas({ ...base, ranked: [], watchlist: [{ ticker: "AAA" }], suggested: [], movers: [{ ticker: "AAA" }, { ticker: "MOV" }, { ticker: "OWN" }], held: ["OWN"] });
+    expect(ideas.find((i) => i.key === "AAA")!.sources).toEqual(["Watchlist", "SIA mover"]);
+    expect(ideas.find((i) => i.key === "MOV")!.stale).toBe(false);
+    expect(ideas.some((i) => i.key === "OWN")).toBe(false);
+  });
   it("a name with no date on file is never dropped on a guess", () => {
     expect(buildIdeas({ ...base, ranked: [], watchlist: [{ ticker: "NODATE" }], suggested: [] })[0].stale).toBe(false);
   });

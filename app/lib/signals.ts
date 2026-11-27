@@ -1,5 +1,6 @@
 /**
- * The signal grid (Nov 26 2026 team session): six separate reads per name,
+ * The signal grid (Nov 26 2026 team session): four separate reads per name
+ * (Fundamentals, Analysts, Technicals, Relative strength),
  * each Positive / Neutral / Negative, with NO aggregate score. Pure — no I/O.
  * READ-ONLY use: nothing here is stored and nothing feeds a score, a weight
  * or a trade. Thresholds live in signal-config.ts.
@@ -14,14 +15,12 @@ import { SIGNAL_CONFIG, type SignalConfig } from "./signal-config";
 export type SignalState = "positive" | "neutral" | "negative" | "pending";
 export type SignalRow = { label: string; value: string; read: SignalState };
 export type Signal = { state: SignalState; summary: string; rows: SignalRow[]; asOf?: string | null };
-export type SignalKey = "fundamentals" | "analyst" | "upside" | "house" | "technicals" | "relStrength";
+export type SignalKey = "fundamentals" | "analysts" | "technicals" | "relStrength";
 export const SIGNAL_COLUMNS: { key: SignalKey; label: string; short: string }[] = [
-  { key: "fundamentals", label: "Fundamentals", short: "Fund." },
-  { key: "analyst", label: "Analyst consensus", short: "Analysts" },
-  { key: "upside", label: "Upside to target", short: "Upside" },
-  { key: "house", label: "House views", short: "House" },
-  { key: "technicals", label: "Technicals", short: "Tech." },
-  { key: "relStrength", label: "Relative strength", short: "Rel. str." },
+  { key: "fundamentals", label: "Fundamentals", short: "Fundamentals" },
+  { key: "analysts", label: "Analysts (street target, estimate revisions, RBC, J.P. Morgan)", short: "Analysts" },
+  { key: "technicals", label: "Technicals", short: "Technicals" },
+  { key: "relStrength", label: "Relative strength", short: "Rel. strength" },
 ];
 
 export type HouseRating = "outperform" | "neutral" | "underperform" | "not-covered";
@@ -182,15 +181,37 @@ export function relStrengthSignal(i: SignalInput, cfg: SignalConfig = SIGNAL_CON
   return { state: read, summary: `SMAX ${fmt(i.sia, 0)} of 10`, rows: [{ label: "SIA SMAX (0 to 10)", value: fmt(i.sia, 0), read }] };
 }
 
+/**
+ * Analysts — ONE signal (team's call, Nov 26 2026): the street's average
+ * target against the price (this IS the consensus read; FactSet supplies no
+ * rating on our plan), the 30-day trend in estimate revisions, and the two
+ * house views (RBC, J.P. Morgan). Each reads on its own; the signal is
+ * positive when at least `netForPositive` more read well than poorly.
+ */
+export function analystsSignal(i: SignalInput, cfg: SignalConfig = SIGNAL_CONFIG): Signal {
+  const up = upsideSignal(i, cfg);
+  const rev = analystSignal(i, cfg);
+  const a = houseRead(i.rbc?.rating);
+  const b = houseRead(i.jpm?.rating);
+  const house = (name: string, e: SignalInput["rbc"], read: SignalState): SignalRow => ({ label: name, value: `${houseLabel(e?.rating)}${num(e?.target) ? ` · target ${fmt(e!.target as number, 2)}` : ""}${e?.asOf ? ` · ${e.asOf}` : ""}`, read });
+  const revRow = rev.rows.find((r) => r.label.startsWith("Estimate revisions")) ?? { label: "Estimate revisions, 30 days", value: "no data", read: "pending" as const };
+  const rows: SignalRow[] = [
+    { label: "Street target vs price", value: up.state === "pending" ? "no data" : `${up.summary}${num(i.avgTarget) ? ` (target ${fmt(i.avgTarget, 2)}${num(i.analystCount) ? `, ${i.analystCount} analysts` : ""})` : ""}`, read: up.state },
+    { label: "Estimate revisions, 30 days", value: `${revRow.value}${rev.state === "pending" ? "" : ` ${revisionArrow(rev)}`}`, read: rev.state },
+    house("RBC", i.rbc, a),
+    house("J.P. Morgan", i.jpm, b),
+  ];
+  const t = cfg.analysts;
+  return { ...tally(rows, t.minChecks, t.netForPositive, t.netForNegative), rows, asOf: i.streetAsOf };
+}
+
 export type SignalSet = Record<SignalKey, Signal> & { positives: number; withData: number };
 
 /** All six signals for one name, plus the count of positives (a count, not a score). */
 export function computeSignals(i: SignalInput, cfg: SignalConfig = SIGNAL_CONFIG): SignalSet {
   const s = {
     fundamentals: fundamentalsSignal(i, cfg),
-    analyst: analystSignal(i, cfg),
-    upside: upsideSignal(i, cfg),
-    house: houseSignal(i),
+    analysts: analystsSignal(i, cfg),
     technicals: technicalsSignal(i, cfg),
     relStrength: relStrengthSignal(i, cfg),
   };

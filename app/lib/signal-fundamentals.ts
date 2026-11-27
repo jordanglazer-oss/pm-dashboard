@@ -82,7 +82,9 @@ export async function readSignalFundamentals(): Promise<SignalFundamentals | nul
   }
 }
 
-export async function buildSignalFundamentals(): Promise<SignalFundamentals> {
+export type FundamentalsDebug = { raws: Record<string, RawFundamentals>; notOnFactset: string[]; requested: number };
+
+export async function buildSignalFundamentals(debug?: FundamentalsDebug): Promise<SignalFundamentals> {
   if (!factsetConfigured()) throw new Error("FactSet is not configured for this deployment");
   const redis = await getRedis();
   const [stocksRaw, suggestedRaw, streetRaw] = await Promise.all([redis.get("pm:stocks"), redis.get("pm:stocks-suggested"), redis.get("pm:street-takeaways")]);
@@ -158,9 +160,14 @@ export async function buildSignalFundamentals(): Promise<SignalFundamentals> {
     }
     if (d.pe != null || d.fcfMargin != null || d.roic != null) withData++;
     names[t] = d;
+    if (debug) debug.raws[t] = raw;
   }
   notes.push(`${withData} of ${tickers.length} names returned FactSet figures; ${tickers.length - idOf.size} are not on FactSet (kept on the existing source).`);
 
+  if (debug) {
+    debug.notOnFactset = tickers.filter((t) => !idOf.has(t));
+    debug.requested = tickers.length;
+  }
   const out: SignalFundamentals = { at: new Date().toISOString(), source: "FactSet", market: { peMedian: marketPe != null ? parseFloat(marketPe.toFixed(1)) : null, names: allPe.length }, sectors, names, notes };
   // An empty build never replaces a good cache.
   if (withData > 0) await redis.set(SIGNAL_FUNDAMENTALS_KEY, JSON.stringify(out));

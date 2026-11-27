@@ -36,6 +36,7 @@ export default function IdeasBoard() {
   const suggested = useGet<Stock[]>("/api/kv/stocks-suggested", (raw) => (raw as { stocks?: Stock[] })?.stocks ?? null);
   const history = useGet<RankedHistory>("/api/ranked-source-history", (raw) => ((raw as { history?: RankedHistory })?.history ?? (raw as RankedHistory)) || null);
   const fundamentals = useSignalFundamentals();
+  const movers = useGet<{ date: string | null; movers: { ticker: string; wChg?: number; smax?: number | null; sector?: string | null }[] }>("/api/sia-universe");
   const [sort, setSort] = useState<SortKey>("positives");
   const [open, setOpen] = useState<{ key: string; signal: SignalKey } | null>(null);
   const [archiveOpen, toggleArchive] = usePersistedOpen("ideas.archive", false);
@@ -45,8 +46,8 @@ export default function IdeasBoard() {
 
   const ideas = useMemo(() => {
     const ranked = rankResearch(research.data ?? {}, stocks);
-    return buildIdeas({ ranked, watchlist: stocks.filter((s) => s.bucket === "Watchlist"), suggested: suggested.data ?? [], history: history.data?.tickers ? history.data : null, pinned, today: todayET(), dropAfterDays: SIGNAL_CONFIG.ideas.dropAfterDays });
-  }, [research.data, stocks, suggested.data, history.data, pinned]);
+    return buildIdeas({ ranked, watchlist: stocks.filter((s) => s.bucket === "Watchlist"), suggested: suggested.data ?? [], history: history.data?.tickers ? history.data : null, pinned, today: todayET(), dropAfterDays: SIGNAL_CONFIG.ideas.dropAfterDays, movers: movers.data?.movers ?? [], held: stocks.filter((s) => s.bucket === "Portfolio").map((s) => s.ticker) });
+  }, [research.data, stocks, suggested.data, history.data, pinned, movers.data]);
 
   const rows = useMemo(() => {
     const pool = [...stocks, ...(suggested.data ?? [])];
@@ -61,7 +62,7 @@ export default function IdeasBoard() {
 
   const table = (list: typeof rows.active) => (
     <div className="overflow-x-auto">
-      <table className="w-full border-collapse" style={{ minWidth: 1180 }}>
+      <table className="w-full border-collapse" style={{ minWidth: 1000 }}>
         <thead>
           <tr>
             <th className={TH}>Name</th>
@@ -83,7 +84,7 @@ export default function IdeasBoard() {
                   </td>
                   <td className={TD}>
                     <div className="flex max-w-[330px] flex-wrap gap-1">
-                      {i.sources.map((s) => <span key={s} className={`whitespace-nowrap rounded-full border px-2 py-0.5 text-[11.5px] font-medium ${s === "Watchlist" ? "border-accent/40 bg-accent/10 text-ink" : "border-line bg-surface-2 text-ink-2"}`}>{s}</span>)}
+                      {i.sources.map((s) => <span key={s} className={`whitespace-nowrap rounded-full border px-2 py-0.5 text-[11.5px] font-medium ${s === "Watchlist" ? "border-accent/40 bg-accent/10 text-ink" : s === "SIA mover" ? "border-pos/30 bg-pos-soft text-pos" : "border-line bg-surface-2 text-ink-2"}`}>{s}</span>)}
                       {i.bearish.map((s) => <span key={`b-${s}`} className="whitespace-nowrap rounded-full border border-neg/30 bg-neg-soft px-2 py-0.5 text-[11.5px] font-medium text-neg" title="On a bearish list">{s}</span>)}
                     </div>
                   </td>
@@ -95,7 +96,7 @@ export default function IdeasBoard() {
                 </tr>
                 {isOpen && set && (
                   <tr>
-                    <td colSpan={11} className="border-b border-line bg-surface-2 px-4 py-3"><SignalDetail k={open!.signal} s={set[open!.signal]} /></td>
+                    <td colSpan={9} className="border-b border-line bg-surface-2 px-4 py-3"><SignalDetail k={open!.signal} s={set[open!.signal]} /></td>
                   </tr>
                 )}
               </React.Fragment>
@@ -119,7 +120,7 @@ export default function IdeasBoard() {
           <div className="text-[13px] text-ink-2">Add a name by hand: use <span className="font-semibold">+ Add</span> at the top right and choose Watchlist. Target buy price and notes are on the <Link href="/watchlist" className="font-semibold !text-accent underline">watchlist page</Link>.</div>
           <Explain prefKey="explain.ideas.rules" label="How this list is built">
             <p>Sources: our watchlist, the Suggested names, and every research list on file (Fundstrat, RBC, J.P. Morgan, Seeking Alpha, Veritas, Equate). &ldquo;Lists&rdquo; counts the bullish lists a name is on now; a red tag marks a bearish list and is never counted.</p>
-            <p className="mt-1">SIA movers, Market Edge lists and Ophir Gottlieb are not yet separate sources (source pending); SIA and Market Edge readings already show in the Rel. str. and Tech. signals.</p>
+            <p className="mt-1">&ldquo;SIA mover&rdquo; = gaining relative strength in the latest SIA export{movers.data?.date ? ` (${movers.data.date})` : ""}. The SIA ranking itself is the Rel. strength signal, and the Market Edge opinion is inside Technicals. Market Edge lists and Ophir Gottlieb are not yet separate sources (source pending).</p>
             <p className="mt-1">A name off every list for more than {SIGNAL_CONFIG.ideas.dropAfterDays} days moves to the archive below unless it is pinned. Signals without a stock record on file read &ldquo;n/a&rdquo;.</p>
           </Explain>
         </div>
