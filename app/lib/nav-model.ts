@@ -48,6 +48,7 @@ export const NAV_GROUPS: NavGroup[] = [
       { key: "performance", label: "Performance", href: "/aa-performance", icon: "trend", match: (p) => p === "/attribution" },
       { key: "holdings", label: "Holdings", href: "/holdings", icon: "table", match: (p) => p.startsWith("/stock/") },
       { key: "watchlist", label: "Ideas", href: "/watchlist", icon: "spark" },
+      { key: "managers", label: "Third-Party Managers", href: "/managers", icon: "star" },
     ],
   },
   {
@@ -85,6 +86,7 @@ export const NAV_GROUPS: NavGroup[] = [
       { key: "themes", label: "Themes", href: "/themes", icon: "star", mergeInto: "Holdings" },
       { key: "pipeline", label: "Pipeline", href: "/funnel", icon: "branch", match: (p) => p === "/conviction", mergeInto: "Ideas" },
       { key: "risk", label: "Risk", href: "/risk", icon: "shield", mergeInto: "Portfolio Snapshot" },
+      { key: "holdings-table", label: "Holdings table (old)", href: "/holdings-table", icon: "table", mergeInto: "Holdings" },
       { key: "scoring", label: "PIM Scoring", href: "/scoring", icon: "table" },
       { key: "synthesis", label: "Synthesis", href: "/synthesis", icon: "spark" },
       { key: "redesign", label: "Redesign options", href: "/redesign", icon: "spark", match: (p) => p.startsWith("/redesign") },
